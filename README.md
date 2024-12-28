@@ -86,9 +86,9 @@ Commands:
   help       Print this message or the help of the given subcommand(s)
 
 Options:
-  -v, --verbose...  
-  -q, --quiet       
-  -j, --json        
+  -v, --verbose...
+  -q, --quiet
+  -j, --json
   -h, --help        Print help
   -V, --version     Print version
 ```

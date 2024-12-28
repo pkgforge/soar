@@ -1,18 +1,10 @@
-[package]
-name = "soar-cli"
-version = "0.4.8"
-authors = ["Rabindra Dhakal <contact@qaidvoid.dev>"]
-description = "A modern package manager for Linux"
-license = "MIT"
-edition = "2021"
-repository = "https://github.com/pkgforge/soar"
-default-run = "soar"
-exclude = ["docs"]
-keywords = ["package-manager", "portable", "binary", "appimage", "linux"]
-
-[[bin]]
-name = "soar"
-path = "src/main.rs"
+[workspace]
+members = [
+  "soar-db",
+  "soar-cli",
+  "soar-core"
+]
+resolver = "2"
 
 [profile.release]
 strip = true
@@ -20,29 +12,3 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
-
-[dependencies]
-anyhow = "1.0.93"
-backhand = "0.18.0"
-base64 = "0.22.1"
-blake3 = "1.5.5"
-chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version = "4.5.21", features = ["cargo", "derive"] }
-futures = "0.3.31"
-icy_sixel = "0.1.2"
-image = { version = "0.25.5", default-features = false, features = ["png"] }
-indicatif = "0.17.9"
-libc = "0.2.166"
-nanoid = "0.4.0"
-regex = { version = "1.11.1", default-features = false, features = ["std", "unicode-case", "unicode-perl"] }
-reqwest = { version = "0.12.9", features = ["blocking", "http2", "json", "rustls-tls", "stream"], default-features = false }
-rmp-serde = "1.3.0"
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.133"
-strip-ansi-escapes = "0.2.0"
-termion = "4.0.3"
-tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread"] }
-tracing = { version = "0.1.41", default-features = false }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt"], default-features = false }
-which = "7.0.0"
-xattr = { version = "1.3.1", default-features = false }

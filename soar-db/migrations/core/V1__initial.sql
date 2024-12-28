@@ -66,8 +66,11 @@ CREATE TABLE packages (
   build_log TEXT NOT NULL,
   category TEXT,
   installed_path TEXT NOT NULL,
-  installed_date TEXT NOT NULL,
+  bin_path TEXT,
+  installed_date TEXT,
   disabled BOOLEAN NOT NULL DEFAULT false,
   pinned BOOLEAN NOT NULL DEFAULT false,
+  is_installed BOOLEAN NOT NULL DEFAULT false,
+  installed_with_family BOOLEAN NOT NULL DEFAULT false,
   UNIQUE (family, pkg_name, checksum)
 );
