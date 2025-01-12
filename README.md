@@ -1,111 +1,86 @@
-# Soar Package Manager
-
 <div align="center">
 
 [crates-shield]: https://img.shields.io/crates/v/soar-cli
 [crates-url]: https://crates.io/crates/soar-cli
-[discord-shield]: https://img.shields.io/discord/1313385177703256064?logo=%235865F2&label=Discord
+[discord-shield]: https://img.shields.io/discord/1313385177703256064?logo=%235865F2&label=discord
 [discord-url]: https://discord.gg/djJUs48Zbu
-[stars-shield]: https://img.shields.io/github/stars/pkgforge/soar.svg
-[stars-url]: https://github.com/pkgforge/soar/stargazers
+[doc-shield]: https://img.shields.io/badge/docs-soar.qaidvoid.dev-blue
+[doc-url]: https://soar.qaidvoid.dev
 [issues-shield]: https://img.shields.io/github/issues/pkgforge/soar.svg
 [issues-url]: https://github.com/pkgforge/soar/issues
 [license-shield]: https://img.shields.io/github/license/pkgforge/soar.svg
 [license-url]: https://github.com/pkgforge/soar/blob/main/LICENSE
-[doc-shield]: https://img.shields.io/badge/docs-soar.qaidvoid.dev-blue
-[doc-url]: https://soar.qaidvoid.dev
-[pkgforge-shield]: https://img.shields.io/badge/pkgforge-docs.pkgforge.dev-blue
-[pkgforge-url]: https://docs.pkgforge.dev
+[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/soarpkgs/data/TOTAL_CACHE.json&query=$.total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
+[packages-url]: https://pkgs.pkgforge.dev
+[stars-shield]: https://img.shields.io/github/stars/pkgforge/soar.svg
+[stars-url]: https://github.com/pkgforge/soar/stargazers
 
 [![Crates.io][crates-shield]][crates-url]
 [![Discord][discord-shield]][discord-url]
 [![Documentation][doc-shield]][doc-url]
-[![PkgForge][pkgforge-shield]][pkgforge-url]
 [![Issues][issues-shield]][issues-url]
 [![License: MIT][license-shield]][license-url]
+[![Packages][packages-shield]][packages-url]
 [![Stars][stars-shield]][stars-url]
 
 </div>
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif" alt="soar-list" width="850">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.4.8" alt="soar-list" width="850">
     </a><br>
 </p>
 
 <p align="center">
-    Soar is a fast Linux package manager that <a href="https://docs.pkgforge.dev/soar/comparisons"> doesn't suck</a>. Works with <a href="https://docs.pkgforge.dev/formats/binaries/static">Static Binaries</a>, <a href="https://docs.pkgforge.dev/formats/packages/appimage">AppImages</a>, and other <a href="https://docs.pkgforge.dev/formats/packages">Portable formats</a>.
+    Soar is a Fast, Modern, Bloat-Free Distro-Independent Package Manager that <a href="https://docs.pkgforge.dev/soar/comparisons"> Just Works</a><br>
+    Supports <a href="https://docs.pkgforge.dev/formats/binaries/static">Static Binaries</a>, <a href="https://docs.pkgforge.dev/formats/packages/appimage">AppImages</a>, and other <a href="https://docs.pkgforge.dev/formats/packages">Portable formats</a> on any <a href="https://docs.pkgforge.dev/repositories/soarpkgs/faq#portability">*Unix-based Distro</a>
 </p>
 
-> [!WARNING]
-> **Breaking Changes Ahead**
->
-> The next version of Soar will introduce significant changes, including breaking changes to configuration formats, and behavior. Please review the CHANGELOG before upgrading.
-
-<div align="center">
-
-| <img src="https://raw.githubusercontent.com/pkgforge/soar/refs/heads/autoplay/install.webp" /> | <img src="https://raw.githubusercontent.com/pkgforge/soar/refs/heads/autoplay/remove.webp" /> | <img src="https://raw.githubusercontent.com/pkgforge/soar/refs/heads/autoplay/download.webp" /> | 
-| - | - | - |
-| [**`Install Packages`**](https://soar.qaidvoid.dev/install) | [**`Remove Packages`**](https://soar.qaidvoid.dev/remove) | [**`Download File`**](https://soar.qaidvoid.dev/download) |
-| <img src="https://raw.githubusercontent.com/pkgforge/soar/refs/heads/autoplay/run.webp" /> | <img src="https://raw.githubusercontent.com/pkgforge/soar/refs/heads/autoplay/list.webp" /> | <img src="https://raw.githubusercontent.com/pkgforge/soar/refs/heads/autoplay/search.webp" /> |
-| [**`Run Package`**](https://soar.qaidvoid.dev/run) | [**`List Packages`**](https://soar.qaidvoid.dev/list) | [**`Search Packages`**](https://soar.qaidvoid.dev/search) |
-
-</div>
-
 ## 🌟 Key Features
+
+- [Distro Agnostic](https://docs.pkgforge.dev/soar/readme/packages#portability) (Read the [Manifesto](https://github.com/pkgforge/soarpkgs/blob/main/MANIFESTO.md))
+- [Native Desktop Integration](https://soar.qaidvoid.dev/#desktop-integration)
+- [SLSA Level 3 Security Guarantees](https://docs.pkgforge.dev/soar/readme/security)
+- [Thousands of Prebuilt Packages](https://pkgs.pkgforge.dev/)
 - [Universal Package Support](https://soar.qaidvoid.dev/#universal-package-support)
-- [Desktop Integration](https://soar.qaidvoid.dev/#desktop-integration)
 - [& Much More](https://docs.pkgforge.dev/soar/comparisons)
 
 ## 🔧 Installation
+
+Soar comes as a single-file, statically-linked executable with no dependencies that you can simply [download](https://github.com/pkgforge/soar/releases/latest) & run.
 - Docs: https://soar.qaidvoid.dev/installation.html
 - Extra Guide & Information: https://docs.pkgforge.dev
 
-## 🎯 Usage
-
-```sh
-Usage: soar [OPTIONS] <COMMAND>
-
-Commands:
-  install    Install packages [aliases: i, add]
-  search     Search package [aliases: s, find]
-  query      Query package info [aliases: Q]
-  remove     Remove packages [aliases: r, del]
-  sync       Sync with remote metadata [aliases: S, fetch]
-  update     Update packages [aliases: u, upgrade]
-  info       Show info about installed packages [aliases: list-installed]
-  list       List all available packages [aliases: ls]
-  log        Inspect package build log
-  inspect    Inspect package build script
-  run        Run packages without installing to PATH [aliases: exec, execute]
-  use        Use package from different family
-  download   Download arbitrary files [aliases: dl]
-  health     Health check
-  defconfig  Generate default config
-  env        View env
-  clean      Garbage collection
-  self       Modify the soar installation
-  help       Print this message or the help of the given subcommand(s)
-
-Options:
-  -v, --verbose...
-  -q, --quiet
-  -j, --json
-      --no-color
-  -p, --profile <PROFILE>
-  -h, --help               Print help
-  -V, --version            Print version
-```
-
 ## ⚙️ Configuration
 
-Soar uses a JSON configuration file located at `~/.config/soar/config.json`.
-For configuration guide, follow [here](https://soar.qaidvoid.dev/configuration.html).
+Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration.html) & [all repositories](https://docs.pkgforge.dev/repositories/) preconfigured at `~/.config/soar/config.json`<br>
+For additional configuration guide, click [here](https://soar.qaidvoid.dev/configuration.html)
+
+## 🎯 Usage
+
+Simply run `soar --help` for general options.
+- General Guide & Manual is maintained at: [soar.qaidvoid.dev](https://soar.qaidvoid.dev/)
+- Detailed guide regarding each format is at: [docs.pkgforge.dev](https://docs.pkgforge.dev/formats/packages)
+
+## 📦 Packages
+We use a novel recipe format called [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) at [pkgforge-dev/soarpkgs](https://github.com/pkgforge/soarpkgs).
+Our CI Infra builds these [packages](https://pkgs.pkgforge.dev/) periodically & syncs to the [cache](https://docs.pkgforge.dev/repositories/soarpkgs/faq#cache).
+To request new packages or report an issue with an existing one, please use the [pkgforge-dev/soarpkgs](https://github.com/pkgforge/soarpkgs) repository.
+
+What Packages are Available?
+- Type `soar list` for a list
+- Or visit [pkgs.pkgforge.dev](https://pkgs.pkgforge.dev/)
+
+## 💬 Community
+
+Be a part of our community to interact with our team, get quick help, and share your ideas
+- [![Discord](https://img.shields.io/discord/1313385177703256064?logo=%235865F2&label=Discord)](https://discord.gg/djJUs48Zbu)
+- Other Channels: https://docs.pkgforge.dev/contact/chat
 
 ## 🤝 Contributing
 
 We welcome contributions! Please feel free to fork the repository and submit
-pull requests. If you have suggestions or feature requests, open an issue to
+pull requests. If you have suggestions or feature requests, open an [discussion](https://github.com/pkgforge/soar/discussions) to
 discuss.
 
 Please feel free to:
@@ -113,12 +88,11 @@ Please feel free to:
 2. Create your feature branch
 3. Submit a pull request
 
-## 💬 Community
-
-Connect directly with our team, get quicker responses, and engage with our community!
-- [![Discord](https://img.shields.io/discord/1313385177703256064?logo=%235865F2&label=Discord)](https://discord.gg/djJUs48Zbu)
-- Other Channels: https://docs.pkgforge.dev/contact/chat
+![Alt](https://repobeats.axiom.co/api/embed/7c089611431897ab74236ac506187c2f563c2886.svg "Repobeats analytics image")
+[![Stargazers](https://reporoster.com/stars/dark/pkgforge/soar)](https://github.com/pkgforge/soar/stargazers)
+[![Stargazers over time](https://starchart.cc/pkgforge/soar.svg?variant=dark)](https://starchart.cc/pkgforge/soar)
 
 ## 📝 License
 
-This project is licensed under [MIT] - see the [LICENSE](LICENSE) file for details.
+This project is licensed under [MIT](https://spdx.org/licenses/MIT.html) - see the [LICENSE](LICENSE) file for details.<br>
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fpkgforge%2Fsoar.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fpkgforge%2Fsoar?ref=badge_large)
