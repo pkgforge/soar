@@ -40,7 +40,7 @@
 
 - [Distro Agnostic](https://docs.pkgforge.dev/soar/readme/packages#portability) (Read the [Manifesto](https://github.com/pkgforge/soarpkgs/blob/main/MANIFESTO.md))
 - [Native Desktop Integration](https://soar.qaidvoid.dev/#desktop-integration)
-- [SLSA Level 3 Security Guarantees](https://docs.pkgforge.dev/soar/readme/security)
+- [SLSA Build L2 Security Guarantees](https://docs.pkgforge.dev/soar/readme/security)
 - [Thousands of Prebuilt Packages](https://pkgs.pkgforge.dev/) ([Soar User Repository](https://github.com/pkgforge/soarpkgs))
 - [Universal Package Support](https://soar.qaidvoid.dev/#universal-package-support)
 - [& Much More](https://docs.pkgforge.dev/soar/comparisons)
