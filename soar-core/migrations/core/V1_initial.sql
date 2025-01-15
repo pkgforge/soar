@@ -1,0 +1,16 @@
+CREATE TABLE packages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_name TEXT NOT NULL,
+  pkg TEXT NOT NULL,
+  pkg_id TEXT NOT NULL,
+  pkg_name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  size BIGINT NOT NULL,
+  checksum TEXT NOT NULL,
+  installed_path TEXT NOT NULL,
+  installed_date TEXT,
+  bin_path TEXT,
+  pinned BOOLEAN NOT NULL DEFAULT false,
+  is_installed BOOLEAN NOT NULL DEFAULT false,
+  installed_with_family BOOLEAN NOT NULL DEFAULT false
+);

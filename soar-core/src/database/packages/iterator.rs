@@ -131,7 +131,10 @@ impl PackageIterator {
             })?
             .filter_map(|res| match res {
                 Ok(pkg) => Some(pkg),
-                Err(_) => None,
+                Err(err) => {
+                    eprintln!("Map Error: {err:#?}");
+                    None
+                }
             })
             .collect();
 
@@ -149,7 +152,7 @@ impl PackageIterator {
             self.state = IterationState {
                 id: last_package.id,
                 pkg_name: Some(last_package.pkg.clone()),
-                family: Some(last_package.family.clone()),
+                family: Some(last_package.pkg_id.clone()),
             };
         }
     }
@@ -291,7 +294,10 @@ impl InstalledPackageIterator {
             .query_map(params_ref.as_slice(), map_installed_package)?
             .filter_map(|res| match res {
                 Ok(pkg) => Some(pkg),
-                Err(_) => None,
+                Err(err) => {
+                    eprintln!("Map Error: {err:#?}");
+                    None
+                }
             })
             .collect();
 
@@ -305,7 +311,7 @@ impl InstalledPackageIterator {
             self.state = IterationState {
                 id: last_package.id,
                 pkg_name: Some(last_package.pkg.clone()),
-                family: Some(last_package.family.clone()),
+                family: Some(last_package.pkg_id.clone()),
             };
         }
     }
@@ -356,26 +362,23 @@ fn map_package(row: &Row, repo_name: String) -> rusqlite::Result<Package> {
     Ok(Package {
         repo_name,
         id: row.get(0)?,
-        collection: row.get(1)?,
-        pkg: row.get(2)?,
-        pkg_id: row.get(3)?,
-        pkg_name: row.get(4)?,
-        app_id: row.get(5)?,
-        family: row.get(6)?,
-        description: row.get(7)?,
-        version: row.get(8)?,
-        size: row.get(9)?,
-        checksum: row.get(10)?,
-        note: row.get(11)?,
-        download_url: row.get(12)?,
-        build_date: row.get(13)?,
-        build_script: row.get(14)?,
-        build_log: row.get(15)?,
-        homepage: row.get(16)?,
-        category: row.get(17)?,
-        source_url: row.get(18)?,
-        icon: row.get(19)?,
-        desktop: row.get(20)?,
+        pkg: row.get(1)?,
+        pkg_id: row.get(2)?,
+        pkg_name: row.get(3)?,
+        app_id: row.get(4)?,
+        description: row.get(5)?,
+        version: row.get(6)?,
+        size: row.get(7)?,
+        checksum: row.get(8)?,
+        note: row.get(9)?,
+        download_url: row.get(10)?,
+        build_date: row.get(11)?,
+        build_script: row.get(12)?,
+        build_log: row.get(13)?,
+        homepage: row.get(14)?,
+        source_url: row.get(15)?,
+        icon: row.get(16)?,
+        desktop: row.get(17)?,
     })
 }
 
@@ -383,26 +386,17 @@ pub fn map_installed_package(row: &Row) -> rusqlite::Result<InstalledPackage> {
     Ok(InstalledPackage {
         id: row.get(0)?,
         repo_name: row.get(1)?,
-        collection: row.get(2)?,
-        family: row.get(3)?,
+        pkg: row.get(2)?,
+        pkg_id: row.get(3)?,
         pkg_name: row.get(4)?,
-        pkg: row.get(5)?,
-        pkg_id: row.get(6)?,
-        app_id: row.get(7)?,
-        description: row.get(8)?,
-        version: row.get(9)?,
-        size: row.get(10)?,
-        checksum: row.get(11)?,
-        build_date: row.get(12)?,
-        build_script: row.get(13)?,
-        build_log: row.get(14)?,
-        category: row.get(15)?,
-        bin_path: row.get(16)?,
-        installed_path: row.get(17)?,
-        installed_date: row.get(18)?,
-        disabled: row.get(19)?,
-        pinned: row.get(20)?,
-        is_installed: row.get(21)?,
-        installed_with_family: row.get(22)?,
+        version: row.get(5)?,
+        size: row.get(6)?,
+        checksum: row.get(7)?,
+        installed_path: row.get(8)?,
+        installed_date: row.get(9)?,
+        bin_path: row.get(10)?,
+        pinned: row.get(11)?,
+        is_installed: row.get(12)?,
+        installed_with_family: row.get(13)?,
     })
 }

@@ -1,8 +1,11 @@
 use std::fs::{self, File};
 
+use rusqlite::Connection;
+
 use crate::{
     config::Repository,
-    database::{connection::Database, models::RemotePackageMetadata},
+    constants::METADATA_MIGRATIONS,
+    database::{connection::Database, migration::MigrationManager, models::RemotePackage},
     error::SoarError,
     SoarResult,
 };
@@ -35,16 +38,19 @@ pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
 
     let _ = fs::remove_file(&metadata_db);
     File::create(&metadata_db)?;
-    soar_db::metadata::init_db(&metadata_db).unwrap();
+
+    let conn = Connection::open(&metadata_db)?;
+    let mut manager = MigrationManager::new(conn)?;
+    manager.migrate_from_dir(METADATA_MIGRATIONS)?;
 
     let resp = reqwest::get(&remote_url).await?;
     if !resp.status().is_success() {
         return Err(SoarError::FailedToFetchRemote);
     }
-    let remote_metadata: RemotePackageMetadata = resp.json().await?;
+    let remote_metadata: Vec<RemotePackage> = resp.json().await?;
 
     let db = Database::new(metadata_db)?;
-    db.from_json_metadata(remote_metadata, &repo.name)?;
+    db.from_remote_metadata(remote_metadata.as_ref(), &repo.name)?;
 
     fs::write(checksum_file, remote_checksum)?;
 

@@ -1,8 +1,0 @@
-[package]
-name = "soar-db"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-refinery = { git = "https://github.com/rust-db/refinery", features = ["rusqlite"] }
-rusqlite = { version = "0.32.1", features = ["bundled"] }

@@ -23,30 +23,38 @@ pub struct Config {
     pub soar_root: String,
 
     /// Path to the directory where cache is stored.
+    #[serde(skip_serializing)]
     pub soar_cache: Option<String>,
 
     /// Path to the directory where binary symlinks is stored.
+    #[serde(skip_serializing)]
     pub soar_bin: Option<String>,
 
     /// Path to the directory where installation database is stored.
+    #[serde(skip_serializing)]
     pub soar_db: Option<String>,
 
     /// Path to the directory where repositories database is stored.
+    #[serde(skip_serializing)]
     pub soar_repositories: Option<String>,
 
     /// Path to the directory where packages are stored.
+    #[serde(skip_serializing)]
     pub soar_packages: Option<String>,
 
     /// A list of remote repositories to fetch packages from.
     pub repositories: Vec<Repository>,
 
     /// Indicates whether downloads should be performed in parallel.
+    #[serde(skip_serializing)]
     pub parallel: Option<bool>,
 
     /// Limit the number of parallel downloads
+    #[serde(skip_serializing)]
     pub parallel_limit: Option<u32>,
 
     /// Limit the number of search results to display
+    #[serde(skip_serializing)]
     pub search_limit: Option<usize>,
 }
 
@@ -103,11 +111,6 @@ impl Config {
                 .soar_cache
                 .unwrap_or_else(|| format!("{}/cache", config.soar_root))
         }));
-        config.soar_db = Some(env::var("SOAR_DB").unwrap_or_else(|_| {
-            config
-                .soar_db
-                .unwrap_or_else(|| format!("{}/db", config.soar_root))
-        }));
         config.soar_packages = Some(env::var("SOAR_PACKAGE").unwrap_or_else(|_| {
             config
                 .soar_packages
@@ -116,9 +119,10 @@ impl Config {
         config.soar_repositories = Some(env::var("SOAR_REPOSITORIES").unwrap_or_else(|_| {
             config
                 .soar_repositories
-                .unwrap_or_else(|| format!("{}/packages", config.soar_root))
+                .unwrap_or_else(|| format!("{}/repos", config.soar_root))
         }));
 
+        config.soar_db = Some(format!("{}/db", config.soar_root));
         if config.parallel.unwrap_or(true) {
             config.parallel_limit = config.parallel_limit.or(Some(4));
         }

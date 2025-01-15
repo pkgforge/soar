@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "soar-db",
   "soar-cli",
   "soar-core"
 ]

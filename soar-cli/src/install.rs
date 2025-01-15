@@ -17,7 +17,11 @@ use soar_core::{
         packages::{get_installed_packages_with_filter, get_packages_with_filter, PackageFilter},
     },
     error::SoarError,
-    package::{formats::common::integrate_package, install::PackageInstaller, query::PackageQuery},
+    package::{
+        formats::common::integrate_package,
+        install::{InstallTarget, PackageInstaller},
+        query::PackageQuery,
+    },
     utils::calculate_checksum,
     SoarResult,
 };
@@ -30,12 +34,6 @@ use crate::{
     state::AppState,
     utils::interactive_ask,
 };
-
-#[derive(Clone)]
-pub struct InstallTarget {
-    pub package: Package,
-    pub existing_install: Option<InstalledPackage>,
-}
 
 #[derive(Clone)]
 pub struct InstallContext {
@@ -94,7 +92,7 @@ pub async fn install_packages(
         portable_config,
     );
 
-    perform_installation(install_context, install_targets, core_db, force).await
+    perform_installation(install_context, install_targets, core_db).await
 }
 
 fn resolve_packages(
@@ -112,14 +110,16 @@ fn resolve_packages(
 
         let existing_install = get_existing_install(&core_db, &filter)?;
 
-        if existing_install.is_some() {
-            warn!(
-                "{} is already installed - {}",
-                package,
-                if force { "reinstalling" } else { "skipping" }
-            );
-            if !force {
-                continue;
+        if let Some(ref existing) = existing_install {
+            if existing.is_installed {
+                warn!(
+                    "{} is already installed - {}",
+                    package,
+                    if force { "reinstalling" } else { "skipping" }
+                );
+                if !force {
+                    continue;
+                }
             }
         }
 
@@ -141,7 +141,6 @@ fn get_existing_install(
 ) -> SoarResult<Option<InstalledPackage>> {
     let installed_pkgs: Vec<InstalledPackage> =
         get_installed_packages_with_filter(core_db.clone(), 128, filter.clone())?
-            .into_iter()
             .filter_map(Result::ok)
             .collect();
 
@@ -158,16 +157,13 @@ fn select_package(
     let filter = if let Some(existing) = existing_install {
         PackageFilter {
             repo_name: Some(existing.repo_name.clone()),
-            collection: Some(existing.collection.clone()),
             exact_pkg_name: Some(existing.pkg_name.clone()),
-            family: Some(existing.family.clone()),
             ..Default::default()
         }
     } else {
         filter.clone()
     };
     let pkgs: Vec<Package> = get_packages_with_filter(db, 1024, filter)?
-        .into_iter()
         .filter_map(Result::ok)
         .collect();
 
@@ -189,10 +185,10 @@ fn select_package_interactively(
     info!("Multiple packages found for {package_name}");
     for (idx, pkg) in pkgs.iter().enumerate() {
         info!(
-            "[{}] {}/{}-{}:{}",
+            "[{}] {}#{}-{}:{}",
             idx + 1,
-            pkg.family,
             pkg.pkg_name,
+            pkg.pkg_id,
             pkg.version,
             pkg.repo_name
         );
@@ -216,7 +212,6 @@ pub async fn perform_installation(
     ctx: InstallContext,
     targets: Vec<InstallTarget>,
     core_db: Arc<Mutex<Connection>>,
-    force: bool,
 ) -> SoarResult<()> {
     let mut handles = Vec::new();
     let fixed_width = 30;
@@ -227,15 +222,8 @@ pub async fn perform_installation(
     }
 
     for (idx, target) in targets.iter().enumerate() {
-        let handle = spawn_installation_task(
-            &ctx,
-            target.clone(),
-            core_db.clone(),
-            idx,
-            fixed_width,
-            force,
-        )
-        .await;
+        let handle =
+            spawn_installation_task(&ctx, target.clone(), core_db.clone(), idx, fixed_width).await;
         handles.push(handle);
     }
 
@@ -261,7 +249,6 @@ async fn spawn_installation_task(
     core_db: Arc<Mutex<Connection>>,
     idx: usize,
     fixed_width: usize,
-    force: bool,
 ) -> tokio::task::JoinHandle<()> {
     let permit = ctx.semaphore.clone().acquire_owned().await.unwrap();
     let progress_bar = ctx
@@ -269,11 +256,11 @@ async fn spawn_installation_task(
         .insert_from_back(1, create_progress_bar());
 
     let message = format!(
-        "[{}/{}] {}/{}",
+        "[{}/{}] {}#{}",
         idx + 1,
         ctx.total_packages,
-        target.package.family,
-        target.package.pkg_name
+        target.package.pkg_name,
+        target.package.pkg_id
     );
     let message = if message.len() > fixed_width {
         format!("{:.width$}", message, width = fixed_width)
@@ -291,7 +278,7 @@ async fn spawn_installation_task(
     let ctx = ctx.clone();
 
     tokio::spawn(async move {
-        let result = install_single_package(&ctx, target, progress_callback, core_db, force).await;
+        let result = install_single_package(&ctx, target, progress_callback, core_db).await;
 
         if let Err(err) = result {
             error!("{err}");
@@ -309,24 +296,15 @@ async fn install_single_package(
     target: InstallTarget,
     progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
     core_db: Arc<Mutex<Connection>>,
-    force: bool,
 ) -> SoarResult<()> {
-    let (install_dir, real_bin, bin_name) = if let Some(existing) = target.existing_install {
-        let install_dir = PathBuf::from(existing.installed_path);
-        let real_bin = install_dir.join(&target.package.pkg);
+    let (install_dir, real_bin, bin_name) = if let Some(ref existing) = target.existing_install {
+        let install_dir = PathBuf::from(&existing.installed_path);
+        let real_bin = install_dir.join(&target.package.pkg_name);
         let bin_name = existing
             .bin_path
+            .as_ref()
             .map(PathBuf::from)
-            .unwrap_or_else(|| bin_path().join(&target.package.pkg));
-
-        if force {
-            if let Err(e) = std::fs::remove_dir_all(&install_dir) {
-                warn!("Failed to clean up existing installation: {}", e);
-            }
-            if let Err(e) = std::fs::remove_file(&bin_name) {
-                warn!("Failed to remove existing symlink: {}", e);
-            }
-        }
+            .unwrap_or_else(|| bin_path().join(&target.package.pkg_name));
 
         (install_dir, real_bin, bin_name)
     } else {
@@ -336,15 +314,34 @@ async fn install_single_package(
             .map(char::from)
             .collect();
 
-        let install_dir = packages_path().join(format!("{}-{}", target.package.pkg_name, rand_str));
-        let real_bin = install_dir.join(&target.package.pkg);
-        let bin_name = bin_path().join(&target.package.pkg);
+        let install_dir = packages_path().join(format!("{}-{}", target.package.pkg, rand_str));
+        let real_bin = install_dir.join(&target.package.pkg_name);
+        let bin_name = bin_path().join(&target.package.pkg_name);
 
         (install_dir, real_bin, bin_name)
     };
 
+    if bin_name.exists() {
+        if let Err(err) = std::fs::remove_file(&bin_name) {
+            return Err(SoarError::Custom(format!(
+                "Failed to remove existing symlink: {}",
+                err
+            )));
+        }
+    }
+
+    if install_dir.exists() {
+        if let Err(err) = std::fs::remove_dir_all(&install_dir) {
+            return Err(SoarError::Custom(format!(
+                "Failed to clean up install directory {}: {}",
+                install_dir.display(),
+                err
+            )));
+        }
+    }
+
     let installer = PackageInstaller::new(
-        target.package.clone(),
+        &target,
         install_dir,
         Some(progress_callback),
         core_db,
@@ -355,9 +352,8 @@ async fn install_single_package(
     installer.install().await?;
 
     let final_checksum = calculate_checksum(&real_bin)?;
-    let symlink_bin = bin_path().join(&bin_name);
-    fs::symlink(&real_bin, &symlink_bin)?;
-    installer.record(&final_checksum, &symlink_bin).await?;
+    fs::symlink(&real_bin, &bin_name)?;
+    installer.record(&final_checksum, &bin_name).await?;
 
     integrate_package(
         &real_bin,

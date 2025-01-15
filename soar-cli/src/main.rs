@@ -1,4 +1,4 @@
-use std::{env, io::Read, sync::Arc};
+use std::{env, io::Read};
 
 use clap::Parser;
 use cli::Args;
@@ -7,18 +7,15 @@ use inspect::{inspect_log, InspectType};
 use install::install_packages;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
 use logging::setup_logging;
-use progress::create_progress_bar;
 use remove::remove_packages;
 use run::run_package;
 use self_actions::process_self_action;
 use soar_core::{
     config::generate_default_config,
     constants::{bin_path, cache_path, db_path, packages_path, repositories_path, root_path},
-    database::packages::get_installed_packages,
     utils::setup_required_paths,
     SoarResult,
 };
-use soar_dl::downloader::{DownloadOptions, Downloader};
 use tracing::{error, info};
 use update::update_packages;
 

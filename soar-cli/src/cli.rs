@@ -124,7 +124,7 @@ pub enum Commands {
         packages: Option<Vec<String>>,
 
         /// Repository to get installed packages for
-        #[arg(required = false)]
+        #[arg(required = false, long, short)]
         repo_name: Option<String>,
     },
 

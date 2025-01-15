@@ -6,7 +6,10 @@ use std::{
 
 use rusqlite::Connection;
 use soar_core::{
-    config::Config, constants::db_path, database::connection::Database, metadata::fetch_metadata,
+    config::Config,
+    constants::{db_path, CORE_MIGRATIONS},
+    database::{connection::Database, migration::MigrationManager},
+    metadata::fetch_metadata,
     SoarResult,
 };
 
@@ -65,7 +68,10 @@ impl AppState {
         if !core_db_file.exists() {
             File::create(&core_db_file)?;
         }
-        soar_db::core::init_db(&core_db_file).unwrap();
+
+        let conn = Connection::open(&core_db_file)?;
+        let mut manager = MigrationManager::new(conn)?;
+        manager.migrate_from_dir(CORE_MIGRATIONS)?;
         Database::new(&core_db_file)
     }
 

@@ -147,11 +147,7 @@ pub async fn integrate_remote<P: AsRef<Path>>(
         };
         downloader.download(options).await?;
     } else {
-        let content = create_default_desktop_entry(
-            &package.pkg,
-            &package.pkg_name,
-            &package.category.replace(',', ";"),
-        );
+        let content = create_default_desktop_entry(&package.pkg, &package.pkg_name, "Utility");
         fs::write(&desktop_output_path, &content)?;
     }
 
@@ -223,31 +219,24 @@ fn create_default_desktop_entry(bin_name: &str, name: &str, categories: &str) ->
 }
 
 pub async fn integrate_package<P: AsRef<Path>>(
-    package_path: P,
+    bin_path: P,
     package: &Package,
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
 ) -> SoarResult<()> {
-    let package_path = package_path.as_ref();
-    let bin_path = package_path.join(&package.pkg);
+    let bin_path = bin_path.as_ref();
     let mut reader = BufReader::new(File::open(&bin_path)?);
     let file_type = get_file_type(&mut reader);
 
     match file_type {
         super::PackageFormat::AppImage => {
             if integrate_appimage(bin_path, package).await.is_ok() {
-                setup_portable_dir(
-                    package_path,
-                    package,
-                    portable,
-                    portable_home,
-                    portable_config,
-                )?;
+                setup_portable_dir(bin_path, package, portable, portable_home, portable_config)?;
             }
         }
         super::PackageFormat::FlatImage => {
-            setup_portable_dir(package_path, package, None, None, portable_config)?;
+            setup_portable_dir(bin_path, package, None, None, portable_config)?;
         }
         _ => {}
     }

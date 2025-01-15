@@ -27,7 +27,6 @@ rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = "1.0.217"
 serde_json = "1.0.133"
 soar-core = { version = "0.1.0", path = "../soar-core" }
-soar-db = { version = "0.1.0", path = "../soar-db" }
 soar-dl = "0.1.2"
 tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
 toml = "0.8.19"

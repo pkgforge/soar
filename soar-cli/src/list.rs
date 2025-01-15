@@ -1,10 +1,10 @@
+use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
 use soar_core::{
     database::{
         models::InstalledPackage,
         packages::{get_installed_packages_with_filter, get_packages_with_filter, PackageFilter},
     },
-    utils::parse_size,
     SoarResult,
 };
 use tracing::info;
@@ -42,7 +42,6 @@ pub async fn search_packages(
         let filter = PackageFilter {
             repo_name: Some(package.repo_name.clone()),
             exact_pkg_name: Some(package.pkg_name.clone()),
-            family: Some(package.family),
             ..Default::default()
         };
 
@@ -63,12 +62,14 @@ pub async fn search_packages(
 
         info!(
             pkg_name = %package.pkg_name,
+            pkg_id = %package.pkg_id,
             description = %package.description,
             version = %package.version,
             repo_name = %package.repo_name,
-            "[{}] {}-{}:{} - {}",
+            "[{}] {}#{}-{}:{} - {}",
             install_status,
             Blue.paint(package.pkg_name.clone()),
+            Cyan.paint(package.pkg_id.clone()),
             Magenta.paint(package.version.clone()),
             Cyan.paint(package.repo_name.clone()),
             package.description
@@ -104,7 +105,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
         let package = package?;
         info!(
             pkg_name = %package.pkg_name,
-            family = %package.family,
+            pkg_id = %package.pkg_id,
             repo_name = %package.repo_name,
             description = %package.description,
             homepage = %package.homepage,
@@ -116,9 +117,8 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             build_date = %package.build_date,
             build_log = %package.build_log,
             build_script = %package.build_script,
-            category = %package.category,
             concat!(
-                "\n{}: {} ({}/{1}:{})\n",
+                "\n{}: {} ({1}#{}:{})\n",
             "{}: {}\n",
             "{}: {}\n",
             "{}: {}\n",
@@ -128,21 +128,19 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             "{}: {}\n",
             "{}: {}\n",
             "{}: {}\n",
-            "{}: {}\n",
-            "{}: {}"
+            "{}: {}",
             ),
-            Red.paint("Name"), Green.paint(package.pkg_name.clone()), Cyan.paint(package.family.clone()), Red.paint(package.repo_name.clone()),
+            Red.paint("Name"), Green.paint(package.pkg_name.clone()), Cyan.paint(package.pkg_id.clone()), Red.paint(package.repo_name.clone()),
             Red.paint("Description"), Yellow.paint(package.description.clone()),
             Red.paint("Homepage"), Blue.paint(package.homepage.clone()),
             Red.paint("Source"), Blue.paint(package.source_url.clone()),
             Red.paint("Version"), Magenta.paint(package.version.clone()),
             Red.paint("Checksum"), Magenta.paint(package.checksum.clone()),
-            Red.paint("Size"), Magenta.paint(package.size.clone()),
+            Red.paint("Size"), Magenta.paint(HumanBytes(package.size).to_string()),
             Red.paint("Download URL"), Blue.paint(package.download_url.clone()),
             Red.paint("Build Date"), Magenta.paint(package.build_date.clone()),
             Red.paint("Build Log"), Blue.paint(package.build_log.clone()),
             Red.paint("Build Script"), Blue.paint(package.build_script.clone()),
-            Red.paint("Category"), Cyan.paint(package.category.clone())
         );
     }
 
@@ -168,7 +166,7 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
         let filter = PackageFilter {
             repo_name: Some(package.repo_name.clone()),
             exact_pkg_name: Some(package.pkg_name.clone()),
-            family: Some(package.family),
+            family: Some(package.pkg_id),
             ..Default::default()
         };
 
@@ -232,14 +230,14 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
                 package.version,
                 package.repo_name,
                 package.installed_date.clone().unwrap(),
-                package.size
+                HumanBytes(package.size)
             );
 
             count += 1;
-            total_size += parse_size(&package.size).unwrap_or(0);
+            total_size += package.size;
         } else {
             broken_count += 1;
-            broken_size += parse_size(&package.size).unwrap_or(0);
+            broken_size += package.size;
         }
     }
 
@@ -249,14 +247,14 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
         total_size = %total_size,
         "Total: {} ({})",
         count,
-        total_size,
+        HumanBytes(total_size),
     );
     info!(
         broken_count = %broken_count,
         total_size = %broken_size,
         "Broken: {} ({})",
         broken_count,
-        broken_size
+        HumanBytes(broken_size)
     );
 
     Ok(())

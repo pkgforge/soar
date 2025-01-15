@@ -11,8 +11,8 @@ impl PackageSort {
         match self {
             PackageSort::Id => "p.id",
             PackageSort::PackageName => "p.pkg_name, p.id",
-            PackageSort::Family => "f.name, p.id",
-            PackageSort::FamilyAndPackage => "f.name, p.pkg_name, p.id",
+            PackageSort::Family => "f.value, p.id",
+            PackageSort::FamilyAndPackage => "f.value, p.pkg_name, p.id",
         }
     }
 
@@ -20,8 +20,8 @@ impl PackageSort {
         match self {
             PackageSort::Id => "p.id > ?",
             PackageSort::PackageName => "(p.pkg_name, p.id) > (?, ?)",
-            PackageSort::Family => "(f.name, p.id) > (?, ?)",
-            PackageSort::FamilyAndPackage => "(f.name, p.pkg_name, p.id) > (?, ?, ?)",
+            PackageSort::Family => "(f.value, p.id) > (?, ?)",
+            PackageSort::FamilyAndPackage => "(f.value, p.pkg_name, p.id) > (?, ?, ?)",
         }
     }
 
@@ -31,34 +31,30 @@ impl PackageSort {
         state: &IterationState,
     ) {
         match self {
-            Self::Id => {
-                params.push(Box::new(state.id));
-            }
             Self::PackageName => {
                 let pkg_name = state.pkg_name.clone().unwrap_or_default();
                 params.push(Box::new(pkg_name));
-                params.push(Box::new(state.id));
             }
             Self::Family => {
                 let family = state.family.clone().unwrap_or_default();
                 params.push(Box::new(family));
-                params.push(Box::new(state.id));
             }
             Self::FamilyAndPackage => {
                 let family = state.family.clone().unwrap_or_default();
                 let pkg_name = state.pkg_name.clone().unwrap_or_default();
                 params.push(Box::new(family));
                 params.push(Box::new(pkg_name));
-                params.push(Box::new(state.id));
             }
+            _ => {}
         }
+
+        params.push(Box::new(state.id));
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct PackageFilter {
     pub repo_name: Option<String>,
-    pub collection: Option<String>,
     pub pkg_name: Option<String>,
     pub exact_pkg_name: Option<String>,
     pub family: Option<String>,

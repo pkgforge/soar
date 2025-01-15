@@ -7,9 +7,7 @@ use rusqlite::Connection;
 
 use crate::error::SoarError;
 
-use super::{
-    models::RemotePackageMetadata, repository::PackageRepository, statements::DbStatements,
-};
+use super::{models::RemotePackage, repository::PackageRepository, statements::DbStatements};
 
 type Result<T> = std::result::Result<T, SoarError>;
 
@@ -38,11 +36,7 @@ impl Database {
         Ok(Database { conn })
     }
 
-    pub fn from_json_metadata(
-        &self,
-        metadata: RemotePackageMetadata,
-        repo_name: &str,
-    ) -> Result<()> {
+    pub fn from_remote_metadata(&self, metadata: &[RemotePackage], repo_name: &str) -> Result<()> {
         let mut guard = self.conn.lock().unwrap();
         let _: String = guard.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
 

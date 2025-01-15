@@ -6,12 +6,12 @@ use soar_core::{
             PackageFilter,
         },
     },
-    package::query::PackageQuery,
+    package::{install::InstallTarget, query::PackageQuery},
     SoarResult,
 };
 
 use crate::{
-    install::{create_install_context, perform_installation, InstallTarget},
+    install::{create_install_context, perform_installation},
     state::AppState,
 };
 
@@ -33,8 +33,6 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
                     let filter = PackageFilter {
                         pkg_name: Some(pkg.pkg_name.clone()),
                         repo_name: Some(pkg.repo_name.clone()),
-                        collection: Some(pkg.collection.clone()),
-                        family: Some(pkg.family.clone()),
                         ..Default::default()
                     };
 
@@ -59,8 +57,7 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
                 let filter = PackageFilter {
                     pkg_name: Some(pkg.pkg_name.clone()),
                     repo_name: Some(pkg.repo_name.clone()),
-                    collection: Some(pkg.collection.clone()),
-                    family: Some(pkg.family.clone()),
+                    family: Some(pkg.pkg_id.clone()),
                     ..Default::default()
                 };
 
@@ -87,7 +84,7 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
         None,
     );
 
-    perform_installation(ctx, update_targets, core_db.clone(), true).await?;
+    perform_installation(ctx, update_targets, core_db.clone()).await?;
 
     Ok(())
 }
@@ -102,11 +99,7 @@ fn matches_filter(package: Option<&Package>, filter: &PackageFilter) -> bool {
                 .repo_name
                 .as_ref()
                 .map_or(true, |r| r == &pkg.repo_name)
-            && filter
-                .collection
-                .as_ref()
-                .map_or(true, |c| c == &pkg.collection)
-            && filter.family.as_ref().map_or(true, |f| f == &pkg.family)
+            && filter.family.as_ref().map_or(true, |f| f == &pkg.pkg_id)
     } else {
         false
     }
