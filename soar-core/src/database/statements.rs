@@ -20,7 +20,7 @@ impl<'a> DbStatements<'a> {
                 .prepare("INSERT INTO provides (family_id, package_id) VALUES (?1, ?2)")?,
             package_insert: tx.prepare(
                 "INSERT INTO packages (
-                    pkg, pkg_name, pkg_id, description, version, download_url,
+                    pkg, pkg_name, pkg_id, pkg_type, description, version, download_url,
                     size, checksum, build_date, build_script, build_log,
                     desktop, icon, family_id, homepages, notes, source_urls,
                     categories
@@ -28,7 +28,7 @@ impl<'a> DbStatements<'a> {
                 VALUES
                 (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                    ?14, ?15, ?16, ?17, ?18
+                    ?14, ?15, ?16, ?17, ?18, ?19
                 )",
             )?,
         })

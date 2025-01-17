@@ -56,6 +56,7 @@ impl<'a> PackageRepository<'a> {
             package.pkg,
             package.pkg_name,
             package.pkg_id,
+            package.pkg_type,
             package.description,
             package.version,
             package.download_url,

@@ -1,7 +1,6 @@
 use std::{fs, process::Command, sync::Arc};
 
 use soar_core::{
-    constants::cache_path,
     database::{
         models::Package,
         packages::{get_packages_with_filter, PackageFilter},
@@ -42,7 +41,7 @@ pub async fn run_package(command: &[String]) -> SoarResult<()> {
     }
 
     let package = packages.first().unwrap();
-    let cache_bin = cache_path().join("bin");
+    let cache_bin = state.config().get_cache_path()?.join("bin");
     fs::create_dir_all(&cache_bin)?;
 
     let output_path = cache_bin.join(&package.pkg_name);

@@ -7,6 +7,7 @@ use rusqlite::{prepare_and_bind, Connection};
 use soar_dl::downloader::{DownloadOptions, DownloadState, Downloader};
 
 use crate::{
+    config::get_config,
     database::models::{InstalledPackage, Package},
     utils::validate_checksum,
     SoarResult,
@@ -36,6 +37,7 @@ impl PackageInstaller {
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
+        let profile = get_config().default_profile.clone();
 
         if target.existing_install.is_none() {
             let conn = db.lock()?;
@@ -54,12 +56,12 @@ impl PackageInstaller {
                 conn,
                 "INSERT INTO packages (
                 repo_name, pkg, pkg_id, pkg_name, version, size, checksum,
-                installed_path, installed_with_family
+                installed_path, installed_with_family, profile
             )
             VALUES
             (
                 $repo_name, $pkg, $pkg_id, $pkg_name, $version, $size, $checksum,
-                $installed_path, $installed_with_family
+                $installed_path, $installed_with_family, $profile
             )"
             );
             stmt.raw_execute()?;

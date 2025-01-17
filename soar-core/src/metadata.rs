@@ -11,21 +11,16 @@ use crate::{
 };
 
 pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
-    let repo_path = repo.get_path();
-    let remote_url = format!(
-        "{}/{}",
-        repo.url,
-        repo.metadata.unwrap_or("metadata.json".into())
-    );
+    let repo_path = repo.get_path()?;
     if !repo_path.is_dir() {
         return Err(SoarError::InvalidPath);
     }
 
     let checksum_file = repo_path.join("metadata.bsum");
-    let remote_checksum_url = format!("{}.bsum", remote_url);
+    let remote_checksum_url = format!("{}.bsum", repo.url);
     let resp = reqwest::get(&remote_checksum_url).await?;
     if !resp.status().is_success() {
-        return Err(SoarError::FailedToFetchRemote);
+        return Err(SoarError::FailedToFetchRemote(remote_checksum_url));
     }
     let remote_checksum = resp.text().await?;
     if let Ok(checksum) = fs::read_to_string(&checksum_file) {
@@ -43,9 +38,9 @@ pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
     let mut manager = MigrationManager::new(conn)?;
     manager.migrate_from_dir(METADATA_MIGRATIONS)?;
 
-    let resp = reqwest::get(&remote_url).await?;
+    let resp = reqwest::get(&repo.url).await?;
     if !resp.status().is_success() {
-        return Err(SoarError::FailedToFetchRemote);
+        return Err(SoarError::FailedToFetchRemote(repo.url));
     }
     let remote_metadata: Vec<RemotePackage> = resp.json().await?;
 

@@ -10,7 +10,8 @@ use regex::Regex;
 use soar_dl::downloader::{DownloadOptions, Downloader};
 
 use crate::{
-    constants::{bin_path, PNG_MAGIC_BYTES},
+    config::get_config,
+    constants::PNG_MAGIC_BYTES,
     database::models::Package,
     utils::{calc_magic_bytes, create_symlink, home_data_path},
     SoarResult,
@@ -91,7 +92,12 @@ pub async fn symlink_desktop<P: AsRef<Path>>(real_path: P, package: &Package) ->
         re.replace_all(&content, |caps: &regex::Captures| match &caps[1] {
             "Icon" => format!("Icon={}", package.pkg),
             "Exec" | "TryExec" => {
-                format!("{}={}/{}", &caps[1], bin_path().display(), package.pkg)
+                format!(
+                    "{}={}/{}",
+                    &caps[1],
+                    get_config().get_bin_path().unwrap().display(),
+                    package.pkg
+                )
             }
             _ => unreachable!(),
         })

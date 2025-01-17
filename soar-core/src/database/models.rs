@@ -7,6 +7,7 @@ pub struct Package {
     pub pkg: String,
     pub pkg_id: String,
     pub pkg_name: String,
+    pub pkg_type: String,
     pub app_id: Option<String>,
     pub description: String,
     pub version: String,
@@ -36,6 +37,7 @@ pub struct InstalledPackage {
     pub installed_path: String,
     pub installed_date: Option<String>,
     pub bin_path: Option<String>,
+    pub profile: String,
     pub pinned: bool,
     pub is_installed: bool,
     pub installed_with_family: bool,
@@ -46,6 +48,7 @@ pub struct RemotePackage {
     pub pkg: String,
     pub pkg_id: String,
     pub pkg_name: String,
+    pub pkg_type: String,
     pub description: String,
 
     #[serde(alias = "note")]
@@ -71,7 +74,7 @@ pub struct RemotePackage {
     pub maintainers: Vec<String>,
 
     #[serde(alias = "tag")]
-    pub tags: Vec<String>,
+    pub tags: Option<Vec<String>>,
 
     pub build_script: String,
     pub build_log: String,

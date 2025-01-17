@@ -1,4 +1,5 @@
 use soar_core::{
+    config::get_config,
     database::{
         models::{InstalledPackage, Package},
         packages::{
@@ -78,7 +79,7 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
 
     let ctx = create_install_context(
         update_targets.len(),
-        state.config().parallel_limit.unwrap_or(1) as usize,
+        get_config().parallel_limit.unwrap_or(1) as usize,
         None,
         None,
         None,

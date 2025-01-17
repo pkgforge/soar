@@ -45,8 +45,8 @@ pub enum SoarError {
     #[error("Package {0} not found")]
     PackageNotFound(String),
 
-    #[error("Failed to fetch from remote source")]
-    FailedToFetchRemote,
+    #[error("Failed to fetch from remote source: {0}")]
+    FailedToFetchRemote(String),
 
     #[error("Invalid path specified")]
     InvalidPath,
@@ -68,6 +68,9 @@ pub enum SoarError {
 
     #[error("{0}")]
     Custom(String),
+
+    #[error("Invalid profile: {0}")]
+    InvalidProfile(String),
 }
 
 impl SoarError {

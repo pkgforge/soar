@@ -22,6 +22,9 @@ pub struct Args {
     #[arg(short, long)]
     pub json: bool,
 
+    #[arg(short, long)]
+    pub profile: Option<String>,
+
     #[clap(subcommand)]
     pub command: Commands,
 }
@@ -228,6 +231,18 @@ pub enum Commands {
     /// Build
     #[clap(name = "build")]
     Build { files: Vec<String> },
+
+    /// Cleanup cache
+    #[clap(name = "clean")]
+    Clean {
+        /// Clean broken symlinks
+        #[arg(required = false, short, long)]
+        cache: bool,
+
+        /// Clean broken symlinks
+        #[arg(required = false, short, long)]
+        broken_symlinks: bool,
+    },
 
     /// Modify the soar installation
     #[command(arg_required_else_help = true)]

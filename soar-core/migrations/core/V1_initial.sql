@@ -10,6 +10,7 @@ CREATE TABLE packages (
   installed_path TEXT NOT NULL,
   installed_date TEXT,
   bin_path TEXT,
+  profile TEXT NOT NULL,
   pinned BOOLEAN NOT NULL DEFAULT false,
   is_installed BOOLEAN NOT NULL DEFAULT false,
   installed_with_family BOOLEAN NOT NULL DEFAULT false

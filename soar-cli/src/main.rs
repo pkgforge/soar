@@ -11,9 +11,8 @@ use remove::remove_packages;
 use run::run_package;
 use self_actions::process_self_action;
 use soar_core::{
-    config::generate_default_config,
-    constants::{bin_path, cache_path, db_path, packages_path, repositories_path, root_path},
-    utils::setup_required_paths,
+    config::{generate_default_config, get_config, set_current_profile},
+    utils::{cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
 };
 use tracing::{error, info};
@@ -58,6 +57,10 @@ async fn handle_cli() -> SoarResult<()> {
     let args = Args::parse_from(args);
 
     setup_logging(&args);
+
+    if let Some(ref profile) = args.profile {
+        set_current_profile(profile)?;
+    }
 
     match args.command {
         cli::Commands::Install {
@@ -146,16 +149,30 @@ async fn handle_cli() -> SoarResult<()> {
         cli::Commands::Health => unreachable!(),
         cli::Commands::DefConfig => generate_default_config()?,
         cli::Commands::Env => {
-            info!("SOAR_ROOT={}", root_path().display());
-            info!("SOAR_BIN={}", bin_path().display());
-            info!("SOAR_DB={}", db_path().display());
-            info!("SOAR_CACHE={}", cache_path().display());
-            info!("SOAR_PACKAGE={}", packages_path().display());
-            info!("SOAR_REPOSITORIES={}", repositories_path().display());
+            let config = get_config();
+            info!("SOAR_BIN={}", config.get_bin_path()?.display());
+            info!("SOAR_DB={}", config.get_db_path()?.display());
+            info!("SOAR_CACHE={}", config.get_cache_path()?.display());
+            info!("SOAR_PACKAGE={}", config.get_packages_path()?.display());
+            info!(
+                "SOAR_REPOSITORIES={}",
+                config.get_repositories_path()?.display()
+            );
         }
         cli::Commands::Build { files } => unreachable!(),
         cli::Commands::SelfCmd { action } => {
             process_self_action(&action, self_bin, self_version).await?;
+        }
+        cli::Commands::Clean {
+            cache,
+            broken_symlinks,
+        } => {
+            if cache {
+                cleanup_cache()?;
+            }
+            if broken_symlinks {
+                remove_broken_symlinks()?;
+            }
         }
     }
 

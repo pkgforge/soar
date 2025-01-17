@@ -1,5 +1,8 @@
 use std::{
-    env,
+    env::{
+        self,
+        consts::{ARCH, OS},
+    },
     fs::{self, File},
     io::{BufReader, Read, Seek},
     os,
@@ -8,11 +11,7 @@ use std::{
 
 use nix::unistd::{geteuid, User};
 
-use crate::{
-    constants::{bin_path, cache_path, db_path, packages_path},
-    error::SoarError,
-    SoarResult,
-};
+use crate::{config::get_config, error::SoarError, SoarResult};
 
 type Result<T> = std::result::Result<T, SoarError>;
 
@@ -133,16 +132,22 @@ pub fn validate_checksum(checksum: &str, file_path: &Path) -> Result<()> {
 }
 
 pub fn setup_required_paths() -> Result<()> {
-    if !bin_path().exists() {
-        fs::create_dir_all(bin_path())?;
+    let config = get_config();
+    let bin_path = config.get_bin_path()?;
+    if !bin_path.exists() {
+        fs::create_dir_all(bin_path)?;
     }
 
-    if !db_path().exists() {
-        fs::create_dir_all(db_path())?
+    let db_path = config.get_db_path()?;
+    if !db_path.exists() {
+        fs::create_dir_all(db_path)?
     }
 
-    if !packages_path().exists() {
-        fs::create_dir_all(packages_path())?;
+    for (_, profile) in &config.profile {
+        let packages_path = profile.get_packages_path();
+        if !packages_path.exists() {
+            fs::create_dir_all(packages_path)?;
+        }
     }
 
     Ok(())
@@ -166,32 +171,27 @@ pub fn create_symlink<P: AsRef<Path>>(from: P, to: P) -> SoarResult<()> {
     Ok(())
 }
 
-pub fn cleanup() -> Result<()> {
-    let entries = fs::read_dir(cache_path().join("bin"))?;
-
-    for entry in entries {
-        let path = entry?.path();
-
-        let modified_at = path.metadata()?.modified()?;
-        let elapsed = modified_at.elapsed()?.as_secs();
-        let cache_ttl = 28800u64;
-
-        if cache_ttl.saturating_sub(elapsed) == 0 {
-            fs::remove_file(path)?;
-        }
-    }
-
-    remove_broken_symlink()
+pub fn cleanup_cache() -> Result<()> {
+    let cache_path = get_config().get_cache_path()?;
+    Ok(fs::remove_dir_all(cache_path)?)
 }
 
-pub fn remove_broken_symlink() -> Result<()> {
-    let entries = fs::read_dir(bin_path())?;
+pub fn remove_broken_symlinks() -> Result<()> {
+    let entries = fs::read_dir(get_config().get_bin_path()?)?;
     for entry in entries {
         let path = entry?.path();
-        if !path.is_file() {
+        if !path.is_file() && !path.is_dir() {
             fs::remove_file(path)?;
         }
     }
 
     Ok(())
+}
+
+/// Retrieves the platform string in the format `ARCH-Os`.
+///
+/// This function combines the architecture (e.g., `x86_64`) and the operating
+/// system (e.g., `Linux`) into a single string to identify the platform.
+pub fn get_platform() -> String {
+    format!("{}-{}{}", ARCH, &OS[..1].to_uppercase(), &OS[1..])
 }

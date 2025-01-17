@@ -1,6 +1,7 @@
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
 use soar_core::{
+    config::get_config,
     database::{
         models::InstalledPackage,
         packages::{get_installed_packages_with_filter, get_packages_with_filter, PackageFilter},
@@ -31,7 +32,7 @@ pub async fn search_packages(
     )?;
 
     let mut count = 0;
-    let show_count = limit.or(state.config().search_limit).unwrap_or(20);
+    let show_count = limit.or(get_config().search_limit).unwrap_or(20);
 
     for package in packages {
         count += 1;
@@ -66,13 +67,14 @@ pub async fn search_packages(
             description = %package.description,
             version = %package.version,
             repo_name = %package.repo_name,
-            "[{}] {}#{}-{}:{} - {}",
+            "[{}] {}#{}-{}:{} - {} ({})",
             install_status,
             Blue.paint(package.pkg_name.clone()),
             Cyan.paint(package.pkg_id.clone()),
             Magenta.paint(package.version.clone()),
             Cyan.paint(package.repo_name.clone()),
-            package.description
+            package.description,
+            HumanBytes(package.size)
         );
     }
 

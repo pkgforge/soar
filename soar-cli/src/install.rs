@@ -11,7 +11,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::{distributions::Alphanumeric, Rng};
 use rusqlite::Connection;
 use soar_core::{
-    constants::{bin_path, packages_path},
+    config::get_config,
     database::{
         models::{InstalledPackage, Package},
         packages::{get_installed_packages_with_filter, get_packages_with_filter, PackageFilter},
@@ -304,7 +304,12 @@ async fn install_single_package(
             .bin_path
             .as_ref()
             .map(PathBuf::from)
-            .unwrap_or_else(|| bin_path().join(&target.package.pkg_name));
+            .unwrap_or_else(|| {
+                get_config()
+                    .get_bin_path()
+                    .unwrap()
+                    .join(&target.package.pkg_name)
+            });
 
         (install_dir, real_bin, bin_name)
     } else {
@@ -314,9 +319,15 @@ async fn install_single_package(
             .map(char::from)
             .collect();
 
-        let install_dir = packages_path().join(format!("{}-{}", target.package.pkg, rand_str));
+        let install_dir = get_config()
+            .get_packages_path()
+            .unwrap()
+            .join(format!("{}-{}", target.package.pkg, rand_str));
         let real_bin = install_dir.join(&target.package.pkg_name);
-        let bin_name = bin_path().join(&target.package.pkg_name);
+        let bin_name = get_config()
+            .get_bin_path()
+            .unwrap()
+            .join(&target.package.pkg_name);
 
         (install_dir, real_bin, bin_name)
     };

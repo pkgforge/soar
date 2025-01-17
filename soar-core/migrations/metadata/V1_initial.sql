@@ -37,6 +37,7 @@ CREATE TABLE packages (
   pkg TEXT NOT NULL,
   pkg_id TEXT,
   pkg_name TEXT NOT NULL,
+  pkg_type TEXT NOT NULL,
   app_id TEXT,
   description TEXT,
   version TEXT NOT NULL,
