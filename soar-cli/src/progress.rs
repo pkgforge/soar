@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
 use soar_dl::downloader::DownloadState;
 
 pub fn create_progress_bar() -> ProgressBar {
     let progress_bar = ProgressBar::new(0);
     let style = ProgressStyle::with_template(
-        "{msg}[{wide_bar:.green/white}] {speed:14} {computed_bytes:22}",
+        "{msg} [{wide_bar:.green/white}] {speed:14} {computed_bytes:22}",
     )
     .unwrap()
     .with_key("computed_bytes", format_bytes)
@@ -39,11 +41,11 @@ fn calculate_speed(pos: u64, elapsed: f64) -> u64 {
 
 pub fn handle_progress(state: DownloadState, progress_bar: &ProgressBar) {
     match state {
+        DownloadState::Preparing(total) => {
+            progress_bar.set_length(total);
+        }
         DownloadState::Progress(progress) => {
-            if let Some(total) = progress.total_bytes {
-                progress_bar.set_length(total);
-            }
-            progress_bar.set_position(progress.bytes_downloaded);
+            progress_bar.set_position(progress);
         }
         DownloadState::Complete => progress_bar.finish(),
     }

@@ -81,10 +81,12 @@ impl QueryBuilder {
         format!(
             r#"
             SELECT
-                p.id, p.pkg, p.pkg_id, p.pkg_name, p.pkg_type, p.app_id,
-                p.description, p.version, p.size, p.checksum, p.notes,
-                p.download_url, p.build_date, p.build_script, p.build_log,
-                p.homepages, source_urls, p.icon, p.desktop
+                p.id, p.disabled, p.disabled_reason, p.pkg, p.pkg_id,
+                p.pkg_name, p.pkg_type, p.pkg_webpage, p.app_id, p.description,
+                p.version, p.download_url, p.size, p.ghcr_pkg, p.ghcr_size,
+                p.checksum, p.homepages, p.notes, p.source_urls, p.tags,
+                p.categories, p.icon, p.desktop, p.build_id, p.build_date,
+                p.build_script, p.build_log
             FROM
                 {0}.packages p
             WHERE {1} AND {2}
@@ -184,8 +186,9 @@ impl InstalledQueryBuilder {
             r#"
             SELECT
                 id, repo_name, pkg, pkg_id, pkg_name, version, size, checksum,
-                installed_path, installed_date, bin_path, pinned,
-                is_installed, installed_with_family, profile
+                installed_path, installed_date, bin_path, icon_path,
+                desktop_path, appstream_path, pinned, is_installed,
+                installed_with_family, profile
             FROM
                 packages p
             WHERE {0} AND {1}

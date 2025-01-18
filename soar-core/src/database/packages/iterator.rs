@@ -359,27 +359,46 @@ pub fn get_installed_packages_with_filter(
 }
 
 fn map_package(row: &Row, repo_name: String) -> rusqlite::Result<Package> {
+    let parse_json_vec = |idx: usize| -> rusqlite::Result<Option<Vec<String>>> {
+        let value: String = row.get(idx)?;
+        Ok(serde_json::from_str(&value).ok())
+    };
+
+    let homepages = parse_json_vec(16)?;
+    let notes = parse_json_vec(17)?;
+    let source_urls = parse_json_vec(18)?;
+    let tags = parse_json_vec(19)?;
+    let categories = parse_json_vec(20)?;
+
     Ok(Package {
         repo_name,
         id: row.get(0)?,
-        pkg: row.get(1)?,
-        pkg_id: row.get(2)?,
-        pkg_name: row.get(3)?,
-        pkg_type: row.get(4)?,
-        app_id: row.get(5)?,
-        description: row.get(6)?,
-        version: row.get(7)?,
-        size: row.get(8)?,
-        checksum: row.get(9)?,
-        note: row.get(10)?,
+        disabled: row.get(1)?,
+        disabled_reason: row.get(2)?,
+        pkg: row.get(3)?,
+        pkg_id: row.get(4)?,
+        pkg_name: row.get(5)?,
+        pkg_type: row.get(6)?,
+        pkg_webpage: row.get(7)?,
+        app_id: row.get(8)?,
+        description: row.get(9)?,
+        version: row.get(10)?,
         download_url: row.get(11)?,
-        build_date: row.get(12)?,
-        build_script: row.get(13)?,
-        build_log: row.get(14)?,
-        homepage: row.get(15)?,
-        source_url: row.get(16)?,
-        icon: row.get(17)?,
-        desktop: row.get(18)?,
+        size: row.get(12)?,
+        ghcr_pkg: row.get(13)?,
+        ghcr_size: row.get(14)?,
+        checksum: row.get(15)?,
+        homepages,
+        notes,
+        source_urls,
+        tags,
+        categories,
+        icon: row.get(21)?,
+        desktop: row.get(22)?,
+        build_id: row.get(23)?,
+        build_date: row.get(24)?,
+        build_script: row.get(25)?,
+        build_log: row.get(26)?,
     })
 }
 
@@ -396,9 +415,12 @@ pub fn map_installed_package(row: &Row) -> rusqlite::Result<InstalledPackage> {
         installed_path: row.get(8)?,
         installed_date: row.get(9)?,
         bin_path: row.get(10)?,
-        pinned: row.get(11)?,
-        is_installed: row.get(12)?,
-        installed_with_family: row.get(13)?,
-        profile: row.get(14)?,
+        icon_path: row.get(11)?,
+        desktop_path: row.get(12)?,
+        appstream_path: row.get(13)?,
+        pinned: row.get(14)?,
+        is_installed: row.get(15)?,
+        installed_with_family: row.get(16)?,
+        profile: row.get(17)?,
     })
 }

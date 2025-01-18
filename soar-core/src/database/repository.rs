@@ -17,8 +17,8 @@ impl<'a> PackageRepository<'a> {
         }
     }
 
-    pub fn import_packages(&mut self, metadata: &[RemotePackage]) -> Result<()> {
-        self.get_or_create_repo(self.repo_name)?;
+    pub fn import_packages(&mut self, metadata: &[RemotePackage], etag: &str) -> Result<()> {
+        self.get_or_create_repo(self.repo_name, etag)?;
 
         for package in metadata {
             self.insert_package(package)?;
@@ -36,42 +36,52 @@ impl<'a> PackageRepository<'a> {
             })
     }
 
-    fn get_or_create_repo(&mut self, name: &str) -> Result<()> {
+    fn get_or_create_repo(&mut self, name: &str, etag: &str) -> Result<()> {
         self.statements
             .repo_check
             .query_row([], |_| Ok(()))
             .or_else(|_| {
-                self.statements.repo_insert.execute(params![name])?;
+                self.statements.repo_insert.execute(params![name, etag])?;
                 Ok(())
             })
     }
 
     fn insert_package(&mut self, package: &RemotePackage) -> Result<()> {
         let family_id = self.get_or_create_family(&package.pkg_id)?;
+        let disabled_reason = serde_json::to_string(&package.disabled_reason).unwrap();
         let homepages = serde_json::to_string(&package.homepages).unwrap();
         let notes = serde_json::to_string(&package.notes).unwrap();
         let source_urls = serde_json::to_string(&package.src_urls).unwrap();
+        let tags = serde_json::to_string(&package.tags).unwrap();
         let categories = serde_json::to_string(&package.categories).unwrap();
         self.statements.package_insert.execute(params![
+            package.disabled == "true",
+            disabled_reason,
             package.pkg,
-            package.pkg_name,
             package.pkg_id,
+            package.pkg_name,
             package.pkg_type,
+            package.pkg_webpage,
+            package.app_id,
             package.description,
             package.version,
             package.download_url,
             package.size_raw,
+            package.ghcr_pkg,
+            package.ghcr_size_raw,
             package.bsum,
-            package.build_date,
-            package.build_script,
-            package.build_log,
-            package.desktop,
-            package.icon,
-            family_id,
             homepages,
             notes,
             source_urls,
-            categories
+            tags,
+            categories,
+            package.icon,
+            package.desktop,
+            package.build_id,
+            package.build_date,
+            package.build_script,
+            package.build_log,
+            family_id
         ])?;
 
         let package_id = self.tx.last_insert_rowid();

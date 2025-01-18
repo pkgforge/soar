@@ -1,5 +1,6 @@
 CREATE TABLE repository (
-  name TEXT NOT NULL UNIQUE
+  name TEXT NOT NULL UNIQUE,
+  etag TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE families (
@@ -38,13 +39,14 @@ CREATE TABLE packages (
   pkg_id TEXT,
   pkg_name TEXT NOT NULL,
   pkg_type TEXT NOT NULL,
+  pkg_webpage TEXT,
   app_id TEXT,
   description TEXT,
   version TEXT NOT NULL,
   download_url TEXT NOT NULL,
   size BIGINT NOT NULL,
   ghcr_pkg TEXT,
-  ghcr_url TEXT,
+  ghcr_size BIGINT,
   checksum TEXT NOT NULL,
   icon TEXT,
   desktop TEXT,
@@ -53,9 +55,10 @@ CREATE TABLE packages (
   source_urls JSONB,
   tags JSONB,
   categories JSONB,
-  build_date TEXT NOT NULL,
-  build_script TEXT NOT NULL,
-  build_log TEXT NOT NULL,
+  build_id TEXT,
+  build_date TEXT,
+  build_script TEXT,
+  build_log TEXT,
   family_id INTEGER NOT NULL,
   FOREIGN KEY (family_id) REFERENCES families (id)
 );

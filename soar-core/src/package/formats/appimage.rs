@@ -1,4 +1,7 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use squishy::{appimage::AppImage, EntryKind};
 
@@ -6,36 +9,48 @@ use crate::{
     constants::PNG_MAGIC_BYTES, database::models::Package, utils::calc_magic_bytes, SoarResult,
 };
 
-use super::common::{symlink_desktop, symlink_icon};
+pub async fn integrate_appimage<P: AsRef<Path>>(
+    install_dir: P,
+    file_path: P,
+    package: &Package,
+    icon: &mut Option<PathBuf>,
+    desktop: &mut Option<PathBuf>,
+) -> SoarResult<()> {
+    if icon.is_some() && desktop.is_some() {
+        return Ok(());
+    }
 
-pub async fn integrate_appimage<P: AsRef<Path>>(file_path: P, package: &Package) -> SoarResult<()> {
+    let install_dir = install_dir.as_ref();
     let appimage = AppImage::new(None, &file_path, None)?;
     let squashfs = &appimage.squashfs;
 
-    if let Some(entry) = appimage.find_icon() {
-        if let EntryKind::File(basic_file) = entry.kind {
-            let dest = format!("{}.DirIcon", package.pkg_name);
-            let _ = squashfs.write_file(basic_file, &dest);
+    if icon.is_none() {
+        if let Some(entry) = appimage.find_icon() {
+            if let EntryKind::File(basic_file) = entry.kind {
+                let dest = format!("{}/{}.DirIcon", install_dir.display(), package.pkg_name);
+                let _ = squashfs.write_file(basic_file, &dest);
 
-            let magic_bytes = calc_magic_bytes(&dest, 8)?;
-            let ext = if magic_bytes == PNG_MAGIC_BYTES {
-                "png"
-            } else {
-                "svg"
-            };
-            let final_path = format!("{}.{ext}", package.pkg_name);
-            fs::rename(&dest, &final_path)?;
+                let magic_bytes = calc_magic_bytes(&dest, 8)?;
+                let ext = if magic_bytes == PNG_MAGIC_BYTES {
+                    "png"
+                } else {
+                    "svg"
+                };
+                let final_path = format!("{}/{}.{ext}", install_dir.display(), package.pkg_name);
+                fs::rename(&dest, &final_path)?;
 
-            symlink_icon(final_path, &package.pkg_name).await?;
+                *icon = Some(PathBuf::from(&final_path));
+            }
         }
     }
 
-    if let Some(entry) = appimage.find_desktop() {
-        if let EntryKind::File(basic_file) = entry.kind {
-            let dest = format!("{}.desktop", package.pkg_name);
-            let _ = squashfs.write_file(basic_file, &dest);
-
-            symlink_desktop(dest, &package).await?;
+    if desktop.is_none() {
+        if let Some(entry) = appimage.find_desktop() {
+            if let EntryKind::File(basic_file) = entry.kind {
+                let dest = format!("{}/{}.desktop", install_dir.display(), package.pkg_name);
+                let _ = squashfs.write_file(basic_file, &dest);
+                *desktop = Some(PathBuf::from(&dest));
+            }
         }
     }
 
@@ -52,7 +67,11 @@ pub async fn integrate_appimage<P: AsRef<Path>>(file_path: P, package: &Package)
             } else {
                 "metainfo"
             };
-            let dest = format!("{}.{file_name}.xml", package.pkg_name);
+            let dest = format!(
+                "{}/{}.{file_name}.xml",
+                install_dir.display(),
+                package.pkg_name
+            );
             let _ = squashfs.write_file(basic_file, &dest);
         }
     }

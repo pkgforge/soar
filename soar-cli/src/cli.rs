@@ -101,10 +101,6 @@ pub enum Commands {
         /// Packages to remove
         #[arg(required = true)]
         packages: Vec<String>,
-
-        /// Remove exact package only
-        #[arg(required = false, long, short)]
-        exact: bool,
     },
 
     /// Sync with remote metadata
@@ -214,6 +210,10 @@ pub enum Commands {
         /// Gitlab project
         #[arg(required = false, long)]
         gitlab: Vec<String>,
+
+        /// OCI reference
+        #[arg(required = false, long)]
+        ghcr: Vec<String>,
     },
 
     /// Health check
@@ -228,14 +228,10 @@ pub enum Commands {
     #[clap(name = "env")]
     Env,
 
-    /// Build
-    #[clap(name = "build")]
-    Build { files: Vec<String> },
-
-    /// Cleanup cache
+    /// Garbage collection
     #[clap(name = "clean")]
     Clean {
-        /// Clean broken symlinks
+        /// Clean cache
         #[arg(required = false, short, long)]
         cache: bool,
 

@@ -100,8 +100,8 @@ async fn handle_cli() -> SoarResult<()> {
         cli::Commands::Query { query } => {
             query_package(query).await?;
         }
-        cli::Commands::Remove { packages, exact } => {
-            remove_packages(&packages, exact).await?;
+        cli::Commands::Remove { packages } => {
+            remove_packages(&packages).await?;
         }
         cli::Commands::Sync => unreachable!(),
         cli::Commands::Update { packages } => {
@@ -133,11 +133,13 @@ async fn handle_cli() -> SoarResult<()> {
             exclude_keywords,
             github,
             gitlab,
+            ghcr,
         } => {
             download(
                 links,
                 github,
                 gitlab,
+                ghcr,
                 regex_patterns,
                 match_keywords,
                 exclude_keywords,
@@ -159,7 +161,6 @@ async fn handle_cli() -> SoarResult<()> {
                 config.get_repositories_path()?.display()
             );
         }
-        cli::Commands::Build { files } => unreachable!(),
         cli::Commands::SelfCmd { action } => {
             process_self_action(&action, self_bin, self_version).await?;
         }

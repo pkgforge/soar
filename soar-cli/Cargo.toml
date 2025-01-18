@@ -1,6 +1,6 @@
 [package]
 name = "soar-cli"
-version = "0.1.0"
+version = "0.5.0-pre"
 authors = ["Rabindra Dhakal <contact@qaidvoid.dev>"]
 description = "A modern package manager for Linux"
 license = "MIT"
@@ -27,7 +27,7 @@ rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = "1.0.217"
 serde_json = "1.0.133"
 soar-core = { version = "0.1.0", path = "../soar-core" }
-soar-dl = "0.1.2"
+soar-dl = "0.3.1"
 tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
 toml = "0.8.19"
 tracing = { version = "0.1.41", default-features = false }

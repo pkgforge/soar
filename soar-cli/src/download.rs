@@ -5,10 +5,13 @@ use regex::Regex;
 use serde::Deserialize;
 use soar_core::SoarResult;
 use soar_dl::{
-    common::{PlatformDownloadOptions, Release, ReleaseAsset, ReleaseHandler, ReleasePlatform},
     downloader::{DownloadOptions, DownloadState, Downloader},
-    github::{Github, GithubRelease},
-    gitlab::{Gitlab, GitlabRelease},
+    github::{Github, GithubAsset, GithubRelease},
+    gitlab::{Gitlab, GitlabAsset, GitlabRelease},
+    platform::{
+        PlatformDownloadOptions, PlatformUrl, Release, ReleaseAsset, ReleaseHandler,
+        ReleasePlatform,
+    },
 };
 use tracing::{error, info};
 
@@ -30,6 +33,7 @@ pub async fn download(
     links: Vec<String>,
     github: Vec<String>,
     gitlab: Vec<String>,
+    ghcr: Vec<String>,
     regex_patterns: Option<Vec<String>>,
     match_keywords: Option<Vec<String>>,
     exclude_keywords: Option<Vec<String>>,
@@ -48,7 +52,7 @@ pub async fn download(
         progress_callback: progress_callback.clone(),
     };
 
-    handle_direct_downloads(links, output.clone(), progress_callback.clone()).await?;
+    handle_direct_downloads(&ctx, links, output.clone(), progress_callback.clone()).await?;
 
     if !github.is_empty() {
         handle_github_downloads(&ctx, github).await?;
@@ -58,10 +62,15 @@ pub async fn download(
         handle_gitlab_downloads(&ctx, gitlab).await?;
     }
 
+    if !ghcr.is_empty() {
+        handle_oci_downloads(ghcr, output.clone(), progress_callback.clone()).await?;
+    }
+
     Ok(())
 }
 
 pub async fn handle_direct_downloads(
+    ctx: &DownloadContext,
     links: Vec<String>,
     output: Option<String>,
     progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
@@ -69,19 +78,82 @@ pub async fn handle_direct_downloads(
     let downloader = Downloader::default();
 
     for link in &links {
+        match PlatformUrl::parse(link) {
+            Ok(PlatformUrl::DirectUrl(url)) => {
+                println!("Downloading using direct link: {}", url);
+
+                let options = DownloadOptions {
+                    url: link.clone(),
+                    output_path: output.clone(),
+                    progress_callback: Some(progress_callback.clone()),
+                };
+                let _ = downloader
+                    .download(options)
+                    .await
+                    .map_err(|e| eprintln!("{}", e));
+            }
+            Ok(PlatformUrl::Github(project)) => {
+                println!("Detected GitHub URL, processing as GitHub release");
+                let handler = ReleaseHandler::<Github>::new();
+                if let Err(e) = handle_platform_download::<Github, GithubRelease, GithubAsset>(
+                    ctx, &handler, &project,
+                )
+                .await
+                {
+                    eprintln!("{}", e);
+                }
+            }
+            Ok(PlatformUrl::Gitlab(project)) => {
+                println!("Detected GitLab URL, processing as GitLab release");
+                let handler = ReleaseHandler::<Gitlab>::new();
+                if let Err(e) = handle_platform_download::<Gitlab, GitlabRelease, GitlabAsset>(
+                    ctx, &handler, &project,
+                )
+                .await
+                {
+                    eprintln!("{}", e);
+                }
+            }
+            Ok(PlatformUrl::Oci(url)) => {
+                println!("Downloading using OCI reference: {}", url);
+
+                let options = DownloadOptions {
+                    url: link.clone(),
+                    output_path: output.clone(),
+                    progress_callback: Some(progress_callback.clone()),
+                };
+                let _ = downloader
+                    .download_oci(options)
+                    .await
+                    .map_err(|e| eprintln!("{}", e));
+            }
+            Err(err) => eprintln!("Error parsing URL '{}' : {}", link, err),
+        };
+    }
+
+    Ok(())
+}
+
+pub async fn handle_oci_downloads(
+    references: Vec<String>,
+    output: Option<String>,
+    progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
+) -> SoarResult<()> {
+    let downloader = Downloader::default();
+
+    for reference in &references {
         let options = DownloadOptions {
-            url: link.clone(),
+            url: reference.clone(),
             output_path: output.clone(),
             progress_callback: Some(progress_callback.clone()),
         };
 
-        info!("Downloading using direct link: {}", link);
+        println!("Downloading using OCI reference: {}", reference);
         let _ = downloader
-            .download(options)
+            .download_oci(options)
             .await
-            .map_err(|e| error!("{}", e));
+            .map_err(|e| eprintln!("{}", e));
     }
-
     Ok(())
 }
 

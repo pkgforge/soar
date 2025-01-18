@@ -319,10 +319,10 @@ async fn install_single_package(
             .map(char::from)
             .collect();
 
-        let install_dir = get_config()
-            .get_packages_path()
-            .unwrap()
-            .join(format!("{}-{}", target.package.pkg, rand_str));
+        let install_dir = get_config().get_packages_path().unwrap().join(format!(
+            "{}-{}-{}",
+            target.package.pkg, target.package.pkg_id, rand_str
+        ));
         let real_bin = install_dir.join(&target.package.pkg_name);
         let bin_name = get_config()
             .get_bin_path()
@@ -353,7 +353,7 @@ async fn install_single_package(
 
     let installer = PackageInstaller::new(
         &target,
-        install_dir,
+        &install_dir,
         Some(progress_callback),
         core_db,
         false,
@@ -364,16 +364,19 @@ async fn install_single_package(
 
     let final_checksum = calculate_checksum(&real_bin)?;
     fs::symlink(&real_bin, &bin_name)?;
-    installer.record(&final_checksum, &bin_name).await?;
 
-    integrate_package(
-        &real_bin,
+    let (icon_path, desktop_path) = integrate_package(
+        &install_dir,
         &target.package,
         ctx.portable.clone(),
         ctx.portable_home.clone(),
         ctx.portable_config.clone(),
     )
     .await?;
+
+    installer
+        .record(&final_checksum, &bin_name, icon_path, desktop_path)
+        .await?;
 
     Ok(())
 }

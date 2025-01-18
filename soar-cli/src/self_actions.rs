@@ -2,9 +2,9 @@ use std::{env::consts::ARCH, fs};
 
 use soar_core::SoarResult;
 use soar_dl::{
-    common::{Release, ReleaseAsset, ReleaseHandler},
     downloader::{DownloadOptions, Downloader},
     github::{Github, GithubRelease},
+    platform::{Release, ReleaseAsset, ReleaseHandler},
 };
 use tracing::{error, info};
 

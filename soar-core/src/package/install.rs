@@ -89,13 +89,26 @@ impl PackageInstaller {
 
     async fn download_package<P: AsRef<Path>>(&self, output_path: P) -> SoarResult<()> {
         let downloader = Downloader::default();
+        let output_path = output_path.as_ref();
+
+        // fallback to download_url for repositories without ghcr
+        let (url, output_path) = if let Some(ref ghcr_pkg) = self.package.ghcr_pkg {
+            (ghcr_pkg, &self.install_dir)
+        } else {
+            (&self.package.download_url, &output_path.to_path_buf())
+        };
+
         let options = DownloadOptions {
-            url: self.package.download_url.clone(),
-            output_path: Some(output_path.as_ref().to_string_lossy().to_string()),
+            url: url.to_string(),
+            output_path: Some(output_path.to_string_lossy().to_string()),
             progress_callback: self.progress_callback.clone(),
         };
 
-        downloader.download(options).await?;
+        if self.package.ghcr_pkg.is_some() {
+            downloader.download_oci(options).await?;
+        } else {
+            downloader.download(options).await?;
+        }
 
         Ok(())
     }
@@ -104,10 +117,14 @@ impl PackageInstaller {
         &self,
         final_checksum: &str,
         bin_path: P,
+        icon_path: Option<PathBuf>,
+        desktop_path: Option<PathBuf>,
     ) -> SoarResult<()> {
         let conn = self.db.lock()?;
         let package = &self.package;
         let bin_path = bin_path.as_ref().to_string_lossy();
+        let icon_path = icon_path.map(|path| path.to_string_lossy().into_owned());
+        let desktop_path = desktop_path.map(|path| path.to_string_lossy().into_owned());
         let Package {
             pkg_name, checksum, ..
         } = package;
@@ -118,6 +135,8 @@ impl PackageInstaller {
             "UPDATE packages
             SET
                 bin_path = $bin_path,
+                icon_path = $icon_path,
+                desktop_path = $desktop_path,
                 checksum = $final_checksum,
                 installed_date = datetime(),
                 is_installed = true,

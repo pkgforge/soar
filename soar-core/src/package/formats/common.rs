@@ -13,6 +13,7 @@ use crate::{
     config::get_config,
     constants::PNG_MAGIC_BYTES,
     database::models::Package,
+    error::SoarError,
     utils::{calc_magic_bytes, create_symlink, home_data_path},
     SoarResult,
 };
@@ -57,7 +58,7 @@ fn normalize_image(image: DynamicImage) -> DynamicImage {
     }
 }
 
-pub async fn symlink_icon<P: AsRef<Path>>(real_path: P, pkg_name: &str) -> SoarResult<()> {
+pub async fn symlink_icon<P: AsRef<Path>>(real_path: P, pkg_name: &str) -> SoarResult<PathBuf> {
     let real_path = real_path.as_ref();
     let image = image::open(real_path)?;
     let (orig_w, orig_h) = image.dimensions();
@@ -69,9 +70,9 @@ pub async fn symlink_icon<P: AsRef<Path>>(real_path: P, pkg_name: &str) -> SoarR
         normalized_image.save(real_path)?;
     }
 
-    let ext = real_path.extension().unwrap_or_default();
+    let ext = real_path.extension().unwrap_or_default().to_string_lossy();
     let final_path = PathBuf::from(format!(
-        "{}/icons/hicolor/{w}x{h}/apps/{pkg_name}-soar.{ext:#?}",
+        "{}/icons/hicolor/{w}x{h}/apps/{pkg_name}-soar.{ext}",
         home_data_path()
     ));
 
@@ -79,24 +80,33 @@ pub async fn symlink_icon<P: AsRef<Path>>(real_path: P, pkg_name: &str) -> SoarR
         fs::create_dir_all(parent)?;
     }
 
-    create_symlink(real_path, &final_path)
+    create_symlink(real_path, &final_path)?;
+    Ok(final_path)
 }
 
-pub async fn symlink_desktop<P: AsRef<Path>>(real_path: P, package: &Package) -> SoarResult<()> {
+pub async fn symlink_desktop<P: AsRef<Path>>(
+    real_path: P,
+    package: &Package,
+) -> SoarResult<PathBuf> {
     let real_path = real_path.as_ref();
-    let content = fs::read_to_string(real_path)?;
+    let content = fs::read_to_string(real_path).map_err(|_| {
+        SoarError::Custom(format!(
+            "Failed to read content of desktop file: {}",
+            real_path.display()
+        ))
+    })?;
 
     let final_content = {
         let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
 
         re.replace_all(&content, |caps: &regex::Captures| match &caps[1] {
-            "Icon" => format!("Icon={}", package.pkg),
+            "Icon" => format!("Icon={}", package.pkg_name),
             "Exec" | "TryExec" => {
                 format!(
                     "{}={}/{}",
                     &caps[1],
                     get_config().get_bin_path().unwrap().display(),
-                    package.pkg
+                    package.pkg_name
                 )
             }
             _ => unreachable!(),
@@ -113,7 +123,8 @@ pub async fn symlink_desktop<P: AsRef<Path>>(real_path: P, package: &Package) ->
         package.pkg_name
     ));
 
-    create_symlink(real_path, &final_path)
+    create_symlink(real_path, &final_path)?;
+    Ok(final_path)
 }
 
 pub async fn integrate_remote<P: AsRef<Path>>(
@@ -225,19 +236,48 @@ fn create_default_desktop_entry(bin_name: &str, name: &str, categories: &str) ->
 }
 
 pub async fn integrate_package<P: AsRef<Path>>(
-    bin_path: P,
+    install_dir: P,
     package: &Package,
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
-) -> SoarResult<()> {
-    let bin_path = bin_path.as_ref();
+) -> SoarResult<(Option<PathBuf>, Option<PathBuf>)> {
+    let install_dir = install_dir.as_ref();
+    let bin_path = install_dir.join(&package.pkg_name);
+
+    let desktop_path = PathBuf::from(format!("{}/{}.desktop", install_dir.display(), package.pkg));
+    let mut desktop_path = if desktop_path.exists() {
+        Some(desktop_path)
+    } else {
+        None
+    };
+
+    let icon_path = PathBuf::from(format!("{}/{}.png", install_dir.display(), package.pkg));
+    let icon_path_fallback =
+        PathBuf::from(format!("{}/{}.svg", install_dir.display(), package.pkg));
+    let mut icon_path = if icon_path.exists() {
+        Some(icon_path)
+    } else if icon_path_fallback.exists() {
+        Some(icon_path_fallback)
+    } else {
+        None
+    };
+
     let mut reader = BufReader::new(File::open(&bin_path)?);
     let file_type = get_file_type(&mut reader);
 
     match file_type {
         super::PackageFormat::AppImage => {
-            if integrate_appimage(bin_path, package).await.is_ok() {
+            if integrate_appimage(
+                install_dir,
+                &bin_path,
+                package,
+                &mut icon_path,
+                &mut desktop_path,
+            )
+            .await
+            .is_ok()
+            {
                 setup_portable_dir(bin_path, package, portable, portable_home, portable_config)?;
             }
         }
@@ -247,5 +287,12 @@ pub async fn integrate_package<P: AsRef<Path>>(
         _ => {}
     }
 
-    Ok(())
+    if let Some(ref path) = icon_path {
+        icon_path = Some(symlink_icon(path, &package.pkg_name).await?);
+    }
+    if let Some(ref path) = desktop_path {
+        desktop_path = Some(symlink_desktop(path, &package).await?);
+    }
+
+    Ok((icon_path, desktop_path))
 }
