@@ -26,16 +26,6 @@ impl<'a> PackageRepository<'a> {
         Ok(())
     }
 
-    fn get_or_create_family(&mut self, value: &str) -> Result<i64> {
-        self.statements
-            .family_check
-            .query_row(params![value], |row| row.get(0))
-            .or_else(|_| {
-                self.statements.family_insert.execute(params![value])?;
-                Ok(self.tx.last_insert_rowid())
-            })
-    }
-
     fn get_or_create_repo(&mut self, name: &str, etag: &str) -> Result<()> {
         self.statements
             .repo_check
@@ -47,7 +37,6 @@ impl<'a> PackageRepository<'a> {
     }
 
     fn insert_package(&mut self, package: &RemotePackage) -> Result<()> {
-        let family_id = self.get_or_create_family(&package.pkg_id)?;
         let disabled_reason = serde_json::to_string(&package.disabled_reason).unwrap();
         let homepages = serde_json::to_string(&package.homepages).unwrap();
         let notes = serde_json::to_string(&package.notes).unwrap();
@@ -81,14 +70,7 @@ impl<'a> PackageRepository<'a> {
             package.build_date,
             package.build_script,
             package.build_log,
-            family_id
         ])?;
-
-        let package_id = self.tx.last_insert_rowid();
-
-        self.statements
-            .provides_insert
-            .execute(params![family_id, package_id])?;
 
         Ok(())
     }

@@ -1,3 +1,11 @@
+CREATE TABLE portable_package (
+  package_id INTEGER NOT NULL,
+  portable_path TEXT,
+  portable_home TEXT,
+  portable_config TEXT,
+  FOREIGN KEY (package_id) REFERENCES packages (id)
+);
+
 CREATE TABLE packages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_name TEXT NOT NULL,

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
 use soar_dl::downloader::DownloadState;
 

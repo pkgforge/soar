@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     os::unix::fs,
     path::PathBuf,
     sync::{
@@ -14,7 +15,7 @@ use soar_core::{
     config::get_config,
     database::{
         models::{InstalledPackage, Package},
-        packages::{get_installed_packages_with_filter, get_packages_with_filter, PackageFilter},
+        packages::{get_installed_packages, get_packages, FilterOp, QueryOptions},
     },
     error::SoarError,
     package::{
@@ -106,9 +107,20 @@ fn resolve_packages(
 
     for package in packages {
         let query = PackageQuery::try_from(package.as_str())?;
-        let filter = PackageFilter::from_query(query);
+        let filters = query.create_filter();
 
-        let existing_install = get_existing_install(&core_db, &filter)?;
+        let options = QueryOptions {
+            limit: 1,
+            filters,
+            ..Default::default()
+        };
+
+        let installed_packages = get_installed_packages(core_db.clone(), options.clone())?.items;
+        let existing_install = if installed_packages.is_empty() {
+            None
+        } else {
+            Some(installed_packages.first().unwrap().clone())
+        };
 
         if let Some(ref existing) = existing_install {
             if existing.is_installed {
@@ -123,7 +135,7 @@ fn resolve_packages(
             }
         }
 
-        if let Some(package) = select_package(db.clone(), package, &filter, yes, &existing_install)?
+        if let Some(package) = select_package(db.clone(), package, options, yes, &existing_install)?
         {
             install_targets.push(InstallTarget {
                 package,
@@ -135,37 +147,29 @@ fn resolve_packages(
     Ok(install_targets)
 }
 
-fn get_existing_install(
-    core_db: &Arc<Mutex<Connection>>,
-    filter: &PackageFilter,
-) -> SoarResult<Option<InstalledPackage>> {
-    let installed_pkgs: Vec<InstalledPackage> =
-        get_installed_packages_with_filter(core_db.clone(), 128, filter.clone())?
-            .filter_map(Result::ok)
-            .collect();
-
-    Ok(installed_pkgs.into_iter().next())
-}
-
 fn select_package(
     db: Arc<Mutex<Connection>>,
     package_name: &str,
-    filter: &PackageFilter,
+    options: QueryOptions,
     yes: bool,
     existing_install: &Option<InstalledPackage>,
 ) -> SoarResult<Option<Package>> {
-    let filter = if let Some(existing) = existing_install {
-        PackageFilter {
-            repo_name: Some(existing.repo_name.clone()),
-            exact_pkg_name: Some(existing.pkg_name.clone()),
-            ..Default::default()
-        }
+    let options = if let Some(existing) = existing_install {
+        let mut filters = HashMap::new();
+        filters.insert(
+            "r.name".to_string(),
+            (FilterOp::Eq, existing.repo_name.clone().into()).into(),
+        );
+        filters.insert(
+            "pkg_name".to_string(),
+            (FilterOp::Eq, existing.pkg_name.clone().into()).into(),
+        );
+        QueryOptions { filters, ..options }
     } else {
-        filter.clone()
+        options
     };
-    let pkgs: Vec<Package> = get_packages_with_filter(db, 1024, filter)?
-        .filter_map(Result::ok)
-        .collect();
+
+    let pkgs = get_packages(db, options)?.items;
 
     match pkgs.len() {
         0 => {

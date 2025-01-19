@@ -25,10 +25,16 @@ impl Database {
 
     pub fn new_multi<P: AsRef<Path>>(paths: &[P]) -> Result<Self> {
         let conn = Connection::open(&paths[0])?;
+        conn.execute("PRAGMA case_sensitive_like = ON;", [])?;
+
         for (idx, path) in paths.iter().enumerate().skip(1) {
             let path = path.as_ref();
             conn.execute(
                 &format!("ATTACH DATABASE '{}' AS shard{}", path.display(), idx),
+                [],
+            )?;
+            conn.execute(
+                &format!("PRAGMA shard{}.case_sensitive_like = ON;", idx),
                 [],
             )?;
         }

@@ -1,10 +1,11 @@
+use std::collections::HashMap;
+
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
 use soar_core::{
     config::get_config,
-    database::{
-        models::InstalledPackage,
-        packages::{get_installed_packages_with_filter, get_packages_with_filter, PackageFilter},
+    database::packages::{
+        get_installed_packages, get_packages, FilterOp, PaginatedIterator, QueryOptions, SortOrder,
     },
     SoarResult,
 };
@@ -21,36 +22,45 @@ pub async fn search_packages(
     let repo_db = state.repo_db().clone();
     let core_db = state.core_db().clone();
 
-    let packages = get_packages_with_filter(
+    let mut filters = HashMap::new();
+    if case_sensitive {
+        filters.insert(
+            "pkg_name".to_string(),
+            (FilterOp::Like, query.into()).into(),
+        );
+    } else {
+        filters.insert(
+            "pkg_name".to_string(),
+            (FilterOp::ILike, query.into()).into(),
+        );
+    }
+
+    let packages = get_packages(
         repo_db,
-        1024,
-        PackageFilter {
-            pkg_name: Some(query),
-            exact_case: case_sensitive,
+        QueryOptions {
+            limit: limit.or(get_config().search_limit).unwrap_or(20) as u32,
+            filters: filters.clone(),
             ..Default::default()
         },
     )?;
 
-    let mut count = 0;
-    let show_count = limit.or(get_config().search_limit).unwrap_or(20);
-
-    for package in packages {
-        count += 1;
-        if count > show_count {
-            continue;
-        }
-        let package = package?;
-        let filter = PackageFilter {
-            repo_name: Some(package.repo_name.clone()),
-            exact_pkg_name: Some(package.pkg_name.clone()),
+    for package in packages.items {
+        let mut filters = filters.clone();
+        filters.insert(
+            "repo_name".to_string(),
+            (FilterOp::Eq, package.repo_name.clone().into()).into(),
+        );
+        filters.insert(
+            "pkg_name".to_string(),
+            (FilterOp::Eq, package.pkg_name.clone().into()).into(),
+        );
+        let options = QueryOptions {
+            limit: 1,
+            filters,
             ..Default::default()
         };
 
-        let installed_pkgs: Vec<InstalledPackage> =
-            get_installed_packages_with_filter(core_db.clone(), 128, filter.clone())?
-                .into_iter()
-                .filter_map(Result::ok)
-                .collect();
+        let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
 
         let mut install_status = "-";
         if !installed_pkgs.is_empty() {
@@ -82,8 +92,8 @@ pub async fn search_packages(
         "{}",
         Red.paint(format!(
             "Showing {} of {}",
-            std::cmp::min(show_count, count),
-            count
+            std::cmp::min(packages.limit as u64, packages.total),
+            packages.total
         ))
     );
 
@@ -94,17 +104,18 @@ pub async fn query_package(query: String) -> SoarResult<()> {
     let state = AppState::new().await?;
     let repo_db = state.repo_db().clone();
 
-    let packages = get_packages_with_filter(
-        repo_db,
-        1024,
-        PackageFilter {
-            exact_pkg_name: Some(query),
-            ..Default::default()
-        },
-    )?;
+    let mut filters = HashMap::new();
+    filters.insert("pkg_name".to_string(), (FilterOp::Eq, query.into()).into());
+
+    let options = QueryOptions {
+        filters,
+        limit: 1,
+        ..Default::default()
+    };
+
+    let packages = get_packages(repo_db, options)?.items;
 
     for package in packages {
-        let package = package?;
         info!(
             pkg_name = %package.pkg_name,
             pkg_id = %package.pkg_id,
@@ -116,9 +127,9 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             checksum = %package.checksum,
             size = %package.size,
             download_url = %package.download_url,
-            build_date = %package.build_date,
-            build_log = %package.build_log,
-            build_script = %package.build_script,
+            build_date = ?package.build_date,
+            build_log = ?package.build_log,
+            build_script = ?package.build_script,
             concat!(
                 "\n{}: {} ({1}#{}:{})\n",
             "{}: {}\n",
@@ -128,9 +139,9 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             "{}: {}\n",
             "{}: {}\n",
             "{}: {}\n",
-            "{}: {}\n",
-            "{}: {}\n",
-            "{}: {}",
+            "{}\n",
+            "{}\n",
+            "{}",
             ),
             Red.paint("Name"), Green.paint(package.pkg_name.clone()), Cyan.paint(package.pkg_id.clone()), Red.paint(package.repo_name.clone()),
             Red.paint("Description"), Yellow.paint(package.description.clone()),
@@ -140,9 +151,23 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             Red.paint("Checksum"), Magenta.paint(package.checksum.clone()),
             Red.paint("Size"), Magenta.paint(HumanBytes(package.size).to_string()),
             Red.paint("Download URL"), Blue.paint(package.download_url.clone()),
-            Red.paint("Build Date"), Magenta.paint(package.build_date.clone()),
-            Red.paint("Build Log"), Blue.paint(package.build_log.clone()),
-            Red.paint("Build Script"), Blue.paint(package.build_script.clone()),
+            if let Some(ref build_date) = package.build_date {
+                format!("{}: {}", Red.paint("Build Date"), Magenta.paint(build_date.clone()))
+            } else {
+                String::new()
+            },
+
+            if let Some(ref build_log) = package.build_log {
+                format!("{}: {}", Red.paint("Build Log"), Blue.paint(build_log.clone()))
+            } else {
+                String::new()
+            },
+
+            if let Some(ref build_script) = package.build_script {
+                format!("{}: {}", Red.paint("Build Script"), Blue.paint(build_script.clone()))
+            } else {
+                String::new()
+            },
         );
     }
 
@@ -154,49 +179,61 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
     let repo_db = state.repo_db().clone();
     let core_db = state.core_db().clone();
 
-    let packages = get_packages_with_filter(
-        repo_db,
-        1024,
-        PackageFilter {
-            repo_name: repo_name.clone(),
+    let fetch_packages = |query_options: QueryOptions| get_packages(repo_db.clone(), query_options);
+
+    let mut filters = HashMap::new();
+    if let Some(repo_name) = repo_name {
+        filters.insert(
+            "r.name".to_string(),
+            (FilterOp::Eq, repo_name.into()).into(),
+        );
+    }
+
+    let package_iterator = PaginatedIterator::new(
+        &fetch_packages,
+        QueryOptions {
+            limit: 2000,
+            sort_by: vec![("pkg_name".into(), SortOrder::Asc)],
+            filters: filters.clone(),
             ..Default::default()
         },
-    )?;
+    );
 
-    for package in packages {
-        let package = package?;
-        let filter = PackageFilter {
-            repo_name: Some(package.repo_name.clone()),
-            exact_pkg_name: Some(package.pkg_name.clone()),
-            family: Some(package.pkg_id),
-            ..Default::default()
-        };
+    for result in package_iterator {
+        let packages = result?;
+        for package in packages {
+            let mut filters = filters.clone();
+            filters.insert(
+                "repo_name".to_string(),
+                (FilterOp::Eq, package.repo_name.clone().into()).into(),
+            );
+            let options = QueryOptions {
+                filters,
+                ..Default::default()
+            };
 
-        let installed_pkgs: Vec<InstalledPackage> =
-            get_installed_packages_with_filter(core_db.clone(), 128, filter.clone())?
-                .into_iter()
-                .filter_map(Result::ok)
-                .collect();
+            let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
 
-        let mut install_status = "-";
-        if !installed_pkgs.is_empty() {
-            if installed_pkgs.first().unwrap().is_installed {
-                install_status = "+";
-            } else {
-                install_status = "?";
+            let mut install_status = "-";
+            if !installed_pkgs.is_empty() {
+                if installed_pkgs.first().unwrap().is_installed {
+                    install_status = "+";
+                } else {
+                    install_status = "?";
+                }
             }
-        }
 
-        info!(
-            pkg_name = %package.pkg_name,
-            version = %package.version,
-            repo_name = %package.repo_name,
-            "[{}] {}-{}:{}",
-            install_status,
-            Red.paint(package.pkg_name.clone()),
-            package.version,
-            package.repo_name
-        );
+            info!(
+                pkg_name = %package.pkg_name,
+                version = %package.version,
+                repo_name = %package.repo_name,
+                "[{}] {}-{}:{}",
+                install_status,
+                Red.paint(package.pkg_name.clone()),
+                package.version,
+                package.repo_name
+            );
+        }
     }
 
     Ok(())
@@ -206,11 +243,18 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
     let state = AppState::new().await?;
     let core_db = state.core_db().clone();
 
-    let filter = PackageFilter {
-        repo_name,
+    let mut filters = HashMap::new();
+    if let Some(repo_name) = repo_name {
+        filters.insert(
+            "repo_name".to_string(),
+            (FilterOp::Eq, repo_name.into()).into(),
+        );
+    }
+    let options = QueryOptions {
+        filters,
         ..Default::default()
     };
-    let packages = get_installed_packages_with_filter(core_db.clone(), 128, filter.clone())?;
+    let packages = get_installed_packages(core_db.clone(), options)?.items;
 
     let mut count = 0;
     let mut broken_count = 0;
@@ -218,8 +262,6 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
     let mut broken_size = 0;
 
     for package in packages {
-        let package = package?;
-
         if package.is_installed {
             info!(
                 pkg_name = %package.pkg_name,

@@ -3,7 +3,7 @@ use std::{fs, process::Command, sync::Arc};
 use soar_core::{
     database::{
         models::Package,
-        packages::{get_packages_with_filter, PackageFilter},
+        packages::{get_packages, QueryOptions},
     },
     error::SoarError,
     package::query::PackageQuery,
@@ -30,11 +30,12 @@ pub async fn run_package(command: &[String]) -> SoarResult<()> {
     };
 
     let query = PackageQuery::try_from(package_name.as_str())?;
-    let filter = PackageFilter::from_query(query);
-    let packages: Vec<Package> = get_packages_with_filter(repo_db, 1024, filter)?
-        .into_iter()
-        .filter_map(Result::ok)
-        .collect();
+    let filters = query.create_filter();
+    let options = QueryOptions {
+        filters,
+        ..Default::default()
+    };
+    let packages: Vec<Package> = get_packages(repo_db, options)?.items;
 
     if packages.is_empty() {
         return Err(SoarError::PackageNotFound(package_name.clone()));

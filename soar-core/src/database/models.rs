@@ -27,10 +27,10 @@ pub struct Package {
     pub categories: Option<Vec<String>>,
     pub icon: Option<String>,
     pub desktop: Option<String>,
-    pub build_id: String,
-    pub build_date: String,
-    pub build_script: String,
-    pub build_log: String,
+    pub build_id: Option<String>,
+    pub build_date: Option<String>,
+    pub build_script: Option<String>,
+    pub build_log: Option<String>,
 }
 
 #[derive(Debug, Clone)]

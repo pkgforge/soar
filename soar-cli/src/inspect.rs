@@ -3,10 +3,7 @@ use std::fmt::Display;
 use futures::StreamExt;
 use indicatif::HumanBytes;
 use soar_core::{
-    database::{
-        models::Package,
-        packages::{get_packages_with_filter, PackageFilter},
-    },
+    database::packages::{get_packages, QueryOptions},
     package::query::PackageQuery,
     SoarResult,
 };
@@ -33,27 +30,36 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
     let repo_db = state.repo_db().clone();
 
     let query = PackageQuery::try_from(package)?;
-    let filter = PackageFilter::from_query(query);
+    let filters = query.create_filter();
 
-    let packages: Vec<Package> = get_packages_with_filter(repo_db, 1024, filter)?
-        .into_iter()
-        .filter_map(Result::ok)
-        .collect();
+    let options = QueryOptions {
+        limit: 1,
+        filters,
+        ..Default::default()
+    };
 
-    if packages.is_empty() {
-        error!("Package {package} not found");
+    let packages = get_packages(repo_db, options)?;
+    if packages.items.is_empty() {
+        error!("Package {} not found", package);
     } else {
-        let first_pkg = packages.first().unwrap();
+        let first_pkg = packages.items.first().unwrap();
 
         let url = if matches!(inspect_type, InspectType::BuildLog) {
             &first_pkg.build_log
-        } else if first_pkg.build_script.starts_with("https://github.com") {
-            &first_pkg
-                .build_script
-                .replacen("/tree/", "/raw/refs/heads/", 1)
-                .replacen("/blob/", "/raw/refs/heads/", 1)
         } else {
             &first_pkg.build_script
+        };
+
+        let Some(url) = url else {
+            error!("No build {} found for {}", inspect_type, first_pkg.pkg_name);
+            return Ok(());
+        };
+
+        let url = if url.starts_with("https://github.com") {
+            &url.replacen("/tree/", "/raw/refs/heads/", 1)
+                .replacen("/blob/", "/raw/refs/heads/", 1)
+        } else {
+            url
         };
 
         let resp = reqwest::get(url).await?;
@@ -92,5 +98,6 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
 
         info!("\n{}", output);
     }
+
     Ok(())
 }

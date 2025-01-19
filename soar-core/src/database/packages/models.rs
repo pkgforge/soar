@@ -1,70 +1,113 @@
-#[derive(Debug, Clone, Copy)]
-pub enum PackageSort {
-    Id,
-    PackageName,
-    Family,
-    FamilyAndPackage,
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub enum FilterOp {
+    Eq,
+    Like,
+    ILike,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    NotEq,
+    In,
+    NotIn,
+    IsNull,
+    IsNotNull,
+    Between,
 }
 
-impl PackageSort {
-    pub fn get_order_clause(&self) -> &'static str {
-        match self {
-            PackageSort::Id => "p.id",
-            PackageSort::PackageName => "p.pkg_name, p.id",
-            PackageSort::Family => "f.value, p.id",
-            PackageSort::FamilyAndPackage => "f.value, p.pkg_name, p.id",
+#[derive(Debug, Clone)]
+pub enum FilterValue {
+    Single(String),
+    Multiple(Vec<String>),
+    Range(String, String),
+    None,
+}
+
+#[derive(Debug, Clone)]
+pub struct Filter {
+    pub operator: FilterOp,
+    pub value: FilterValue,
+}
+
+impl From<(String, String)> for FilterValue {
+    fn from(value: (String, String)) -> Self {
+        FilterValue::Range(value.0, value.1)
+    }
+}
+
+impl From<String> for FilterValue {
+    fn from(value: String) -> Self {
+        FilterValue::Single(value)
+    }
+}
+
+impl From<Vec<String>> for FilterValue {
+    fn from(value: Vec<String>) -> Self {
+        FilterValue::Multiple(value)
+    }
+}
+
+impl From<(FilterOp, FilterValue)> for Filter {
+    fn from(value: (FilterOp, FilterValue)) -> Self {
+        Filter {
+            operator: value.0,
+            value: value.1,
         }
     }
+}
 
-    pub fn get_next_page_condition(&self) -> &'static str {
+impl FilterOp {
+    pub fn to_sql(&self) -> &'static str {
         match self {
-            PackageSort::Id => "p.id > ?",
-            PackageSort::PackageName => "(p.pkg_name, p.id) > (?, ?)",
-            PackageSort::Family => "(f.value, p.id) > (?, ?)",
-            PackageSort::FamilyAndPackage => "(f.value, p.pkg_name, p.id) > (?, ?, ?)",
+            FilterOp::Eq => "=",
+            FilterOp::Like => "LIKE",
+            FilterOp::ILike => "LIKE",
+            FilterOp::Gt => ">",
+            FilterOp::Gte => ">=",
+            FilterOp::Lt => "<",
+            FilterOp::Lte => "<=",
+            FilterOp::NotEq => "!=",
+            FilterOp::In => "IN",
+            FilterOp::NotIn => "NOT IN",
+            FilterOp::IsNull => "IS NULL",
+            FilterOp::IsNotNull => "IS NOT NULL",
+            FilterOp::Between => "BETWEEN",
         }
     }
+}
 
-    pub fn bind_pagination_params(
-        &self,
-        params: &mut Vec<Box<dyn rusqlite::ToSql>>,
-        state: &IterationState,
-    ) {
-        match self {
-            Self::PackageName => {
-                let pkg_name = state.pkg_name.clone().unwrap_or_default();
-                params.push(Box::new(pkg_name));
-            }
-            Self::Family => {
-                let family = state.family.clone().unwrap_or_default();
-                params.push(Box::new(family));
-            }
-            Self::FamilyAndPackage => {
-                let family = state.family.clone().unwrap_or_default();
-                let pkg_name = state.pkg_name.clone().unwrap_or_default();
-                params.push(Box::new(family));
-                params.push(Box::new(pkg_name));
-            }
-            _ => {}
+#[derive(Debug, Clone)]
+pub struct QueryOptions {
+    pub page: u32,
+    pub limit: u32,
+    pub filters: HashMap<String, Filter>,
+    pub sort_by: Vec<(String, SortOrder)>,
+}
+
+impl Default for QueryOptions {
+    fn default() -> Self {
+        Self {
+            page: 1,
+            limit: u32::MAX,
+            filters: HashMap::new(),
+            sort_by: Vec::new(),
         }
-
-        params.push(Box::new(state.id));
     }
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct PackageFilter {
-    pub repo_name: Option<String>,
-    pub pkg_name: Option<String>,
-    pub exact_pkg_name: Option<String>,
-    pub family: Option<String>,
-    pub search_term: Option<String>,
-    pub exact_case: bool,
+pub enum SortOrder {
+    #[default]
+    Asc,
+    Desc,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct IterationState {
-    pub id: u64,
-    pub pkg_name: Option<String>,
-    pub family: Option<String>,
+pub struct PaginatedResponse<T> {
+    pub items: Vec<T>,
+    pub page: u32,
+    pub limit: u32,
+    pub total: u64,
+    pub has_next: bool,
 }

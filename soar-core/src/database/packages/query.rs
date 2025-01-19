@@ -1,207 +1,427 @@
-use rusqlite::ToSql;
+use std::sync::{Arc, Mutex};
 
-use super::models::{IterationState, PackageFilter, PackageSort};
+use rusqlite::{Connection, Row, ToSql};
 
-pub struct QueryBuilder {
-    shard_name: String,
-    sort_method: PackageSort,
-    filter: PackageFilter,
-    state: IterationState,
-    buffer_size: usize,
+use crate::{
+    database::{
+        models::{InstalledPackage, Package},
+        packages::SortOrder,
+    },
+    error::SoarError,
+    SoarResult,
+};
+
+use super::{Filter, FilterOp, FilterValue, PaginatedResponse, QueryOptions};
+
+pub struct PackageQuery {
+    db: Arc<Mutex<Connection>>,
+    options: QueryOptions,
 }
 
-impl QueryBuilder {
-    pub fn new(
-        shard_name: String,
-        sort_method: PackageSort,
-        filter: PackageFilter,
-        state: IterationState,
-        buffer_size: usize,
-    ) -> Self {
-        Self {
-            shard_name,
-            sort_method,
-            filter,
-            state,
-            buffer_size,
-        }
+impl PackageQuery {
+    pub fn new(db: Arc<Mutex<Connection>>, options: QueryOptions) -> Self {
+        Self { db, options }
     }
 
-    pub fn build(&self) -> (String, Vec<Box<dyn ToSql>>) {
-        let (where_clause, filter_params) = self.build_filter_clause();
-        let query = self.build_query_string(&where_clause);
+    pub fn execute(&self) -> SoarResult<PaginatedResponse<Package>> {
+        let conn = self.db.lock().map_err(|_| SoarError::PoisonError)?;
+        let shards = self.get_shards(&conn)?;
+        let (query, params) = self.build_query(&shards)?;
+        let mut stmt = conn.prepare(&query)?;
 
-        let mut params: Vec<Box<dyn ToSql>> = filter_params
-            .into_iter()
-            .map(|s| Box::new(s) as Box<dyn ToSql>)
+        let params_ref: Vec<&dyn rusqlite::ToSql> = params
+            .iter()
+            .map(|p| p.as_ref() as &dyn rusqlite::ToSql)
+            .collect();
+        let items = stmt
+            .query_map(params_ref.as_slice(), map_package)?
+            .filter_map(|r| match r {
+                Ok(pkg) => Some(pkg),
+                Err(err) => {
+                    eprintln!("Package map error: {err:#?}");
+                    None
+                }
+            })
             .collect();
 
-        self.sort_method
-            .bind_pagination_params(&mut params, &self.state);
-        params.push(Box::new(self.buffer_size));
+        let (count_query, count_params) = self.build_count_query(&shards);
+        let mut count_stmt = conn.prepare(&count_query)?;
+        let count_params_ref: Vec<&dyn rusqlite::ToSql> = count_params
+            .iter()
+            .map(|p| p.as_ref() as &dyn rusqlite::ToSql)
+            .collect();
+        let total: u64 = count_stmt.query_row(count_params_ref.as_slice(), |row| row.get(0))?;
+
+        let page = self.options.page;
+        let limit = self.options.limit;
+        let has_next = (page as u64 * limit as u64) < total;
+
+        Ok(PaginatedResponse {
+            items,
+            page,
+            limit,
+            total,
+            has_next,
+        })
+    }
+
+    fn get_shards(&self, conn: &Connection) -> SoarResult<Vec<String>> {
+        let mut stmt = conn.prepare("PRAGMA database_list")?;
+        let shards = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(Result::ok)
+            .collect();
+        Ok(shards)
+    }
+
+    fn build_query(
+        &self,
+        shards: &[String],
+    ) -> SoarResult<(String, Vec<Box<dyn rusqlite::ToSql>>)> {
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        let shard_queries: Vec<String> = shards
+            .iter()
+            .map(|shard| {
+                let select_clause = format!(
+                    "SELECT p.*, r.name FROM {0}.packages p JOIN {0}.repository r",
+                    shard
+                );
+                self.build_shard_query(&select_clause, &mut params)
+            })
+            .collect();
+
+        let combined_query = shard_queries.join("\nUNION ALL\n");
+
+        let mut final_query = format!("WITH results AS ({}) SELECT * FROM results", combined_query);
+
+        if !self.options.sort_by.is_empty() {
+            let sort_clauses: Vec<String> = self
+                .options
+                .sort_by
+                .iter()
+                .map(|(field, order)| {
+                    format!(
+                        "{} {}",
+                        field,
+                        match order {
+                            SortOrder::Asc => "ASC",
+                            SortOrder::Desc => "DESC",
+                        }
+                    )
+                })
+                .collect();
+            final_query.push_str(" ORDER BY ");
+            final_query.push_str(&sort_clauses.join(", "));
+        }
+
+        let page = self.options.page;
+        let limit = self.options.limit;
+        let offset = (page - 1) * limit;
+        final_query.push_str(" LIMIT ? OFFSET ?");
+        params.push(Box::new(self.options.limit));
+        params.push(Box::new(offset));
+
+        Ok((final_query, params))
+    }
+
+    fn build_shard_query(
+        &self,
+        select_clause: &str,
+        params: &mut Vec<Box<dyn rusqlite::ToSql>>,
+    ) -> String {
+        let mut conditions = Vec::new();
+
+        for (field, filter) in &self.options.filters {
+            if let Some(condition) = self.build_filter_condition(field, filter, params) {
+                conditions.push(condition);
+            }
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        format!("{} {}", select_clause, where_clause)
+    }
+
+    fn build_count_query(&self, shards: &[String]) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        let shard_queries: Vec<String> = shards
+            .iter()
+            .map(|shard| {
+                let select_clause = format!(
+                    "SELECT COUNT(*) as cnt FROM {0}.packages p JOIN {0}.repository r",
+                    shard
+                );
+                self.build_shard_query(&select_clause, &mut params)
+            })
+            .collect();
+
+        let query = format!(
+            "SELECT SUM(cnt) FROM ({})",
+            shard_queries.join("\nUNION ALL\n")
+        );
 
         (query, params)
     }
 
-    fn build_filter_clause(&self) -> (String, Vec<String>) {
-        let mut conditions = Vec::new();
-        let mut params = Vec::new();
-
-        if let Some(pkg_name) = &self.filter.pkg_name {
-            conditions.push("p.pkg_name LIKE ?".to_string());
-            params.push(format!("%{}%", pkg_name));
-        }
-
-        if let Some(pkg_name) = &self.filter.exact_pkg_name {
-            conditions.push("p.pkg_name = ?".to_string());
-            params.push(pkg_name.clone());
-        }
-
-        if let Some(family) = &self.filter.family {
-            conditions.push("f.value = ?".to_string());
-            params.push(family.clone());
-        }
-
-        if let Some(search) = &self.filter.search_term {
-            conditions.push("(p.pkg_name LIKE ? OR p.description LIKE ?)".to_string());
-            params.push(format!("%{}%", search));
-            params.push(format!("%{}%", search));
-        }
-
-        let where_clause = if conditions.is_empty() {
-            "1=1".to_string()
-        } else {
-            conditions.join(" AND ")
-        };
-
-        (where_clause, params)
-    }
-
-    fn build_query_string(&self, where_clause: &str) -> String {
-        format!(
-            r#"
-            SELECT
-                p.id, p.disabled, p.disabled_reason, p.pkg, p.pkg_id,
-                p.pkg_name, p.pkg_type, p.pkg_webpage, p.app_id, p.description,
-                p.version, p.download_url, p.size, p.ghcr_pkg, p.ghcr_size,
-                p.checksum, p.homepages, p.notes, p.source_urls, p.tags,
-                p.categories, p.icon, p.desktop, p.build_id, p.build_date,
-                p.build_script, p.build_log
-            FROM
-                {0}.packages p
-            WHERE {1} AND {2}
-            GROUP BY p.id
-            ORDER BY {3}
-            LIMIT ?
-            {4}
-            "#,
-            self.shard_name,
-            where_clause,
-            self.sort_method.get_next_page_condition(),
-            self.sort_method.get_order_clause(),
-            if self.filter.exact_case {
-                "COLLATE BINARY"
-            } else {
-                ""
+    fn build_filter_condition(
+        &self,
+        field: &str,
+        filter: &Filter,
+        params: &mut Vec<Box<dyn ToSql>>,
+    ) -> Option<String> {
+        match (&filter.operator, &filter.value) {
+            (FilterOp::IsNull, _) => Some(format!("{} IS NULL", field)),
+            (FilterOp::IsNotNull, _) => Some(format!("{} IS NOT NULL", field)),
+            (FilterOp::Between, FilterValue::Range(start, end)) => {
+                params.push(Box::new(start.clone()));
+                params.push(Box::new(end.clone()));
+                Some(format!("{} BETWEEN ? AND ?", field))
             }
-        )
-    }
-}
-
-pub struct InstalledQueryBuilder {
-    filter: PackageFilter,
-    sort_method: PackageSort,
-    state: IterationState,
-    buffer_size: usize,
-}
-
-impl InstalledQueryBuilder {
-    pub fn new(
-        sort_method: PackageSort,
-        filter: PackageFilter,
-        state: IterationState,
-        buffer_size: usize,
-    ) -> Self {
-        Self {
-            sort_method,
-            filter,
-            state,
-            buffer_size,
+            (FilterOp::In | FilterOp::NotIn, FilterValue::Multiple(values)) => {
+                let placeholders = vec!["?"; values.len()].join(",");
+                for value in values {
+                    params.push(Box::new(value.clone()));
+                }
+                Some(format!(
+                    "{} {} ({})",
+                    field,
+                    filter.operator.to_sql(),
+                    placeholders
+                ))
+            }
+            (FilterOp::Like | FilterOp::ILike, FilterValue::Single(value)) => {
+                let wildcard_value = format!("%{}%", value);
+                params.push(Box::new(wildcard_value));
+                if matches!(filter.operator, FilterOp::ILike) {
+                    Some(format!("LOWER({}) LIKE LOWER(?)", field))
+                } else {
+                    Some(format!("{} LIKE ?", field))
+                }
+            }
+            (_, FilterValue::Single(value)) => {
+                params.push(Box::new(value.clone()));
+                Some(format!("{} {} ?", field, filter.operator.to_sql()))
+            }
+            _ => None,
         }
     }
 
-    pub fn build(&self) -> (String, Vec<Box<dyn ToSql>>) {
-        let (where_clause, filter_params) = self.build_filter_clause();
-        let query = self.build_query_string(&where_clause);
+    pub fn execute_installed(&self) -> SoarResult<PaginatedResponse<InstalledPackage>> {
+        let conn = self.db.lock().map_err(|_| SoarError::PoisonError)?;
+        let (query, params) = self.build_installed_query()?;
+        let mut stmt = conn.prepare(&query)?;
 
-        let mut params: Vec<Box<dyn ToSql>> = filter_params
-            .into_iter()
-            .map(|s| Box::new(s) as Box<dyn ToSql>)
+        let params_ref: Vec<&dyn rusqlite::ToSql> = params
+            .iter()
+            .map(|p| p.as_ref() as &dyn rusqlite::ToSql)
+            .collect();
+        let items = stmt
+            .query_map(params_ref.as_slice(), map_installed_package)?
+            .filter_map(|r| match r {
+                Ok(pkg) => Some(pkg),
+                Err(err) => {
+                    eprintln!("Installed package map error: {err:#?}");
+                    None
+                }
+            })
             .collect();
 
-        self.sort_method
-            .bind_pagination_params(&mut params, &self.state);
-
-        params.push(Box::new(self.buffer_size));
-
-        (query, params)
-    }
-
-    fn build_filter_clause(&self) -> (String, Vec<String>) {
-        let mut conditions = Vec::new();
-        let mut params = Vec::new();
-
-        if let Some(pkg_name) = &self.filter.pkg_name {
-            conditions.push("pkg_name LIKE ?".to_string());
-            params.push(format!("%{}%", pkg_name));
-        }
-
-        if let Some(pkg_name) = &self.filter.exact_pkg_name {
-            conditions.push("pkg_name = ?".to_string());
-            params.push(pkg_name.clone());
-        }
-
-        if let Some(family) = &self.filter.family {
-            conditions.push("pkg_id = ?".to_string());
-            params.push(family.clone());
-        }
-
-        if let Some(search) = &self.filter.search_term {
-            conditions.push("(pkg_name LIKE ? OR description LIKE ?)".to_string());
-            params.push(format!("%{}%", search));
-            params.push(format!("%{}%", search));
-        }
-
-        let where_clause = if conditions.is_empty() {
-            "1=1".to_string()
-        } else {
-            conditions.join(" AND ")
+        let (count_query, count_params) = {
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+            let select_clause = "SELECT COUNT(*) FROM packages p";
+            let query = self.build_shard_query(&select_clause, &mut params);
+            (query, params)
         };
+        let mut count_stmt = conn.prepare(&count_query)?;
+        let count_params_ref: Vec<&dyn rusqlite::ToSql> = count_params
+            .iter()
+            .map(|p| p.as_ref() as &dyn rusqlite::ToSql)
+            .collect();
+        let total: u64 = count_stmt.query_row(count_params_ref.as_slice(), |row| row.get(0))?;
 
-        (where_clause, params)
+        let page = self.options.page;
+        let limit = self.options.limit;
+        let has_next = (page as u64 * limit as u64) < total;
+
+        Ok(PaginatedResponse {
+            items,
+            page,
+            limit,
+            total,
+            has_next,
+        })
     }
 
-    fn build_query_string(&self, where_clause: &str) -> String {
-        format!(
-            r#"
-            SELECT
-                id, repo_name, pkg, pkg_id, pkg_name, version, size, checksum,
-                installed_path, installed_date, bin_path, icon_path,
-                desktop_path, appstream_path, pinned, is_installed,
-                installed_with_family, profile
-            FROM
-                packages p
-            WHERE {0} AND {1}
-            LIMIT ?
-            {2}
-            "#,
-            where_clause,
-            self.sort_method.get_next_page_condition(),
-            if self.filter.exact_case {
-                "COLLATE BINARY"
-            } else {
-                ""
+    fn build_installed_query(&self) -> SoarResult<(String, Vec<Box<dyn rusqlite::ToSql>>)> {
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let select_clause = "SELECT p.* FROM packages p";
+        let mut query = self.build_shard_query(select_clause, &mut params);
+
+        if !self.options.sort_by.is_empty() {
+            let sort_clauses: Vec<String> = self
+                .options
+                .sort_by
+                .iter()
+                .map(|(field, order)| {
+                    format!(
+                        "{} {}",
+                        field,
+                        match order {
+                            SortOrder::Asc => "ASC",
+                            SortOrder::Desc => "DESC",
+                        }
+                    )
+                })
+                .collect();
+            query.push_str(" ORDER BY ");
+            query.push_str(&sort_clauses.join(", "));
+        }
+
+        let offset = (self.options.page - 1) * self.options.limit;
+        query.push_str(" LIMIT ? OFFSET ?");
+        params.push(Box::new(self.options.limit));
+        params.push(Box::new(offset));
+
+        Ok((query, params))
+    }
+}
+
+fn map_package(row: &Row) -> rusqlite::Result<Package> {
+    let parse_json_vec = |idx: usize| -> rusqlite::Result<Option<Vec<String>>> {
+        let value: String = row.get(idx)?;
+        Ok(serde_json::from_str(&value).ok())
+    };
+
+    let homepages = parse_json_vec(18)?;
+    let notes = parse_json_vec(19)?;
+    let source_urls = parse_json_vec(20)?;
+    let tags = parse_json_vec(21)?;
+    let categories = parse_json_vec(22)?;
+
+    Ok(Package {
+        id: row.get(0)?,
+        disabled: row.get(1)?,
+        disabled_reason: row.get(2)?,
+        pkg: row.get(3)?,
+        pkg_id: row.get(4)?,
+        pkg_name: row.get(5)?,
+        pkg_type: row.get(6)?,
+        pkg_webpage: row.get(7)?,
+        app_id: row.get(8)?,
+        description: row.get(9)?,
+        version: row.get(10)?,
+        download_url: row.get(11)?,
+        size: row.get(12)?,
+        ghcr_pkg: row.get(13)?,
+        ghcr_size: row.get(14)?,
+        checksum: row.get(15)?,
+        icon: row.get(16)?,
+        desktop: row.get(17)?,
+        homepages,
+        notes,
+        source_urls,
+        tags,
+        categories,
+        build_id: row.get(23)?,
+        build_date: row.get(24)?,
+        build_script: row.get(25)?,
+        build_log: row.get(26)?,
+        repo_name: row.get(27)?,
+    })
+}
+
+pub struct PaginatedIterator<'a, T, F>
+where
+    F: Fn(QueryOptions) -> SoarResult<PaginatedResponse<T>>,
+{
+    query_options: QueryOptions,
+    fetch_page: &'a F,
+    current_page: u32,
+    limit: u32,
+    has_next: bool,
+}
+
+impl<'a, T, F> PaginatedIterator<'a, T, F>
+where
+    F: Fn(QueryOptions) -> SoarResult<PaginatedResponse<T>>,
+{
+    pub fn new(fetch_page: &'a F, query_options: QueryOptions) -> Self {
+        let limit = query_options.limit;
+        PaginatedIterator {
+            query_options,
+            fetch_page,
+            current_page: 1,
+            limit,
+            has_next: true,
+        }
+    }
+}
+
+impl<'a, T, F> Iterator for PaginatedIterator<'a, T, F>
+where
+    T: Clone,
+    F: Fn(QueryOptions) -> SoarResult<PaginatedResponse<T>>,
+{
+    type Item = SoarResult<Vec<T>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.has_next {
+            return None;
+        }
+
+        self.query_options.page = self.current_page;
+        self.query_options.limit = self.limit;
+
+        match (self.fetch_page)(self.query_options.clone()) {
+            Ok(response) => {
+                self.has_next = response.has_next;
+                self.current_page += 1;
+                Some(Ok(response.items))
             }
-        )
+            Err(e) => Some(Err(e)),
+        }
     }
+}
+
+pub fn get_packages(
+    db: Arc<Mutex<Connection>>,
+    options: QueryOptions,
+) -> SoarResult<PaginatedResponse<Package>> {
+    PackageQuery::new(db, options).execute()
+}
+
+pub fn get_installed_packages(
+    db: Arc<Mutex<Connection>>,
+    options: QueryOptions,
+) -> SoarResult<PaginatedResponse<InstalledPackage>> {
+    PackageQuery::new(db, options).execute_installed()
+}
+
+pub fn map_installed_package(row: &Row) -> rusqlite::Result<InstalledPackage> {
+    Ok(InstalledPackage {
+        id: row.get(0)?,
+        repo_name: row.get(1)?,
+        pkg: row.get(2)?,
+        pkg_id: row.get(3)?,
+        pkg_name: row.get(4)?,
+        version: row.get(5)?,
+        size: row.get(6)?,
+        checksum: row.get(7)?,
+        installed_path: row.get(8)?,
+        installed_date: row.get(9)?,
+        bin_path: row.get(10)?,
+        icon_path: row.get(11)?,
+        desktop_path: row.get(12)?,
+        appstream_path: row.get(13)?,
+        profile: row.get(14)?,
+        pinned: row.get(15)?,
+        is_installed: row.get(16)?,
+        installed_with_family: row.get(17)?,
+    })
 }

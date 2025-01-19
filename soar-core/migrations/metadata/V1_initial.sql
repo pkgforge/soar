@@ -3,20 +3,6 @@ CREATE TABLE repository (
   etag TEXT NOT NULL UNIQUE
 );
 
-CREATE TABLE families (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  value TEXT NOT NULL
-);
-
-CREATE TABLE provides (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  family_id INTEGER NOT NULL,
-  package_id INTEGER NOT NULL,
-  FOREIGN KEY (package_id) REFERENCES packages (id),
-  FOREIGN KEY (family_id) REFERENCES families (id),
-  UNIQUE (family_id, package_id)
-);
-
 CREATE TABLE maintainers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   contact TEXT NOT NULL,
@@ -58,7 +44,5 @@ CREATE TABLE packages (
   build_id TEXT,
   build_date TEXT,
   build_script TEXT,
-  build_log TEXT,
-  family_id INTEGER NOT NULL,
-  FOREIGN KEY (family_id) REFERENCES families (id)
+  build_log TEXT
 );

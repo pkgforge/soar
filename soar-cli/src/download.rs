@@ -80,7 +80,7 @@ pub async fn handle_direct_downloads(
     for link in &links {
         match PlatformUrl::parse(link) {
             Ok(PlatformUrl::DirectUrl(url)) => {
-                println!("Downloading using direct link: {}", url);
+                info!("Downloading using direct link: {}", url);
 
                 let options = DownloadOptions {
                     url: link.clone(),
@@ -93,7 +93,7 @@ pub async fn handle_direct_downloads(
                     .map_err(|e| eprintln!("{}", e));
             }
             Ok(PlatformUrl::Github(project)) => {
-                println!("Detected GitHub URL, processing as GitHub release");
+                info!("Detected GitHub URL, processing as GitHub release");
                 let handler = ReleaseHandler::<Github>::new();
                 if let Err(e) = handle_platform_download::<Github, GithubRelease, GithubAsset>(
                     ctx, &handler, &project,
@@ -104,7 +104,7 @@ pub async fn handle_direct_downloads(
                 }
             }
             Ok(PlatformUrl::Gitlab(project)) => {
-                println!("Detected GitLab URL, processing as GitLab release");
+                info!("Detected GitLab URL, processing as GitLab release");
                 let handler = ReleaseHandler::<Gitlab>::new();
                 if let Err(e) = handle_platform_download::<Gitlab, GitlabRelease, GitlabAsset>(
                     ctx, &handler, &project,
@@ -115,7 +115,7 @@ pub async fn handle_direct_downloads(
                 }
             }
             Ok(PlatformUrl::Oci(url)) => {
-                println!("Downloading using OCI reference: {}", url);
+                info!("Downloading using OCI reference: {}", url);
 
                 let options = DownloadOptions {
                     url: link.clone(),
@@ -148,7 +148,7 @@ pub async fn handle_oci_downloads(
             progress_callback: Some(progress_callback.clone()),
         };
 
-        println!("Downloading using OCI reference: {}", reference);
+        info!("Downloading using OCI reference: {}", reference);
         let _ = downloader
             .download_oci(options)
             .await

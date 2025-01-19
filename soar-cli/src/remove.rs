@@ -1,8 +1,5 @@
 use soar_core::{
-    database::{
-        models::InstalledPackage,
-        packages::{get_installed_packages_with_filter, PackageFilter},
-    },
+    database::packages::{get_installed_packages, QueryOptions},
     package::{query::PackageQuery, remove::PackageRemover},
     SoarResult,
 };
@@ -17,13 +14,13 @@ pub async fn remove_packages(packages: &[String]) -> SoarResult<()> {
         let core_db = state.core_db().clone();
 
         let query = PackageQuery::try_from(package.as_str())?;
-        let filter = PackageFilter::from_query(query);
+        let filters = query.create_filter();
+        let options = QueryOptions {
+            filters,
+            ..Default::default()
+        };
 
-        let installed_pkgs: Vec<InstalledPackage> =
-            get_installed_packages_with_filter(core_db.clone(), 128, filter.clone())?
-                .into_iter()
-                .filter_map(Result::ok)
-                .collect();
+        let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
 
         if installed_pkgs.is_empty() {
             warn!("Package {} is not installed.", package);
