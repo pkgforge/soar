@@ -1,6 +1,8 @@
 use rusqlite::types::Value;
 use serde::{Deserialize, Serialize};
 
+use super::packages::{PackageProvide, ProvideStrategy};
+
 #[derive(Debug, Clone)]
 pub struct Package {
     pub id: u64,
@@ -31,6 +33,7 @@ pub struct Package {
     pub build_date: Option<String>,
     pub build_script: Option<String>,
     pub build_log: Option<String>,
+    pub provides: Option<Vec<PackageProvide>>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +56,7 @@ pub struct InstalledPackage {
     pub pinned: bool,
     pub is_installed: bool,
     pub installed_with_family: bool,
+    pub provides: Option<Vec<PackageProvide>>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
@@ -102,8 +106,21 @@ pub struct RemotePackage {
     #[serde(alias = "category")]
     pub categories: Vec<String>,
 
-    pub provides: Vec<String>,
+    pub provides: Option<Vec<String>>,
     pub icon: Option<String>,
     pub desktop: Option<String>,
     pub app_id: Option<String>,
+}
+
+impl Package {
+    pub fn should_create_original_symlink(&self) -> bool {
+        self.provides
+            .as_ref()
+            .map(|links| {
+                !links
+                    .iter()
+                    .any(|link| matches!(link.strategy, ProvideStrategy::KeepTargetOnly))
+            })
+            .unwrap_or(true)
+    }
 }

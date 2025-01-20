@@ -205,6 +205,8 @@ where
     } else {
         select_asset(&assets)?
     };
+
+    info!("Downloading asset from {}", selected_asset.download_url());
     handler.download(&selected_asset, options.clone()).await?;
     Ok(())
 }

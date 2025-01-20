@@ -17,13 +17,13 @@ impl<'a> DbStatements<'a> {
                     pkg_webpage, app_id, description, version, download_url,
                     size, ghcr_pkg, ghcr_size, checksum, homepages, notes,
                     source_urls, tags, categories, icon, desktop, build_id,
-                    build_date, build_script, build_log
+                    build_date, build_script, build_log, provides
                 )
                 VALUES
                 (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
                     ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25,
-                    ?26
+                    ?26, ?27
                 )",
             )?,
         })

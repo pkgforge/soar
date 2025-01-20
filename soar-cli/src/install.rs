@@ -15,7 +15,7 @@ use soar_core::{
     config::get_config,
     database::{
         models::{InstalledPackage, Package},
-        packages::{get_installed_packages, get_packages, FilterOp, QueryOptions},
+        packages::{get_installed_packages, get_packages, FilterOp, ProvideStrategy, QueryOptions},
     },
     error::SoarError,
     package::{
@@ -301,21 +301,18 @@ async fn install_single_package(
     progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
     core_db: Arc<Mutex<Connection>>,
 ) -> SoarResult<()> {
-    let (install_dir, real_bin, bin_name) = if let Some(ref existing) = target.existing_install {
+    let bin_dir = get_config().get_bin_path()?;
+    let (install_dir, real_bin, def_bin_path) = if let Some(ref existing) = target.existing_install
+    {
         let install_dir = PathBuf::from(&existing.installed_path);
         let real_bin = install_dir.join(&target.package.pkg_name);
-        let bin_name = existing
+        let def_bin_path = existing
             .bin_path
             .as_ref()
             .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                get_config()
-                    .get_bin_path()
-                    .unwrap()
-                    .join(&target.package.pkg_name)
-            });
+            .unwrap_or_else(|| bin_dir.join(&target.package.pkg_name));
 
-        (install_dir, real_bin, bin_name)
+        (install_dir, real_bin, def_bin_path)
     } else {
         let rand_str: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
@@ -328,22 +325,10 @@ async fn install_single_package(
             target.package.pkg, target.package.pkg_id, rand_str
         ));
         let real_bin = install_dir.join(&target.package.pkg_name);
-        let bin_name = get_config()
-            .get_bin_path()
-            .unwrap()
-            .join(&target.package.pkg_name);
+        let def_bin_path = bin_dir.join(&target.package.pkg_name);
 
-        (install_dir, real_bin, bin_name)
+        (install_dir, real_bin, def_bin_path)
     };
-
-    if bin_name.exists() {
-        if let Err(err) = std::fs::remove_file(&bin_name) {
-            return Err(SoarError::Custom(format!(
-                "Failed to remove existing symlink: {}",
-                err
-            )));
-        }
-    }
 
     if install_dir.exists() {
         if let Err(err) = std::fs::remove_dir_all(&install_dir) {
@@ -367,7 +352,37 @@ async fn install_single_package(
     installer.install().await?;
 
     let final_checksum = calculate_checksum(&real_bin)?;
-    fs::symlink(&real_bin, &bin_name)?;
+
+    if target.package.should_create_original_symlink() {
+        if def_bin_path.is_symlink() || def_bin_path.exists() {
+            if let Err(err) = std::fs::remove_file(&def_bin_path) {
+                return Err(SoarError::Custom(format!(
+                    "Failed to remove existing symlink: {}",
+                    err
+                )));
+            }
+        }
+        fs::symlink(&real_bin, &def_bin_path)?;
+    }
+
+    if let Some(provides) = &target.package.provides {
+        for provide in provides {
+            if let Some(ref target) = provide.target_name {
+                let real_path = install_dir.join(provide.name.clone());
+                let is_symlink = match provide.strategy {
+                    ProvideStrategy::KeepTargetOnly | ProvideStrategy::KeepBoth => true,
+                    _ => false,
+                };
+                if is_symlink {
+                    let target_name = bin_dir.join(&target);
+                    if target_name.is_symlink() || target_name.exists() {
+                        std::fs::remove_file(&target_name)?;
+                    }
+                    fs::symlink(&real_path, &target_name)?;
+                }
+            }
+        }
+    }
 
     let (icon_path, desktop_path) = integrate_package(
         &install_dir,
@@ -379,7 +394,7 @@ async fn install_single_package(
     .await?;
 
     installer
-        .record(&final_checksum, &bin_name, icon_path, desktop_path)
+        .record(&final_checksum, &bin_dir, icon_path, desktop_path)
         .await?;
 
     Ok(())

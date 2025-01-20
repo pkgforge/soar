@@ -1,17 +1,60 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
+use rusqlite::Connection;
 use soar_core::{
     config::get_config,
-    database::packages::{
-        get_installed_packages, get_packages, FilterOp, PaginatedIterator, QueryOptions, SortOrder,
+    database::{
+        models::Package,
+        packages::{
+            get_installed_packages, get_packages, Filter, FilterOp, PaginatedIterator,
+            QueryOptions, SortOrder,
+        },
     },
     SoarResult,
 };
 use tracing::info;
 
 use crate::state::AppState;
+
+fn get_package_install_state(
+    core_db: &Arc<Mutex<Connection>>,
+    filters: &HashMap<String, Filter>,
+    package: &Package,
+) -> SoarResult<String> {
+    let mut filters = filters.clone();
+    filters.insert(
+        "repo_name".to_string(),
+        (FilterOp::Eq, package.repo_name.clone().into()).into(),
+    );
+    filters.insert(
+        "pkg_id".to_string(),
+        (FilterOp::Eq, package.pkg_id.clone().into()).into(),
+    );
+    filters.insert(
+        "pkg_name".to_string(),
+        (FilterOp::Eq, package.pkg_name.clone().into()).into(),
+    );
+    let options = QueryOptions {
+        limit: 1,
+        filters,
+        ..Default::default()
+    };
+
+    let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
+
+    let install_status = match installed_pkgs {
+        _ if installed_pkgs.is_empty() => "-",
+        _ if installed_pkgs.first().unwrap().is_installed => "+",
+        _ => "?",
+    };
+
+    Ok(install_status.to_string())
+}
 
 pub async fn search_packages(
     query: String,
@@ -45,31 +88,7 @@ pub async fn search_packages(
     )?;
 
     for package in packages.items {
-        let mut filters = filters.clone();
-        filters.insert(
-            "repo_name".to_string(),
-            (FilterOp::Eq, package.repo_name.clone().into()).into(),
-        );
-        filters.insert(
-            "pkg_name".to_string(),
-            (FilterOp::Eq, package.pkg_name.clone().into()).into(),
-        );
-        let options = QueryOptions {
-            limit: 1,
-            filters,
-            ..Default::default()
-        };
-
-        let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
-
-        let mut install_status = "-";
-        if !installed_pkgs.is_empty() {
-            if installed_pkgs.first().unwrap().is_installed {
-                install_status = "+";
-            } else {
-                install_status = "?";
-            }
-        }
+        let install_state = get_package_install_state(&core_db, &filters, &package)?;
 
         info!(
             pkg_name = %package.pkg_name,
@@ -78,7 +97,7 @@ pub async fn search_packages(
             version = %package.version,
             repo_name = %package.repo_name,
             "[{}] {}#{}-{}:{} - {} ({})",
-            install_status,
+            install_state,
             Blue.paint(package.pkg_name.clone()),
             Cyan.paint(package.pkg_id.clone()),
             Magenta.paint(package.version.clone()),
@@ -202,33 +221,13 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
     for result in package_iterator {
         let packages = result?;
         for package in packages {
-            let mut filters = filters.clone();
-            filters.insert(
-                "repo_name".to_string(),
-                (FilterOp::Eq, package.repo_name.clone().into()).into(),
-            );
-            let options = QueryOptions {
-                filters,
-                ..Default::default()
-            };
-
-            let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
-
-            let mut install_status = "-";
-            if !installed_pkgs.is_empty() {
-                if installed_pkgs.first().unwrap().is_installed {
-                    install_status = "+";
-                } else {
-                    install_status = "?";
-                }
-            }
-
+            let install_state = get_package_install_state(&core_db, &filters, &package)?;
             info!(
                 pkg_name = %package.pkg_name,
                 version = %package.version,
                 repo_name = %package.repo_name,
                 "[{}] {}-{}:{}",
-                install_status,
+                install_state,
                 Red.paint(package.pkg_name.clone()),
                 package.version,
                 package.repo_name

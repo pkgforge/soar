@@ -44,5 +44,7 @@ CREATE TABLE packages (
   build_id TEXT,
   build_date TEXT,
   build_script TEXT,
-  build_log TEXT
+  build_log TEXT,
+  provides JSONB,
+  UNIQUE (pkg_id, pkg_name)
 );

@@ -51,8 +51,13 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
             }
         }
     } else {
-        let installed_pkgs =
-            get_installed_packages(core_db.clone(), QueryOptions::default())?.items;
+        let mut filters = HashMap::new();
+        filters.insert("pinned".to_string(), (FilterOp::Eq, false.into()).into());
+        let options = QueryOptions {
+            filters: filters.clone(),
+            ..Default::default()
+        };
+        let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
         for pkg in installed_pkgs {
             let mut filters = HashMap::new();
 

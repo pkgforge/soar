@@ -128,6 +128,7 @@ impl PackageInstaller {
         let Package {
             pkg_name, checksum, ..
         } = package;
+        let provides = serde_json::to_string(&package.provides).unwrap();
 
         let installed_with_family = self.installed_with_family;
         let mut stmt = prepare_and_bind!(
@@ -140,6 +141,7 @@ impl PackageInstaller {
                 checksum = $final_checksum,
                 installed_date = datetime(),
                 is_installed = true,
+                provides = $provides,
                 installed_with_family = $installed_with_family
             WHERE
                 pkg_name = $pkg_name

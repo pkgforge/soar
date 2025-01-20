@@ -11,7 +11,7 @@ use crate::{
     SoarResult,
 };
 
-use super::{Filter, FilterOp, FilterValue, PaginatedResponse, QueryOptions};
+use super::{Filter, FilterOp, FilterValue, PackageProvide, PaginatedResponse, QueryOptions};
 
 pub struct PackageQuery {
     db: Arc<Mutex<Connection>>,
@@ -298,11 +298,17 @@ fn map_package(row: &Row) -> rusqlite::Result<Package> {
         Ok(serde_json::from_str(&value).ok())
     };
 
+    let parse_provides = |idx: usize| -> rusqlite::Result<Option<Vec<PackageProvide>>> {
+        let value: String = row.get(idx)?;
+        Ok(serde_json::from_str(&value).ok())
+    };
+
     let homepages = parse_json_vec(18)?;
     let notes = parse_json_vec(19)?;
     let source_urls = parse_json_vec(20)?;
     let tags = parse_json_vec(21)?;
     let categories = parse_json_vec(22)?;
+    let provides = parse_provides(27)?;
 
     Ok(Package {
         id: row.get(0)?,
@@ -332,7 +338,8 @@ fn map_package(row: &Row) -> rusqlite::Result<Package> {
         build_date: row.get(24)?,
         build_script: row.get(25)?,
         build_log: row.get(26)?,
-        repo_name: row.get(27)?,
+        provides,
+        repo_name: row.get(28)?,
     })
 }
 
@@ -404,6 +411,12 @@ pub fn get_installed_packages(
 }
 
 pub fn map_installed_package(row: &Row) -> rusqlite::Result<InstalledPackage> {
+    let parse_provides = |idx: usize| -> rusqlite::Result<Option<Vec<PackageProvide>>> {
+        let value: String = row.get(idx)?;
+        Ok(serde_json::from_str(&value).ok())
+    };
+    let provides = parse_provides(18)?;
+
     Ok(InstalledPackage {
         id: row.get(0)?,
         repo_name: row.get(1)?,
@@ -423,5 +436,6 @@ pub fn map_installed_package(row: &Row) -> rusqlite::Result<InstalledPackage> {
         pinned: row.get(15)?,
         is_installed: row.get(16)?,
         installed_with_family: row.get(17)?,
+        provides,
     })
 }

@@ -1,6 +1,6 @@
 use rusqlite::{params, Result, Transaction};
 
-use super::{models::RemotePackage, statements::DbStatements};
+use super::{models::RemotePackage, packages::PackageProvide, statements::DbStatements};
 
 pub struct PackageRepository<'a> {
     tx: &'a Transaction<'a>,
@@ -43,6 +43,23 @@ impl<'a> PackageRepository<'a> {
         let source_urls = serde_json::to_string(&package.src_urls).unwrap();
         let tags = serde_json::to_string(&package.tags).unwrap();
         let categories = serde_json::to_string(&package.categories).unwrap();
+
+        let provides = package.provides.clone().map(|vec| {
+            vec.iter()
+                .filter_map(|p| {
+                    if p.split_once("==").is_some()
+                        || p.split_once("=>").is_some()
+                        || p.split_once(":").is_some()
+                        || *p == package.pkg_name
+                    {
+                        Some(PackageProvide::from_string(p))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<PackageProvide>>()
+        });
+        let provides = serde_json::to_string(&provides).unwrap();
         self.statements.package_insert.execute(params![
             package.disabled == "true",
             disabled_reason,
@@ -70,6 +87,7 @@ impl<'a> PackageRepository<'a> {
             package.build_date,
             package.build_script,
             package.build_log,
+            provides
         ])?;
 
         Ok(())

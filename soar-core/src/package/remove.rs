@@ -1,11 +1,15 @@
 use std::{
     fs,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 use rusqlite::{params, Connection};
 
-use crate::{database::models::InstalledPackage, SoarResult};
+use crate::{
+    database::{models::InstalledPackage, packages::ProvideStrategy},
+    SoarResult,
+};
 
 pub struct PackageRemover {
     package: InstalledPackage,
@@ -26,7 +30,28 @@ impl PackageRemover {
         )?;
 
         // if the package is installed, it does have bin_path
-        fs::remove_file(&self.package.bin_path.clone().unwrap())?;
+        let bin_path = PathBuf::from(self.package.bin_path.clone().unwrap());
+        let def_bin = bin_path.join(&self.package.pkg_name);
+        if def_bin.exists() && def_bin.is_file() {
+            fs::remove_file(def_bin)?;
+        }
+
+        if let Some(provides) = &self.package.provides {
+            for provide in provides {
+                if let Some(ref target) = provide.target_name {
+                    let is_symlink = match provide.strategy {
+                        ProvideStrategy::KeepTargetOnly | ProvideStrategy::KeepBoth => true,
+                        _ => false,
+                    };
+                    if is_symlink {
+                        let target_name = bin_path.join(&target);
+                        if target_name.exists() {
+                            std::fs::remove_file(&target_name)?;
+                        }
+                    }
+                }
+            }
+        }
 
         if let Some(ref icon_path) = self.package.icon_path {
             let _ = fs::remove_file(icon_path);
