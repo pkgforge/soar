@@ -110,37 +110,74 @@ fn resolve_packages(
         let filters = query.create_filter();
 
         let options = QueryOptions {
-            limit: 1,
+            limit: if query.name.is_none() && query.pkg_id.is_some() {
+                u32::MAX
+            } else {
+                1
+            },
             filters,
             ..Default::default()
         };
 
         let installed_packages = get_installed_packages(core_db.clone(), options.clone())?.items;
-        let existing_install = if installed_packages.is_empty() {
-            None
-        } else {
-            Some(installed_packages.first().unwrap().clone())
-        };
 
-        if let Some(ref existing) = existing_install {
-            if existing.is_installed {
-                warn!(
-                    "{} is already installed - {}",
-                    package,
-                    if force { "reinstalling" } else { "skipping" }
-                );
-                if !force {
-                    continue;
+        if query.name.is_none() && query.pkg_id.is_some() {
+            for pkg in get_packages(db.clone(), options.clone())?.items {
+                let existing_install = installed_packages
+                    .iter()
+                    .find(|ip| ip.pkg_name == pkg.pkg_name)
+                    .cloned();
+                if let Some(ref existing) = existing_install {
+                    if existing.detached {
+                        continue;
+                    }
+                    if existing.is_installed {
+                        warn!(
+                            "{} is already installed - {}",
+                            package,
+                            if force { "reinstalling" } else { "skipping" }
+                        );
+                        if !force {
+                            continue;
+                        }
+                    }
+                }
+
+                install_targets.push(InstallTarget {
+                    package: pkg,
+                    existing_install,
+                    with_pkg_id: true,
+                });
+            }
+        } else {
+            let existing_install = if installed_packages.is_empty() {
+                None
+            } else {
+                Some(installed_packages.first().unwrap().clone())
+            };
+
+            if let Some(ref existing) = existing_install {
+                if existing.is_installed {
+                    warn!(
+                        "{} is already installed - {}",
+                        package,
+                        if force { "reinstalling" } else { "skipping" }
+                    );
+                    if !force {
+                        continue;
+                    }
                 }
             }
-        }
 
-        if let Some(package) = select_package(db.clone(), package, options, yes, &existing_install)?
-        {
-            install_targets.push(InstallTarget {
-                package,
-                existing_install,
-            });
+            if let Some(package) =
+                select_package(db.clone(), package, options, yes, &existing_install)?
+            {
+                install_targets.push(InstallTarget {
+                    package,
+                    existing_install,
+                    with_pkg_id: false,
+                });
+            }
         }
     }
 
@@ -322,7 +359,7 @@ async fn install_single_package(
 
         let install_dir = get_config().get_packages_path().unwrap().join(format!(
             "{}-{}-{}",
-            target.package.pkg, target.package.pkg_id, rand_str
+            target.package.pkg_name, target.package.pkg_id, rand_str
         ));
         let real_bin = install_dir.join(&target.package.pkg_name);
         let def_bin_path = bin_dir.join(&target.package.pkg_name);
@@ -345,7 +382,7 @@ async fn install_single_package(
         &install_dir,
         Some(progress_callback),
         core_db,
-        false,
+        target.with_pkg_id,
     )
     .await?;
 

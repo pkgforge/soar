@@ -18,13 +18,14 @@ pub struct PackageInstaller {
     install_dir: PathBuf,
     progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
     db: Arc<Mutex<Connection>>,
-    installed_with_family: bool,
+    with_pkg_id: bool,
 }
 
 #[derive(Clone)]
 pub struct InstallTarget {
     pub package: Package,
     pub existing_install: Option<InstalledPackage>,
+    pub with_pkg_id: bool,
 }
 
 impl PackageInstaller {
@@ -33,7 +34,7 @@ impl PackageInstaller {
         install_dir: P,
         progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
         db: Arc<Mutex<Connection>>,
-        installed_with_family: bool,
+        with_pkg_id: bool,
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
@@ -56,12 +57,12 @@ impl PackageInstaller {
                 conn,
                 "INSERT INTO packages (
                 repo_name, pkg, pkg_id, pkg_name, version, size, checksum,
-                installed_path, installed_with_family, profile
+                installed_path, with_pkg_id, profile
             )
             VALUES
             (
                 $repo_name, $pkg, $pkg_id, $pkg_name, $version, $size, $checksum,
-                $installed_path, $installed_with_family, $profile
+                $installed_path, $with_pkg_id, $profile
             )"
             );
             stmt.raw_execute()?;
@@ -72,7 +73,7 @@ impl PackageInstaller {
             install_dir,
             progress_callback,
             db: db.clone(),
-            installed_with_family,
+            with_pkg_id,
         })
     }
 
@@ -130,7 +131,7 @@ impl PackageInstaller {
         } = package;
         let provides = serde_json::to_string(&package.provides).unwrap();
 
-        let installed_with_family = self.installed_with_family;
+        let with_pkg_id = self.with_pkg_id;
         let mut stmt = prepare_and_bind!(
             conn,
             "UPDATE packages
@@ -142,7 +143,7 @@ impl PackageInstaller {
                 installed_date = datetime(),
                 is_installed = true,
                 provides = $provides,
-                installed_with_family = $installed_with_family
+                with_pkg_id = $with_pkg_id
             WHERE
                 pkg_name = $pkg_name
                 AND

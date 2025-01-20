@@ -55,7 +55,9 @@ pub struct InstalledPackage {
     pub profile: String,
     pub pinned: bool,
     pub is_installed: bool,
-    pub installed_with_family: bool,
+    pub with_pkg_id: bool,
+    pub detached: bool,
+    pub unlinked: bool,
     pub provides: Option<Vec<PackageProvide>>,
 }
 

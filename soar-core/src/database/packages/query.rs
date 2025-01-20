@@ -415,7 +415,7 @@ pub fn map_installed_package(row: &Row) -> rusqlite::Result<InstalledPackage> {
         let value: String = row.get(idx)?;
         Ok(serde_json::from_str(&value).ok())
     };
-    let provides = parse_provides(18)?;
+    let provides = parse_provides(20)?;
 
     Ok(InstalledPackage {
         id: row.get(0)?,
@@ -435,7 +435,9 @@ pub fn map_installed_package(row: &Row) -> rusqlite::Result<InstalledPackage> {
         profile: row.get(14)?,
         pinned: row.get(15)?,
         is_installed: row.get(16)?,
-        installed_with_family: row.get(17)?,
+        with_pkg_id: row.get(17)?,
+        detached: row.get(18)?,
+        unlinked: row.get(19)?,
         provides,
     })
 }

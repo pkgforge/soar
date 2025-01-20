@@ -27,16 +27,17 @@ pub async fn remove_packages(packages: &[String]) -> SoarResult<()> {
             continue;
         }
 
-        let installed_pkg = installed_pkgs.first().unwrap();
-        if !installed_pkg.is_installed {
-            warn!("Package {} is not installed.", package);
-            continue;
+        for installed_pkg in installed_pkgs {
+            if !installed_pkg.is_installed {
+                warn!("Package {} is not installed.", package);
+                continue;
+            }
+
+            let remover = PackageRemover::new(installed_pkg.clone(), core_db.clone()).await;
+            remover.remove().await?;
+
+            info!("Removed {}", installed_pkg.pkg_name);
         }
-
-        let remover = PackageRemover::new(installed_pkg.clone(), core_db).await;
-        remover.remove().await?;
-
-        info!("Removed {}", installed_pkg.pkg_name);
     }
 
     Ok(())

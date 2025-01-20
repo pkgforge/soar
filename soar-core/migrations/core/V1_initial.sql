@@ -24,6 +24,8 @@ CREATE TABLE packages (
   profile TEXT NOT NULL,
   pinned BOOLEAN NOT NULL DEFAULT false,
   is_installed BOOLEAN NOT NULL DEFAULT false,
-  installed_with_family BOOLEAN NOT NULL DEFAULT false,
+  with_pkg_id BOOLEAN NOT NULL DEFAULT false,
+  detached BOOLEAN NOT NULL DEFAULT false,
+  unlinked BOOLEAN NOT NULL DEFAULT false,
   provides JSONB
 );

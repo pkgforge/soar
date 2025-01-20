@@ -43,9 +43,11 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
                 };
                 let updated = get_packages(repo_db.clone(), options)?.items;
                 if updated.len() > 0 {
+                    let with_pkg_id = pkg.with_pkg_id;
                     update_targets.push(InstallTarget {
                         package: updated.first().unwrap().clone(),
                         existing_install: Some(pkg),
+                        with_pkg_id,
                     })
                 }
             }
@@ -83,9 +85,11 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
             };
             let updated = get_packages(repo_db.clone(), options)?.items;
             if updated.len() > 0 {
+                let with_pkg_id = pkg.with_pkg_id;
                 update_targets.push(InstallTarget {
                     package: updated.first().unwrap().clone(),
                     existing_install: Some(pkg),
+                    with_pkg_id,
                 })
             }
         }

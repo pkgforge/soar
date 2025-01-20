@@ -136,7 +136,7 @@ pub async fn integrate_remote<P: AsRef<Path>>(
     let desktop_url = &package.desktop;
 
     let mut icon_output_path = package_path.join(".DirIcon");
-    let desktop_output_path = package_path.join(format!("{}.desktop", package.pkg));
+    let desktop_output_path = package_path.join(format!("{}.desktop", package.pkg_name));
 
     let downloader = Downloader::default();
 
@@ -153,7 +153,7 @@ pub async fn integrate_remote<P: AsRef<Path>>(
         } else {
             "svg"
         };
-        icon_output_path = package_path.join(format!("{}.{}", package.pkg, ext));
+        icon_output_path = package_path.join(format!("{}.{}", package.pkg_name, ext));
     }
 
     if let Some(desktop_url) = desktop_url {
@@ -245,16 +245,27 @@ pub async fn integrate_package<P: AsRef<Path>>(
     let install_dir = install_dir.as_ref();
     let bin_path = install_dir.join(&package.pkg_name);
 
-    let desktop_path = PathBuf::from(format!("{}/{}.desktop", install_dir.display(), package.pkg));
+    let desktop_path = PathBuf::from(format!(
+        "{}/{}.desktop",
+        install_dir.display(),
+        package.pkg_name
+    ));
     let mut desktop_path = if desktop_path.exists() {
         Some(desktop_path)
     } else {
         None
     };
 
-    let icon_path = PathBuf::from(format!("{}/{}.png", install_dir.display(), package.pkg));
-    let icon_path_fallback =
-        PathBuf::from(format!("{}/{}.svg", install_dir.display(), package.pkg));
+    let icon_path = PathBuf::from(format!(
+        "{}/{}.png",
+        install_dir.display(),
+        package.pkg_name
+    ));
+    let icon_path_fallback = PathBuf::from(format!(
+        "{}/{}.svg",
+        install_dir.display(),
+        package.pkg_name
+    ));
     let mut icon_path = if icon_path.exists() {
         Some(icon_path)
     } else if icon_path_fallback.exists() {
