@@ -9,7 +9,6 @@ use soar_dl::downloader::{DownloadOptions, DownloadState, Downloader};
 use crate::{
     config::get_config,
     database::models::{InstalledPackage, Package},
-    utils::validate_checksum,
     SoarResult,
 };
 
@@ -49,7 +48,7 @@ impl PackageInstaller {
                 ref pkg_name,
                 ref version,
                 ref size,
-                ref checksum,
+                bsum,
                 ..
             } = package;
             let installed_path = install_dir.to_string_lossy();
@@ -61,7 +60,7 @@ impl PackageInstaller {
             )
             VALUES
             (
-                $repo_name, $pkg, $pkg_id, $pkg_name, $version, $size, $checksum,
+                $repo_name, $pkg, $pkg_id, $pkg_name, $version, $size, $bsum,
                 $installed_path, $with_pkg_id, $profile
             )"
             );
@@ -82,8 +81,6 @@ impl PackageInstaller {
         let output_path = self.install_dir.join(&package.pkg_name);
 
         self.download_package(&output_path).await?;
-
-        validate_checksum(&package.checksum, &output_path)?;
 
         Ok(())
     }
@@ -127,7 +124,9 @@ impl PackageInstaller {
         let icon_path = icon_path.map(|path| path.to_string_lossy().into_owned());
         let desktop_path = desktop_path.map(|path| path.to_string_lossy().into_owned());
         let Package {
-            pkg_name, checksum, ..
+            pkg_name,
+            bsum: checksum,
+            ..
         } = package;
         let provides = serde_json::to_string(&package.provides).unwrap();
 

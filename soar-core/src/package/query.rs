@@ -31,10 +31,12 @@ impl PackageQuery {
             );
         }
         if let Some(ref pkg_id) = self.pkg_id {
-            filter.insert(
-                "pkg_id".to_string(),
-                (FilterOp::Eq, pkg_id.clone().into()).into(),
-            );
+            if pkg_id != "all" {
+                filter.insert(
+                    "pkg_id".to_string(),
+                    (FilterOp::Eq, pkg_id.clone().into()).into(),
+                );
+            }
         }
         if let Some(ref version) = self.version {
             filter.insert(
@@ -81,6 +83,14 @@ impl TryFrom<&str> for PackageQuery {
             return Err(SoarError::InvalidPackageQuery(
                 "Either package name or pkg_id is required".into(),
             ));
+        }
+
+        if let Some(ref pkg_id) = pkg_id {
+            if pkg_id == "all" && name.is_none() {
+                return Err(SoarError::InvalidPackageQuery(
+                    "For all, package name is required.".into(),
+                ));
+            }
         }
 
         Ok(PackageQuery {

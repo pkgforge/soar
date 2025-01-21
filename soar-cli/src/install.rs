@@ -33,7 +33,7 @@ use tracing::{error, info, warn};
 use crate::{
     progress::{self, create_progress_bar},
     state::AppState,
-    utils::interactive_ask,
+    utils::select_package_interactively,
 };
 
 #[derive(Clone)]
@@ -46,6 +46,8 @@ pub struct InstallContext {
     pub portable: Option<String>,
     pub portable_home: Option<String>,
     pub portable_config: Option<String>,
+    pub warnings: Vec<String>,
+    pub errors: Vec<String>,
 }
 
 pub fn create_install_context(
@@ -68,6 +70,8 @@ pub fn create_install_context(
         portable,
         portable_home,
         portable_config,
+        warnings: Vec::new(),
+        errors: Vec::new(),
     }
 }
 
@@ -106,8 +110,36 @@ fn resolve_packages(
     let mut install_targets = Vec::new();
 
     for package in packages {
-        let query = PackageQuery::try_from(package.as_str())?;
-        let filters = query.create_filter();
+        let mut query = PackageQuery::try_from(package.as_str())?;
+        let mut filters = query.create_filter();
+
+        if let Some(ref pkg_id) = query.pkg_id {
+            if pkg_id == "all" {
+                let options = QueryOptions {
+                    filters: filters.clone(),
+                    ..Default::default()
+                };
+                let pkg = get_packages(db.clone(), options)?;
+                if pkg.total == 0 {
+                    error!("Package {} not found", query.name.unwrap());
+                    continue;
+                }
+                let pkg = if pkg.total > 1 {
+                    let pkgs = pkg.items.clone();
+                    select_package_interactively(pkgs, &query.name.unwrap())?.unwrap()
+                } else {
+                    pkg.items.first().unwrap().clone()
+                };
+                query.pkg_id = Some(pkg.pkg_id.clone());
+                query.name = None;
+
+                filters.insert(
+                    "pkg_id".to_string(),
+                    (FilterOp::Eq, pkg.pkg_id.into()).into(),
+                );
+                filters.remove("pkg_name");
+            }
+        }
 
         let options = QueryOptions {
             limit: if query.name.is_none() && query.pkg_id.is_some() {
@@ -133,8 +165,9 @@ fn resolve_packages(
                     }
                     if existing.is_installed {
                         warn!(
-                            "{} is already installed - {}",
-                            package,
+                            "{}#{} is already installed - {}",
+                            existing.pkg_name,
+                            existing.pkg_id,
                             if force { "reinstalling" } else { "skipping" }
                         );
                         if !force {
@@ -219,36 +252,6 @@ fn select_package(
     }
 }
 
-fn select_package_interactively(
-    pkgs: Vec<Package>,
-    package_name: &str,
-) -> SoarResult<Option<Package>> {
-    info!("Multiple packages found for {package_name}");
-    for (idx, pkg) in pkgs.iter().enumerate() {
-        info!(
-            "[{}] {}#{}-{}:{}",
-            idx + 1,
-            pkg.pkg_name,
-            pkg.pkg_id,
-            pkg.version,
-            pkg.repo_name
-        );
-    }
-
-    let selection = get_valid_selection(pkgs.len())?;
-    Ok(pkgs.into_iter().nth(selection))
-}
-
-fn get_valid_selection(max: usize) -> SoarResult<usize> {
-    loop {
-        let response = interactive_ask("Select a package: ")?;
-        match response.parse::<usize>() {
-            Ok(n) if n > 0 && n <= max => return Ok(n - 1),
-            _ => error!("Invalid selection, please try again."),
-        }
-    }
-}
-
 pub async fn perform_installation(
     ctx: InstallContext,
     targets: Vec<InstallTarget>,
@@ -275,6 +278,13 @@ pub async fn perform_installation(
     }
 
     ctx.total_progress_bar.finish_and_clear();
+    for warn in ctx.warnings {
+        warn!("{warn}");
+    }
+
+    for error in ctx.errors {
+        error!("{error}");
+    }
     info!(
         "Installed {}/{} packages",
         ctx.installed_count.load(Ordering::Relaxed),
@@ -316,13 +326,13 @@ async fn spawn_installation_task(
 
     let total_pb = ctx.total_progress_bar.clone();
     let installed_count = ctx.installed_count.clone();
-    let ctx = ctx.clone();
+    let mut ctx = ctx.clone();
 
     tokio::spawn(async move {
-        let result = install_single_package(&ctx, target, progress_callback, core_db).await;
+        let result = install_single_package(&mut ctx, target, progress_callback, core_db).await;
 
         if let Err(err) = result {
-            error!("{err}");
+            ctx.errors.push(format!("{err}"));
         } else {
             installed_count.fetch_add(1, Ordering::Relaxed);
             total_pb.inc(1);
@@ -333,7 +343,7 @@ async fn spawn_installation_task(
 }
 
 async fn install_single_package(
-    ctx: &InstallContext,
+    ctx: &mut InstallContext,
     target: InstallTarget,
     progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
     core_db: Arc<Mutex<Connection>>,
@@ -389,6 +399,12 @@ async fn install_single_package(
     installer.install().await?;
 
     let final_checksum = calculate_checksum(&real_bin)?;
+    if final_checksum != target.package.bsum {
+        ctx.warnings.push(format!(
+            "{}#{} - Invalid checksum, installed anyway.",
+            target.package.pkg_name, target.package.pkg_id
+        ));
+    }
 
     if target.package.should_create_original_symlink() {
         if def_bin_path.is_symlink() || def_bin_path.exists() {

@@ -1,4 +1,8 @@
-use std::{env, io::Read};
+use std::{
+    env,
+    fs::{self, File},
+    io::Read,
+};
 
 use clap::Parser;
 use cli::Args;
@@ -12,6 +16,7 @@ use run::run_package;
 use self_actions::process_self_action;
 use soar_core::{
     config::{generate_default_config, get_config, set_current_profile},
+    metadata::fetch_metadata,
     utils::{cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
 };
@@ -103,7 +108,19 @@ async fn handle_cli() -> SoarResult<()> {
         cli::Commands::Remove { packages } => {
             remove_packages(&packages).await?;
         }
-        cli::Commands::Sync => unreachable!(),
+        cli::Commands::Sync => {
+            let config = get_config();
+            for repo in &config.repositories {
+                let db_file = repo.get_path()?.join("metadata.db");
+                if !db_file.exists() {
+                    fs::create_dir_all(repo.get_path()?)?;
+                    File::create(&db_file)?;
+                }
+                info!("Fetching metadata from {}", repo.url);
+                fetch_metadata(repo.clone()).await?;
+            }
+            info!("All repositories up to date");
+        }
         cli::Commands::Update { packages } => {
             update_packages(packages).await?;
         }

@@ -4,7 +4,7 @@ use rusqlite::{Connection, Row, ToSql};
 
 use crate::{
     database::{
-        models::{InstalledPackage, Package},
+        models::{InstalledPackage, Maintainer, Package},
         packages::SortOrder,
     },
     error::SoarError,
@@ -33,6 +33,7 @@ impl PackageQuery {
             .iter()
             .map(|p| p.as_ref() as &dyn rusqlite::ToSql)
             .collect();
+
         let items = stmt
             .query_map(params_ref.as_slice(), map_package)?
             .filter_map(|r| match r {
@@ -84,10 +85,25 @@ impl PackageQuery {
             .iter()
             .map(|shard| {
                 let select_clause = format!(
-                    "SELECT p.*, r.name FROM {0}.packages p JOIN {0}.repository r",
+                    "SELECT
+                        p.*, r.name AS repo_name,
+                        json_group_array(
+                            json_object(
+                                'name', m.name,
+                                'contact', m.contact
+                            )
+                        ) FILTER (WHERE m.id IS NOT NULL) as maintainers
+                     FROM
+                         {0}.packages p
+                         JOIN {0}.repository r
+                         LEFT JOIN {0}.package_maintainers pm ON p.id = pm.package_id
+                         LEFT JOIN {0}.maintainers m ON m.id = pm.maintainer_id
+                    ",
                     shard
                 );
-                self.build_shard_query(&select_clause, &mut params)
+                let mut query_str = self.build_shard_query(&select_clause, &mut params);
+                query_str.push_str(" GROUP BY p.id, repo_name");
+                query_str
             })
             .collect();
 
@@ -154,7 +170,7 @@ impl PackageQuery {
             .iter()
             .map(|shard| {
                 let select_clause = format!(
-                    "SELECT COUNT(*) as cnt FROM {0}.packages p JOIN {0}.repository r",
+                    "SELECT COUNT(*) as cnt, r.name as repo_name FROM {0}.packages p JOIN {0}.repository r",
                     shard
                 );
                 self.build_shard_query(&select_clause, &mut params)
@@ -294,52 +310,79 @@ impl PackageQuery {
 
 fn map_package(row: &Row) -> rusqlite::Result<Package> {
     let parse_json_vec = |idx: usize| -> rusqlite::Result<Option<Vec<String>>> {
-        let value: String = row.get(idx)?;
-        Ok(serde_json::from_str(&value).ok())
+        Ok(row
+            .get::<_, Option<String>>(idx)?
+            .and_then(|json| serde_json::from_str(&json).ok()))
     };
 
     let parse_provides = |idx: usize| -> rusqlite::Result<Option<Vec<PackageProvide>>> {
-        let value: String = row.get(idx)?;
-        Ok(serde_json::from_str(&value).ok())
+        Ok(row
+            .get::<_, Option<String>>(idx)?
+            .and_then(|json| serde_json::from_str(&json).ok()))
     };
 
-    let homepages = parse_json_vec(18)?;
-    let notes = parse_json_vec(19)?;
-    let source_urls = parse_json_vec(20)?;
-    let tags = parse_json_vec(21)?;
-    let categories = parse_json_vec(22)?;
-    let provides = parse_provides(27)?;
+    let maintainers: Vec<Maintainer> = row
+        .get::<_, Option<String>>(44)?
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+
+    let licenses = parse_json_vec(14)?;
+    let ghcr_files = parse_json_vec(19)?;
+    let homepages = parse_json_vec(27)?;
+    let notes = parse_json_vec(28)?;
+    let source_urls = parse_json_vec(29)?;
+    let tags = parse_json_vec(30)?;
+    let categories = parse_json_vec(31)?;
+    let provides = parse_provides(37)?;
+    let snapshots = parse_json_vec(38)?;
+    let repology = parse_json_vec(39)?;
 
     Ok(Package {
         id: row.get(0)?,
         disabled: row.get(1)?,
         disabled_reason: row.get(2)?,
-        pkg: row.get(3)?,
-        pkg_id: row.get(4)?,
-        pkg_name: row.get(5)?,
-        pkg_type: row.get(6)?,
-        pkg_webpage: row.get(7)?,
-        app_id: row.get(8)?,
-        description: row.get(9)?,
-        version: row.get(10)?,
-        download_url: row.get(11)?,
-        size: row.get(12)?,
-        ghcr_pkg: row.get(13)?,
-        ghcr_size: row.get(14)?,
-        checksum: row.get(15)?,
-        icon: row.get(16)?,
-        desktop: row.get(17)?,
+        rank: row.get(3)?,
+        pkg: row.get(4)?,
+        pkg_id: row.get(5)?,
+        pkg_name: row.get(6)?,
+        pkg_family: row.get(7)?,
+        pkg_type: row.get(8)?,
+        pkg_webpage: row.get(9)?,
+        app_id: row.get(10)?,
+        description: row.get(11)?,
+        version: row.get(12)?,
+        version_upstream: row.get(13)?,
+        licenses,
+        download_url: row.get(15)?,
+        size: row.get(16)?,
+        ghcr_pkg: row.get(17)?,
+        ghcr_size: row.get(18)?,
+        ghcr_files,
+        ghcr_blob: row.get(20)?,
+        ghcr_url: row.get(21)?,
+        bsum: row.get(22)?,
+        shasum: row.get(23)?,
+        icon: row.get(24)?,
+        desktop: row.get(25)?,
+        appstream: row.get(26)?,
         homepages,
         notes,
         source_urls,
         tags,
         categories,
-        build_id: row.get(23)?,
-        build_date: row.get(24)?,
-        build_script: row.get(25)?,
-        build_log: row.get(26)?,
+        build_id: row.get(32)?,
+        build_date: row.get(33)?,
+        build_action: row.get(34)?,
+        build_script: row.get(35)?,
+        build_log: row.get(36)?,
         provides,
-        repo_name: row.get(28)?,
+        snapshots,
+        repology,
+        download_count: row.get(40)?,
+        download_count_week: row.get(41)?,
+        download_count_month: row.get(42)?,
+        repo_name: row.get(43)?,
+        maintainers,
     })
 }
 
@@ -412,9 +455,10 @@ pub fn get_installed_packages(
 
 pub fn map_installed_package(row: &Row) -> rusqlite::Result<InstalledPackage> {
     let parse_provides = |idx: usize| -> rusqlite::Result<Option<Vec<PackageProvide>>> {
-        let value: String = row.get(idx)?;
-        Ok(serde_json::from_str(&value).ok())
+        let value: Option<String> = row.get(idx)?;
+        Ok(value.and_then(|s| serde_json::from_str(&s).ok()))
     };
+
     let provides = parse_provides(20)?;
 
     Ok(InstalledPackage {
