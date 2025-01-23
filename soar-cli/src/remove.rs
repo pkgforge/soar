@@ -1,5 +1,5 @@
 use soar_core::{
-    database::packages::{get_installed_packages, get_packages, FilterOp, QueryOptions},
+    database::packages::PackageQueryBuilder,
     package::{query::PackageQuery, remove::PackageRemover},
     SoarResult,
 };
@@ -15,42 +15,34 @@ pub async fn remove_packages(packages: &[String]) -> SoarResult<()> {
         let core_db = state.core_db().clone();
 
         let mut query = PackageQuery::try_from(package.as_str())?;
-        let mut filters = query.create_filter();
+        let builder = PackageQueryBuilder::new(db.clone());
 
         if let Some(ref pkg_id) = query.pkg_id {
             if pkg_id == "all" {
-                let options = QueryOptions {
-                    filters: filters.clone(),
-                    ..Default::default()
-                };
-                let pkg = get_packages(db.clone(), options)?;
-                if pkg.total == 0 {
+                let builder = query.apply_filters(builder.clone());
+                let packages = builder.load()?;
+
+                if packages.total == 0 {
                     error!("Package {} not found", query.name.unwrap());
                     continue;
                 }
-                let pkg = if pkg.total > 1 {
-                    let pkgs = pkg.items.clone();
+                let pkg = if packages.total > 1 {
+                    let pkgs = packages.items.clone();
                     select_package_interactively(pkgs, &query.name.unwrap())?.unwrap()
                 } else {
-                    pkg.items.first().unwrap().clone()
+                    packages.items.first().unwrap().clone()
                 };
                 query.pkg_id = Some(pkg.pkg_id.clone());
                 query.name = None;
-
-                filters.insert(
-                    "pkg_id".to_string(),
-                    (FilterOp::Eq, pkg.pkg_id.into()).into(),
-                );
-                filters.remove("pkg_name");
             }
         }
 
-        let options = QueryOptions {
-            filters,
-            ..Default::default()
-        };
-
-        let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
+        let builder = query.apply_filters(builder);
+        let installed_pkgs = builder
+            .clone()
+            .database(core_db.clone())
+            .load_installed()?
+            .items;
 
         if installed_pkgs.is_empty() {
             warn!("Package {} is not installed.", package);

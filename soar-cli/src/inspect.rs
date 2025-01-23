@@ -3,9 +3,7 @@ use std::fmt::Display;
 use futures::StreamExt;
 use indicatif::HumanBytes;
 use soar_core::{
-    database::packages::{get_packages, QueryOptions},
-    package::query::PackageQuery,
-    SoarResult,
+    database::packages::PackageQueryBuilder, package::query::PackageQuery, SoarResult,
 };
 use tracing::{error, info};
 
@@ -30,15 +28,11 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
     let repo_db = state.repo_db().clone();
 
     let query = PackageQuery::try_from(package)?;
-    let filters = query.create_filter();
+    let builder = PackageQueryBuilder::new(repo_db).limit(1);
+    let builder = query.apply_filters(builder);
 
-    let options = QueryOptions {
-        limit: 1,
-        filters,
-        ..Default::default()
-    };
+    let packages = builder.load()?;
 
-    let packages = get_packages(repo_db, options)?;
     if packages.items.is_empty() {
         error!("Package {} not found", package);
     } else {

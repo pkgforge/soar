@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     os::unix::fs,
     path::PathBuf,
     sync::{
@@ -15,7 +14,7 @@ use soar_core::{
     config::get_config,
     database::{
         models::{InstalledPackage, Package},
-        packages::{get_installed_packages, get_packages, FilterOp, ProvideStrategy, QueryOptions},
+        packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
     error::SoarError,
     package::{
@@ -111,50 +110,42 @@ fn resolve_packages(
 
     for package in packages {
         let mut query = PackageQuery::try_from(package.as_str())?;
-        let mut filters = query.create_filter();
+        let builder = PackageQueryBuilder::new(db.clone());
 
         if let Some(ref pkg_id) = query.pkg_id {
             if pkg_id == "all" {
-                let options = QueryOptions {
-                    filters: filters.clone(),
-                    ..Default::default()
-                };
-                let pkg = get_packages(db.clone(), options)?;
-                if pkg.total == 0 {
+                let builder = query.apply_filters(builder.clone());
+                let packages = builder.load()?;
+
+                if packages.total == 0 {
                     error!("Package {} not found", query.name.unwrap());
                     continue;
                 }
-                let pkg = if pkg.total > 1 {
-                    let pkgs = pkg.items.clone();
+                let pkg = if packages.total > 1 {
+                    let pkgs = packages.items.clone();
                     select_package_interactively(pkgs, &query.name.unwrap())?.unwrap()
                 } else {
-                    pkg.items.first().unwrap().clone()
+                    packages.items.first().unwrap().clone()
                 };
                 query.pkg_id = Some(pkg.pkg_id.clone());
                 query.name = None;
-
-                filters.insert(
-                    "pkg_id".to_string(),
-                    (FilterOp::Eq, pkg.pkg_id.into()).into(),
-                );
-                filters.remove("pkg_name");
             }
         }
 
-        let options = QueryOptions {
-            limit: if query.name.is_none() && query.pkg_id.is_some() {
-                u32::MAX
-            } else {
-                1
-            },
-            filters,
-            ..Default::default()
-        };
+        let mut builder = query.apply_filters(builder);
+        if query.pkg_id.is_none() {
+            builder = builder.limit(1);
+        }
 
-        let installed_packages = get_installed_packages(core_db.clone(), options.clone())?.items;
+        let installed_packages = builder
+            .clone()
+            .database(core_db.clone())
+            .load_installed()?
+            .items;
 
         if query.name.is_none() && query.pkg_id.is_some() {
-            for pkg in get_packages(db.clone(), options.clone())?.items {
+            let packages = builder.load()?;
+            for pkg in packages.items {
                 let existing_install = installed_packages
                     .iter()
                     .find(|ip| ip.pkg_name == pkg.pkg_name)
@@ -202,9 +193,7 @@ fn resolve_packages(
                 }
             }
 
-            if let Some(package) =
-                select_package(db.clone(), package, options, yes, &existing_install)?
-            {
+            if let Some(package) = select_package(package, builder, yes, &existing_install)? {
                 install_targets.push(InstallTarget {
                     package,
                     existing_install,
@@ -218,37 +207,31 @@ fn resolve_packages(
 }
 
 fn select_package(
-    db: Arc<Mutex<Connection>>,
     package_name: &str,
-    options: QueryOptions,
+    builder: PackageQueryBuilder,
     yes: bool,
     existing_install: &Option<InstalledPackage>,
 ) -> SoarResult<Option<Package>> {
-    let options = if let Some(existing) = existing_install {
-        let mut filters = HashMap::new();
-        filters.insert(
-            "r.name".to_string(),
-            (FilterOp::Eq, existing.repo_name.clone().into()).into(),
-        );
-        filters.insert(
-            "pkg_name".to_string(),
-            (FilterOp::Eq, existing.pkg_name.clone().into()).into(),
-        );
-        QueryOptions { filters, ..options }
+    let builder = if let Some(existing) = existing_install {
+        let builder = builder
+            .clear_filters()
+            .where_and("r.name", FilterCondition::Eq(existing.repo_name.clone()))
+            .where_and("pkg_name", FilterCondition::Eq(existing.pkg_name.clone()));
+        builder
     } else {
-        options
+        builder
     };
 
-    let pkgs = get_packages(db, options)?.items;
+    let packages = builder.load()?.items;
 
-    match pkgs.len() {
+    match packages.len() {
         0 => {
             error!("Package {package_name} not found");
             Ok(None)
         }
-        1 => Ok(pkgs.into_iter().next()),
-        _ if yes => Ok(pkgs.into_iter().next()),
-        _ => select_package_interactively(pkgs, package_name),
+        1 => Ok(packages.into_iter().next()),
+        _ if yes => Ok(packages.into_iter().next()),
+        _ => select_package_interactively(packages, package_name),
     }
 }
 

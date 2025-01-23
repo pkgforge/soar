@@ -66,6 +66,86 @@ pub struct Package {
     pub maintainers: Vec<Maintainer>,
 }
 
+impl Package {
+    pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        let parse_json_vec = |idx: &str| -> rusqlite::Result<Option<Vec<String>>> {
+            Ok(row
+                .get::<_, Option<String>>(idx)?
+                .and_then(|json| serde_json::from_str(&json).ok()))
+        };
+
+        let parse_provides = |idx: &str| -> rusqlite::Result<Option<Vec<PackageProvide>>> {
+            Ok(row
+                .get::<_, Option<String>>(idx)?
+                .and_then(|json| serde_json::from_str(&json).ok()))
+        };
+
+        let maintainers: Vec<Maintainer> = row
+            .get::<_, Option<String>>("maintainers")?
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+
+        let licenses = parse_json_vec("licenses")?;
+        let ghcr_files = parse_json_vec("ghcr_files")?;
+        let homepages = parse_json_vec("homepages")?;
+        let notes = parse_json_vec("notes")?;
+        let source_urls = parse_json_vec("source_urls")?;
+        let tags = parse_json_vec("tags")?;
+        let categories = parse_json_vec("categories")?;
+        let provides = parse_provides("provides")?;
+        let snapshots = parse_json_vec("snapshots")?;
+        let repology = parse_json_vec("repology")?;
+
+        Ok(Package {
+            id: row.get("id")?,
+            disabled: row.get("disabled")?,
+            disabled_reason: row.get("disabled_reason")?,
+            rank: row.get("rank")?,
+            pkg: row.get("pkg")?,
+            pkg_id: row.get("pkg_id")?,
+            pkg_name: row.get("pkg_name")?,
+            pkg_family: row.get("pkg_family")?,
+            pkg_type: row.get("pkg_type")?,
+            pkg_webpage: row.get("pkg_webpage")?,
+            app_id: row.get("app_id")?,
+            description: row.get("description")?,
+            version: row.get("version")?,
+            version_upstream: row.get("version_upstream")?,
+            licenses,
+            download_url: row.get("download_url")?,
+            size: row.get("size")?,
+            ghcr_pkg: row.get("ghcr_pkg")?,
+            ghcr_size: row.get("ghcr_size")?,
+            ghcr_files,
+            ghcr_blob: row.get("ghcr_blob")?,
+            ghcr_url: row.get("ghcr_url")?,
+            bsum: row.get("bsum")?,
+            shasum: row.get("shasum")?,
+            icon: row.get("icon")?,
+            desktop: row.get("desktop")?,
+            appstream: row.get("appstream")?,
+            homepages,
+            notes,
+            source_urls,
+            tags,
+            categories,
+            build_id: row.get("build_id")?,
+            build_date: row.get("build_date")?,
+            build_action: row.get("build_action")?,
+            build_script: row.get("build_script")?,
+            build_log: row.get("build_log")?,
+            provides,
+            snapshots,
+            repology,
+            download_count: row.get("download_count")?,
+            download_count_week: row.get("download_count_week")?,
+            download_count_month: row.get("download_count_month")?,
+            repo_name: row.get("repo_name")?,
+            maintainers,
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct InstalledPackage {
     pub id: u64,
@@ -89,6 +169,41 @@ pub struct InstalledPackage {
     pub detached: bool,
     pub unlinked: bool,
     pub provides: Option<Vec<PackageProvide>>,
+}
+
+impl InstalledPackage {
+    pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        let parse_provides = |idx: &str| -> rusqlite::Result<Option<Vec<PackageProvide>>> {
+            let value: Option<String> = row.get(idx)?;
+            Ok(value.and_then(|s| serde_json::from_str(&s).ok()))
+        };
+
+        let provides = parse_provides("provides")?;
+
+        Ok(InstalledPackage {
+            id: row.get("id")?,
+            repo_name: row.get("repo_name")?,
+            pkg: row.get("pkg")?,
+            pkg_id: row.get("pkg_id")?,
+            pkg_name: row.get("pkg_name")?,
+            version: row.get("version")?,
+            size: row.get("size")?,
+            checksum: row.get("checksum")?,
+            installed_path: row.get("installed_path")?,
+            installed_date: row.get("installed_date")?,
+            bin_path: row.get("bin_path")?,
+            icon_path: row.get("icon_path")?,
+            desktop_path: row.get("desktop_path")?,
+            appstream_path: row.get("appstream_path")?,
+            profile: row.get("profile")?,
+            pinned: row.get("pinned")?,
+            is_installed: row.get("is_installed")?,
+            with_pkg_id: row.get("with_pkg_id")?,
+            detached: row.get("detached")?,
+            unlinked: row.get("unlinked")?,
+            provides,
+        })
+    }
 }
 
 fn empty_is_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>

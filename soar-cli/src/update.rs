@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use soar_core::{
     config::get_config,
-    database::packages::{get_installed_packages, get_packages, FilterOp, QueryOptions},
+    database::packages::{FilterCondition, PackageQueryBuilder},
     package::{install::InstallTarget, query::PackageQuery},
     SoarResult,
 };
@@ -23,25 +21,18 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
     if let Some(packages) = packages {
         for package in packages {
             let query = PackageQuery::try_from(package.as_str())?;
-            let filters = query.create_filter();
-            let options = QueryOptions {
-                filters: filters.clone(),
-                limit: 1,
-                ..Default::default()
-            };
-            let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
+            let builder = PackageQueryBuilder::new(core_db.clone());
+            let builder = query.apply_filters(builder.clone()).limit(1);
+            let installed_pkgs = builder.load_installed()?.items;
 
             for pkg in installed_pkgs {
-                let mut filters = filters.clone();
-                filters.insert(
-                    "version".to_string(),
-                    (FilterOp::Gt, pkg.version.clone().into()).into(),
-                );
-                let options = QueryOptions {
-                    filters,
-                    ..Default::default()
-                };
-                let updated = get_packages(repo_db.clone(), options)?.items;
+                let updated = builder
+                    .clone()
+                    .database(repo_db.clone())
+                    .where_and("version", FilterCondition::Gt(pkg.version.clone()))
+                    .load()?
+                    .items;
+
                 if updated.len() > 0 {
                     let with_pkg_id = pkg.with_pkg_id;
                     update_targets.push(InstallTarget {
@@ -53,37 +44,20 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
             }
         }
     } else {
-        let mut filters = HashMap::new();
-        filters.insert("pinned".to_string(), (FilterOp::Eq, false.into()).into());
-        let options = QueryOptions {
-            filters: filters.clone(),
-            ..Default::default()
-        };
-        let installed_pkgs = get_installed_packages(core_db.clone(), options)?.items;
-        for pkg in installed_pkgs {
-            let mut filters = HashMap::new();
+        let installed_packages = PackageQueryBuilder::new(core_db.clone())
+            .where_and("pinned", FilterCondition::Eq(false.to_string()))
+            .load_installed()?
+            .items;
 
-            filters.insert(
-                "repo_name".to_string(),
-                (FilterOp::Eq, pkg.repo_name.clone().into()).into(),
-            );
-            filters.insert(
-                "pkg_name".to_string(),
-                (FilterOp::Eq, pkg.pkg_name.clone().into()).into(),
-            );
-            filters.insert(
-                "pkg_id".to_string(),
-                (FilterOp::Eq, pkg.pkg_id.clone().into()).into(),
-            );
-            filters.insert(
-                "version".to_string(),
-                (FilterOp::Gt, pkg.version.clone().into()).into(),
-            );
-            let options = QueryOptions {
-                filters,
-                ..Default::default()
-            };
-            let updated = get_packages(repo_db.clone(), options)?.items;
+        for pkg in installed_packages {
+            let updated = PackageQueryBuilder::new(repo_db.clone())
+                .where_and("repo_name", FilterCondition::Eq(pkg.repo_name.clone()))
+                .where_and("pkg_name", FilterCondition::Eq(pkg.pkg_name.clone()))
+                .where_and("pkg_id", FilterCondition::Eq(pkg.pkg_id.clone()))
+                .where_and("version", FilterCondition::Gt(pkg.version.clone()))
+                .load()?
+                .items;
+
             if updated.len() > 0 {
                 let with_pkg_id = pkg.with_pkg_id;
                 update_targets.push(InstallTarget {

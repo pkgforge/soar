@@ -1,14 +1,8 @@
 use std::{fs, process::Command, sync::Arc};
 
 use soar_core::{
-    database::{
-        models::Package,
-        packages::{get_packages, QueryOptions},
-    },
-    error::SoarError,
-    package::query::PackageQuery,
-    utils::calculate_checksum,
-    SoarResult,
+    database::packages::PackageQueryBuilder, error::SoarError, package::query::PackageQuery,
+    utils::calculate_checksum, SoarResult,
 };
 use soar_dl::downloader::{DownloadOptions, Downloader};
 
@@ -30,12 +24,10 @@ pub async fn run_package(command: &[String]) -> SoarResult<()> {
     };
 
     let query = PackageQuery::try_from(package_name.as_str())?;
-    let filters = query.create_filter();
-    let options = QueryOptions {
-        filters,
-        ..Default::default()
-    };
-    let packages: Vec<Package> = get_packages(repo_db, options)?.items;
+    let builder = PackageQueryBuilder::new(repo_db.clone());
+
+    let builder = query.apply_filters(builder.clone());
+    let packages = builder.load()?.items;
 
     if packages.is_empty() {
         return Err(SoarError::PackageNotFound(package_name.clone()));

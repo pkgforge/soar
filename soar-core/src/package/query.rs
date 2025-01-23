@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::OnceLock};
+use std::sync::OnceLock;
 
 use regex::Regex;
 
 use crate::{
-    database::packages::{Filter, FilterOp},
+    database::packages::{FilterCondition, PackageQueryBuilder},
     error::SoarError,
 };
 
@@ -16,36 +16,22 @@ pub struct PackageQuery {
 }
 
 impl PackageQuery {
-    pub fn create_filter(&self) -> HashMap<String, Filter> {
-        let mut filter = HashMap::new();
+    pub fn apply_filters(&self, mut builder: PackageQueryBuilder) -> PackageQueryBuilder {
         if let Some(ref repo_name) = self.repo_name {
-            filter.insert(
-                "repo_name".to_string(),
-                (FilterOp::Eq, repo_name.clone().into()).into(),
-            );
+            builder = builder.where_and("repo_name", FilterCondition::Eq(repo_name.clone()));
         }
         if let Some(ref name) = self.name {
-            filter.insert(
-                "pkg_name".to_string(),
-                (FilterOp::Eq, name.clone().into()).into(),
-            );
+            builder = builder.where_and("pkg_name", FilterCondition::Eq(name.clone()));
         }
         if let Some(ref pkg_id) = self.pkg_id {
             if pkg_id != "all" {
-                filter.insert(
-                    "pkg_id".to_string(),
-                    (FilterOp::Eq, pkg_id.clone().into()).into(),
-                );
+                builder = builder.where_and("pkg_id", FilterCondition::Eq(pkg_id.clone()));
             }
         }
         if let Some(ref version) = self.version {
-            filter.insert(
-                "version".to_string(),
-                (FilterOp::Eq, version.clone().into()).into(),
-            );
+            builder = builder.where_and("version", FilterCondition::Eq(version.clone()));
         }
-
-        filter
+        builder
     }
 }
 
