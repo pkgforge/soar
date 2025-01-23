@@ -1,11 +1,10 @@
 use include_dir::Dir;
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 
 use crate::{error::SoarError, SoarResult};
 
 pub struct Migration {
     version: i32,
-    description: String,
     sql: String,
 }
 
@@ -15,26 +14,12 @@ pub struct MigrationManager {
 
 impl MigrationManager {
     pub fn new(conn: Connection) -> rusqlite::Result<Self> {
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
-                version INTEGER PRIMARY KEY,
-                description TEXT NOT NULL,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ",
-            [],
-        )?;
-
         Ok(Self { conn })
     }
 
     fn get_current_version(&self) -> rusqlite::Result<i32> {
-        let version = self.conn.query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
-            [],
-            |row| row.get(0),
-        );
-        version
+        self.conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
     }
 
     fn run_migration(&mut self, migration: &Migration) -> rusqlite::Result<()> {
@@ -42,10 +27,7 @@ impl MigrationManager {
 
         match tx.execute_batch(&migration.sql) {
             Ok(_) => {
-                tx.execute(
-                    "INSERT INTO schema_migrations (version, description) VALUES (?1, ?2)",
-                    params![&migration.version, &migration.description],
-                )?;
+                tx.pragma_update(None, "user_version", migration.version)?;
                 tx.commit()?;
                 Ok(())
             }
@@ -78,14 +60,9 @@ impl MigrationManager {
                     SoarError::Custom(format!("Invalid version number in filename: {}", filename))
                 })?;
 
-                let description = parts[1].replace('_', " ");
                 let sql = entry.contents_utf8().unwrap().to_string();
 
-                migrations.push(Migration {
-                    version,
-                    description,
-                    sql,
-                });
+                migrations.push(Migration { version, sql });
             }
         }
 
