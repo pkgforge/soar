@@ -45,8 +45,8 @@ pub struct InstallContext {
     pub portable: Option<String>,
     pub portable_home: Option<String>,
     pub portable_config: Option<String>,
-    pub warnings: Vec<String>,
-    pub errors: Vec<String>,
+    pub warnings: Arc<Mutex<Vec<String>>>,
+    pub errors: Arc<Mutex<Vec<String>>>,
 }
 
 pub fn create_install_context(
@@ -69,8 +69,8 @@ pub fn create_install_context(
         portable,
         portable_home,
         portable_config,
-        warnings: Vec::new(),
-        errors: Vec::new(),
+        warnings: Arc::new(Mutex::new(Vec::new())),
+        errors: Arc::new(Mutex::new(Vec::new())),
     }
 }
 
@@ -261,11 +261,11 @@ pub async fn perform_installation(
     }
 
     ctx.total_progress_bar.finish_and_clear();
-    for warn in ctx.warnings {
+    for warn in ctx.warnings.lock().unwrap().iter() {
         warn!("{warn}");
     }
 
-    for error in ctx.errors {
+    for error in ctx.errors.lock().unwrap().iter() {
         error!("{error}");
     }
     info!(
@@ -309,13 +309,22 @@ async fn spawn_installation_task(
 
     let total_pb = ctx.total_progress_bar.clone();
     let installed_count = ctx.installed_count.clone();
-    let mut ctx = ctx.clone();
+    let ctx = ctx.clone();
 
     tokio::spawn(async move {
-        let result = install_single_package(&mut ctx, target, progress_callback, core_db).await;
+        let result = install_single_package(&ctx, target, progress_callback, core_db).await;
 
         if let Err(err) = result {
-            ctx.errors.push(format!("{err}"));
+            match err {
+                SoarError::Warning(err) => {
+                    let mut warnings = ctx.warnings.lock().unwrap();
+                    warnings.push(format!("{err}"));
+                }
+                _ => {
+                    let mut errors = ctx.errors.lock().unwrap();
+                    errors.push(format!("{err}"));
+                }
+            }
         } else {
             installed_count.fetch_add(1, Ordering::Relaxed);
             total_pb.inc(1);
@@ -326,7 +335,7 @@ async fn spawn_installation_task(
 }
 
 async fn install_single_package(
-    ctx: &mut InstallContext,
+    ctx: &InstallContext,
     target: InstallTarget,
     progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
     core_db: Arc<Mutex<Connection>>,
@@ -383,10 +392,10 @@ async fn install_single_package(
 
     let final_checksum = calculate_checksum(&real_bin)?;
     if final_checksum != target.package.bsum {
-        ctx.warnings.push(format!(
+        return Err(SoarError::Warning(format!(
             "{}#{} - Invalid checksum, installed anyway.",
             target.package.pkg_name, target.package.pkg_id
-        ));
+        )));
     }
 
     if target.package.should_create_original_symlink() {

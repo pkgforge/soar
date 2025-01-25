@@ -71,6 +71,9 @@ pub enum SoarError {
 
     #[error("Invalid profile: {0}")]
     InvalidProfile(String),
+
+    #[error("{0}")]
+    Warning(String),
 }
 
 impl SoarError {
