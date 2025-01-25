@@ -221,6 +221,10 @@ pub enum Commands {
         /// OCI reference
         #[arg(required = false, long)]
         ghcr: Vec<String>,
+
+        /// Whether to use exact case matching for keywords
+        #[arg(required = false, long)]
+        exact_case: bool,
     },
 
     /// Health check

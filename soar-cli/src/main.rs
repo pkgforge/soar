@@ -170,6 +170,7 @@ async fn handle_cli() -> SoarResult<()> {
             github,
             gitlab,
             ghcr,
+            exact_case,
         } => {
             download(
                 links,
@@ -181,6 +182,7 @@ async fn handle_cli() -> SoarResult<()> {
                 exclude_keywords,
                 output,
                 yes,
+                exact_case,
             )
             .await?;
         }

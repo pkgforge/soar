@@ -94,6 +94,10 @@ pub struct Config {
     #[serde(skip_serializing)]
     pub parallel_limit: Option<u32>,
 
+    /// GHCR Layer concurrency
+    #[serde(skip_serializing)]
+    pub ghcr_concurrency: Option<u64>,
+
     /// Limit the number of search results to display
     #[serde(skip_serializing)]
     pub search_limit: Option<usize>,
@@ -230,16 +234,20 @@ impl Default for Config {
             bin_path: Some(format!("{}/bin", soar_root)),
             db_path: Some(format!("{}/db", soar_root)),
             repositories_path: Some(format!("{}/repos", soar_root)),
-            repositories: vec![Repository {
-                name: "bincache".to_owned(),
-                url: format!("https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/bincache/data/{}.json", get_platform()),
-            }, Repository {
-                name: "pkgcache".to_owned(),
-                url: format!("https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/pkgcache/data/{}.json", get_platform()),
-            }],
+            repositories: vec![
+                Repository {
+                    name: "bincache".to_owned(),
+                    url: format!("https://meta.pkgforge.dev/bincache/{}.json", get_platform()),
+                },
+                Repository {
+                    name: "pkgcache".to_owned(),
+                    url: format!("https://meta.pkgforge.dev/pkgcache/{}.json", get_platform()),
+                },
+            ],
             parallel: Some(true),
             parallel_limit: Some(4),
             search_limit: Some(20),
+            ghcr_concurrency: Some(8),
         }
     }
 }

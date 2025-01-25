@@ -3,9 +3,9 @@ use std::sync::Arc;
 use indicatif::HumanBytes;
 use regex::Regex;
 use serde::Deserialize;
-use soar_core::SoarResult;
+use soar_core::{config::get_config, SoarResult};
 use soar_dl::{
-    downloader::{DownloadOptions, DownloadState, Downloader},
+    downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions},
     github::{Github, GithubAsset, GithubRelease},
     gitlab::{Gitlab, GitlabAsset, GitlabRelease},
     platform::{
@@ -21,12 +21,13 @@ use crate::{
 };
 
 pub struct DownloadContext {
-    regex_patterns: Option<Vec<String>>,
-    match_keywords: Option<Vec<String>>,
-    exclude_keywords: Option<Vec<String>>,
+    regex_patterns: Vec<Regex>,
+    match_keywords: Vec<String>,
+    exclude_keywords: Vec<String>,
     output: Option<String>,
     yes: bool,
     progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
+    exact_case: bool,
 }
 
 pub async fn download(
@@ -39,17 +40,22 @@ pub async fn download(
     exclude_keywords: Option<Vec<String>>,
     output: Option<String>,
     yes: bool,
+    exact_case: bool,
 ) -> SoarResult<()> {
     let progress_bar = create_progress_bar();
     let progress_callback = Arc::new(move |state| progress::handle_progress(state, &progress_bar));
+    let regex_patterns = create_regex_patterns(regex_patterns);
+    let match_keywords = match_keywords.unwrap_or_default();
+    let exclude_keywords = exclude_keywords.unwrap_or_default();
 
     let ctx = DownloadContext {
-        regex_patterns: regex_patterns.clone(),
-        match_keywords: match_keywords.clone(),
-        exclude_keywords: exclude_keywords.clone(),
+        regex_patterns,
+        match_keywords,
+        exclude_keywords,
         output: output.clone(),
         yes,
         progress_callback: progress_callback.clone(),
+        exact_case,
     };
 
     handle_direct_downloads(&ctx, links, output.clone(), progress_callback.clone()).await?;
@@ -63,7 +69,7 @@ pub async fn download(
     }
 
     if !ghcr.is_empty() {
-        handle_oci_downloads(ghcr, output.clone(), progress_callback.clone()).await?;
+        handle_oci_downloads(&ctx, ghcr).await?;
     }
 
     Ok(())
@@ -115,17 +121,9 @@ pub async fn handle_direct_downloads(
                 }
             }
             Ok(PlatformUrl::Oci(url)) => {
-                info!("Downloading using OCI reference: {}", url);
-
-                let options = DownloadOptions {
-                    url: link.clone(),
-                    output_path: output.clone(),
-                    progress_callback: Some(progress_callback.clone()),
+                if let Err(e) = handle_oci_download(ctx, &url).await {
+                    eprintln!("{}", e);
                 };
-                let _ = downloader
-                    .download_oci(options)
-                    .await
-                    .map_err(|e| eprintln!("{}", e));
             }
             Err(err) => eprintln!("Error parsing URL '{}' : {}", link, err),
         };
@@ -134,32 +132,43 @@ pub async fn handle_direct_downloads(
     Ok(())
 }
 
-pub async fn handle_oci_downloads(
-    references: Vec<String>,
-    output: Option<String>,
-    progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
-) -> SoarResult<()> {
+async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResult<()> {
+    info!("Downloading using OCI reference: {}", reference);
+
     let downloader = Downloader::default();
 
-    for reference in &references {
-        let options = DownloadOptions {
-            url: reference.clone(),
-            output_path: output.clone(),
-            progress_callback: Some(progress_callback.clone()),
-        };
+    let options = OciDownloadOptions {
+        url: reference.to_string(),
+        output_path: ctx.output.clone(),
+        progress_callback: Some(ctx.progress_callback.clone()),
+        api: Some("https://ghcr.pkgforge.dev/v2".to_string()),
+        regex_patterns: ctx.regex_patterns.clone(),
+        concurrency: get_config().ghcr_concurrency,
+        match_keywords: ctx.match_keywords.clone(),
+        exclude_keywords: ctx.exclude_keywords.clone(),
+        exact_case: ctx.exact_case,
+    };
 
-        info!("Downloading using OCI reference: {}", reference);
-        let _ = downloader
-            .download_oci(options)
-            .await
-            .map_err(|e| eprintln!("{}", e));
+    let _ = downloader
+        .download_oci(options)
+        .await
+        .map_err(|e| eprintln!("{}", e));
+
+    Ok(())
+}
+
+pub async fn handle_oci_downloads(
+    ctx: &DownloadContext,
+    references: Vec<String>,
+) -> SoarResult<()> {
+    for reference in &references {
+        handle_oci_download(ctx, reference).await?;
     }
     Ok(())
 }
 
-fn create_platform_options(ctx: &DownloadContext, tag: Option<String>) -> PlatformDownloadOptions {
-    let asset_regexes = ctx
-        .regex_patterns
+fn create_regex_patterns(regex_patterns: Option<Vec<String>>) -> Vec<Regex> {
+    regex_patterns
         .clone()
         .map(|patterns| {
             patterns
@@ -169,16 +178,18 @@ fn create_platform_options(ctx: &DownloadContext, tag: Option<String>) -> Platfo
         })
         .transpose()
         .unwrap()
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
 
+fn create_platform_options(ctx: &DownloadContext, tag: Option<String>) -> PlatformDownloadOptions {
     PlatformDownloadOptions {
         output_path: ctx.output.clone(),
         progress_callback: Some(ctx.progress_callback.clone()),
         tag,
-        regex_patterns: asset_regexes,
-        match_keywords: ctx.match_keywords.clone().unwrap_or_default(),
-        exclude_keywords: ctx.exclude_keywords.clone().unwrap_or_default(),
-        exact_case: false,
+        regex_patterns: ctx.regex_patterns.clone(),
+        match_keywords: ctx.match_keywords.clone(),
+        exclude_keywords: ctx.exclude_keywords.clone(),
+        exact_case: ctx.exact_case,
     }
 }
 

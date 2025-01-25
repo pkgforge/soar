@@ -1768,9 +1768,9 @@ dependencies = [
 
 [[package]]
 name = "soar-dl"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d6bb6173fe20e6a3a5329e1d7ae078d5e0ee35645b81cfae451daa5ed9ac841"
+checksum = "191f1217bc08fed8ba515e9165d6677560836a0ec201cc2343e2f6e2930bddc0"
 dependencies = [
  "futures",
  "regex",
@@ -1816,9 +1816,9 @@ dependencies = [
 
 [[package]]
 name = "squishy"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "315fb6ca7507585bc9cff0d16958ffa7b3bf3fadbc32ce4b67695ccbd94e281b"
+checksum = "766da72218a7bbaa90c9e06587f0d347ff2e4b1119c1fffe6d8233a56819da3b"
 dependencies = [
  "backhand",
  "goblin",

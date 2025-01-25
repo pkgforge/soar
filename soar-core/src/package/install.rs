@@ -5,7 +5,7 @@ use std::{
 };
 
 use rusqlite::{prepare_and_bind, Connection};
-use soar_dl::downloader::{DownloadOptions, DownloadState, Downloader};
+use soar_dl::downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions};
 
 use crate::{
     config::get_config,
@@ -101,15 +101,25 @@ impl PackageInstaller {
             (&self.package.download_url, &output_path.to_path_buf())
         };
 
-        let options = DownloadOptions {
-            url: url.to_string(),
-            output_path: Some(output_path.to_string_lossy().to_string()),
-            progress_callback: self.progress_callback.clone(),
-        };
-
         if self.package.ghcr_pkg.is_some() {
+            let options = OciDownloadOptions {
+                url: url.to_string(),
+                output_path: Some(output_path.to_string_lossy().to_string()),
+                progress_callback: self.progress_callback.clone(),
+                api: Some("https://ghcr.pkgforge.dev/v2".to_string()),
+                concurrency: Some(8),
+                regex_patterns: Vec::new(),
+                exclude_keywords: Vec::new(),
+                match_keywords: Vec::new(),
+                exact_case: false,
+            };
             downloader.download_oci(options).await?;
         } else {
+            let options = DownloadOptions {
+                url: url.to_string(),
+                output_path: Some(output_path.to_string_lossy().to_string()),
+                progress_callback: self.progress_callback.clone(),
+            };
             downloader.download(options).await?;
         }
 

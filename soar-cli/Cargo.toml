@@ -16,18 +16,18 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5.23", features = ["cargo", "derive"] }
-futures = "0.3.31"
+futures = { workspace = true }
 indicatif = "0.17.9"
 nu-ansi-term = "0.50.1"
 rand = "0.8.5"
-rayon = "1.10.0"
-regex = { version = "1.11.1", default-features = false, features = ["unicode-case", "unicode-perl", "std"] }
-reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls", "blocking", "http2", "json", "stream"] }
-rusqlite = { version = "0.32.1", features = ["bundled"] }
-serde = "1.0.217"
-serde_json = "1.0.133"
+rayon = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 soar-core = { version = "0.1.0", path = "../soar-core" }
-soar-dl = "0.3.1"
+soar-dl = { workspace = true }
 tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
 toml = "0.8.19"
 tracing = { version = "0.1.41", default-features = false }
