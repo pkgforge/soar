@@ -62,7 +62,10 @@ pub async fn remove_packages(packages: &[String]) -> SoarResult<()> {
             let remover = PackageRemover::new(installed_pkg.clone(), core_db.clone()).await;
             remover.remove().await?;
 
-            info!("Removed {}", installed_pkg.pkg_name);
+            info!(
+                "Removed {}#{}",
+                installed_pkg.pkg_name, installed_pkg.pkg_id
+            );
         }
     }
 

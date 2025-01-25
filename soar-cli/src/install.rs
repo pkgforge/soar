@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use soar_core::{
     config::get_config,
     database::{
-        models::{InstalledPackage, Package},
+        models::{InstalledPackage, Package, PackageExt},
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
     error::SoarError,
@@ -193,7 +193,9 @@ fn resolve_packages(
                 }
             }
 
-            if let Some(package) = select_package(package, builder, yes, &existing_install)? {
+            if let Some(package) =
+                select_package(package, builder.clear_limit(), yes, &existing_install)?
+            {
                 install_targets.push(InstallTarget {
                     package,
                     existing_install,
@@ -216,7 +218,8 @@ fn select_package(
         let builder = builder
             .clear_filters()
             .where_and("r.name", FilterCondition::Eq(existing.repo_name.clone()))
-            .where_and("pkg_name", FilterCondition::Eq(existing.pkg_name.clone()));
+            .where_and("pkg_name", FilterCondition::Eq(existing.pkg_name.clone()))
+            .where_and("pkg_id", FilterCondition::Eq(existing.pkg_id.clone()));
         builder
     } else {
         builder
@@ -399,7 +402,7 @@ async fn install_single_package(
     }
 
     if target.package.should_create_original_symlink() {
-        if def_bin_path.is_symlink() || def_bin_path.exists() {
+        if def_bin_path.is_symlink() || def_bin_path.is_file() {
             if let Err(err) = std::fs::remove_file(&def_bin_path) {
                 return Err(SoarError::Custom(format!(
                     "Failed to remove existing symlink: {}",
@@ -420,7 +423,7 @@ async fn install_single_package(
                 };
                 if is_symlink {
                     let target_name = bin_dir.join(&target);
-                    if target_name.is_symlink() || target_name.exists() {
+                    if target_name.is_symlink() || target_name.is_file() {
                         std::fs::remove_file(&target_name)?;
                     }
                     fs::symlink(&real_path, &target_name)?;

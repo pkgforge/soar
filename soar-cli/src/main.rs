@@ -22,6 +22,7 @@ use soar_core::{
 };
 use tracing::{error, info};
 use update::update_packages;
+use use_package::use_alternate_package;
 
 mod cli;
 mod download;
@@ -35,6 +36,8 @@ mod run;
 mod self_actions;
 mod state;
 mod update;
+#[path = "use.rs"]
+mod use_package;
 mod utils;
 
 async fn handle_cli() -> SoarResult<()> {
@@ -140,7 +143,9 @@ async fn handle_cli() -> SoarResult<()> {
         cli::Commands::Run { yes, command } => {
             run_package(command.as_ref()).await?;
         }
-        cli::Commands::Use { package } => unreachable!(),
+        cli::Commands::Use { package_name } => {
+            use_alternate_package(&package_name).await?;
+        }
         cli::Commands::Download {
             links,
             yes,

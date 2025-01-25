@@ -12,7 +12,7 @@ use soar_dl::downloader::{DownloadOptions, Downloader};
 use crate::{
     config::get_config,
     constants::PNG_MAGIC_BYTES,
-    database::models::Package,
+    database::models::{Package, PackageExt},
     error::SoarError,
     utils::{calc_magic_bytes, create_symlink, home_data_path},
     SoarResult,
@@ -84,10 +84,11 @@ pub async fn symlink_icon<P: AsRef<Path>>(real_path: P, pkg_name: &str) -> SoarR
     Ok(final_path)
 }
 
-pub async fn symlink_desktop<P: AsRef<Path>>(
+pub async fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     real_path: P,
-    package: &Package,
+    package: &T,
 ) -> SoarResult<PathBuf> {
+    let pkg_name = package.pkg_name();
     let real_path = real_path.as_ref();
     let content = fs::read_to_string(real_path).map_err(|_| {
         SoarError::Custom(format!(
@@ -100,13 +101,13 @@ pub async fn symlink_desktop<P: AsRef<Path>>(
         let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
 
         re.replace_all(&content, |caps: &regex::Captures| match &caps[1] {
-            "Icon" => format!("Icon={}", package.pkg_name),
+            "Icon" => format!("Icon={}", pkg_name),
             "Exec" | "TryExec" => {
                 format!(
                     "{}={}/{}",
                     &caps[1],
                     get_config().get_bin_path().unwrap().display(),
-                    package.pkg_name
+                    pkg_name
                 )
             }
             _ => unreachable!(),
@@ -120,7 +121,7 @@ pub async fn symlink_desktop<P: AsRef<Path>>(
     let final_path = PathBuf::from(format!(
         "{}/applications/{}-soar.desktop",
         home_data_path(),
-        package.pkg_name
+        pkg_name
     ));
 
     create_symlink(real_path, &final_path)?;
@@ -170,21 +171,22 @@ pub async fn integrate_remote<P: AsRef<Path>>(
 
     try_join!(
         symlink_icon(&icon_output_path, &package.pkg_name),
-        symlink_desktop(&desktop_output_path, &package)
+        symlink_desktop(&desktop_output_path, package)
     )?;
 
     Ok(())
 }
 
-pub fn setup_portable_dir<P: AsRef<Path>>(
+pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     package_path: P,
-    package: &Package,
+    package: &T,
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
 ) -> SoarResult<()> {
     let package_path = package_path.as_ref();
 
+    let pkg_name = package.pkg_name();
     let pkg_config = package_path.with_extension("config");
     let pkg_home = package_path.with_extension("home");
 
@@ -199,7 +201,7 @@ pub fn setup_portable_dir<P: AsRef<Path>>(
             fs::create_dir(&pkg_home)?;
         } else {
             let portable_home = PathBuf::from(portable_home)
-                .join(&package.pkg_name)
+                .join(pkg_name)
                 .with_extension("home");
             fs::create_dir_all(&portable_home)?;
             create_symlink(&portable_home, &pkg_home)?;
@@ -211,7 +213,7 @@ pub fn setup_portable_dir<P: AsRef<Path>>(
             fs::create_dir(&pkg_config)?;
         } else {
             let portable_config = PathBuf::from(portable_config)
-                .join(&package.pkg_name)
+                .join(&package.pkg_name())
                 .with_extension("config");
             fs::create_dir_all(&portable_config)?;
             create_symlink(&portable_config, &pkg_config)?;
@@ -235,37 +237,26 @@ fn create_default_desktop_entry(bin_name: &str, name: &str, categories: &str) ->
     .to_vec()
 }
 
-pub async fn integrate_package<P: AsRef<Path>>(
+pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
-    package: &Package,
+    package: &T,
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
 ) -> SoarResult<(Option<PathBuf>, Option<PathBuf>)> {
     let install_dir = install_dir.as_ref();
-    let bin_path = install_dir.join(&package.pkg_name);
+    let pkg_name = package.pkg_name();
+    let bin_path = install_dir.join(pkg_name);
 
-    let desktop_path = PathBuf::from(format!(
-        "{}/{}.desktop",
-        install_dir.display(),
-        package.pkg_name
-    ));
+    let desktop_path = PathBuf::from(format!("{}/{}.desktop", install_dir.display(), pkg_name));
     let mut desktop_path = if desktop_path.exists() {
         Some(desktop_path)
     } else {
         None
     };
 
-    let icon_path = PathBuf::from(format!(
-        "{}/{}.png",
-        install_dir.display(),
-        package.pkg_name
-    ));
-    let icon_path_fallback = PathBuf::from(format!(
-        "{}/{}.svg",
-        install_dir.display(),
-        package.pkg_name
-    ));
+    let icon_path = PathBuf::from(format!("{}/{}.png", install_dir.display(), pkg_name));
+    let icon_path_fallback = PathBuf::from(format!("{}/{}.svg", install_dir.display(), pkg_name));
     let mut icon_path = if icon_path.exists() {
         Some(icon_path)
     } else if icon_path_fallback.exists() {
@@ -299,10 +290,10 @@ pub async fn integrate_package<P: AsRef<Path>>(
     }
 
     if let Some(ref path) = icon_path {
-        icon_path = Some(symlink_icon(path, &package.pkg_name).await?);
+        icon_path = Some(symlink_icon(path, pkg_name).await?);
     }
     if let Some(ref path) = desktop_path {
-        desktop_path = Some(symlink_desktop(path, &package).await?);
+        desktop_path = Some(symlink_desktop(path, package).await?);
     }
 
     Ok((icon_path, desktop_path))

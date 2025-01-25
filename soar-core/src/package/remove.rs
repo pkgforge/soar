@@ -32,7 +32,7 @@ impl PackageRemover {
         // if the package is installed, it does have bin_path
         let bin_path = PathBuf::from(self.package.bin_path.clone().unwrap());
         let def_bin = bin_path.join(&self.package.pkg_name);
-        if def_bin.exists() && def_bin.is_file() {
+        if def_bin.is_symlink() && def_bin.is_file() {
             fs::remove_file(def_bin)?;
         }
 

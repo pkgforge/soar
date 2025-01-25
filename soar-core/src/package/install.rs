@@ -1,4 +1,5 @@
 use std::{
+    fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -8,7 +9,10 @@ use soar_dl::downloader::{DownloadOptions, DownloadState, Downloader};
 
 use crate::{
     config::get_config,
-    database::models::{InstalledPackage, Package},
+    database::{
+        models::{InstalledPackage, Package},
+        packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
+    },
     SoarResult,
 };
 
@@ -46,6 +50,7 @@ impl PackageInstaller {
                 ref pkg,
                 ref pkg_id,
                 ref pkg_name,
+                ref pkg_type,
                 ref version,
                 ref size,
                 bsum,
@@ -55,13 +60,13 @@ impl PackageInstaller {
             let mut stmt = prepare_and_bind!(
                 conn,
                 "INSERT INTO packages (
-                repo_name, pkg, pkg_id, pkg_name, version, size, checksum,
-                installed_path, with_pkg_id, profile
+                repo_name, pkg, pkg_id, pkg_name, pkg_type, version, size,
+                checksum, installed_path, with_pkg_id, profile
             )
             VALUES
             (
-                $repo_name, $pkg, $pkg_id, $pkg_name, $version, $size, $bsum,
-                $installed_path, $with_pkg_id, $profile
+                $repo_name, $pkg, $pkg_id, $pkg_name, $pkg_type, $version, $size,
+                $bsum, $installed_path, $with_pkg_id, $profile
             )"
             );
             stmt.raw_execute()?;
@@ -118,38 +123,112 @@ impl PackageInstaller {
         icon_path: Option<PathBuf>,
         desktop_path: Option<PathBuf>,
     ) -> SoarResult<()> {
-        let conn = self.db.lock()?;
+        let mut conn = self.db.lock()?;
         let package = &self.package;
         let bin_path = bin_path.as_ref().to_string_lossy();
         let icon_path = icon_path.map(|path| path.to_string_lossy().into_owned());
         let desktop_path = desktop_path.map(|path| path.to_string_lossy().into_owned());
         let Package {
             pkg_name,
+            pkg_id,
             bsum: checksum,
             ..
         } = package;
         let provides = serde_json::to_string(&package.provides).unwrap();
 
         let with_pkg_id = self.with_pkg_id;
-        let mut stmt = prepare_and_bind!(
-            conn,
-            "UPDATE packages
-            SET
-                bin_path = $bin_path,
-                icon_path = $icon_path,
-                desktop_path = $desktop_path,
-                checksum = $final_checksum,
-                installed_date = datetime(),
-                is_installed = true,
-                provides = $provides,
-                with_pkg_id = $with_pkg_id
-            WHERE
-                pkg_name = $pkg_name
-                AND
-                checksum = $checksum
+        let tx = conn.transaction()?;
+
+        {
+            let mut stmt = prepare_and_bind!(
+                tx,
+                "UPDATE packages
+                SET
+                    bin_path = $bin_path,
+                    icon_path = $icon_path,
+                    desktop_path = $desktop_path,
+                    checksum = $final_checksum,
+                    installed_date = datetime(),
+                    is_installed = true,
+                    provides = $provides,
+                    with_pkg_id = $with_pkg_id
+                WHERE
+                    pkg_name = $pkg_name
+                    AND pkg_id = $pkg_id
+                    AND checksum = $checksum
             "
-        );
-        stmt.raw_execute()?;
+            );
+            stmt.raw_execute()?;
+        }
+
+        {
+            let mut stmt = prepare_and_bind!(
+                tx,
+                "UPDATE packages
+                SET
+                    unlinked = true
+                WHERE
+                    pkg_name = $pkg_name
+                    AND (
+                        pkg_id != $pkg_id
+                        OR
+                        checksum != $final_checksum
+                    )"
+            );
+            stmt.raw_execute()?;
+        }
+
+        tx.commit()?;
+        drop(conn);
+
+        let alternate_packages = PackageQueryBuilder::new(self.db.clone())
+            .where_and("pkg_name", FilterCondition::Eq(pkg_name.to_owned()))
+            .where_and("pkg_id", FilterCondition::Ne(pkg_id.to_owned()))
+            .where_and("checksum", FilterCondition::Ne(final_checksum.to_owned()))
+            .load_installed()?
+            .items;
+
+        for package in alternate_packages {
+            if let Some(alt_path) = package.desktop_path {
+                let alt_pathbuf = PathBuf::from(&alt_path);
+
+                let should_remove = desktop_path
+                    .as_ref()
+                    .map(|dp| dp != &alt_path)
+                    .unwrap_or(true);
+
+                if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
+                    fs::remove_file(&alt_path)?;
+                }
+            }
+
+            if let Some(alt_path) = package.icon_path {
+                let alt_pathbuf = PathBuf::from(&alt_path);
+
+                let should_remove = icon_path.as_ref().map(|dp| dp != &alt_path).unwrap_or(true);
+
+                if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
+                    fs::remove_file(&alt_path)?;
+                }
+            }
+
+            if let Some(provides) = package.provides {
+                for provide in provides {
+                    if let Some(ref target) = provide.target_name {
+                        let is_symlink = match provide.strategy {
+                            ProvideStrategy::KeepTargetOnly | ProvideStrategy::KeepBoth => true,
+                            _ => false,
+                        };
+                        if is_symlink {
+                            let target_name = get_config().get_bin_path()?.join(&target);
+                            if target_name.is_symlink() || target_name.is_file() {
+                                std::fs::remove_file(&target_name)?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(())
     }

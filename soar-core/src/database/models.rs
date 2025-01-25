@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 
 use rusqlite::types::Value;
 use serde::{de, Deserialize, Deserializer, Serialize};
@@ -15,6 +18,13 @@ impl Display for Maintainer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ({})", self.name, self.contact)
     }
+}
+
+pub trait PackageExt {
+    fn pkg_name(&self) -> &str;
+    fn icon(&self) -> Option<PathBuf>;
+    fn desktop(&self) -> Option<PathBuf>;
+    fn should_create_original_symlink(&self) -> bool;
 }
 
 #[derive(Debug, Clone)]
@@ -153,6 +163,7 @@ pub struct InstalledPackage {
     pub pkg: String,
     pub pkg_id: String,
     pub pkg_name: String,
+    pub pkg_type: String,
     pub version: String,
     pub size: u64,
     pub checksum: String,
@@ -186,6 +197,7 @@ impl InstalledPackage {
             pkg: row.get("pkg")?,
             pkg_id: row.get("pkg_id")?,
             pkg_name: row.get("pkg_name")?,
+            pkg_type: row.get("pkg_type")?,
             version: row.get("version")?,
             size: row.get("size")?,
             checksum: row.get("checksum")?,
@@ -363,15 +375,56 @@ pub struct RemotePackage {
     pub snapshots: Option<Vec<String>>,
 }
 
-impl Package {
-    pub fn should_create_original_symlink(&self) -> bool {
-        self.provides
-            .as_ref()
-            .map(|links| {
-                !links
-                    .iter()
-                    .any(|link| matches!(link.strategy, ProvideStrategy::KeepTargetOnly))
-            })
-            .unwrap_or(true)
+fn should_create_original_symlink_impl(provides: Option<&Vec<PackageProvide>>) -> bool {
+    provides
+        .map(|links| {
+            !links
+                .iter()
+                .any(|link| matches!(link.strategy, ProvideStrategy::KeepTargetOnly))
+        })
+        .unwrap_or(true)
+}
+
+impl PackageExt for Package {
+    fn should_create_original_symlink(&self) -> bool {
+        should_create_original_symlink_impl(self.provides.as_ref())
+    }
+
+    fn pkg_name(&self) -> &str {
+        &self.pkg_name
+    }
+
+    fn icon(&self) -> Option<PathBuf> {
+        self.icon.as_ref().map(PathBuf::from)
+    }
+
+    fn desktop(&self) -> Option<PathBuf> {
+        self.desktop.as_ref().map(PathBuf::from)
+    }
+}
+
+impl PackageExt for InstalledPackage {
+    fn should_create_original_symlink(&self) -> bool {
+        should_create_original_symlink_impl(self.provides.as_ref())
+    }
+
+    fn pkg_name(&self) -> &str {
+        &self.pkg_name
+    }
+
+    fn icon(&self) -> Option<PathBuf> {
+        self.icon_path
+            .as_deref()
+            .map(Path::new)
+            .and_then(|icon| icon.file_name())
+            .map(|file_name| Path::new(&self.installed_path).join(file_name))
+    }
+
+    fn desktop(&self) -> Option<PathBuf> {
+        self.desktop_path
+            .as_deref()
+            .map(Path::new)
+            .and_then(|desktop| desktop.file_name())
+            .map(|file_name| Path::new(&self.installed_path).join(file_name))
     }
 }

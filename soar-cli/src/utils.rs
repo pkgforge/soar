@@ -30,7 +30,7 @@ pub fn vec_string<T: Display + Serialize>(value: Option<Vec<T>>) -> Option<Strin
     value.and_then(|json| serde_json::to_string(&json).ok())
 }
 
-fn get_valid_selection(max: usize) -> SoarResult<usize> {
+pub fn get_valid_selection(max: usize) -> SoarResult<usize> {
     loop {
         let response = interactive_ask("Select a package: ")?;
         match response.parse::<usize>() {

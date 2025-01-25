@@ -12,6 +12,7 @@ CREATE TABLE packages (
   pkg TEXT NOT NULL,
   pkg_id TEXT NOT NULL,
   pkg_name TEXT NOT NULL,
+  pkg_type TEXT NOT NULL,
   version TEXT NOT NULL,
   size BIGINT NOT NULL,
   checksum TEXT NOT NULL,

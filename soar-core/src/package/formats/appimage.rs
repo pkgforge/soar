@@ -6,13 +6,13 @@ use std::{
 use squishy::{appimage::AppImage, EntryKind};
 
 use crate::{
-    constants::PNG_MAGIC_BYTES, database::models::Package, utils::calc_magic_bytes, SoarResult,
+    constants::PNG_MAGIC_BYTES, database::models::PackageExt, utils::calc_magic_bytes, SoarResult,
 };
 
-pub async fn integrate_appimage<P: AsRef<Path>>(
+pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
     file_path: P,
-    package: &Package,
+    package: &T,
     icon: &mut Option<PathBuf>,
     desktop: &mut Option<PathBuf>,
 ) -> SoarResult<()> {
@@ -21,13 +21,14 @@ pub async fn integrate_appimage<P: AsRef<Path>>(
     }
 
     let install_dir = install_dir.as_ref();
+    let pkg_name = package.pkg_name();
     let appimage = AppImage::new(None, &file_path, None)?;
     let squashfs = &appimage.squashfs;
 
     if icon.is_none() {
         if let Some(entry) = appimage.find_icon() {
             if let EntryKind::File(basic_file) = entry.kind {
-                let dest = format!("{}/{}.DirIcon", install_dir.display(), package.pkg_name);
+                let dest = format!("{}/{}.DirIcon", install_dir.display(), pkg_name);
                 let _ = squashfs.write_file(basic_file, &dest);
 
                 let magic_bytes = calc_magic_bytes(&dest, 8)?;
@@ -36,7 +37,7 @@ pub async fn integrate_appimage<P: AsRef<Path>>(
                 } else {
                     "svg"
                 };
-                let final_path = format!("{}/{}.{ext}", install_dir.display(), package.pkg_name);
+                let final_path = format!("{}/{}.{ext}", install_dir.display(), pkg_name);
                 fs::rename(&dest, &final_path)?;
 
                 *icon = Some(PathBuf::from(&final_path));
@@ -47,7 +48,7 @@ pub async fn integrate_appimage<P: AsRef<Path>>(
     if desktop.is_none() {
         if let Some(entry) = appimage.find_desktop() {
             if let EntryKind::File(basic_file) = entry.kind {
-                let dest = format!("{}/{}.desktop", install_dir.display(), package.pkg_name);
+                let dest = format!("{}/{}.desktop", install_dir.display(), pkg_name);
                 let _ = squashfs.write_file(basic_file, &dest);
                 *desktop = Some(PathBuf::from(&dest));
             }
@@ -67,11 +68,7 @@ pub async fn integrate_appimage<P: AsRef<Path>>(
             } else {
                 "metainfo"
             };
-            let dest = format!(
-                "{}/{}.{file_name}.xml",
-                install_dir.display(),
-                package.pkg_name
-            );
+            let dest = format!("{}/{}.{file_name}.xml", install_dir.display(), pkg_name);
             let _ = squashfs.write_file(basic_file, &dest);
         }
     }

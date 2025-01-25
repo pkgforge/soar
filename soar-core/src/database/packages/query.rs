@@ -70,6 +70,11 @@ impl PackageQueryBuilder {
         self
     }
 
+    pub fn clear_limit(mut self) -> Self {
+        self.limit = None;
+        self
+    }
+
     pub fn page(mut self, page: u32) -> Self {
         self.page = page;
         self
