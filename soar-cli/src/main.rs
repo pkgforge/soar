@@ -23,6 +23,7 @@ use soar_core::{
 use tracing::{error, info};
 use update::update_packages;
 use use_package::use_alternate_package;
+use utils::COLOR;
 
 mod cli;
 mod download;
@@ -68,6 +69,11 @@ async fn handle_cli() -> SoarResult<()> {
 
     if let Some(ref profile) = args.profile {
         set_current_profile(profile)?;
+    }
+
+    if args.no_color {
+        let mut color = COLOR.write().unwrap();
+        *color = false;
     }
 
     match args.command {

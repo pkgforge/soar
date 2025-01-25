@@ -9,7 +9,7 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
-use crate::cli::Args;
+use crate::{cli::Args, utils::Colored};
 
 #[derive(Default)]
 struct MessageVisitor {
@@ -41,11 +41,11 @@ where
         event.record(&mut visitor);
 
         match *event.metadata().level() {
-            Level::TRACE => write!(writer, "{} ", Magenta.paint("[TRACE]")),
-            Level::DEBUG => write!(writer, "{} ", Blue.paint("[DEBUG]")),
+            Level::TRACE => write!(writer, "{} ", Colored(Magenta, "[TRACE]")),
+            Level::DEBUG => write!(writer, "{} ", Colored(Blue, "[DEBUG]")),
             Level::INFO => write!(writer, ""),
-            Level::WARN => write!(writer, "{} ", Yellow.paint("[WARN]")),
-            Level::ERROR => write!(writer, "{} ", Red.paint("[ERROR]")),
+            Level::WARN => write!(writer, "{} ", Colored(Yellow, "[WARN]")),
+            Level::ERROR => write!(writer, "{} ", Colored(Red, "[ERROR]")),
         }?;
 
         if let Some(message) = visitor.message {

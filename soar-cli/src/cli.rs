@@ -22,6 +22,9 @@ pub struct Args {
     #[arg(short, long)]
     pub json: bool,
 
+    #[arg(long)]
+    pub no_color: bool,
+
     #[arg(short, long)]
     pub profile: Option<String>,
 

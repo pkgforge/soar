@@ -1,9 +1,15 @@
-use std::{fmt::Display, io::Write};
+use std::{
+    fmt::Display,
+    io::Write,
+    sync::{LazyLock, RwLock},
+};
 
 use nu_ansi_term::Color;
 use serde::Serialize;
 use soar_core::{database::models::Package, SoarResult};
 use tracing::{error, info};
+
+pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
 
 pub fn interactive_ask(ques: &str) -> SoarResult<String> {
     print!("{}", ques);
@@ -20,9 +26,14 @@ pub struct Colored<T: Display>(pub Color, pub T);
 
 impl<T: Display> Display for Colored<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.prefix())?;
-        self.1.fmt(f)?;
-        write!(f, "{}", self.0.suffix())
+        let color = COLOR.read().unwrap();
+        if *color {
+            write!(f, "{}", self.0.prefix())?;
+            self.1.fmt(f)?;
+            write!(f, "{}", self.0.suffix())
+        } else {
+            self.1.fmt(f)
+        }
     }
 }
 
