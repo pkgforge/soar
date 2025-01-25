@@ -122,7 +122,7 @@ fn resolve_packages(
                     continue;
                 }
                 let pkg = if packages.total > 1 {
-                    let pkgs = packages.items.clone();
+                    let pkgs = packages.items;
                     select_package_interactively(pkgs, &query.name.unwrap())?.unwrap()
                 } else {
                     packages.items.first().unwrap().clone()

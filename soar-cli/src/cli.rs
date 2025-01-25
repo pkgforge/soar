@@ -118,10 +118,6 @@ pub enum Commands {
     /// Show info about installed packages
     #[clap(name = "info", visible_alias = "list-installed")]
     ListInstalledPackages {
-        /// Packages to get info about
-        #[arg(required = false)]
-        packages: Option<Vec<String>>,
-
         /// Repository to get installed packages for
         #[arg(required = false, long, short)]
         repo_name: Option<String>,
@@ -164,6 +160,14 @@ pub enum Commands {
         /// Command to execute
         #[arg(required = true, trailing_var_arg = true)]
         command: Vec<String>,
+
+        /// Package id
+        #[arg(required = false, short, long)]
+        pkg_id: Option<String>,
+
+        /// Repo name
+        #[arg(required = false, short, long)]
+        repo_name: Option<String>,
     },
 
     /// Use package from different family

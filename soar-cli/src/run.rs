@@ -1,18 +1,25 @@
 use std::{fs, process::Command, sync::Arc};
 
 use soar_core::{
-    database::packages::PackageQueryBuilder, error::SoarError, package::query::PackageQuery,
-    utils::calculate_checksum, SoarResult,
+    database::packages::{FilterCondition, PackageQueryBuilder},
+    error::SoarError,
+    utils::calculate_checksum,
+    SoarResult,
 };
 use soar_dl::downloader::{DownloadOptions, Downloader};
 
 use crate::{
     progress::{self, create_progress_bar},
     state::AppState,
-    utils::interactive_ask,
+    utils::{interactive_ask, select_package_interactively},
 };
 
-pub async fn run_package(command: &[String]) -> SoarResult<()> {
+pub async fn run_package(
+    command: &[String],
+    yes: bool,
+    repo_name: Option<&str>,
+    pkg_id: Option<&str>,
+) -> SoarResult<()> {
     let state = AppState::new().await?;
     let repo_db = state.repo_db().clone();
 
@@ -23,17 +30,27 @@ pub async fn run_package(command: &[String]) -> SoarResult<()> {
         &[]
     };
 
-    let query = PackageQuery::try_from(package_name.as_str())?;
-    let builder = PackageQueryBuilder::new(repo_db.clone());
+    let mut builder = PackageQueryBuilder::new(repo_db.clone())
+        .where_and("pkg_name", FilterCondition::Eq(package_name.clone()));
 
-    let builder = query.apply_filters(builder.clone());
-    let packages = builder.load()?.items;
-
-    if packages.is_empty() {
-        return Err(SoarError::PackageNotFound(package_name.clone()));
+    if let Some(repo_name) = repo_name {
+        builder = builder.where_and("repo_name", FilterCondition::Eq(repo_name.to_string()));
     }
 
-    let package = packages.first().unwrap();
+    if let Some(pkg_id) = pkg_id {
+        builder = builder.where_and("pkg_id", FilterCondition::Eq(pkg_id.to_string()));
+    }
+
+    let packages = builder.load()?.items;
+
+    let package = match packages.len() {
+        0 => return Err(SoarError::PackageNotFound(package_name.clone())),
+        1 => packages.into_iter().next(),
+        _ if yes => packages.into_iter().next(),
+        _ => select_package_interactively(packages, &package_name)?,
+    }
+    .unwrap();
+
     let cache_bin = state.config().get_cache_path()?.join("bin");
     fs::create_dir_all(&cache_bin)?;
 
