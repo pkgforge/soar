@@ -18,7 +18,10 @@ impl<'a> DbStatements<'a> {
                 .prepare("INSERT INTO maintainers (name, contact) VALUES (?1, ?2)")?,
             maintainer_check: tx.prepare("SELECT id FROM maintainers WHERE contact=?1 LIMIT 1")?,
             pkg_maintainer_insert: tx.prepare(
-                "INSERT INTO package_maintainers (maintainer_id, package_id) VALUES (?1, ?2)",
+                "INSERT INTO package_maintainers (
+                        maintainer_id, package_id
+                    ) VALUES (?1, ?2)
+                    ON CONFLICT (maintainer_id, package_id) DO NOTHING",
             )?,
             package_insert: tx.prepare(
                 "INSERT INTO packages (
@@ -38,7 +41,8 @@ impl<'a> DbStatements<'a> {
                     ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25,
                     ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37,
                     ?38, ?39, ?40, ?41, ?42
-                )",
+                )
+                ON CONFLICT (pkg_id, pkg_name) DO NOTHING",
             )?,
         })
     }

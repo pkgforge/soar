@@ -17,6 +17,7 @@ pub enum FilterCondition {
     Between(String, String),
     IsNull,
     IsNotNull,
+    None,
 }
 
 #[derive(Debug, Default, Clone)]

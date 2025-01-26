@@ -83,14 +83,18 @@ Commands:
   health     Health check
   defconfig  Generate default config
   env        View env
+  clean      Garbage collection
+  self       Modify the soar installation
   help       Print this message or the help of the given subcommand(s)
 
 Options:
   -v, --verbose...
   -q, --quiet
   -j, --json
-  -h, --help        Print help
-  -V, --version     Print version
+      --no-color
+  -p, --profile <PROFILE>
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
 ## ⚙️ Configuration

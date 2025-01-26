@@ -151,7 +151,7 @@ fn resolve_packages(
                     .find(|ip| ip.pkg_name == pkg.pkg_name)
                     .cloned();
                 if let Some(ref existing) = existing_install {
-                    if existing.detached {
+                    if !existing.with_pkg_id {
                         continue;
                     }
                     if existing.is_installed {

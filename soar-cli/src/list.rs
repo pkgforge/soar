@@ -56,7 +56,8 @@ pub async fn search_packages(
     let packages = PackageQueryBuilder::new(repo_db.clone())
         .where_or("pkg_name", filter_condition.clone())
         .where_or("pkg_id", filter_condition.clone())
-        .where_or("pkg", filter_condition)
+        .where_or("pkg", filter_condition.clone())
+        .json_where_or("provides", "target_name", filter_condition.clone())
         .limit(limit.or(get_config().search_limit).unwrap_or(20) as u32)
         .load()?;
 

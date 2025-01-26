@@ -55,6 +55,46 @@ impl PackageQueryBuilder {
         self
     }
 
+    pub fn json_where_or(
+        mut self,
+        field: &str,
+        json_field: &str,
+        condition: FilterCondition,
+    ) -> Self {
+        let select_clause = format!("SELECT 1 FROM json_each({})", field);
+        let extract_value = format!("json_extract(value, '$.{}')", json_field);
+        let where_clause = self.build_subquery_where_clause(&extract_value, condition);
+
+        let query = format!("EXISTS ({} WHERE {})", select_clause, where_clause);
+
+        self.filters.push(QueryFilter {
+            field: query,
+            condition: FilterCondition::None,
+            logical_op: Some(LogicalOp::Or),
+        });
+        self
+    }
+
+    pub fn json_where_and(
+        mut self,
+        field: &str,
+        json_field: &str,
+        condition: FilterCondition,
+    ) -> Self {
+        let select_clause = format!("SELECT 1 FROM json_each({})", field);
+        let extract_value = format!("json_extract(value, '$.{}')", json_field);
+        let where_clause = self.build_subquery_where_clause(&extract_value, condition);
+
+        let query = format!("EXISTS ({} WHERE {})", select_clause, where_clause);
+
+        self.filters.push(QueryFilter {
+            field: query,
+            condition: FilterCondition::None,
+            logical_op: Some(LogicalOp::And),
+        });
+        self
+    }
+
     pub fn database(mut self, db: Arc<Mutex<Connection>>) -> Self {
         self.db = db;
         self
@@ -391,6 +431,9 @@ impl PackageQueryBuilder {
                     FilterCondition::IsNotNull => {
                         format!("{} IS NOT NULL", filter.field)
                     }
+                    FilterCondition::None => {
+                        format!("{}", filter.field)
+                    }
                 };
 
                 if idx > 0 {
@@ -405,5 +448,64 @@ impl PackageQueryBuilder {
             })
             .collect();
         format!("WHERE {}", conditions.join(" "))
+    }
+
+    fn build_subquery_where_clause(&self, value: &str, condition: FilterCondition) -> String {
+        match condition {
+            FilterCondition::Eq(val) => {
+                format!("{} = '{}'", value, val)
+            }
+            FilterCondition::Ne(val) => {
+                format!("{} != '{}'", value, val)
+            }
+            FilterCondition::Gt(val) => {
+                format!("{} > '{}'", value, val)
+            }
+            FilterCondition::Gte(val) => {
+                format!("{} >= '{}'", value, val)
+            }
+            FilterCondition::Lt(val) => {
+                format!("{} < '{}'", value, val)
+            }
+            FilterCondition::Lte(val) => {
+                format!("{} <= '{}'", value, val)
+            }
+            FilterCondition::Like(val) => {
+                format!("{} LIKE '%{}%'", value, val)
+            }
+            FilterCondition::ILike(val) => {
+                format!("LOWER({}) LIKE LOWER('%{}%')", value, val)
+            }
+            FilterCondition::In(vals) => {
+                format!(
+                    "{} IN ({})",
+                    value,
+                    vals.iter()
+                        .map(|v| format!("'{}'", v))
+                        .collect::<Vec<String>>()
+                        .join(",")
+                )
+            }
+            FilterCondition::NotIn(vals) => {
+                format!(
+                    "{} NOT IN ({})",
+                    value,
+                    vals.iter()
+                        .map(|v| format!("'{}'", v))
+                        .collect::<Vec<String>>()
+                        .join(",")
+                )
+            }
+            FilterCondition::Between(start, end) => {
+                format!("{} BETWEEN '{}' AND '{}'", value, start, end)
+            }
+            FilterCondition::IsNull => {
+                format!("{} IS NULL", value)
+            }
+            FilterCondition::IsNotNull => {
+                format!("{} IS NOT NULL", value)
+            }
+            FilterCondition::None => String::new(),
+        }
     }
 }
