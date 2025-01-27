@@ -1,6 +1,6 @@
 [package]
 name = "soar-cli"
-version = "0.5.0-pre"
+version = "0.5.0"
 authors = ["Rabindra Dhakal <contact@qaidvoid.dev>"]
 description = "A modern package manager for Linux"
 license = "MIT"

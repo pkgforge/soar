@@ -1,5 +1,53 @@
 
-## [0.4.8](https://github.com/pkgforge/soar/compare/v0.4.7..0.4.8) - 2024-11-25
+## [0.5.0](https://github.com/pkgforge/soar/compare/v0.4.8..v0.5.0) - 2025-01-27
+
+### ⛰️  Features
+
+- *(color)* Add no-color support - ([0d66b76](https://github.com/pkgforge/soar/commit/0d66b7688f6c886a520ec5ebf2cdc121a29fa646))
+- *(ghcr)* Use ghcr as default download source for package - ([671fa9b](https://github.com/pkgforge/soar/commit/671fa9b2b87ccefac6618591c00d6782dfe88469))
+- *(install)* Implement install with pkg_id - ([f8573a1](https://github.com/pkgforge/soar/commit/f8573a1689f74b08bb87caa32a937d7fb1fb5e1d))
+- *(json_where)* Add json array condition support - ([0b84535](https://github.com/pkgforge/soar/commit/0b8453514dbc8039cc402f779e04cdec895f949e))
+- *(package)* Enhance pkg_id handling for install/update - ([63cf070](https://github.com/pkgforge/soar/commit/63cf0703a7af761fcb37a67ef3bc10d52c11ea71))
+- *(profile)* Add profile support - ([45c6c97](https://github.com/pkgforge/soar/commit/45c6c97c50fb93992b3317b08a329817a4350acb))
+- *(provides)* Add provides support - ([937a447](https://github.com/pkgforge/soar/commit/937a447dcde90e1c630c54866a405d7a9613331b))
+- *(soar-db)* Initialize soar-db - ([be59788](https://github.com/pkgforge/soar/commit/be59788433eebf03ee56e19402391701eb3b84a1))
+- *(use-package)* Implement use package and improve installation - ([723bf3b](https://github.com/pkgforge/soar/commit/723bf3b74156702bae2959ebcfcffaec73cbf05b))
+
+### 🐛 Bug Fixes
+
+- *(install)* Fix installation error handling - ([8b540d4](https://github.com/pkgforge/soar/commit/8b540d4faea4039ad6f357f7d638b3528c3e3a58))
+- *(path)* Fix home path - ([b4d3a53](https://github.com/pkgforge/soar/commit/b4d3a53658089edfb26ced1199cf03f968c03d97))
+- *(script)* Fix install script - ([115056f](https://github.com/pkgforge/soar/commit/115056ff251ee0e2c8e2f8cb859e97049a7e046b))
+- *(struct)* Fix database and package struct to use new metadata - ([322af28](https://github.com/pkgforge/soar/commit/322af283e7a269191dc7921a23eefcd42d502276))
+- *(update)* Fix package update functionality - ([c6bf461](https://github.com/pkgforge/soar/commit/c6bf461393365a94897d54f0eeffd7b50825258e))
+
+### 🚜 Refactor
+
+- *(db)* Use builder pattern for queries and map using column names - ([b2827f7](https://github.com/pkgforge/soar/commit/b2827f7ebf2e2eb0dd017ab59db57b2f50b0ad3d))
+- *(db)* Simplify database migration - ([1975da5](https://github.com/pkgforge/soar/commit/1975da5b5f000ad4a7a9341915bce0aabe3e41c5))
+- *(db)* Simplify database query builders - ([82b20b9](https://github.com/pkgforge/soar/commit/82b20b9dff81dba73171ac5df94a6d6b78fcc6d6))
+- *(ghcr)* Use pkgforge ghcr api - ([f745fff](https://github.com/pkgforge/soar/commit/f745fff8f5e6e95067e7ede1ebe80593ef3ca3eb))
+- *(project)* Rewrite and switch to sqlite - ([6c3d5f5](https://github.com/pkgforge/soar/commit/6c3d5f58b3b576505805242a938f378340023b4b))
+- *(run)* Enhance run capability - ([58d49a1](https://github.com/pkgforge/soar/commit/58d49a113ea0fd98ecc3dc99c30b1dc5ab4f3e38))
+
+### 📚 Documentation
+
+- *(readme)* Update README (#13) - ([25a3947](https://github.com/pkgforge/soar/commit/25a3947124a192ec70350d98c34b0d2b2a2b4629))
+
+### ⚡ Performance
+
+- *(query)* Optimize packages list SQL query - ([826f343](https://github.com/pkgforge/soar/commit/826f3430b164e9b2f42ac25981f05af74a1e25ef))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(readme)* Add gif, new doc links, community chat & more (#8) - ([cfe7341](https://github.com/pkgforge/soar/commit/cfe73416e2b4b4a349480d437e65bfd57a0e7724))
+- *(workflow)* Employ @pkgforge-bot to auto respond to Issues & Discussions (#7) - ([8bda58b](https://github.com/pkgforge/soar/commit/8bda58b22758b6760a325357589951aa3ed57931))
+
+## New Contributors ❤️
+
+* @Azathothas made their first contribution in [#13](https://github.com/pkgforge/soar/pull/13)
+
+## [0.4.8](https://github.com/pkgforge/soar/compare/v0.4.7..v0.4.8) - 2024-11-25
 
 ### ⛰️  Features
 
