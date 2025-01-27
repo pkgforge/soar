@@ -1,3 +1,5 @@
+# Soar
+
 <div align="center">
 
 [crates-shield]: https://img.shields.io/crates/v/soar-cli
@@ -27,7 +29,7 @@
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif?version=v0.4.8" alt="soar-list" width="850">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.5.0" alt="soar-list" width="850">
     </a><br>
 </p>
 
@@ -53,7 +55,7 @@ Soar comes as a single-file, statically-linked executable with no dependencies t
 
 ## ⚙️ Configuration
 
-Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration.html) & [all repositories](https://docs.pkgforge.dev/repositories/) preconfigured at `~/.config/soar/config.json`<br>
+Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration.html) & [all repositories](https://docs.pkgforge.dev/repositories/) preconfigured at `~/.config/soar/config.toml`<br>
 For additional configuration guide, click [here](https://soar.qaidvoid.dev/configuration.html)
 
 ## 🎯 Usage
