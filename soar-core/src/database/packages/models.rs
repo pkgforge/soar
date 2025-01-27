@@ -48,13 +48,11 @@ pub struct PaginatedResponse<T> {
     pub has_next: bool,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProvideStrategy {
     KeepTargetOnly,
     KeepBoth,
     Alias,
-    #[default]
-    None,
 }
 
 impl Display for ProvideStrategy {
@@ -63,7 +61,6 @@ impl Display for ProvideStrategy {
             ProvideStrategy::KeepTargetOnly => "=>",
             ProvideStrategy::KeepBoth => "==",
             ProvideStrategy::Alias => ":",
-            _ => "",
         };
         write!(f, "{}", msg)
     }
@@ -72,8 +69,8 @@ impl Display for ProvideStrategy {
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct PackageProvide {
     pub name: String,
-    pub target_name: Option<String>,
-    pub strategy: ProvideStrategy,
+    pub target: Option<String>,
+    pub strategy: Option<ProvideStrategy>,
 }
 
 impl PackageProvide {
@@ -81,26 +78,26 @@ impl PackageProvide {
         if let Some((name, target_name)) = provide.split_once("==") {
             Self {
                 name: name.to_string(),
-                target_name: Some(target_name.to_string()),
-                strategy: ProvideStrategy::KeepBoth,
+                target: Some(target_name.to_string()),
+                strategy: Some(ProvideStrategy::KeepBoth),
             }
         } else if let Some((name, target_name)) = provide.split_once("=>") {
             Self {
                 name: name.to_string(),
-                target_name: Some(target_name.to_string()),
-                strategy: ProvideStrategy::KeepTargetOnly,
+                target: Some(target_name.to_string()),
+                strategy: Some(ProvideStrategy::KeepTargetOnly),
             }
         } else if let Some((name, target_name)) = provide.split_once(":") {
             Self {
                 name: name.to_string(),
-                target_name: Some(target_name.to_string()),
-                strategy: ProvideStrategy::Alias,
+                target: Some(target_name.to_string()),
+                strategy: Some(ProvideStrategy::Alias),
             }
         } else {
             Self {
                 name: provide.to_string(),
-                target_name: None,
-                strategy: ProvideStrategy::None,
+                target: None,
+                strategy: None,
             }
         }
     }

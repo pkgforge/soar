@@ -27,6 +27,10 @@ pub trait PackageExt {
     fn should_create_original_symlink(&self) -> bool;
 }
 
+pub trait FromRow: Sized {
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self>;
+}
+
 #[derive(Debug, Clone)]
 pub struct Package {
     pub id: u64,
@@ -76,8 +80,8 @@ pub struct Package {
     pub maintainers: Vec<Maintainer>,
 }
 
-impl Package {
-    pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+impl FromRow for Package {
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
         let parse_json_vec = |idx: &str| -> rusqlite::Result<Option<Vec<String>>> {
             Ok(row
                 .get::<_, Option<String>>(idx)?
@@ -182,8 +186,8 @@ pub struct InstalledPackage {
     pub provides: Option<Vec<PackageProvide>>,
 }
 
-impl InstalledPackage {
-    pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+impl FromRow for InstalledPackage {
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
         let parse_provides = |idx: &str| -> rusqlite::Result<Option<Vec<PackageProvide>>> {
             let value: Option<String> = row.get(idx)?;
             Ok(value.and_then(|s| serde_json::from_str(&s).ok()))
@@ -380,7 +384,7 @@ fn should_create_original_symlink_impl(provides: Option<&Vec<PackageProvide>>) -
         .map(|links| {
             !links
                 .iter()
-                .any(|link| matches!(link.strategy, ProvideStrategy::KeepTargetOnly))
+                .any(|link| matches!(link.strategy, Some(ProvideStrategy::KeepTargetOnly)))
         })
         .unwrap_or(true)
 }

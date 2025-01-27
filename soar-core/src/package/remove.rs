@@ -38,9 +38,11 @@ impl PackageRemover {
 
         if let Some(provides) = &self.package.provides {
             for provide in provides {
-                if let Some(ref target) = provide.target_name {
+                if let Some(ref target) = provide.target {
                     let is_symlink = match provide.strategy {
-                        ProvideStrategy::KeepTargetOnly | ProvideStrategy::KeepBoth => true,
+                        Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth) => {
+                            true
+                        }
                         _ => false,
                     };
                     if is_symlink {

@@ -3,7 +3,12 @@ use std::fmt::Display;
 use futures::StreamExt;
 use indicatif::HumanBytes;
 use soar_core::{
-    database::packages::PackageQueryBuilder, package::query::PackageQuery, SoarResult,
+    database::{
+        models::Package,
+        packages::{PackageQueryBuilder, PaginatedResponse},
+    },
+    package::query::PackageQuery,
+    SoarResult,
 };
 use tracing::{error, info};
 
@@ -31,7 +36,7 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
     let builder = PackageQueryBuilder::new(repo_db).limit(1);
     let builder = query.apply_filters(builder);
 
-    let packages = builder.load()?;
+    let packages: PaginatedResponse<Package> = builder.load()?;
 
     if packages.items.is_empty() {
         error!("Package {} not found", package);

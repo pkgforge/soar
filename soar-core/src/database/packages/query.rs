@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::{Connection, ToSql};
 
 use crate::{
-    database::models::{InstalledPackage, Package},
+    database::models::{FromRow, InstalledPackage},
     error::SoarError,
     SoarResult,
 };
@@ -18,6 +18,7 @@ pub struct PackageQueryBuilder {
     limit: Option<u32>,
     shards: Option<Vec<String>>,
     page: u32,
+    select_columns: Vec<String>,
 }
 
 impl PackageQueryBuilder {
@@ -29,7 +30,14 @@ impl PackageQueryBuilder {
             limit: None,
             shards: None,
             page: 1,
+            select_columns: Vec::new(),
         }
+    }
+
+    pub fn select(mut self, columns: &[&str]) -> Self {
+        self.select_columns
+            .extend(columns.iter().map(|&col| col.to_string()));
+        self
     }
 
     pub fn clear_filters(mut self) -> Self {
@@ -125,7 +133,7 @@ impl PackageQueryBuilder {
         self
     }
 
-    pub fn load(&self) -> SoarResult<PaginatedResponse<Package>> {
+    pub fn load<T: FromRow>(&self) -> SoarResult<PaginatedResponse<T>> {
         let conn = self.db.lock().map_err(|_| SoarError::PoisonError)?;
         let shards = self.get_shards(&conn)?;
 
@@ -138,7 +146,7 @@ impl PackageQueryBuilder {
             .collect();
 
         let items = stmt
-            .query_map(params_ref.as_slice(), Package::from_row)?
+            .query_map(params_ref.as_slice(), T::from_row)?
             .filter_map(|r| match r {
                 Ok(pkg) => Some(pkg),
                 Err(err) => {
@@ -190,9 +198,59 @@ impl PackageQueryBuilder {
         let shard_queries: Vec<String> = shards
             .iter()
             .map(|shard| {
+                let cols = if self.select_columns.is_empty() {
+                    vec![
+                        "p.id",
+                        "disabled",
+                        "json(disabled_reason) AS disabled_reason",
+                        "rank",
+                        "pkg",
+                        "pkg_id",
+                        "pkg_name",
+                        "pkg_family",
+                        "pkg_type",
+                        "pkg_webpage",
+                        "app_id",
+                        "description",
+                        "version",
+                        "version_upstream",
+                        "json(licenses) AS licenses",
+                        "download_url",
+                        "size",
+                        "ghcr_pkg",
+                        "ghcr_size",
+                        "json(ghcr_files) AS ghcr_files",
+                        "ghcr_blob",
+                        "ghcr_url",
+                        "bsum",
+                        "shasum",
+                        "icon",
+                        "desktop",
+                        "appstream",
+                        "json(homepages) AS homepages",
+                        "json(notes) AS notes",
+                        "json(source_urls) AS source_urls",
+                        "json(tags) AS tags",
+                        "json(categories) AS categories",
+                        "build_id",
+                        "build_date",
+                        "build_action",
+                        "build_script",
+                        "build_log",
+                        "json(provides) AS provides",
+                        "json(snapshots) AS snapshots",
+                        "json(repology) AS repology",
+                        "download_count",
+                        "download_count_week",
+                        "download_count_month",
+                    ]
+                    .join(",")
+                } else {
+                    self.select_columns.join(",")
+                };
                 let select_clause = format!(
                     "SELECT
-                        p.*, r.name AS repo_name,
+                        {cols}, r.name AS repo_name,
                         json_group_array(
                             json_object(
                                 'name', m.name,
@@ -259,7 +317,7 @@ impl PackageQueryBuilder {
             .iter()
             .map(|shard| {
                 let select_clause = format!(
-                    "SELECT COUNT(*) as cnt, r.name as repo_name FROM {0}.packages p JOIN {0}.repository r",
+                    "SELECT COUNT(1) as cnt, r.name as repo_name FROM {0}.packages p JOIN {0}.repository r",
                     shard
                 );
 
@@ -298,7 +356,7 @@ impl PackageQueryBuilder {
 
         let (count_query, count_params) = {
             let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-            let select_clause = "SELECT COUNT(*) FROM packages p";
+            let select_clause = "SELECT COUNT(1) FROM packages p";
             let where_clause = self.build_where_clause(&mut params);
             let query = format!("{} {}", select_clause, where_clause);
             (query, params)

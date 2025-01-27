@@ -224,9 +224,10 @@ impl PackageInstaller {
 
             if let Some(provides) = package.provides {
                 for provide in provides {
-                    if let Some(ref target) = provide.target_name {
+                    if let Some(ref target) = provide.target {
                         let is_symlink = match provide.strategy {
-                            ProvideStrategy::KeepTargetOnly | ProvideStrategy::KeepBoth => true,
+                            Some(ProvideStrategy::KeepTargetOnly)
+                            | Some(ProvideStrategy::KeepBoth) => true,
                             _ => false,
                         };
                         if is_symlink {

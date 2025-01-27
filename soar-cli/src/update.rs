@@ -1,6 +1,9 @@
 use soar_core::{
     config::get_config,
-    database::packages::{FilterCondition, PackageQueryBuilder},
+    database::{
+        models::Package,
+        packages::{FilterCondition, PackageQueryBuilder},
+    },
     package::{install::InstallTarget, query::PackageQuery},
     SoarResult,
 };
@@ -26,7 +29,7 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
             let installed_pkgs = builder.load_installed()?.items;
 
             for pkg in installed_pkgs {
-                let updated = builder
+                let updated: Vec<Package> = builder
                     .clone()
                     .database(repo_db.clone())
                     .where_and("version", FilterCondition::Gt(pkg.version.clone()))
@@ -50,7 +53,7 @@ pub async fn update_packages(packages: Option<Vec<String>>) -> SoarResult<()> {
             .items;
 
         for pkg in installed_packages {
-            let updated = PackageQueryBuilder::new(repo_db.clone())
+            let updated: Vec<Package> = PackageQueryBuilder::new(repo_db.clone())
                 .where_and("repo_name", FilterCondition::Eq(pkg.repo_name.clone()))
                 .where_and("pkg_name", FilterCondition::Eq(pkg.pkg_name.clone()))
                 .where_and("pkg_id", FilterCondition::Eq(pkg.pkg_id.clone()))

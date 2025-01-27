@@ -17,7 +17,7 @@ futures = "0.3.31"
 rayon = "1.10.0"
 regex = { version = "1.11.1", default-features = false, features = ["unicode-case", "unicode-perl", "std"] }
 reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls", "blocking", "http2", "json", "stream"] }
-rusqlite = { version = "0.32.1", features = ["bundled", "rusqlite-macros"] }
+rusqlite = { version = "0.33.0", features = ["bundled", "rusqlite-macros"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = { version = "1.0.135", features = ["indexmap"] }
-soar-dl = "0.3.2"
+soar-dl = "0.3.3"

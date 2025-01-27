@@ -6,8 +6,8 @@ use rusqlite::Connection;
 use soar_core::{
     config::get_config,
     database::{
-        models::Package,
-        packages::{FilterCondition, PackageQueryBuilder, SortDirection},
+        models::{FromRow, Package},
+        packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse, SortDirection},
     },
     SoarResult,
 };
@@ -113,7 +113,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
     let state = AppState::new().await?;
     let repo_db = state.repo_db().clone();
 
-    let packages = PackageQueryBuilder::new(repo_db)
+    let packages: Vec<Package> = PackageQueryBuilder::new(repo_db)
         .where_and("pkg_name", FilterCondition::Eq(query))
         .load()?
         .items;
@@ -346,6 +346,29 @@ pub async fn query_package(query: String) -> SoarResult<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+pub struct PackageList {
+    pkg_id: String,
+    pkg_name: String,
+    repo_name: String,
+    pkg_type: String,
+    version: String,
+    version_upstream: Option<String>,
+}
+
+impl FromRow for PackageList {
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        Ok(PackageList {
+            pkg_id: row.get("pkg_id")?,
+            pkg_name: row.get("pkg_name")?,
+            repo_name: row.get("repo_name")?,
+            pkg_type: row.get("pkg_type")?,
+            version: row.get("version")?,
+            version_upstream: row.get("version_upstream")?,
+        })
+    }
+}
+
 pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
     let state = AppState::new().await?;
     let repo_db = state.repo_db().clone();
@@ -359,10 +382,30 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
         builder = builder.where_and("repo_name", FilterCondition::Eq(repo_name));
     }
 
+    builder = builder.select(&[
+        "pkg_id",
+        "pkg_name",
+        "pkg_type",
+        "version",
+        "version_upstream",
+    ]);
+
     loop {
-        let packages = builder.load()?;
+        let packages: PaginatedResponse<PackageList> = builder.load()?;
         for package in &packages.items {
-            let install_state = get_package_install_state(&core_db, &package)?;
+            let installed_pkgs = PackageQueryBuilder::new(core_db.clone())
+                .where_and("repo_name", FilterCondition::Eq(package.repo_name.clone()))
+                .where_and("pkg_id", FilterCondition::Eq(package.pkg_id.clone()))
+                .where_and("pkg_name", FilterCondition::Eq(package.pkg_name.clone()))
+                .limit(1)
+                .load_installed()?
+                .items;
+
+            let install_state = match installed_pkgs {
+                _ if installed_pkgs.is_empty() => "-",
+                _ if installed_pkgs.first().unwrap().is_installed => "+",
+                _ => "?",
+            };
 
             info!(
                 pkg_name = package.pkg_name,

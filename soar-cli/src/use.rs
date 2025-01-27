@@ -111,10 +111,10 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
 
     if let Some(provides) = &selected_package.provides {
         for provide in provides {
-            if let Some(ref target) = provide.target_name {
+            if let Some(ref target) = provide.target {
                 let real_path = install_dir.join(provide.name.clone());
                 let is_symlink = match provide.strategy {
-                    ProvideStrategy::KeepTargetOnly | ProvideStrategy::KeepBoth => true,
+                    Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth) => true,
                     _ => false,
                 };
                 if is_symlink {

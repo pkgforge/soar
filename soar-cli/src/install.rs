@@ -14,7 +14,7 @@ use soar_core::{
     config::get_config,
     database::{
         models::{InstalledPackage, Package, PackageExt},
-        packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
+        packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse, ProvideStrategy},
     },
     error::SoarError,
     package::{
@@ -144,7 +144,7 @@ fn resolve_packages(
             .items;
 
         if query.name.is_none() && query.pkg_id.is_some() {
-            let packages = builder.load()?;
+            let packages: PaginatedResponse<Package> = builder.load()?;
             for pkg in packages.items {
                 let existing_install = installed_packages
                     .iter()
@@ -415,10 +415,10 @@ async fn install_single_package(
 
     if let Some(provides) = &target.package.provides {
         for provide in provides {
-            if let Some(ref target) = provide.target_name {
+            if let Some(ref target) = provide.target {
                 let real_path = install_dir.join(provide.name.clone());
                 let is_symlink = match provide.strategy {
-                    ProvideStrategy::KeepTargetOnly | ProvideStrategy::KeepBoth => true,
+                    Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth) => true,
                     _ => false,
                 };
                 if is_symlink {

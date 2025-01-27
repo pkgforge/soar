@@ -89,7 +89,7 @@ impl<'a> PackageRepository<'a> {
                 .collect::<Vec<PackageProvide>>()
         });
         let provides = serde_json::to_string(&provides).unwrap();
-        self.statements.package_insert.execute(params![
+        let inserted = self.statements.package_insert.execute(params![
             package.disabled,
             disabled_reason,
             package.rank,
@@ -133,6 +133,9 @@ impl<'a> PackageRepository<'a> {
             package.download_count_week,
             package.download_count_month
         ])?;
+        if inserted == 0 {
+            return Ok(());
+        }
         let package_id = self.tx.last_insert_rowid();
         for maintainer in &package.maintainers {
             let typed = self.extract_name_and_contact(&maintainer);
