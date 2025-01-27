@@ -50,11 +50,6 @@ pub async fn remove_packages(packages: &[String]) -> SoarResult<()> {
         }
 
         for installed_pkg in installed_pkgs {
-            if !installed_pkg.is_installed {
-                warn!("Package {} is not installed.", package);
-                continue;
-            }
-
             if query.name.is_none() && !installed_pkg.with_pkg_id {
                 continue;
             }

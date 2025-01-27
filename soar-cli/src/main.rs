@@ -130,8 +130,8 @@ async fn handle_cli() -> SoarResult<()> {
             }
             info!("All repositories up to date");
         }
-        cli::Commands::Update { packages } => {
-            update_packages(packages).await?;
+        cli::Commands::Update { packages, keep } => {
+            update_packages(packages, keep).await?;
         }
         cli::Commands::ListInstalledPackages { repo_name } => {
             list_installed_packages(repo_name).await?;

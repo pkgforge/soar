@@ -61,12 +61,12 @@ impl PackageInstaller {
                 conn,
                 "INSERT INTO packages (
                 repo_name, pkg, pkg_id, pkg_name, pkg_type, version, size,
-                checksum, installed_path, with_pkg_id, profile
+                checksum, installed_path, installed_date, with_pkg_id, profile
             )
             VALUES
             (
                 $repo_name, $pkg, $pkg_id, $pkg_name, $pkg_type, $version, $size,
-                $bsum, $installed_path, $with_pkg_id, $profile
+                $bsum, $installed_path, datetime(), $with_pkg_id, $profile
             )"
             );
             stmt.raw_execute()?;
@@ -128,10 +128,10 @@ impl PackageInstaller {
 
     pub async fn record<P: AsRef<Path>>(
         &self,
-        final_checksum: &str,
         bin_path: P,
         icon_path: Option<PathBuf>,
         desktop_path: Option<PathBuf>,
+        unlinked: bool,
     ) -> SoarResult<()> {
         let mut conn = self.db.lock()?;
         let package = &self.package;
@@ -139,6 +139,7 @@ impl PackageInstaller {
         let icon_path = icon_path.map(|path| path.to_string_lossy().into_owned());
         let desktop_path = desktop_path.map(|path| path.to_string_lossy().into_owned());
         let Package {
+            repo_name,
             pkg_name,
             pkg_id,
             bsum: checksum,
@@ -157,13 +158,13 @@ impl PackageInstaller {
                     bin_path = $bin_path,
                     icon_path = $icon_path,
                     desktop_path = $desktop_path,
-                    checksum = $final_checksum,
                     installed_date = datetime(),
                     is_installed = true,
                     provides = $provides,
                     with_pkg_id = $with_pkg_id
                 WHERE
-                    pkg_name = $pkg_name
+                    repo_name = $repo_name
+                    AND pkg_name = $pkg_name
                     AND pkg_id = $pkg_id
                     AND checksum = $checksum
             "
@@ -171,7 +172,7 @@ impl PackageInstaller {
             stmt.raw_execute()?;
         }
 
-        {
+        if !unlinked {
             let mut stmt = prepare_and_bind!(
                 tx,
                 "UPDATE packages
@@ -182,7 +183,7 @@ impl PackageInstaller {
                     AND (
                         pkg_id != $pkg_id
                         OR
-                        checksum != $final_checksum
+                        checksum != $checksum
                     )"
             );
             stmt.raw_execute()?;
@@ -191,49 +192,52 @@ impl PackageInstaller {
         tx.commit()?;
         drop(conn);
 
-        let alternate_packages = PackageQueryBuilder::new(self.db.clone())
-            .where_and("pkg_name", FilterCondition::Eq(pkg_name.to_owned()))
-            .where_and("pkg_id", FilterCondition::Ne(pkg_id.to_owned()))
-            .where_and("checksum", FilterCondition::Ne(final_checksum.to_owned()))
-            .load_installed()?
-            .items;
+        if !unlinked {
+            let alternate_packages = PackageQueryBuilder::new(self.db.clone())
+                .where_and("pkg_name", FilterCondition::Eq(pkg_name.to_owned()))
+                .where_and("pkg_id", FilterCondition::Ne(pkg_id.to_owned()))
+                .where_and("checksum", FilterCondition::Ne(checksum.to_owned()))
+                .load_installed()?
+                .items;
 
-        for package in alternate_packages {
-            if let Some(alt_path) = package.desktop_path {
-                let alt_pathbuf = PathBuf::from(&alt_path);
+            for package in alternate_packages {
+                if let Some(alt_path) = package.desktop_path {
+                    let alt_pathbuf = PathBuf::from(&alt_path);
 
-                let should_remove = desktop_path
-                    .as_ref()
-                    .map(|dp| dp != &alt_path)
-                    .unwrap_or(true);
+                    let should_remove = desktop_path
+                        .as_ref()
+                        .map(|dp| dp != &alt_path)
+                        .unwrap_or(true);
 
-                if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
-                    fs::remove_file(&alt_path)?;
+                    if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
+                        fs::remove_file(&alt_path)?;
+                    }
                 }
-            }
 
-            if let Some(alt_path) = package.icon_path {
-                let alt_pathbuf = PathBuf::from(&alt_path);
+                if let Some(alt_path) = package.icon_path {
+                    let alt_pathbuf = PathBuf::from(&alt_path);
 
-                let should_remove = icon_path.as_ref().map(|dp| dp != &alt_path).unwrap_or(true);
+                    let should_remove =
+                        icon_path.as_ref().map(|dp| dp != &alt_path).unwrap_or(true);
 
-                if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
-                    fs::remove_file(&alt_path)?;
+                    if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
+                        fs::remove_file(&alt_path)?;
+                    }
                 }
-            }
 
-            if let Some(provides) = package.provides {
-                for provide in provides {
-                    if let Some(ref target) = provide.target {
-                        let is_symlink = match provide.strategy {
-                            Some(ProvideStrategy::KeepTargetOnly)
-                            | Some(ProvideStrategy::KeepBoth) => true,
-                            _ => false,
-                        };
-                        if is_symlink {
-                            let target_name = get_config().get_bin_path()?.join(&target);
-                            if target_name.is_symlink() || target_name.is_file() {
-                                std::fs::remove_file(&target_name)?;
+                if let Some(provides) = package.provides {
+                    for provide in provides {
+                        if let Some(ref target) = provide.target {
+                            let is_symlink = match provide.strategy {
+                                Some(ProvideStrategy::KeepTargetOnly)
+                                | Some(ProvideStrategy::KeepBoth) => true,
+                                _ => false,
+                            };
+                            if is_symlink {
+                                let target_name = get_config().get_bin_path()?.join(&target);
+                                if target_name.is_symlink() || target_name.is_file() {
+                                    std::fs::remove_file(&target_name)?;
+                                }
                             }
                         }
                     }

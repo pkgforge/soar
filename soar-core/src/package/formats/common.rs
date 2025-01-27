@@ -213,7 +213,7 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
             fs::create_dir(&pkg_config)?;
         } else {
             let portable_config = PathBuf::from(portable_config)
-                .join(&package.pkg_name())
+                .join(pkg_name)
                 .with_extension("config");
             fs::create_dir_all(&portable_config)?;
             create_symlink(&portable_config, &pkg_config)?;

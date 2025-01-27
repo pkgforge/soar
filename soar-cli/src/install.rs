@@ -244,7 +244,7 @@ pub async fn perform_installation(
     core_db: Arc<Mutex<Connection>>,
 ) -> SoarResult<()> {
     let mut handles = Vec::new();
-    let fixed_width = 30;
+    let fixed_width = 40;
 
     if targets.is_empty() {
         info!("No packages to install");
@@ -315,7 +315,7 @@ async fn spawn_installation_task(
     let ctx = ctx.clone();
 
     tokio::spawn(async move {
-        let result = install_single_package(&ctx, target, progress_callback, core_db).await;
+        let result = install_single_package(&ctx, &target, progress_callback, core_db).await;
 
         if let Err(err) = result {
             match err {
@@ -337,40 +337,40 @@ async fn spawn_installation_task(
     })
 }
 
-async fn install_single_package(
+pub async fn install_single_package(
     ctx: &InstallContext,
-    target: InstallTarget,
+    target: &InstallTarget,
     progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
     core_db: Arc<Mutex<Connection>>,
 ) -> SoarResult<()> {
     let bin_dir = get_config().get_bin_path()?;
-    let (install_dir, real_bin, def_bin_path) = if let Some(ref existing) = target.existing_install
-    {
-        let install_dir = PathBuf::from(&existing.installed_path);
-        let real_bin = install_dir.join(&target.package.pkg_name);
-        let def_bin_path = existing
-            .bin_path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| bin_dir.join(&target.package.pkg_name));
+    let (install_dir, real_bin, def_bin_path, unlinked) =
+        if let Some(ref existing) = target.existing_install {
+            let install_dir = PathBuf::from(&existing.installed_path);
+            let real_bin = install_dir.join(&target.package.pkg_name);
+            let def_bin_path = existing
+                .bin_path
+                .as_ref()
+                .map(|p| PathBuf::from(p).join(&target.package.pkg_name))
+                .unwrap_or_else(|| bin_dir.join(&target.package.pkg_name));
 
-        (install_dir, real_bin, def_bin_path)
-    } else {
-        let rand_str: String = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(12)
-            .map(char::from)
-            .collect();
+            (install_dir, real_bin, def_bin_path, existing.unlinked)
+        } else {
+            let rand_str: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(12)
+                .map(char::from)
+                .collect();
 
-        let install_dir = get_config().get_packages_path().unwrap().join(format!(
-            "{}-{}-{}",
-            target.package.pkg_name, target.package.pkg_id, rand_str
-        ));
-        let real_bin = install_dir.join(&target.package.pkg_name);
-        let def_bin_path = bin_dir.join(&target.package.pkg_name);
+            let install_dir = get_config().get_packages_path().unwrap().join(format!(
+                "{}-{}-{}",
+                target.package.pkg_name, target.package.pkg_id, rand_str
+            ));
+            let real_bin = install_dir.join(&target.package.pkg_name);
+            let def_bin_path = bin_dir.join(&target.package.pkg_name);
 
-        (install_dir, real_bin, def_bin_path)
-    };
+            (install_dir, real_bin, def_bin_path, false)
+        };
 
     if install_dir.exists() {
         if let Err(err) = std::fs::remove_dir_all(&install_dir) {
@@ -432,17 +432,21 @@ async fn install_single_package(
         }
     }
 
-    let (icon_path, desktop_path) = integrate_package(
-        &install_dir,
-        &target.package,
-        ctx.portable.clone(),
-        ctx.portable_home.clone(),
-        ctx.portable_config.clone(),
-    )
-    .await?;
+    let (icon_path, desktop_path) = if unlinked {
+        (None, None)
+    } else {
+        integrate_package(
+            &install_dir,
+            &target.package,
+            ctx.portable.clone(),
+            ctx.portable_home.clone(),
+            ctx.portable_config.clone(),
+        )
+        .await?
+    };
 
     installer
-        .record(&final_checksum, &bin_dir, icon_path, desktop_path)
+        .record(&bin_dir, icon_path, desktop_path, unlinked)
         .await?;
 
     Ok(())

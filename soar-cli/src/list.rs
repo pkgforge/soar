@@ -454,20 +454,25 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
     let (installed_count, broken_count, installed_size, broken_size) = packages.iter().fold(
         (0, 0, 0, 0),
         |(installed_count, broken_count, installed_size, broken_size), package| {
+            info!(
+                pkg_name = package.pkg_name,
+                version = package.version,
+                repo_name = package.repo_name,
+                installed_date = package.installed_date.clone(),
+                size = %package.size,
+                "{}-{}:{} ({}) ({}){}",
+                Colored(Red, &package.pkg_name),
+                Colored(Magenta, &package.version),
+                Colored(Cyan, &package.repo_name),
+                Colored(Blue, &package.installed_date.clone()),
+                HumanBytes(package.size),
+                if package.is_installed {
+                    "".to_string()
+                } else {
+                    Colored(Red, " [Broken]").to_string()
+                }
+            );
             if package.is_installed {
-                info!(
-                    pkg_name = package.pkg_name,
-                    version = package.version,
-                    repo_name = package.repo_name,
-                    installed_date = package.installed_date.clone().unwrap(),
-                    size = %package.size,
-                    "{}-{}:{} ({}) ({})",
-                    Colored(Red, &package.pkg_name),
-                    package.version,
-                    package.repo_name,
-                    package.installed_date.clone().unwrap(),
-                    HumanBytes(package.size)
-                );
                 (
                     installed_count + 1,
                     broken_count,

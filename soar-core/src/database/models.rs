@@ -172,7 +172,7 @@ pub struct InstalledPackage {
     pub size: u64,
     pub checksum: String,
     pub installed_path: String,
-    pub installed_date: Option<String>,
+    pub installed_date: String,
     pub bin_path: Option<String>,
     pub icon_path: Option<String>,
     pub desktop_path: Option<String>,

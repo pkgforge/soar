@@ -17,7 +17,7 @@ CREATE TABLE packages (
   size BIGINT NOT NULL,
   checksum TEXT NOT NULL,
   installed_path TEXT NOT NULL,
-  installed_date TEXT,
+  installed_date TEXT NOT NULL,
   bin_path TEXT,
   icon_path TEXT,
   desktop_path TEXT,

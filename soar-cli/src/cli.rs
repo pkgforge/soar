@@ -116,6 +116,10 @@ pub enum Commands {
         /// Packages to update
         #[arg(required = false)]
         packages: Option<Vec<String>>,
+
+        /// Keep old version
+        #[arg(required = false, short, long)]
+        keep: bool,
     },
 
     /// Show info about installed packages

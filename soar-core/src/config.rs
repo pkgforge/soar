@@ -104,6 +104,10 @@ pub struct Config {
 
     /// Default profile to use
     pub default_profile: String,
+
+    /// Whether to allow cross-repo updates
+    #[serde(skip_serializing)]
+    pub cross_repo_updates: Option<bool>,
 }
 
 pub fn init() {
@@ -248,6 +252,7 @@ impl Default for Config {
             parallel_limit: Some(4),
             search_limit: Some(20),
             ghcr_concurrency: Some(8),
+            cross_repo_updates: Some(false),
         }
     }
 }
