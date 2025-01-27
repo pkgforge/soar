@@ -1,4 +1,15 @@
 
+## [0.5.1](https://github.com/pkgforge/soar/compare/v0.5.0..v0.5.1) - 2025-01-27
+
+### 🐛 Bug Fixes
+
+- *(update)* Handle multi-profile update - ([569347f](https://github.com/pkgforge/soar/commit/569347f2ee7ad137917428ec9454c81f43c7708c))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(cargo)* Update cargo manifest - ([ad18d0c](https://github.com/pkgforge/soar/commit/ad18d0c6d3a3089815ed050844a76265e4900aa2))
+
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/v0.4.8..v0.5.0) - 2025-01-27
 
 ### ⛰️  Features

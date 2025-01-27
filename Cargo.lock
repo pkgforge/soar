@@ -1710,7 +1710,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "soar-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "futures",
@@ -1733,7 +1733,7 @@ dependencies = [
 
 [[package]]
 name = "soar-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "chrono",
