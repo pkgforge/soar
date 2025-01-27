@@ -29,6 +29,7 @@ pub struct InstallTarget {
     pub package: Package,
     pub existing_install: Option<InstalledPackage>,
     pub with_pkg_id: bool,
+    pub profile: Option<String>,
 }
 
 impl PackageInstaller {

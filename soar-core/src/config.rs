@@ -206,10 +206,9 @@ impl Config {
         }
     }
 
-    pub fn get_packages_path(&self) -> Result<PathBuf> {
-        Ok(self
-            .get_profile(&get_current_profile())?
-            .get_packages_path())
+    pub fn get_packages_path(&self, profile_name: Option<String>) -> Result<PathBuf> {
+        let profile_name = profile_name.unwrap_or_else(|| get_current_profile());
+        Ok(self.get_profile(&profile_name)?.get_packages_path())
     }
 
     pub fn get_cache_path(&self) -> Result<PathBuf> {

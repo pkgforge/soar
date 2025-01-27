@@ -171,6 +171,7 @@ fn resolve_packages(
                     package: pkg,
                     existing_install,
                     with_pkg_id: true,
+                    profile: None,
                 });
             }
         } else {
@@ -200,6 +201,7 @@ fn resolve_packages(
                     package,
                     existing_install,
                     with_pkg_id: false,
+                    profile: None,
                 });
             }
         }
@@ -362,10 +364,13 @@ pub async fn install_single_package(
                 .map(char::from)
                 .collect();
 
-            let install_dir = get_config().get_packages_path().unwrap().join(format!(
-                "{}-{}-{}",
-                target.package.pkg_name, target.package.pkg_id, rand_str
-            ));
+            let install_dir = get_config()
+                .get_packages_path(target.profile.clone())
+                .unwrap()
+                .join(format!(
+                    "{}-{}-{}",
+                    target.package.pkg_name, target.package.pkg_id, rand_str
+                ));
             let real_bin = install_dir.join(&target.package.pkg_name);
             let def_bin_path = bin_dir.join(&target.package.pkg_name);
 

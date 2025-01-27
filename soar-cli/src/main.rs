@@ -193,7 +193,7 @@ async fn handle_cli() -> SoarResult<()> {
             info!("SOAR_BIN={}", config.get_bin_path()?.display());
             info!("SOAR_DB={}", config.get_db_path()?.display());
             info!("SOAR_CACHE={}", config.get_cache_path()?.display());
-            info!("SOAR_PACKAGE={}", config.get_packages_path()?.display());
+            info!("SOAR_PACKAGE={}", config.get_packages_path(None)?.display());
             info!(
                 "SOAR_REPOSITORIES={}",
                 config.get_repositories_path()?.display()

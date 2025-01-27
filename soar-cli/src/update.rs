@@ -27,7 +27,7 @@ fn is_already_installed(package: &Package, core_db: Arc<Mutex<Connection>>) -> S
         .where_and("repo_name", FilterCondition::Eq(package.repo_name.clone()))
         .where_and("pkg_name", FilterCondition::Eq(package.pkg_name.clone()))
         .where_and("pkg_id", FilterCondition::Eq(package.pkg_id.clone()))
-        .where_and("checksum", FilterCondition::Ne(package.bsum.clone()))
+        .where_and("checksum", FilterCondition::Eq(package.bsum.clone()))
         .limit(1)
         .load_installed()?
         .items;
@@ -83,6 +83,7 @@ pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarR
                         package,
                         existing_install: None,
                         with_pkg_id,
+                        profile: Some(pkg.profile),
                     })
                 }
             }
@@ -127,6 +128,7 @@ pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarR
                     package,
                     existing_install: None,
                     with_pkg_id,
+                    profile: Some(pkg.profile),
                 })
             }
         }
