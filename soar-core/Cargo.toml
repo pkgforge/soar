@@ -1,7 +1,14 @@
 [package]
 name = "soar-core"
 version = "0.1.0"
-edition = "2021"
+description = "Core library for soar package manager"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+categories.workspace = true
 
 [dependencies]
 blake3 = { version = "1.5.5", features = ["mmap"] }

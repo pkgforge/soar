@@ -1,14 +1,15 @@
 [package]
 name = "soar-cli"
 version = "0.5.0"
-authors = ["Rabindra Dhakal <contact@qaidvoid.dev>"]
 description = "A modern package manager for Linux"
-license = "MIT"
-edition = "2021"
-repository = "https://github.com/pkgforge/soar"
 default-run = "soar"
-exclude = ["docs"]
-keywords = ["package-manager", "portable", "binary", "appimage", "linux"]
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+categories.workspace = true
 
 [[bin]]
 name = "soar"

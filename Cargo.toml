@@ -5,6 +5,15 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+authors = ["Rabindra Dhakal <contact@qaidvoid.dev>"]
+license = "MIT"
+edition = "2021"
+repository = "https://github.com/pkgforge/soar"
+keywords = ["package-manager", "portable", "binary", "appimage", "linux"]
+readme = "README.md"
+categories = ["command-line-utilities"]
+
 [profile.release]
 strip = true
 opt-level = "z"
