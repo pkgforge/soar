@@ -101,7 +101,7 @@ pub async fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
 
         re.replace_all(&content, |caps: &regex::Captures| match &caps[1] {
-            "Icon" => format!("Icon={}", pkg_name),
+            "Icon" => format!("Icon={}-soar", pkg_name),
             "Exec" | "TryExec" => {
                 format!(
                     "{}={}/{}",
