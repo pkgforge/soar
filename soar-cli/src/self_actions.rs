@@ -21,22 +21,18 @@ pub async fn process_self_action(
             let handler = ReleaseHandler::<Github>::new();
             let releases = handler
                 .fetch_releases::<GithubRelease>("pkgforge/soar")
-                .await
-                .unwrap();
+                .await?;
 
             let release = releases.iter().find(|rel| {
                 if is_nightly {
                     rel.tag_name().starts_with("nightly") && rel.name() != self_version
                 } else {
-                    rel.tag_name()
-                        .trim_start_matches("v")
-                        .parse::<f32>()
-                        .map(|v| v > self_version.parse::<f32>().unwrap())
-                        .unwrap_or(false)
+                    rel.tag_name().trim_start_matches("v") > self_version
                 }
             });
 
             if let Some(release) = release {
+                info!("Found new update: {}", release.tag_name());
                 let assets = release.assets();
                 let asset = assets
                     .iter()
