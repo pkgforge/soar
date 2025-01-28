@@ -32,7 +32,7 @@ use tracing::{error, info, warn};
 use crate::{
     progress::{self, create_progress_bar},
     state::AppState,
-    utils::select_package_interactively,
+    utils::{has_no_desktop_integration, select_package_interactively},
 };
 
 #[derive(Clone)]
@@ -437,7 +437,9 @@ pub async fn install_single_package(
         }
     }
 
-    let (icon_path, desktop_path) = if unlinked {
+    let (icon_path, desktop_path) = if unlinked
+        || has_no_desktop_integration(&target.package.pkg_type, target.package.notes.as_deref())
+    {
         (None, None)
     } else {
         integrate_package(

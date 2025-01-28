@@ -6,7 +6,7 @@ use rusqlite::prepare_and_bind;
 use soar_core::{
     config::get_config,
     database::{
-        models::{InstalledPackage, PackageExt},
+        models::{InstalledPackage, Package, PackageExt},
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy, SortDirection},
     },
     error::SoarError,
@@ -17,7 +17,7 @@ use tracing::info;
 
 use crate::{
     state::AppState,
-    utils::{get_valid_selection, Colored},
+    utils::{get_valid_selection, has_no_desktop_integration, Colored},
 };
 
 pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
@@ -129,8 +129,29 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
     }
 
     // TODO: handle portable_dirs
-    let (icon_path, desktop_path) =
-        integrate_package(&install_dir, &selected_package, None, None, None).await?;
+    let repo_db = state.repo_db();
+    let pkg: Vec<Package> = PackageQueryBuilder::new(repo_db.clone())
+        .where_and(
+            "repo_name",
+            FilterCondition::Eq(selected_package.repo_name.clone()),
+        )
+        .where_and("pkg_name", FilterCondition::Eq(name.to_string()))
+        .where_and(
+            "pkg_id",
+            FilterCondition::Eq(selected_package.pkg_id.clone()),
+        )
+        .limit(1)
+        .load()?
+        .items;
+
+    let (icon_path, desktop_path) = if pkg
+        .iter()
+        .any(|p| has_no_desktop_integration(&p.pkg_type, p.notes.as_deref()))
+    {
+        (None, None)
+    } else {
+        integrate_package(&install_dir, &selected_package, None, None, None).await?
+    };
 
     {
         let icon_path = icon_path.map(|path| path.to_string_lossy().into_owned());

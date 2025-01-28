@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsStr,
     fs::{self, File},
     io::{BufReader, BufWriter, Write},
     path::{Path, PathBuf},
@@ -60,15 +61,22 @@ fn normalize_image(image: DynamicImage) -> DynamicImage {
 
 pub async fn symlink_icon<P: AsRef<Path>>(real_path: P, pkg_name: &str) -> SoarResult<PathBuf> {
     let real_path = real_path.as_ref();
-    let image = image::open(real_path)?;
-    let (orig_w, orig_h) = image.dimensions();
 
-    let normalized_image = normalize_image(image);
-    let (w, h) = normalized_image.dimensions();
+    let (w, h) = if real_path.extension() == Some(OsStr::new("svg")) {
+        (128, 128)
+    } else {
+        let image = image::open(real_path)?;
+        let (orig_w, orig_h) = image.dimensions();
 
-    if (w, h) != (orig_w, orig_h) {
-        normalized_image.save(real_path)?;
-    }
+        let normalized_image = normalize_image(image);
+        let (w, h) = normalized_image.dimensions();
+
+        if (w, h) != (orig_w, orig_h) {
+            normalized_image.save(real_path)?;
+        }
+
+        (w, h)
+    };
 
     let ext = real_path.extension().unwrap_or_default().to_string_lossy();
     let final_path = PathBuf::from(format!(

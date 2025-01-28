@@ -70,3 +70,11 @@ pub fn select_package_interactively(
     let selection = get_valid_selection(pkgs.len())?;
     Ok(pkgs.into_iter().nth(selection))
 }
+
+pub fn has_no_desktop_integration(pkg_type: &str, notes: Option<&[String]>) -> bool {
+    pkg_type == "static"
+        || pkg_type == "dynamic"
+        || notes.map_or(false, |all| {
+            all.iter().any(|note| note == "NO_DESKTOP_INTEGRATION")
+        })
+}
