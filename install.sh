@@ -10,12 +10,14 @@ main() {
 
     # Function to check for curl or wget
     check_download_tool() {
-        if command -v curl >/dev/null 2>&1; then
-            printf "curl -fsSL"
+        if command -v soar-dl >/dev/null 2>&1; then
+            printf "soar-dl -o"
+        elif command -v curl >/dev/null 2>&1; then
+            printf "curl -fSL -o"
         elif command -v wget >/dev/null 2>&1; then
-            printf "wget -qO-"
+            printf "wget -O"
         else
-            echo "Error: Neither curl nor wget found. Please install either curl or wget."
+            echo "Error: Neither soar-dl, curl nor wget found. Please install either soar-dl, curl or wget."
             exit 1
         fi
     }
@@ -86,17 +88,22 @@ main() {
 
         # Get latest release URL
         echo "Downloading Soar..."
-        if echo "$SOAR_VERSION" | grep -q "nightly"; then
-            RELEASE_URL="https://github.com/pkgforge/soar/releases/download/nightly/soar-nightly-$ARCH-linux"
-        elif echo "$SOAR_VERSION" | grep -q "latest"; then
-            RELEASE_URL="https://github.com/pkgforge/soar/releases/latest/download/soar-$ARCH-linux"
-        else
-            RELEASE_URL="https://github.com/pkgforge/soar/releases/download/v$SOAR_VERSION/soar-$ARCH-linux"
-        fi
+        case "$SOAR_VERSION" in
+            *nightly*)
+                RELEASE_URL="https://github.com/pkgforge/soar/releases/download/nightly/soar-nightly-$ARCH-linux"
+                ;;
+            *latest*)
+                RELEASE_URL="https://github.com/pkgforge/soar/releases/latest/download/soar-$ARCH-linux"
+                ;;
+            *)
+                RELEASE_URL="https://github.com/pkgforge/soar/releases/download/v$SOAR_VERSION/soar-$ARCH-linux"
+                ;;
+        esac
+               
         echo "$RELEASE_URL"
 
         # Download and install
-        $DOWNLOAD_TOOL "$RELEASE_URL" > "$INSTALL_PATH/soar"
+        $DOWNLOAD_TOOL "$INSTALL_PATH/soar" "$RELEASE_URL"
 
         if [ ! -f "$INSTALL_PATH/soar" ]; then
             echo "Error: Download failed"
@@ -105,12 +112,6 @@ main() {
 
         # Make executable
         chmod +x "$INSTALL_PATH/soar"
-
-        # Run health check
-        echo "Running health check..."
-        if ! "$INSTALL_PATH/soar" health; then
-            echo "Warning: Health check failed. Please check your installation."
-        fi
 
         echo "Soar has been installed to: $INSTALL_PATH/soar"
         echo "Make sure $INSTALL_PATH is in your PATH."
