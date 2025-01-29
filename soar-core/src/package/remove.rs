@@ -70,7 +70,12 @@ impl PackageRemover {
             }
         }
 
-        fs::remove_dir_all(&self.package.installed_path)?;
+        if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {
+            // if not found, the package is already removed.
+            if err.kind() != std::io::ErrorKind::NotFound {
+                return Err(err)?;
+            }
+        };
 
         stmt.execute(params![self.package.id])?;
 
