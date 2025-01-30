@@ -1,4 +1,23 @@
 
+## [0.5.2](https://github.com/pkgforge/soar/compare/v0.5.1..v0.5.2) - 2025-01-30
+
+### 🐛 Bug Fixes
+
+- *(icon)* Fix desktop icon integration - ([7d09ff4](https://github.com/pkgforge/soar/commit/7d09ff43d35daa7173787a0a06ec378bb3b44d40))
+- *(integration)* Skip desktop integration for static/dynamic package - ([0d10c12](https://github.com/pkgforge/soar/commit/0d10c12819863bbd541cb6aa974876514e71dbeb))
+- *(remove)* Ignore error if package path is already removed - ([58cb283](https://github.com/pkgforge/soar/commit/58cb283109854f0fafe6515cf256521fac49da2a))
+- *(self_update)* Fix version check - ([86d02cc](https://github.com/pkgforge/soar/commit/86d02ccf1e8f89ae4c3c2073a859c9d7d28809ef))
+
+### ⚡ Performance
+
+- *(remove)* Don't load metadata databases on package removal - ([229e265](https://github.com/pkgforge/soar/commit/229e2654322f7a7d01945935b2df3a50f156ef27))
+- *(state)* Lazy load databases - ([823dea4](https://github.com/pkgforge/soar/commit/823dea48287eb367172ce1cfc3462d6ae63eee25))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(script)* Update install script - ([126e5d4](https://github.com/pkgforge/soar/commit/126e5d4c094671ac6421fa8271e8b50d086c023d))
+
+
 ## [0.5.1](https://github.com/pkgforge/soar/compare/v0.5.0..v0.5.1) - 2025-01-27
 
 ### 🐛 Bug Fixes
