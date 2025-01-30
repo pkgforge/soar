@@ -44,9 +44,9 @@ pub async fn search_packages(
     case_sensitive: bool,
     limit: Option<usize>,
 ) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let repo_db = state.repo_db().clone();
-    let core_db = state.core_db().clone();
+    let state = AppState::new();
+    let repo_db = state.repo_db().await?;
+    let core_db = state.core_db()?;
 
     let filter_condition = if case_sensitive {
         FilterCondition::Like(query)
@@ -110,10 +110,10 @@ pub async fn search_packages(
 }
 
 pub async fn query_package(query: String) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let repo_db = state.repo_db().clone();
+    let state = AppState::new();
+    let repo_db = state.repo_db().await?;
 
-    let packages: Vec<Package> = PackageQueryBuilder::new(repo_db)
+    let packages: Vec<Package> = PackageQueryBuilder::new(repo_db.clone())
         .where_and("pkg_name", FilterCondition::Eq(query))
         .load()?
         .items;
@@ -370,11 +370,11 @@ impl FromRow for PackageList {
 }
 
 pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let repo_db = state.repo_db().clone();
-    let core_db = state.core_db().clone();
+    let state = AppState::new();
+    let repo_db = state.repo_db().await?;
+    let core_db = state.core_db()?;
 
-    let mut builder = PackageQueryBuilder::new(repo_db)
+    let mut builder = PackageQueryBuilder::new(repo_db.clone())
         .sort_by("pkg_name", SortDirection::Asc)
         .limit(1000);
 
@@ -441,10 +441,10 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
 }
 
 pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let core_db = state.core_db().clone();
+    let state = AppState::new();
+    let core_db = state.core_db()?;
 
-    let mut builder = PackageQueryBuilder::new(core_db);
+    let mut builder = PackageQueryBuilder::new(core_db.clone());
     if let Some(repo_name) = repo_name {
         builder = builder.where_and("repo_name", FilterCondition::Eq(repo_name));
     }

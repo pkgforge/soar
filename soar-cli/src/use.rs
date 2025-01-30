@@ -21,8 +21,8 @@ use crate::{
 };
 
 pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let db = state.core_db();
+    let state = AppState::new();
+    let db = state.core_db()?;
 
     let packages = PackageQueryBuilder::new(db.clone())
         .where_and("pkg_name", FilterCondition::Eq(name.to_string()))
@@ -129,7 +129,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
     }
 
     // TODO: handle portable_dirs
-    let repo_db = state.repo_db();
+    let repo_db = state.repo_db().await?;
     let pkg: Vec<Package> = PackageQueryBuilder::new(repo_db.clone())
         .where_and(
             "repo_name",

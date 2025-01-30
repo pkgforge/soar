@@ -8,11 +8,11 @@ use tracing::{error, info, warn};
 use crate::{state::AppState, utils::select_package_interactively};
 
 pub async fn remove_packages(packages: &[String]) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let db = state.repo_db();
+    let state = AppState::new();
+    let db = state.repo_db().await?;
 
     for package in packages {
-        let core_db = state.core_db().clone();
+        let core_db = state.core_db()?;
 
         let mut query = PackageQuery::try_from(package.as_str())?;
         let builder = PackageQueryBuilder::new(db.clone());

@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, Mutex, RwLockReadGuard},
 };
 
+use once_cell::sync::OnceCell;
 use rusqlite::Connection;
 use soar_core::{
     config::{get_config, Config},
@@ -20,29 +21,25 @@ pub struct AppState {
 
 struct AppStateInner {
     config: RwLockReadGuard<'static, Config>,
-    repo_db: Database,
-    core_db: Database,
+    repo_db: OnceCell<Database>,
+    core_db: OnceCell<Database>,
 }
 
 impl AppState {
-    pub async fn new() -> SoarResult<Self> {
+    pub fn new() -> Self {
         let config = get_config();
 
-        Self::init_repo_dbs(&config).await?;
-        let repo_db = Self::create_repo_db(&config)?;
-        let core_db = Self::create_core_db(&config)?;
-
-        Ok(Self {
+        Self {
             inner: Arc::new(AppStateInner {
                 config,
-                repo_db,
-                core_db,
+                repo_db: OnceCell::new(),
+                core_db: OnceCell::new(),
             }),
-        })
+        }
     }
 
-    async fn init_repo_dbs(config: &RwLockReadGuard<'_, Config>) -> SoarResult<()> {
-        for repo in &config.repositories {
+    async fn init_repo_dbs(&self) -> SoarResult<()> {
+        for repo in &self.inner.config.repositories {
             let db_file = repo.get_path()?.join("metadata.db");
             if !db_file.exists() {
                 fs::create_dir_all(repo.get_path()?)?;
@@ -53,8 +50,10 @@ impl AppState {
         Ok(())
     }
 
-    fn create_repo_db(config: &RwLockReadGuard<'_, Config>) -> SoarResult<Database> {
-        let repo_paths: Vec<PathBuf> = config
+    fn create_repo_db(&self) -> SoarResult<Database> {
+        let repo_paths: Vec<PathBuf> = self
+            .inner
+            .config
             .repositories
             .iter()
             .map(|r| r.get_path().unwrap().join("metadata.db"))
@@ -63,8 +62,8 @@ impl AppState {
         Database::new_multi(repo_paths.as_ref())
     }
 
-    fn create_core_db(config: &RwLockReadGuard<'_, Config>) -> SoarResult<Database> {
-        let core_db_file = config.get_db_path()?.join("soar.db");
+    fn create_core_db(&self) -> SoarResult<Database> {
+        let core_db_file = self.inner.config.get_db_path()?.join("soar.db");
         if !core_db_file.exists() {
             File::create(&core_db_file)?;
         }
@@ -79,11 +78,18 @@ impl AppState {
         &self.inner.config
     }
 
-    pub fn repo_db(&self) -> &Arc<Mutex<Connection>> {
-        &self.inner.repo_db.conn
+    pub async fn repo_db(&self) -> SoarResult<&Arc<Mutex<Connection>>> {
+        self.init_repo_dbs().await?;
+        self.inner
+            .repo_db
+            .get_or_try_init(|| self.create_repo_db())
+            .map(|db| &db.conn)
     }
 
-    pub fn core_db(&self) -> &Arc<Mutex<Connection>> {
-        &self.inner.core_db.conn
+    pub fn core_db(&self) -> SoarResult<&Arc<Mutex<Connection>>> {
+        self.inner
+            .core_db
+            .get_or_try_init(|| self.create_core_db())
+            .map(|db| &db.conn)
     }
 }

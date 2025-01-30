@@ -29,11 +29,11 @@ impl Display for InspectType {
 }
 
 pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let repo_db = state.repo_db().clone();
+    let state = AppState::new();
+    let repo_db = state.repo_db().await?;
 
     let query = PackageQuery::try_from(package)?;
-    let builder = PackageQueryBuilder::new(repo_db).limit(1);
+    let builder = PackageQueryBuilder::new(repo_db.clone()).limit(1);
     let builder = query.apply_filters(builder);
 
     let packages: PaginatedResponse<Package> = builder.load()?;

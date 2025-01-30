@@ -36,9 +36,9 @@ fn is_already_installed(package: &Package, core_db: Arc<Mutex<Connection>>) -> S
 }
 
 pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let core_db = state.core_db();
-    let repo_db = state.repo_db();
+    let state = AppState::new();
+    let core_db = state.core_db()?;
+    let repo_db = state.repo_db().await?;
     let config = state.config();
 
     let mut update_targets = Vec::new();

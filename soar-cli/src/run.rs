@@ -20,8 +20,8 @@ pub async fn run_package(
     repo_name: Option<&str>,
     pkg_id: Option<&str>,
 ) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let repo_db = state.repo_db().clone();
+    let state = AppState::new();
+    let repo_db = state.repo_db().await?;
 
     let package_name = &command[0];
     let args = if command.len() > 1 {

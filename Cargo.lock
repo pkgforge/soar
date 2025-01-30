@@ -1716,6 +1716,7 @@ dependencies = [
  "futures",
  "indicatif",
  "nu-ansi-term 0.50.1",
+ "once_cell",
  "rand",
  "rayon",
  "regex",

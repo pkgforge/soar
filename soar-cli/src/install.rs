@@ -82,11 +82,11 @@ pub async fn install_packages(
     portable_home: Option<String>,
     portable_config: Option<String>,
 ) -> SoarResult<()> {
-    let state = AppState::new().await?;
-    let repo_db = state.repo_db().clone();
-    let core_db = state.core_db().clone();
+    let state = AppState::new();
+    let repo_db = state.repo_db().await?;
+    let core_db = state.core_db()?;
 
-    let install_targets = resolve_packages(repo_db, core_db.clone(), packages, yes, force)?;
+    let install_targets = resolve_packages(repo_db.clone(), core_db.clone(), packages, yes, force)?;
 
     let install_context = create_install_context(
         install_targets.len(),
@@ -96,7 +96,7 @@ pub async fn install_packages(
         portable_config,
     );
 
-    perform_installation(install_context, install_targets, core_db).await
+    perform_installation(install_context, install_targets, core_db.clone()).await
 }
 
 fn resolve_packages(
