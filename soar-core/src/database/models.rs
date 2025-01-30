@@ -22,6 +22,9 @@ impl Display for Maintainer {
 
 pub trait PackageExt {
     fn pkg_name(&self) -> &str;
+    fn pkg_id(&self) -> &str;
+    fn version(&self) -> &str;
+    fn repo_name(&self) -> &str;
     fn icon(&self) -> Option<PathBuf>;
     fn desktop(&self) -> Option<PathBuf>;
     fn should_create_original_symlink(&self) -> bool;
@@ -405,6 +408,18 @@ impl PackageExt for Package {
     fn desktop(&self) -> Option<PathBuf> {
         self.desktop.as_ref().map(PathBuf::from)
     }
+
+    fn pkg_id(&self) -> &str {
+        &self.pkg_id
+    }
+
+    fn version(&self) -> &str {
+        &self.version
+    }
+
+    fn repo_name(&self) -> &str {
+        &self.repo_name
+    }
 }
 
 impl PackageExt for InstalledPackage {
@@ -430,5 +445,17 @@ impl PackageExt for InstalledPackage {
             .map(Path::new)
             .and_then(|desktop| desktop.file_name())
             .map(|file_name| Path::new(&self.installed_path).join(file_name))
+    }
+
+    fn pkg_id(&self) -> &str {
+        &self.pkg_id
+    }
+
+    fn version(&self) -> &str {
+        &self.version
+    }
+
+    fn repo_name(&self) -> &str {
+        &self.repo_name
     }
 }

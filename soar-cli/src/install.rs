@@ -115,7 +115,7 @@ fn resolve_packages(
         if let Some(ref pkg_id) = query.pkg_id {
             if pkg_id == "all" {
                 let builder = query.apply_filters(builder.clone());
-                let packages = builder.load()?;
+                let packages: PaginatedResponse<Package> = builder.load()?;
 
                 if packages.total == 0 {
                     error!("Package {} not found", query.name.unwrap());

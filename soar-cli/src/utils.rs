@@ -6,7 +6,7 @@ use std::{
 
 use nu_ansi_term::Color;
 use serde::Serialize;
-use soar_core::{database::models::Package, SoarResult};
+use soar_core::{database::models::PackageExt, SoarResult};
 use tracing::{error, info};
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
@@ -51,19 +51,19 @@ pub fn get_valid_selection(max: usize) -> SoarResult<usize> {
     }
 }
 
-pub fn select_package_interactively(
-    pkgs: Vec<Package>,
+pub fn select_package_interactively<T: PackageExt>(
+    pkgs: Vec<T>,
     package_name: &str,
-) -> SoarResult<Option<Package>> {
+) -> SoarResult<Option<T>> {
     info!("Multiple packages found for {package_name}");
     for (idx, pkg) in pkgs.iter().enumerate() {
         info!(
             "[{}] {}#{}-{}:{}",
             idx + 1,
-            pkg.pkg_name,
-            pkg.pkg_id,
-            pkg.version,
-            pkg.repo_name
+            pkg.pkg_name(),
+            pkg.pkg_id(),
+            pkg.version(),
+            pkg.repo_name()
         );
     }
 

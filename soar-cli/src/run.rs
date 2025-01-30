@@ -1,7 +1,10 @@
 use std::{fs, process::Command, sync::Arc};
 
 use soar_core::{
-    database::packages::{FilterCondition, PackageQueryBuilder},
+    database::{
+        models::Package,
+        packages::{FilterCondition, PackageQueryBuilder},
+    },
     error::SoarError,
     utils::calculate_checksum,
     SoarResult,
@@ -41,7 +44,7 @@ pub async fn run_package(
         builder = builder.where_and("pkg_id", FilterCondition::Eq(pkg_id.to_string()));
     }
 
-    let packages = builder.load()?.items;
+    let packages: Vec<Package> = builder.load()?.items;
 
     let package = match packages.len() {
         0 => return Err(SoarError::PackageNotFound(package_name.clone())),
