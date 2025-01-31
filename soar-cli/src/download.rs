@@ -141,7 +141,7 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
         url: reference.to_string(),
         output_path: ctx.output.clone(),
         progress_callback: Some(ctx.progress_callback.clone()),
-        api: Some("https://ghcr.pkgforge.dev/v2".to_string()),
+        api: None,
         regex_patterns: ctx.regex_patterns.clone(),
         concurrency: get_config().ghcr_concurrency,
         match_keywords: ctx.match_keywords.clone(),

@@ -53,11 +53,13 @@ impl PackageInstaller {
                 ref pkg_name,
                 ref pkg_type,
                 ref version,
+                ref ghcr_size,
                 ref size,
                 bsum,
                 ..
             } = package;
             let installed_path = install_dir.to_string_lossy();
+            let size = ghcr_size.unwrap_or(*size);
             let mut stmt = prepare_and_bind!(
                 conn,
                 "INSERT INTO packages (
@@ -107,7 +109,7 @@ impl PackageInstaller {
                 url: url.to_string(),
                 output_path: Some(output_path.to_string_lossy().to_string()),
                 progress_callback: self.progress_callback.clone(),
-                api: Some("https://ghcr.pkgforge.dev/v2".to_string()),
+                api: None,
                 concurrency: Some(8),
                 regex_patterns: Vec::new(),
                 exclude_keywords: Vec::new(),
