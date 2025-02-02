@@ -42,7 +42,7 @@ impl<'a> DbStatements<'a> {
                     ?26, jsonb(?27), jsonb(?28), jsonb(?29), jsonb(?30), jsonb(?31), ?32, ?33, ?34, ?35, ?36,
                     jsonb(?37), jsonb(?38), jsonb(?39), ?40, ?41, ?42
                 )
-                ON CONFLICT (pkg_id, pkg_name) DO NOTHING",
+                ON CONFLICT (pkg_id, pkg_name, version) DO NOTHING",
             )?,
         })
     }

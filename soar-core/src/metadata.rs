@@ -1,7 +1,9 @@
 use std::fs::{self, File};
 
+use futures::TryStreamExt;
 use reqwest::header::{self, HeaderMap};
 use rusqlite::Connection;
+use tracing::info;
 
 use crate::{
     config::Repository,
@@ -30,32 +32,50 @@ pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
 
     let metadata_db = repo_path.join("metadata.db");
 
-    let conn = Connection::open(&metadata_db)?;
-    let etag: String = conn
-        .query_row("SELECT etag FROM repository", [], |row| row.get(0))
-        .unwrap_or_default();
+    let etag = {
+        let conn = Connection::open(&metadata_db)?;
+        let etag: String = conn
+            .query_row("SELECT etag FROM repository", [], |row| row.get(0))
+            .unwrap_or_default();
 
-    let etag = if let Some(remote_etag) = resp.headers().get(header::ETAG) {
-        let remote_etag = remote_etag.to_str().unwrap();
-        if etag == remote_etag {
-            return Ok(());
+        match resp.headers().get(header::ETAG) {
+            Some(remote_etag) => {
+                let remote_etag = remote_etag.to_str().unwrap();
+                if etag == remote_etag {
+                    return Ok(());
+                }
+                remote_etag.to_string()
+            }
+            None => {
+                return Err(SoarError::Custom(
+                    "etag is required in metadata response header.".to_string(),
+                ))
+            }
         }
-        remote_etag.to_string()
-    } else {
-        return Err(SoarError::Custom(
-            "etag is required in metadata response header.".to_string(),
-        ));
     };
-    let _ = conn.close();
 
     let _ = fs::remove_file(&metadata_db);
     File::create(&metadata_db)?;
+
+    info!("Fetching metadata from {}", repo.url);
 
     let conn = Connection::open(&metadata_db)?;
     let mut manager = MigrationManager::new(conn)?;
     manager.migrate_from_dir(METADATA_MIGRATIONS)?;
 
-    let remote_metadata: Vec<RemotePackage> = resp.json().await?;
+    let mut content = Vec::new();
+    let mut stream = resp.bytes_stream();
+
+    while let Ok(Some(chunk)) = stream.try_next().await {
+        content.extend_from_slice(&chunk);
+    }
+
+    let remote_metadata: Vec<RemotePackage> = serde_json::from_slice(&content).map_err(|err| {
+        SoarError::Custom(format!(
+            "Failed to parse metadata response from {}: {:#?}",
+            repo.url, err
+        ))
+    })?;
 
     let db = Database::new(metadata_db)?;
     db.from_remote_metadata(remote_metadata.as_ref(), &repo.name, &etag)?;

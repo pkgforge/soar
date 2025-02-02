@@ -10,6 +10,7 @@ use soar_core::{
     config::{get_config, Config},
     constants::CORE_MIGRATIONS,
     database::{connection::Database, migration::MigrationManager},
+    error::SoarError,
     metadata::fetch_metadata,
     SoarResult,
 };
@@ -39,13 +40,22 @@ impl AppState {
     }
 
     async fn init_repo_dbs(&self) -> SoarResult<()> {
+        let mut tasks = Vec::new();
+
         for repo in &self.inner.config.repositories {
             let db_file = repo.get_path()?.join("metadata.db");
             if !db_file.exists() {
                 fs::create_dir_all(repo.get_path()?)?;
                 File::create(&db_file)?;
             }
-            fetch_metadata(repo.clone()).await?;
+            let repo_clone = repo.clone();
+            let task = tokio::task::spawn(async move { fetch_metadata(repo_clone).await });
+            tasks.push(task);
+        }
+
+        for task in tasks {
+            task.await
+                .map_err(|err| SoarError::Custom(format!("Join handle error: {}", err)))??;
         }
         Ok(())
     }

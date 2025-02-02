@@ -61,5 +61,5 @@ CREATE TABLE packages (
   download_count INTEGER,
   download_count_week INTEGER,
   download_count_month INTEGER,
-  UNIQUE (pkg_id, pkg_name)
+  UNIQUE (pkg_id, pkg_name, version)
 );
