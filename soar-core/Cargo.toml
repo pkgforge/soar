@@ -29,3 +29,4 @@ squishy = { version = "0.3.1", features = ["appimage"] }
 thiserror = "2.0.6"
 toml = "0.8.19"
 tracing = { workspace = true }
+zstd = "0.13.2"

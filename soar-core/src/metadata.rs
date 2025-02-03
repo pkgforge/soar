@@ -1,17 +1,38 @@
-use std::fs::{self, File};
+use std::{
+    fs::{self, File},
+    io::{self, BufReader, BufWriter, Write},
+    path::Path,
+};
 
 use futures::TryStreamExt;
 use reqwest::header::{self, HeaderMap};
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use tracing::info;
 
 use crate::{
     config::Repository,
-    constants::METADATA_MIGRATIONS,
+    constants::{METADATA_MIGRATIONS, SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES},
     database::{connection::Database, migration::MigrationManager, models::RemotePackage},
     error::SoarError,
+    utils::calc_magic_bytes,
     SoarResult,
 };
+
+fn handle_json_metadata<P: AsRef<Path>>(
+    metadata: &[RemotePackage],
+    metadata_db: P,
+    repo: &Repository,
+    etag: &str,
+) -> SoarResult<()> {
+    let conn = Connection::open(&metadata_db)?;
+    let mut manager = MigrationManager::new(conn)?;
+    manager.migrate_from_dir(METADATA_MIGRATIONS)?;
+
+    let db = Database::new(metadata_db)?;
+    db.from_remote_metadata(metadata.as_ref(), &repo.name, &etag)?;
+
+    Ok(())
+}
 
 pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
     let repo_path = repo.get_path()?;
@@ -54,14 +75,7 @@ pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
         }
     };
 
-    let _ = fs::remove_file(&metadata_db);
-    File::create(&metadata_db)?;
-
     info!("Fetching metadata from {}", repo.url);
-
-    let conn = Connection::open(&metadata_db)?;
-    let mut manager = MigrationManager::new(conn)?;
-    manager.migrate_from_dir(METADATA_MIGRATIONS)?;
 
     let mut content = Vec::new();
     let mut stream = resp.bytes_stream();
@@ -70,15 +84,53 @@ pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
         content.extend_from_slice(&chunk);
     }
 
-    let remote_metadata: Vec<RemotePackage> = serde_json::from_slice(&content).map_err(|err| {
-        SoarError::Custom(format!(
-            "Failed to parse metadata response from {}: {:#?}",
-            repo.url, err
-        ))
-    })?;
+    if content[..4] == ZST_MAGIC_BYTES {
+        let tmp_path = format!("{}.part", metadata_db.display());
+        let mut tmp_file = File::create(&tmp_path)?;
 
-    let db = Database::new(metadata_db)?;
-    db.from_remote_metadata(remote_metadata.as_ref(), &repo.name, &etag)?;
+        let mut decoder = zstd::Decoder::new(content.as_slice())?;
+        io::copy(&mut decoder, &mut tmp_file)?;
+
+        let magic_bytes = calc_magic_bytes(&tmp_path, 4)?;
+        if magic_bytes == SQLITE_MAGIC_BYTES {
+            fs::rename(&tmp_path, &metadata_db)?;
+            let conn = Connection::open(&metadata_db)?;
+            conn.execute(
+                "UPDATE repository SET name = ?, etag = ?",
+                params![repo.name, etag],
+            )?;
+        } else {
+            let tmp_file = File::open(&tmp_path)?;
+            let reader = BufReader::new(tmp_file);
+            let metadata: Vec<RemotePackage> = serde_json::from_reader(reader).map_err(|err| {
+                SoarError::Custom(format!(
+                    "Failed to parse JSON metadata from {}: {:#?}",
+                    tmp_path, err
+                ))
+            })?;
+
+            handle_json_metadata(&metadata, metadata_db, &repo, &etag)?;
+            fs::remove_file(tmp_path)?;
+        }
+    } else if content[..4] == SQLITE_MAGIC_BYTES {
+        let mut writer = BufWriter::new(File::create(&metadata_db)?);
+        writer.write_all(&content)?;
+        let conn = Connection::open(&metadata_db)?;
+        conn.execute(
+            "UPDATE repository SET name = ?, etag = ?",
+            params![repo.name, etag],
+        )?;
+    } else {
+        let remote_metadata: Vec<RemotePackage> =
+            serde_json::from_slice(&content).map_err(|err| {
+                SoarError::Custom(format!(
+                    "Failed to parse JSON metadata response from {}: {:#?}",
+                    repo.url, err
+                ))
+            })?;
+
+        handle_json_metadata(&remote_metadata, metadata_db, &repo, &etag)?;
+    }
 
     Ok(())
 }

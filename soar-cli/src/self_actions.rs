@@ -1,4 +1,7 @@
-use std::{env::consts::ARCH, fs};
+use std::{
+    env::{self, consts::ARCH},
+    fs,
+};
 
 use soar_core::SoarResult;
 use soar_dl::{
@@ -17,7 +20,8 @@ pub async fn process_self_action(
 ) -> SoarResult<()> {
     match action {
         SelfAction::Update => {
-            let is_nightly = self_version.starts_with("nightly");
+            let is_nightly =
+                self_version.starts_with("nightly") || env::var("SOAR_NIGHTLY").is_ok();
             let handler = ReleaseHandler::<Github>::new();
             let releases = handler
                 .fetch_releases::<GithubRelease>("pkgforge/soar")
