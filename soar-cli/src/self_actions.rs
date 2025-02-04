@@ -20,23 +20,39 @@ pub async fn process_self_action(
 ) -> SoarResult<()> {
     match action {
         SelfAction::Update => {
-            let is_nightly =
-                self_version.starts_with("nightly") || env::var("SOAR_NIGHTLY").is_ok();
+            let is_nightly = self_version.starts_with("nightly");
+
+            let target_nightly = match (env::var("SOAR_NIGHTLY"), env::var("SOAR_RELEASE")) {
+                (Ok(_), Err(_)) => true,
+                (Err(_), Ok(_)) => false,
+                _ => is_nightly,
+            };
+
             let handler = ReleaseHandler::<Github>::new();
             let releases = handler
                 .fetch_releases::<GithubRelease>("pkgforge/soar")
                 .await?;
 
             let release = releases.iter().find(|rel| {
-                if is_nightly {
-                    rel.tag_name().starts_with("nightly") && rel.name() != self_version
+                let is_nightly_release = rel.tag_name().starts_with("nightly");
+                if target_nightly {
+                    is_nightly_release && rel.name() != self_version
                 } else {
-                    rel.tag_name().trim_start_matches("v") > self_version
+                    !is_nightly_release
+                        && (is_nightly || rel.tag_name().trim_start_matches("v") > self_version)
                 }
             });
 
             if let Some(release) = release {
-                info!("Found new update: {}", release.tag_name());
+                if target_nightly != is_nightly {
+                    println!(
+                        "Switching from {} to {} channel",
+                        if is_nightly { "nightly" } else { "stable" },
+                        if target_nightly { "nightly" } else { "stable" }
+                    );
+                } else {
+                    info!("Found new update: {}", release.tag_name());
+                }
                 let assets = release.assets();
                 let asset = assets
                     .iter()
