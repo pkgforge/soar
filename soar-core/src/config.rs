@@ -240,11 +240,17 @@ impl Default for Config {
             repositories: vec![
                 Repository {
                     name: "bincache".to_owned(),
-                    url: format!("https://meta.pkgforge.dev/bincache/{}.json", get_platform()),
+                    url: format!(
+                        "https://meta.pkgforge.dev/bincache/{}.sdb.zstd",
+                        get_platform()
+                    ),
                 },
                 Repository {
                     name: "pkgcache".to_owned(),
-                    url: format!("https://meta.pkgforge.dev/pkgcache/{}.json", get_platform()),
+                    url: format!(
+                        "https://meta.pkgforge.dev/pkgcache/{}.sdb.zstd",
+                        get_platform()
+                    ),
                 },
             ],
             parallel: Some(true),
