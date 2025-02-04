@@ -1,4 +1,25 @@
 
+## [0.5.3](https://github.com/pkgforge/soar/compare/v0.5.2..v0.5.3) - 2025-02-04
+
+### ⛰️  Features
+
+- *(metadata)* Add support for zstd compressed sqlite database - ([1cae955](https://github.com/pkgforge/soar/commit/1cae9551e49d4e3819e1f7c9c15edd059155711d))
+- *(self)* Allow switching soar release channels - ([25acb9c](https://github.com/pkgforge/soar/commit/25acb9cb83919ca75c2d20157c1b884fb9bd4114))
+
+### 🐛 Bug Fixes
+
+- *(install)* Use ghcr size, switch to official ghcr API - ([58b812c](https://github.com/pkgforge/soar/commit/58b812ca2611c9771b219b8ac716e64ae49f0141))
+- *(nightly)* Fix nightly version - ([9f7bd79](https://github.com/pkgforge/soar/commit/9f7bd79551bdbcc31902d0e5d1aab78db1984cd9))
+
+### ⚡ Performance
+
+- *(metadata)* Parallelize metadata fetch, use gzip on request - ([3863707](https://github.com/pkgforge/soar/commit/3863707a33d00cd066fa6ad3e071d55c384c6476))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(config)* Update default repository URLs to use sdb.zstd format - ([b76127e](https://github.com/pkgforge/soar/commit/b76127e3997623f6508237f4532750c005113c8f))
+
+
 ## [0.5.2](https://github.com/pkgforge/soar/compare/v0.5.1..v0.5.2) - 2025-01-30
 
 ### 🐛 Bug Fixes
