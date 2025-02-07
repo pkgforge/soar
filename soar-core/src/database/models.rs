@@ -38,14 +38,14 @@ pub trait FromRow: Sized {
 pub struct Package {
     pub id: u64,
     pub repo_name: String,
-    pub disabled: bool,
+    pub disabled: Option<bool>,
     pub disabled_reason: Option<Value>,
     pub rank: Option<u64>,
-    pub pkg: String,
+    pub pkg: Option<String>,
     pub pkg_id: String,
     pub pkg_name: String,
-    pub pkg_family: String,
-    pub pkg_type: String,
+    pub pkg_family: Option<String>,
+    pub pkg_type: Option<String>,
     pub pkg_webpage: Option<String>,
     pub app_id: Option<String>,
     pub description: String,
@@ -53,14 +53,14 @@ pub struct Package {
     pub version_upstream: Option<String>,
     pub licenses: Option<Vec<String>>,
     pub download_url: String,
-    pub size: u64,
+    pub size: Option<u64>,
     pub ghcr_pkg: Option<String>,
     pub ghcr_size: Option<u64>,
     pub ghcr_files: Option<Vec<String>>,
     pub ghcr_blob: Option<String>,
     pub ghcr_url: Option<String>,
-    pub bsum: String,
-    pub shasum: String,
+    pub bsum: Option<String>,
+    pub shasum: Option<String>,
     pub homepages: Option<Vec<String>>,
     pub notes: Option<Vec<String>>,
     pub source_urls: Option<Vec<String>>,
@@ -80,7 +80,7 @@ pub struct Package {
     pub download_count: Option<u64>,
     pub download_count_month: Option<u64>,
     pub download_count_week: Option<u64>,
-    pub maintainers: Vec<Maintainer>,
+    pub maintainers: Option<Vec<Maintainer>>,
 }
 
 impl FromRow for Package {
@@ -97,10 +97,9 @@ impl FromRow for Package {
                 .and_then(|json| serde_json::from_str(&json).ok()))
         };
 
-        let maintainers: Vec<Maintainer> = row
+        let maintainers: Option<Vec<Maintainer>> = row
             .get::<_, Option<String>>("maintainers")?
-            .and_then(|json| serde_json::from_str(&json).ok())
-            .unwrap_or_default();
+            .and_then(|json| serde_json::from_str(&json).ok());
 
         let licenses = parse_json_vec("licenses")?;
         let ghcr_files = parse_json_vec("ghcr_files")?;
@@ -167,13 +166,13 @@ impl FromRow for Package {
 pub struct InstalledPackage {
     pub id: u64,
     pub repo_name: String,
-    pub pkg: String,
+    pub pkg: Option<String>,
     pub pkg_id: String,
     pub pkg_name: String,
-    pub pkg_type: String,
+    pub pkg_type: Option<String>,
     pub version: String,
     pub size: u64,
-    pub checksum: String,
+    pub checksum: Option<String>,
     pub installed_path: String,
     pub installed_date: String,
     pub bin_path: Option<String>,
@@ -244,44 +243,28 @@ where
         .map(|n| n as u64))
 }
 
-fn number_from_string<'de, D>(deserializer: D) -> Result<u64, D::Error>
+fn opt_boolean_from_string<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: String = Deserialize::deserialize(deserializer)?;
-    s.parse::<i64>()
-        .map_err(|_| de::Error::invalid_value(de::Unexpected::Str(&s), &"a valid number"))
-        .and_then(|n| {
-            if n >= 0 {
-                Ok(n as u64)
-            } else {
-                Err(de::Error::invalid_value(
-                    de::Unexpected::Signed(n),
-                    &"a non-negative u64",
-                ))
-            }
-        })
-}
-
-fn boolean_from_string<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: String = Deserialize::deserialize(deserializer)?;
-    match s.to_lowercase().as_str() {
-        "true" | "yes" | "1" => Ok(true),
-        "false" | "no" | "0" => Ok(false),
-        _ => Err(de::Error::invalid_value(
-            de::Unexpected::Str(&s),
+    let s: Option<String> = Deserialize::deserialize(deserializer)?;
+    s.map(|s| match s.to_lowercase().as_str() {
+        "true" | "yes" | "1" => Some(true),
+        "false" | "no" | "0" => Some(false),
+        _ => None,
+    })
+    .ok_or_else(|| {
+        de::Error::invalid_value(
+            de::Unexpected::Option,
             &"a valid boolean (true/false, yes/no, 1/0)",
-        )),
-    }
+        )
+    })
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct RemotePackage {
-    #[serde(deserialize_with = "boolean_from_string", alias = "_disabled")]
-    pub disabled: bool,
+    #[serde(deserialize_with = "opt_boolean_from_string", alias = "_disabled")]
+    pub disabled: Option<bool>,
 
     #[serde(alias = "_disabled_reason")]
     pub disabled_reason: Option<serde_json::Value>,
@@ -289,11 +272,11 @@ pub struct RemotePackage {
     #[serde(default, deserialize_with = "optional_number")]
     pub rank: Option<u64>,
 
-    pub pkg: String,
+    pub pkg: Option<String>,
     pub pkg_id: String,
     pub pkg_name: String,
-    pub pkg_family: String,
-    pub pkg_type: String,
+    pub pkg_family: Option<String>,
+    pub pkg_type: Option<String>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
     pub pkg_webpage: Option<String>,
@@ -303,8 +286,8 @@ pub struct RemotePackage {
     pub version_upstream: Option<String>,
     pub download_url: String,
 
-    #[serde(default, deserialize_with = "number_from_string")]
-    pub size_raw: u64,
+    #[serde(default, deserialize_with = "optional_number")]
+    pub size_raw: Option<u64>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
     pub ghcr_pkg: Option<String>,
@@ -317,16 +300,16 @@ pub struct RemotePackage {
     pub ghcr_url: Option<String>,
 
     #[serde(alias = "src_url")]
-    pub src_urls: Vec<String>,
+    pub src_urls: Option<Vec<String>>,
 
     #[serde(alias = "homepage")]
-    pub homepages: Vec<String>,
+    pub homepages: Option<Vec<String>>,
 
     #[serde(alias = "license")]
     pub licenses: Option<Vec<String>>,
 
     #[serde(alias = "maintainer")]
-    pub maintainers: Vec<String>,
+    pub maintainers: Option<Vec<String>>,
 
     #[serde(alias = "note")]
     pub notes: Option<Vec<String>>,
@@ -334,8 +317,8 @@ pub struct RemotePackage {
     #[serde(alias = "tag")]
     pub tags: Option<Vec<String>>,
 
-    pub bsum: String,
-    pub shasum: String,
+    pub bsum: Option<String>,
+    pub shasum: Option<String>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
     pub build_id: Option<String>,
@@ -353,7 +336,7 @@ pub struct RemotePackage {
     pub build_log: Option<String>,
 
     #[serde(alias = "category")]
-    pub categories: Vec<String>,
+    pub categories: Option<Vec<String>>,
 
     pub provides: Option<Vec<String>>,
 

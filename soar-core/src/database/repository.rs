@@ -137,7 +137,7 @@ impl<'a> PackageRepository<'a> {
             return Ok(());
         }
         let package_id = self.tx.last_insert_rowid();
-        for maintainer in &package.maintainers {
+        for maintainer in &package.maintainers.clone().unwrap_or_default() {
             let typed = self.extract_name_and_contact(&maintainer);
             if let Some((name, contact)) = typed {
                 let maintainer_id = self.get_or_create_maintainer(&name, &contact)?;

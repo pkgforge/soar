@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Purple, Red, White, Yellow};
@@ -15,7 +18,7 @@ use tracing::info;
 
 use crate::{
     state::AppState,
-    utils::{vec_string, Colored},
+    utils::{pretty_package_size, vec_string, Colored},
 };
 
 fn get_package_install_state(
@@ -72,13 +75,17 @@ pub async fn search_packages(
             version = package.version,
             version_upstream = package.version_upstream,
             description = package.description,
-            size = package.ghcr_size.unwrap_or(package.size),
+            size = package.ghcr_size.or(package.size),
             "[{}] {}#{}:{} ({}-{}{}) - {} ({})",
             install_state,
             Colored(Blue, &package.pkg_name),
             Colored(Cyan, &package.pkg_id),
             Colored(Cyan, &package.repo_name),
-            Colored(Magenta, &package.pkg_type),
+            package
+                .pkg_type
+                .as_ref()
+                .map(|pkg_type| format!("{}", Colored(Magenta, &pkg_type)))
+                .unwrap_or_default(),
             Colored(Magenta, &package.version),
             package
                 .version_upstream
@@ -87,10 +94,7 @@ pub async fn search_packages(
                 .map(|upstream| format!(":{}", Colored(Yellow, &upstream)))
                 .unwrap_or_default(),
             package.description,
-            Colored(
-                Magenta,
-                HumanBytes(package.ghcr_size.unwrap_or(package.size))
-            )
+            pretty_package_size(&package)
         );
     }
 
@@ -160,11 +164,19 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             format!(
                 "{}: {}",
                 Colored(Purple, "Size"),
-                Colored(Green, HumanBytes(package.ghcr_size.unwrap_or(package.size)))
+                pretty_package_size(&package)
             ),
             format!("{}:", Colored(Purple, "Checksums")),
-            format!("  - {} (blake3)", Colored(Blue, &package.bsum)),
-            format!("  - {} (sha256)", Colored(Blue, &package.shasum)),
+            package
+                .bsum
+                .as_ref()
+                .map(|cs| format!("  - {} (blake3)", Colored(Blue, cs)))
+                .unwrap_or_default(),
+            package
+                .shasum
+                .as_ref()
+                .map(|cs| format!("  - {} (sha256)", Colored(Blue, cs)))
+                .unwrap_or_default(),
             package
                 .homepages
                 .as_ref()
@@ -191,13 +203,19 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                     format!("{}\n{}", key, values)
                 })
                 .unwrap_or_default(),
-            format!("{}:", Colored(Purple, "Maintainers")),
             package
                 .maintainers
-                .iter()
-                .map(|maintainer| format!("  - {}", Colored(Blue, maintainer)))
-                .collect::<Vec<String>>()
-                .join("\n"),
+                .as_ref()
+                .map(|maintainers| {
+                    let key = format!("{}:", Colored(Purple, "Maintainers"));
+                    let values = maintainers
+                        .iter()
+                        .map(|maintainer| format!("  - {}", Colored(Blue, maintainer)))
+                        .collect::<Vec<String>>()
+                        .join("\n");
+                    format!("{}\n{}", key, values)
+                })
+                .unwrap_or_default(),
             package
                 .notes
                 .as_ref()
@@ -237,11 +255,11 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                     format!("{}\n{}", key, values)
                 })
                 .unwrap_or_default(),
-            format!(
-                "{}: {}",
-                Colored(Purple, "Type"),
-                Colored(Blue, &package.pkg_type)
-            ),
+            package
+                .pkg_type
+                .as_ref()
+                .map(|pkg_type| format!("{}: {}", Colored(Purple, "Type"), Colored(Blue, pkg_type)))
+                .unwrap_or_default(),
             package
                 .build_action
                 .as_ref()
@@ -325,7 +343,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             homepages = vec_string(package.homepages),
             source_urls = vec_string(package.source_urls),
             licenses = vec_string(package.licenses),
-            maintainers = vec_string(Some(package.maintainers)),
+            maintainers = vec_string(package.maintainers),
             notes = vec_string(package.notes),
             snapshots = vec_string(package.snapshots),
             size = package.size,
@@ -339,7 +357,12 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             ghcr_pkg = package.ghcr_pkg,
             pkg_webpage = package.pkg_webpage,
             "{}",
-            fields.join("\n")
+            fields
+                .iter()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.as_str())
+                .collect::<Vec<&str>>()
+                .join("\n")
         );
     }
 
@@ -450,51 +473,66 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
     }
 
     let packages = builder.load_installed()?.items;
+    let mut unique_pkgs = HashSet::new();
 
-    let (installed_count, broken_count, installed_size, broken_size) = packages.iter().fold(
-        (0, 0, 0, 0),
-        |(installed_count, broken_count, installed_size, broken_size), package| {
-            info!(
-                pkg_name = package.pkg_name,
-                version = package.version,
-                repo_name = package.repo_name,
-                installed_date = package.installed_date.clone(),
-                size = %package.size,
-                "{}-{}:{} ({}) ({}){}",
-                Colored(Red, &package.pkg_name),
-                Colored(Magenta, &package.version),
-                Colored(Cyan, &package.repo_name),
-                Colored(Blue, &package.installed_date.clone()),
-                HumanBytes(package.size),
+    let (installed_count, unique_count, broken_count, installed_size, broken_size) =
+        packages.iter().fold(
+            (0, 0, 0, 0, 0),
+            |(installed_count, unique_count, broken_count, installed_size, broken_size),
+             package| {
+                info!(
+                    pkg_name = package.pkg_name,
+                    version = package.version,
+                    repo_name = package.repo_name,
+                    installed_date = package.installed_date.clone(),
+                    size = %package.size,
+                    "{}-{}:{} ({}) ({}){}",
+                    Colored(Red, &package.pkg_name),
+                    Colored(Magenta, &package.version),
+                    Colored(Cyan, &package.repo_name),
+                    Colored(Blue, &package.installed_date.clone()),
+                    HumanBytes(package.size),
+                    if package.is_installed {
+                        "".to_string()
+                    } else {
+                        Colored(Red, " [Broken]").to_string()
+                    }
+                );
+
+                let unique_count =
+                    unique_pkgs.insert(format!("{}-{}", package.pkg_id, package.pkg_name)) as u32
+                        + unique_count;
                 if package.is_installed {
-                    "".to_string()
+                    (
+                        installed_count + 1,
+                        unique_count,
+                        broken_count,
+                        installed_size + package.size,
+                        broken_size,
+                    )
                 } else {
-                    Colored(Red, " [Broken]").to_string()
+                    (
+                        installed_count,
+                        unique_count,
+                        broken_count + 1,
+                        installed_size,
+                        broken_size + package.size,
+                    )
                 }
-            );
-            if package.is_installed {
-                (
-                    installed_count + 1,
-                    broken_count,
-                    installed_size + package.size,
-                    broken_size,
-                )
-            } else {
-                (
-                    installed_count,
-                    broken_count + 1,
-                    installed_size,
-                    broken_size + package.size,
-                )
-            }
-        },
-    );
+            },
+        );
 
     info!(
         installed_count,
+        unique_count,
         installed_size,
-        "Installed: {} ({})",
+        "Installed: {}{} ({})",
         installed_count,
+        if installed_count != unique_count {
+            format!(", {} distinct", unique_count)
+        } else {
+            String::new()
+        },
         HumanBytes(installed_size),
     );
 

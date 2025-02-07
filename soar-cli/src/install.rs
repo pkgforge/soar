@@ -399,11 +399,18 @@ pub async fn install_single_package(
     installer.install().await?;
 
     let final_checksum = calculate_checksum(&real_bin)?;
-    if final_checksum != target.package.bsum {
-        return Err(SoarError::Warning(format!(
-            "{}#{} - Invalid checksum, installed anyway.",
+    if let Some(ref checksum) = target.package.bsum {
+        if final_checksum != *checksum {
+            return Err(SoarError::Custom(format!(
+                "{}#{} - Invalid checksum, skipped installation.",
+                target.package.pkg_name, target.package.pkg_id
+            )));
+        }
+    } else {
+        ctx.warnings.lock().unwrap().push(format!(
+            "{}#{} - Blake3 checksum not found. Skipped checksum validation.",
             target.package.pkg_name, target.package.pkg_id
-        )));
+        ));
     }
 
     if target.package.should_create_original_symlink() {
@@ -438,8 +445,10 @@ pub async fn install_single_package(
     }
 
     let (icon_path, desktop_path) = if unlinked
-        || has_no_desktop_integration(&target.package.pkg_type, target.package.notes.as_deref())
-    {
+        || has_no_desktop_integration(
+            target.package.pkg_type.as_deref(),
+            target.package.notes.as_deref(),
+        ) {
         (None, None)
     } else {
         integrate_package(
@@ -453,7 +462,7 @@ pub async fn install_single_package(
     };
 
     installer
-        .record(&bin_dir, icon_path, desktop_path, unlinked)
+        .record(&bin_dir, icon_path, desktop_path, unlinked, final_checksum)
         .await?;
 
     Ok(())

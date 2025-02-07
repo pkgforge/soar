@@ -173,7 +173,7 @@ pub async fn integrate_remote<P: AsRef<Path>>(
         };
         downloader.download(options).await?;
     } else {
-        let content = create_default_desktop_entry(&package.pkg, &package.pkg_name, "Utility");
+        let content = create_default_desktop_entry(&package.pkg_name, "Utility");
         fs::write(&desktop_output_path, &content)?;
     }
 
@@ -231,15 +231,15 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     Ok(())
 }
 
-fn create_default_desktop_entry(bin_name: &str, name: &str, categories: &str) -> Vec<u8> {
+fn create_default_desktop_entry(name: &str, categories: &str) -> Vec<u8> {
     format!(
         "[Desktop Entry]\n\
         Type=Application\n\
-        Name={}\n\
-        Icon={}\n\
-        Exec={}\n\
-        Categories={};\n",
-        name, bin_name, bin_name, categories
+        Name={0}\n\
+        Icon={0}\n\
+        Exec={0}\n\
+        Categories={1};\n",
+        name, categories
     )
     .as_bytes()
     .to_vec()

@@ -49,7 +49,11 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
             Colored(Blue, &package.pkg_name),
             Colored(Cyan, &package.pkg_id),
             Colored(Cyan, &package.repo_name),
-            Colored(Magenta, &package.pkg_type),
+            package
+                .pkg_type
+                .as_ref()
+                .map(|pkg_type| format!(":{}", Colored(Magenta, &pkg_type)))
+                .unwrap_or_default(),
             Colored(Magenta, &package.version),
             Colored(Magenta, HumanBytes(package.size)),
             package
@@ -146,7 +150,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
 
     let (icon_path, desktop_path) = if pkg
         .iter()
-        .any(|p| has_no_desktop_integration(&p.pkg_type, p.notes.as_deref()))
+        .any(|p| has_no_desktop_integration(p.pkg_type.as_deref(), p.notes.as_deref()))
     {
         (None, None)
     } else {

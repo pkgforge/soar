@@ -55,21 +55,20 @@ impl PackageInstaller {
                 ref version,
                 ref ghcr_size,
                 ref size,
-                bsum,
                 ..
             } = package;
             let installed_path = install_dir.to_string_lossy();
-            let size = ghcr_size.unwrap_or(*size);
+            let size = ghcr_size.unwrap_or(size.unwrap_or(0));
             let mut stmt = prepare_and_bind!(
                 conn,
                 "INSERT INTO packages (
                 repo_name, pkg, pkg_id, pkg_name, pkg_type, version, size,
-                checksum, installed_path, installed_date, with_pkg_id, profile
+                installed_path, installed_date, with_pkg_id, profile
             )
             VALUES
             (
                 $repo_name, $pkg, $pkg_id, $pkg_name, $pkg_type, $version, $size,
-                $bsum, $installed_path, datetime(), $with_pkg_id, $profile
+                $installed_path, datetime(), $with_pkg_id, $profile
             )"
             );
             stmt.raw_execute()?;
@@ -135,6 +134,7 @@ impl PackageInstaller {
         icon_path: Option<PathBuf>,
         desktop_path: Option<PathBuf>,
         unlinked: bool,
+        final_checksum: String,
     ) -> SoarResult<()> {
         let mut conn = self.db.lock()?;
         let package = &self.package;
@@ -145,7 +145,7 @@ impl PackageInstaller {
             repo_name,
             pkg_name,
             pkg_id,
-            bsum: checksum,
+            version,
             ..
         } = package;
         let provides = serde_json::to_string(&package.provides).unwrap();
@@ -164,12 +164,13 @@ impl PackageInstaller {
                     installed_date = datetime(),
                     is_installed = true,
                     provides = $provides,
-                    with_pkg_id = $with_pkg_id
+                    with_pkg_id = $with_pkg_id,
+                    checksum = $final_checksum
                 WHERE
                     repo_name = $repo_name
                     AND pkg_name = $pkg_name
                     AND pkg_id = $pkg_id
-                    AND checksum = $checksum
+                    AND version = $version
             "
             );
             stmt.raw_execute()?;
@@ -186,7 +187,7 @@ impl PackageInstaller {
                     AND (
                         pkg_id != $pkg_id
                         OR
-                        checksum != $checksum
+                        version != $version
                     )"
             );
             stmt.raw_execute()?;
@@ -199,7 +200,7 @@ impl PackageInstaller {
             let alternate_packages = PackageQueryBuilder::new(self.db.clone())
                 .where_and("pkg_name", FilterCondition::Eq(pkg_name.to_owned()))
                 .where_and("pkg_id", FilterCondition::Ne(pkg_id.to_owned()))
-                .where_and("checksum", FilterCondition::Ne(checksum.to_owned()))
+                .where_and("version", FilterCondition::Ne(version.to_owned()))
                 .load_installed()?
                 .items;
 

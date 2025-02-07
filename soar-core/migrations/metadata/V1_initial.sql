@@ -1,12 +1,12 @@
 CREATE TABLE repository (
-  name TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
   etag TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE maintainers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  contact TEXT NOT NULL,
-  name TEXT NOT NULL
+  contact TEXT NOT NULL COLLATE NOCASE,
+  name TEXT NOT NULL COLLATE NOCASE
 );
 
 CREATE TABLE package_maintainers (
@@ -21,27 +21,27 @@ CREATE TABLE packages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   disabled BOOLEAN NOT NULL DEFAULT false,
   disabled_reason JSONB,
-  rank INT NOT NULL,
-  pkg TEXT NOT NULL,
-  pkg_id TEXT,
-  pkg_name TEXT NOT NULL,
-  pkg_family TEXT NOT NULL,
-  pkg_type TEXT NOT NULL,
+  rank INT,
+  pkg TEXT COLLATE NOCASE,
+  pkg_id TEXT NOT NULL COLLATE NOCASE,
+  pkg_name TEXT NOT NULL COLLATE NOCASE,
+  pkg_family TEXT COLLATE NOCASE,
+  pkg_type TEXT COLLATE NOCASE,
   pkg_webpage TEXT,
-  app_id TEXT,
+  app_id TEXT COLLATE NOCASE,
   description TEXT,
   version TEXT NOT NULL,
   version_upstream TEXT,
   licenses JSONB,
   download_url TEXT NOT NULL,
-  size BIGINT NOT NULL,
+  size BIGINT,
   ghcr_pkg TEXT,
   ghcr_size BIGINT,
   ghcr_files JSONB,
   ghcr_blob TEXT,
   ghcr_url TEXT,
-  bsum TEXT NOT NULL,
-  shasum TEXT NOT NULL,
+  bsum TEXT,
+  shasum TEXT,
   icon TEXT,
   desktop TEXT,
   appstream TEXT,

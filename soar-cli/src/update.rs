@@ -27,7 +27,7 @@ fn is_already_installed(package: &Package, core_db: Arc<Mutex<Connection>>) -> S
         .where_and("repo_name", FilterCondition::Eq(package.repo_name.clone()))
         .where_and("pkg_name", FilterCondition::Eq(package.pkg_name.clone()))
         .where_and("pkg_id", FilterCondition::Eq(package.pkg_id.clone()))
-        .where_and("checksum", FilterCondition::Eq(package.bsum.clone()))
+        .where_and("version", FilterCondition::Eq(package.version.clone()))
         .limit(1)
         .load_installed()?
         .items;
@@ -54,7 +54,6 @@ pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarR
                 builder = builder
                     .database(repo_db.clone())
                     .where_and("repo_name", FilterCondition::Eq(pkg.repo_name.clone()))
-                    .where_and("bsum", FilterCondition::Ne(pkg.checksum.clone()))
                     .where_and("version", FilterCondition::Gt(pkg.version.clone()))
                     .where_and(
                         &format!(
@@ -99,7 +98,6 @@ pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarR
                 .where_and("repo_name", FilterCondition::Eq(pkg.repo_name.clone()))
                 .where_and("pkg_name", FilterCondition::Eq(pkg.pkg_name.clone()))
                 .where_and("pkg_id", FilterCondition::Eq(pkg.pkg_id.clone()))
-                .where_and("bsum", FilterCondition::Ne(pkg.checksum.clone()))
                 .where_and(
                     &format!(
                         "(version > '{}' OR version LIKE 'HEAD-%' AND substr(version, 14) > '{}')",

@@ -74,10 +74,12 @@ pub async fn run_package(
         downloader.download(options).await?;
 
         let checksum = calculate_checksum(&output_path)?;
-        if checksum != package.bsum {
-            let response = interactive_ask("Invalid checksum. Do you want to continue (y/N)?")?;
-            if !response.to_lowercase().starts_with("y") {
-                return Err(SoarError::InvalidChecksum);
+        if let Some(bsum) = package.bsum {
+            if checksum != bsum {
+                let response = interactive_ask("Invalid checksum. Do you want to continue (y/N)?")?;
+                if !response.to_lowercase().starts_with("y") {
+                    return Err(SoarError::InvalidChecksum);
+                }
             }
         }
     }
