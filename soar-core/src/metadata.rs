@@ -48,7 +48,8 @@ pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
 
     let resp = client.get(&repo.url).headers(header_map).send().await?;
     if !resp.status().is_success() {
-        return Err(SoarError::FailedToFetchRemote(repo.url));
+        let msg = format!("{} [{}]", repo.url, resp.status());
+        return Err(SoarError::FailedToFetchRemote(msg));
     }
 
     let metadata_db = repo_path.join("metadata.db");

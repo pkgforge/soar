@@ -1,11 +1,13 @@
-use std::sync::Arc;
+use std::{sync::Arc, thread::sleep, time::Duration};
 
 use indicatif::HumanBytes;
 use regex::Regex;
+use reqwest::StatusCode;
 use serde::Deserialize;
 use soar_core::{config::get_config, SoarResult};
 use soar_dl::{
-    downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions},
+    downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions, OciDownloader},
+    error::DownloadError,
     github::{Github, GithubAsset, GithubRelease},
     gitlab::{Gitlab, GitlabAsset, GitlabRelease},
     platform::{
@@ -135,8 +137,6 @@ pub async fn handle_direct_downloads(
 async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResult<()> {
     info!("Downloading using OCI reference: {}", reference);
 
-    let downloader = Downloader::default();
-
     let options = OciDownloadOptions {
         url: reference.to_string(),
         output_path: ctx.output.clone(),
@@ -149,10 +149,29 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
         exact_case: ctx.exact_case,
     };
 
-    let _ = downloader
-        .download_oci(options)
-        .await
-        .map_err(|e| eprintln!("{}", e));
+    let mut downloader = OciDownloader::new(options);
+    let mut retries = 0;
+    loop {
+        if retries > 5 {
+            eprintln!("Max retries exhausted. Aborting.");
+            break;
+        }
+        match downloader.download_oci().await {
+            Ok(_) => break,
+            Err(
+                DownloadError::ResourceError {
+                    status: StatusCode::TOO_MANY_REQUESTS,
+                    ..
+                }
+                | DownloadError::ChunkError,
+            ) => sleep(Duration::from_secs(5)),
+            Err(err) => {
+                eprintln!("{}", err);
+                break;
+            }
+        };
+        retries += 1;
+    }
 
     Ok(())
 }

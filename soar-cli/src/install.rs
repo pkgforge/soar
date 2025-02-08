@@ -30,7 +30,7 @@ use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
 
 use crate::{
-    progress::{self, create_progress_bar},
+    progress::handle_install_progress,
     state::AppState,
     utils::{has_no_desktop_integration, select_package_interactively},
 };
@@ -47,6 +47,8 @@ pub struct InstallContext {
     pub portable_config: Option<String>,
     pub warnings: Arc<Mutex<Vec<String>>>,
     pub errors: Arc<Mutex<Vec<String>>>,
+    pub retrying: Arc<AtomicU64>,
+    pub failed: Arc<AtomicU64>,
 }
 
 pub fn create_install_context(
@@ -58,7 +60,8 @@ pub fn create_install_context(
 ) -> InstallContext {
     let multi_progress = Arc::new(MultiProgress::new());
     let total_progress_bar = multi_progress.add(ProgressBar::new(total_packages as u64));
-    total_progress_bar.set_style(ProgressStyle::with_template("Installing {pos}/{len}").unwrap());
+    total_progress_bar
+        .set_style(ProgressStyle::with_template("Installing {pos}/{len} {msg}").unwrap());
 
     InstallContext {
         multi_progress,
@@ -71,6 +74,8 @@ pub fn create_install_context(
         portable_config,
         warnings: Arc::new(Mutex::new(Vec::new())),
         errors: Arc::new(Mutex::new(Vec::new())),
+        retrying: Arc::new(AtomicU64::new(0)),
+        failed: Arc::new(AtomicU64::new(0)),
     }
 }
 
@@ -302,27 +307,19 @@ async fn spawn_installation_task(
     fixed_width: usize,
 ) -> tokio::task::JoinHandle<()> {
     let permit = ctx.semaphore.clone().acquire_owned().await.unwrap();
-    let progress_bar = ctx
-        .multi_progress
-        .insert_from_back(1, create_progress_bar());
+    let progress_bar = Arc::new(Mutex::new(None));
 
-    let message = format!(
-        "[{}/{}] {}#{}",
-        idx + 1,
-        ctx.total_packages,
-        target.package.pkg_name,
-        target.package.pkg_id
-    );
-    let message = if message.len() > fixed_width {
-        format!("{:.width$}", message, width = fixed_width)
-    } else {
-        format!("{:<width$}", message, width = fixed_width)
+    let progress_callback = {
+        let ctx = ctx.clone();
+        let progress_bar = progress_bar.clone();
+        let package = target.package.clone();
+
+        Arc::new(move |state| {
+            let mut pb_lock = progress_bar.lock().unwrap();
+
+            handle_install_progress(state, &mut *pb_lock, &ctx, &package, idx, fixed_width);
+        })
     };
-    progress_bar.set_message(message);
-
-    let progress_callback = Arc::new(move |state| {
-        progress::handle_progress(state, &progress_bar);
-    });
 
     let total_pb = ctx.total_progress_bar.clone();
     let installed_count = ctx.installed_count.clone();

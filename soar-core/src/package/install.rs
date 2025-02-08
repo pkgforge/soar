@@ -2,10 +2,16 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    thread::sleep,
+    time::Duration,
 };
 
+use reqwest::StatusCode;
 use rusqlite::{prepare_and_bind, Connection};
-use soar_dl::downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions};
+use soar_dl::{
+    downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions, OciDownloader},
+    error::DownloadError,
+};
 
 use crate::{
     config::get_config,
@@ -93,7 +99,6 @@ impl PackageInstaller {
     }
 
     async fn download_package<P: AsRef<Path>>(&self, output_path: P) -> SoarResult<()> {
-        let downloader = Downloader::default();
         let output_path = output_path.as_ref();
 
         // fallback to download_url for repositories without ghcr
@@ -104,6 +109,7 @@ impl PackageInstaller {
         };
 
         if self.package.ghcr_pkg.is_some() {
+            let progress_callback = &self.progress_callback.clone();
             let options = OciDownloadOptions {
                 url: url.to_string(),
                 output_path: Some(output_path.to_string_lossy().to_string()),
@@ -115,8 +121,36 @@ impl PackageInstaller {
                 match_keywords: Vec::new(),
                 exact_case: false,
             };
-            downloader.download_oci(options).await?;
+            let mut downloader = OciDownloader::new(options);
+            let mut retries = 0;
+            loop {
+                if retries > 5 {
+                    if let Some(ref callback) = progress_callback {
+                        callback(DownloadState::Aborted);
+                    }
+                    break;
+                }
+                match downloader.download_oci().await {
+                    Ok(_) => break,
+                    Err(
+                        DownloadError::ResourceError {
+                            status: StatusCode::TOO_MANY_REQUESTS,
+                            ..
+                        }
+                        | DownloadError::ChunkError,
+                    ) => sleep(Duration::from_secs(5)),
+                    Err(err) => return Err(err)?,
+                };
+                retries += 1;
+                if retries > 1 {
+                    continue;
+                }
+                if let Some(ref callback) = progress_callback {
+                    callback(DownloadState::Error);
+                }
+            }
         } else {
+            let downloader = Downloader::default();
             let options = DownloadOptions {
                 url: url.to_string(),
                 output_path: Some(output_path.to_string_lossy().to_string()),

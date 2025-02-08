@@ -225,7 +225,7 @@ async fn spawn_update_task(
     } else {
         format!("{:<width$}", message, width = fixed_width)
     };
-    progress_bar.set_message(message);
+    progress_bar.set_prefix(message);
 
     let progress_callback = Arc::new(move |state| {
         progress::handle_progress(state, &progress_bar);

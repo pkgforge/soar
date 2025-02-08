@@ -29,5 +29,5 @@ reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tl
 rusqlite = { version = "0.33.0", features = ["bundled", "rusqlite-macros"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = { version = "1.0.135", features = ["indexmap"] }
-soar-dl = "0.3.3"
+soar-dl = "0.3.4"
 tracing = { version = "0.1.41", default-features = false }
