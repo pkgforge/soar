@@ -273,6 +273,18 @@ pub async fn perform_installation(
     for error in ctx.errors.lock().unwrap().iter() {
         error!("{error}");
     }
+
+    for target in targets {
+        let pkg = target.package;
+        let notes = pkg.notes.unwrap_or_default().join("\n  ");
+        info!(
+            "\n* {}#{}\n  {}\n",
+            pkg.pkg_name,
+            pkg.pkg_id,
+            if notes.is_empty() { "" } else { &notes }
+        );
+    }
+
     info!(
         "Installed {}/{} packages",
         ctx.installed_count.load(Ordering::Relaxed),
