@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     os::unix::fs,
     path::PathBuf,
     sync::{
@@ -49,6 +50,7 @@ pub struct InstallContext {
     pub errors: Arc<Mutex<Vec<String>>>,
     pub retrying: Arc<AtomicU64>,
     pub failed: Arc<AtomicU64>,
+    pub installed_indices: Arc<Mutex<HashSet<usize>>>,
 }
 
 pub fn create_install_context(
@@ -76,6 +78,7 @@ pub fn create_install_context(
         errors: Arc::new(Mutex::new(Vec::new())),
         retrying: Arc::new(AtomicU64::new(0)),
         failed: Arc::new(AtomicU64::new(0)),
+        installed_indices: Arc::new(Mutex::new(HashSet::new())),
     }
 }
 
@@ -86,6 +89,7 @@ pub async fn install_packages(
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
+    no_notes: bool,
 ) -> SoarResult<()> {
     let state = AppState::new();
     let repo_db = state.repo_db().await?;
@@ -101,7 +105,7 @@ pub async fn install_packages(
         portable_config,
     );
 
-    perform_installation(install_context, install_targets, core_db.clone()).await
+    perform_installation(install_context, install_targets, core_db.clone(), no_notes).await
 }
 
 fn resolve_packages(
@@ -249,6 +253,7 @@ pub async fn perform_installation(
     ctx: InstallContext,
     targets: Vec<InstallTarget>,
     core_db: Arc<Mutex<Connection>>,
+    no_notes: bool,
 ) -> SoarResult<()> {
     let mut handles = Vec::new();
     let fixed_width = 40;
@@ -279,15 +284,21 @@ pub async fn perform_installation(
         error!("{error}");
     }
 
-    for target in targets {
-        let pkg = target.package;
-        let notes = pkg.notes.unwrap_or_default().join("\n  ");
-        info!(
-            "\n* {}#{}\n  {}\n",
-            pkg.pkg_name,
-            pkg.pkg_id,
-            if notes.is_empty() { "" } else { &notes }
-        );
+    if !no_notes {
+        let installed_indices = ctx.installed_indices.lock().unwrap();
+        for (idx, target) in targets.into_iter().enumerate() {
+            let pkg = target.package;
+            if !installed_indices.contains(&idx) || pkg.notes.is_none() {
+                continue;
+            }
+            let notes = pkg.notes.unwrap_or_default().join("\n  ");
+            info!(
+                "\n* {}#{}\n  {}\n",
+                pkg.pkg_name,
+                pkg.pkg_id,
+                if notes.is_empty() { "" } else { &notes }
+            );
+        }
     }
 
     info!(
@@ -323,6 +334,7 @@ async fn spawn_installation_task(
 
     let total_pb = ctx.total_progress_bar.clone();
     let installed_count = ctx.installed_count.clone();
+    let installed_indices = ctx.installed_indices.clone();
     let ctx = ctx.clone();
 
     tokio::spawn(async move {
@@ -341,6 +353,7 @@ async fn spawn_installation_task(
             }
         } else {
             installed_count.fetch_add(1, Ordering::Relaxed);
+            installed_indices.lock().unwrap().insert(idx);
             total_pb.inc(1);
         }
 

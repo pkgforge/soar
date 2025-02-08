@@ -80,6 +80,7 @@ async fn handle_cli() -> SoarResult<()> {
             portable,
             portable_home,
             portable_config,
+            no_notes,
         } => {
             if portable.is_some() && (portable_home.is_some() || portable_config.is_some()) {
                 error!("--portable cannot be used with --portable-home or --portable-config");
@@ -97,6 +98,7 @@ async fn handle_cli() -> SoarResult<()> {
                 portable,
                 portable_home,
                 portable_config,
+                no_notes,
             )
             .await?;
         }
