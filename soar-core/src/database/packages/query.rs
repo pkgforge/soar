@@ -10,7 +10,7 @@ use crate::{
 
 use super::{FilterCondition, LogicalOp, PaginatedResponse, QueryFilter, SortDirection};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PackageQueryBuilder {
     db: Arc<Mutex<Connection>>,
     filters: Vec<QueryFilter>,
@@ -384,7 +384,9 @@ impl PackageQueryBuilder {
 
     fn build_installed_query(&self) -> SoarResult<(String, Vec<Box<dyn rusqlite::ToSql>>)> {
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        let select_clause = "SELECT p.* FROM packages p";
+        let select_clause = "SELECT p.*, pp.* FROM packages p
+            LEFT JOIN portable_package pp
+            ON pp.package_id = p.id";
         let where_clause = self.build_where_clause(&mut params);
         let mut query = format!("{} {}", select_clause, where_clause);
 

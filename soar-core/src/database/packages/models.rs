@@ -40,6 +40,7 @@ pub struct QueryFilter {
     pub logical_op: Option<LogicalOp>,
 }
 
+#[derive(Debug)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
     pub page: u32,

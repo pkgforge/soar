@@ -186,6 +186,9 @@ pub struct InstalledPackage {
     pub detached: bool,
     pub unlinked: bool,
     pub provides: Option<Vec<PackageProvide>>,
+    pub portable_path: Option<String>,
+    pub portable_home: Option<String>,
+    pub portable_config: Option<String>,
 }
 
 impl FromRow for InstalledPackage {
@@ -220,6 +223,9 @@ impl FromRow for InstalledPackage {
             detached: row.get("detached")?,
             unlinked: row.get("unlinked")?,
             provides,
+            portable_path: row.get("portable_path")?,
+            portable_home: row.get("portable_home")?,
+            portable_config: row.get("portable_config")?,
         })
     }
 }

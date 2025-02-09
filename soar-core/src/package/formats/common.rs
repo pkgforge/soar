@@ -188,9 +188,9 @@ pub async fn integrate_remote<P: AsRef<Path>>(
 pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     package_path: P,
     package: &T,
-    portable: Option<String>,
-    portable_home: Option<String>,
-    portable_config: Option<String>,
+    portable: Option<&str>,
+    portable_home: Option<&str>,
+    portable_config: Option<&str>,
 ) -> SoarResult<()> {
     let package_path = package_path.as_ref();
 
@@ -199,7 +199,7 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     let pkg_home = package_path.with_extension("home");
 
     let (portable_home, portable_config) = if let Some(portable) = portable {
-        (Some(portable.clone()), Some(portable.clone()))
+        (Some(portable), Some(portable))
     } else {
         (portable_home, portable_config)
     };
@@ -248,9 +248,9 @@ fn create_default_desktop_entry(name: &str, categories: &str) -> Vec<u8> {
 pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
     package: &T,
-    portable: Option<String>,
-    portable_home: Option<String>,
-    portable_config: Option<String>,
+    portable: Option<&str>,
+    portable_home: Option<&str>,
+    portable_config: Option<&str>,
 ) -> SoarResult<(Option<PathBuf>, Option<PathBuf>)> {
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();

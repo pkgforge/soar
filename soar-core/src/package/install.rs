@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread::sleep,
@@ -7,7 +7,7 @@ use std::{
 };
 
 use reqwest::StatusCode;
-use rusqlite::{prepare_and_bind, Connection};
+use rusqlite::{params, prepare_and_bind, Connection};
 use soar_dl::{
     downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions, OciDownloader},
     error::DownloadError,
@@ -169,6 +169,9 @@ impl PackageInstaller {
         desktop_path: Option<PathBuf>,
         unlinked: bool,
         final_checksum: String,
+        portable: Option<&str>,
+        portable_home: Option<&str>,
+        portable_config: Option<&str>,
     ) -> SoarResult<()> {
         let mut conn = self.db.lock()?;
         let package = &self.package;
@@ -208,6 +211,84 @@ impl PackageInstaller {
             "
             );
             stmt.raw_execute()?;
+        }
+
+        let record_id: u32 = tx.query_row(
+            "SELECT id FROM packages
+            WHERE
+            repo_name = ?
+            AND pkg_name = ?
+            AND pkg_id = ?
+            AND version = ?",
+            params![repo_name, pkg_name, pkg_id, version],
+            |row| row.get(0),
+        )?;
+
+        if portable.is_some() || portable_home.is_some() || portable_config.is_some() {
+            let base_dir = env::current_dir()?;
+            let portable = portable
+                .map(|p| {
+                    let path = PathBuf::from(&p);
+                    if path.is_absolute() {
+                        path
+                    } else {
+                        base_dir.join(path)
+                    }
+                })
+                .map(|p| p.to_string_lossy().into_owned());
+
+            let portable_home = portable_home
+                .map(|p| {
+                    let path = PathBuf::from(&p);
+                    if path.is_absolute() {
+                        path
+                    } else {
+                        base_dir.join(path)
+                    }
+                })
+                .map(|p| p.to_string_lossy().into_owned());
+
+            let portable_config = portable_config
+                .map(|p| {
+                    let path = PathBuf::from(&p);
+                    if path.is_absolute() {
+                        path
+                    } else {
+                        base_dir.join(path)
+                    }
+                })
+                .map(|p| p.to_string_lossy().into_owned());
+
+            // try to update existing record first
+            let mut stmt = prepare_and_bind!(
+                tx,
+                "UPDATE portable_package
+                SET
+                    portable_path = $portable,
+                    portable_home = $portable_home,
+                    portable_config = $portable_config
+                WHERE
+                    package_id = $record_id
+                "
+            );
+            let updated = stmt.raw_execute()?;
+
+            // if no record were updated, add a new record
+            if updated == 0 {
+                let mut stmt = prepare_and_bind!(
+                    tx,
+                    "INSERT INTO portable_package
+                (
+                    package_id, portable_path, portable_home, portable_config
+                )
+                VALUES
+                (
+                     $record_id, $portable, $portable_home, $portable_config
+                )
+                "
+                );
+                stmt.raw_execute()?;
+            }
         }
 
         if !unlinked {

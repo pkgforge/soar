@@ -22,12 +22,8 @@ impl PackageRemover {
     }
 
     pub async fn remove(&self) -> SoarResult<()> {
-        let conn = self.db.lock()?;
-        let mut stmt = conn.prepare(
-            r#"
-            DELETE FROM packages WHERE id = ?
-        "#,
-        )?;
+        let mut conn = self.db.lock()?;
+        let tx = conn.transaction()?;
 
         // to prevent accidentally removing required files by other package,
         // remove only if the installation was successful
@@ -77,7 +73,23 @@ impl PackageRemover {
             }
         };
 
-        stmt.execute(params![self.package.id])?;
+        {
+            let mut stmt = tx.prepare(
+                r#"
+                DELETE FROM packages WHERE id = ?
+            "#,
+            )?;
+            stmt.execute(params![self.package.id])?;
+
+            let mut stmt = tx.prepare(
+                r#"
+                DELETE FROM portable_package WHERE package_id = ?
+            "#,
+            )?;
+            stmt.execute(params![self.package.id])?;
+        }
+
+        tx.commit()?;
 
         Ok(())
     }

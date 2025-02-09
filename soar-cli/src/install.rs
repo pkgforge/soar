@@ -368,7 +368,7 @@ pub async fn install_single_package(
     core_db: Arc<Mutex<Connection>>,
 ) -> SoarResult<()> {
     let bin_dir = get_config().get_bin_path()?;
-    let (install_dir, real_bin, def_bin_path, unlinked) =
+    let (install_dir, real_bin, def_bin_path, unlinked, portable, portable_home, portable_config) =
         if let Some(ref existing) = target.existing_install {
             let install_dir = PathBuf::from(&existing.installed_path);
             let real_bin = install_dir.join(&target.package.pkg_name);
@@ -378,7 +378,15 @@ pub async fn install_single_package(
                 .map(|p| PathBuf::from(p).join(&target.package.pkg_name))
                 .unwrap_or_else(|| bin_dir.join(&target.package.pkg_name));
 
-            (install_dir, real_bin, def_bin_path, existing.unlinked)
+            (
+                install_dir,
+                real_bin,
+                def_bin_path,
+                existing.unlinked,
+                existing.portable_path.as_deref(),
+                existing.portable_home.as_deref(),
+                existing.portable_config.as_deref(),
+            )
         } else {
             let rand_str: String = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
@@ -396,7 +404,15 @@ pub async fn install_single_package(
             let real_bin = install_dir.join(&target.package.pkg_name);
             let def_bin_path = bin_dir.join(&target.package.pkg_name);
 
-            (install_dir, real_bin, def_bin_path, false)
+            (
+                install_dir,
+                real_bin,
+                def_bin_path,
+                false,
+                ctx.portable.as_deref(),
+                ctx.portable_home.as_deref(),
+                ctx.portable_config.as_deref(),
+            )
         };
 
     if install_dir.exists() {
@@ -476,15 +492,24 @@ pub async fn install_single_package(
         integrate_package(
             &install_dir,
             &target.package,
-            ctx.portable.clone(),
-            ctx.portable_home.clone(),
-            ctx.portable_config.clone(),
+            portable,
+            portable_home,
+            portable_config,
         )
         .await?
     };
 
     installer
-        .record(&bin_dir, icon_path, desktop_path, unlinked, final_checksum)
+        .record(
+            &bin_dir,
+            icon_path,
+            desktop_path,
+            unlinked,
+            final_checksum,
+            portable,
+            portable_home,
+            portable_config,
+        )
         .await?;
 
     Ok(())
