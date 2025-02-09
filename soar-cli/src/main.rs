@@ -63,13 +63,13 @@ async fn handle_cli() -> SoarResult<()> {
 
     setup_logging(&args);
 
-    if let Some(ref profile) = args.profile {
-        set_current_profile(profile)?;
-    }
-
     if args.no_color {
         let mut color = COLOR.write().unwrap();
         *color = false;
+    }
+
+    if let Some(ref profile) = args.profile {
+        set_current_profile(profile)?;
     }
 
     match args.command {
@@ -177,7 +177,7 @@ async fn handle_cli() -> SoarResult<()> {
             .await?;
         }
         cli::Commands::Health => unreachable!(),
-        cli::Commands::DefConfig => generate_default_config()?,
+        cli::Commands::DefConfig { external } => generate_default_config(external)?,
         cli::Commands::Env => {
             let config = get_config();
             info!("SOAR_BIN={}", config.get_bin_path()?.display());

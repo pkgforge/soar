@@ -301,11 +301,16 @@ pub async fn perform_installation(
         }
     }
 
-    info!(
-        "Installed {}/{} packages",
-        ctx.installed_count.load(Ordering::Relaxed),
-        ctx.total_packages
-    );
+    let installed_count = ctx.installed_count.load(Ordering::Relaxed);
+    if installed_count > 0 {
+        info!(
+            "Installed {}/{} packages",
+            ctx.installed_count.load(Ordering::Relaxed),
+            ctx.total_packages
+        );
+    } else {
+        info!("No packages installed.");
+    }
 
     Ok(())
 }

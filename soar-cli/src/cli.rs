@@ -241,7 +241,11 @@ pub enum Commands {
 
     /// Generate default config
     #[clap(name = "defconfig")]
-    DefConfig,
+    DefConfig {
+        /// Enable external repositories
+        #[arg(required = false, short, long)]
+        external: bool,
+    },
 
     /// View env
     #[clap(name = "env")]

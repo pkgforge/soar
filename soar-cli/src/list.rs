@@ -76,7 +76,7 @@ pub async fn search_packages(
             version_upstream = package.version_upstream,
             description = package.description,
             size = package.ghcr_size.or(package.size),
-            "[{}] {}#{}:{} ({}-{}{}) - {} ({})",
+            "[{}] {}#{}:{} ({}{}{}) - {} ({})",
             install_state,
             Colored(Blue, &package.pkg_name),
             Colored(Cyan, &package.pkg_id),
@@ -374,7 +374,7 @@ pub struct PackageList {
     pkg_id: String,
     pkg_name: String,
     repo_name: String,
-    pkg_type: String,
+    pkg_type: Option<String>,
     version: String,
     version_upstream: Option<String>,
 }
@@ -437,12 +437,16 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
                 pkg_type = package.pkg_type,
                 version = package.version,
                 version_upstream = package.version_upstream,
-                "[{}] {}#{}:{} ({}-{}{})",
+                "[{}] {}#{}:{} ({}{}{})",
                 install_state,
                 Colored(Blue, &package.pkg_name),
                 Colored(Cyan, &package.pkg_id),
                 Colored(Cyan, &package.repo_name),
-                Colored(Magenta, &package.pkg_type),
+                package
+                    .pkg_type
+                    .as_ref()
+                    .map(|pkg_type| format!("{}-", Colored(Magenta, &pkg_type)))
+                    .unwrap_or_default(),
                 Colored(Magenta, &package.version),
                 package
                     .version_upstream

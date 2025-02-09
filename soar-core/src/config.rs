@@ -262,7 +262,7 @@ impl Default for Config {
     }
 }
 
-pub fn generate_default_config() -> Result<()> {
+pub fn generate_default_config(external: bool) -> Result<()> {
     let home_config = home_config_path();
     let config_path = PathBuf::from(home_config).join("soar").join("config.toml");
 
@@ -272,7 +272,21 @@ pub fn generate_default_config() -> Result<()> {
 
     fs::create_dir_all(config_path.parent().unwrap())?;
 
-    let def_config = Config::default();
+    let mut def_config = Config::default();
+
+    if external {
+        def_config.repositories.extend([
+            Repository {
+                name: "appimage".to_string(),
+                url: "https://meta.pkgforge.dev/external/am/x86_64-Linux.json.zstd".to_string(),
+            },
+            Repository {
+                name: "appimage-github-io".to_string(),
+                url: "https://meta.pkgforge.dev/external/appimage.github.io/x86_64-Linux.json.zstd"
+                    .to_string(),
+            },
+        ]);
+    }
     let serialized = toml::to_string_pretty(&def_config)?;
     fs::write(&config_path, &serialized)?;
 
