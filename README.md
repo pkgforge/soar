@@ -57,6 +57,9 @@ Soar comes as a single-file, statically-linked executable with no dependencies t
 
 Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration.html) & [all repositories](https://docs.pkgforge.dev/repositories/) preconfigured at `~/.config/soar/config.toml`<br>
 For additional configuration guide, click [here](https://soar.qaidvoid.dev/configuration.html)
+> [!NOTE]
+> [External repositories](https://docs.pkgforge.dev/repositories/external) aren't enabled enabled by default.
+> Enable them with `soar defconfig --external`
 
 ## 🎯 Usage
 
@@ -65,18 +68,15 @@ Simply run `soar --help` for general options.
 - Detailed guide regarding each format is at: [docs.pkgforge.dev](https://docs.pkgforge.dev/formats/packages)
 
 ## 📦 Packages
-We use a novel recipe format called [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) at [pkgforge-dev/soarpkgs](https://github.com/pkgforge/soarpkgs).
-Our CI Infra builds these [packages](https://pkgs.pkgforge.dev/) periodically & syncs to the [cache](https://docs.pkgforge.dev/repositories/soarpkgs/faq#cache).
-To request new packages or report an issue with an existing one, please use the [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs) repository.<br>
-Additionally we also support [AM](https://github.com/ivan-hc/AM) & [appimage.github.io](https://github.com/AppImage/appimage.github.io)
-> [!NOTE]
-> [External repositories](https://docs.pkgforge.dev/) aren't enabled enabled by default.
-> Enable them with `soar defconfig --external`
+Our [Official repositories](https://docs.pkgforge.dev/repositories) use a novel recipe format called [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) at [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs).
+Our CI Infra builds these [packages](https://pkgs.pkgforge.dev/) periodically & syncs to the [cache](https://docs.pkgforge.dev/repositories/soarpkgs/faq#cache).<br>
+Additionally we also support [AM](https://github.com/ivan-hc/AM) & [appimage.github.io](https://github.com/AppImage/appimage.github.io) as [external repositories](https://docs.pkgforge.dev/repositories/external)
 
 
 What Packages are Available?
 - Type `soar list` for a list
-- Or visit [pkgs.pkgforge.dev](https://pkgs.pkgforge.dev/)
+- Or visit [pkgs.pkgforge.dev](https://pkgs.pkgforge.dev/)<br>
+To request new packages or report an issue with an existing one, please use the [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs) repository.<br>
 
 ## 💬 Community
 
