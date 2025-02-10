@@ -12,7 +12,7 @@
 [issues-url]: https://github.com/pkgforge/soar/issues
 [license-shield]: https://img.shields.io/github/license/pkgforge/soar.svg
 [license-url]: https://github.com/pkgforge/soar/blob/main/LICENSE
-[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/soarpkgs/data/TOTAL_CACHE.json&query=$.total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
+[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/TOTAL_INSTALLABLE.json&query=$[4].total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
 [packages-url]: https://pkgs.pkgforge.dev
 [stars-shield]: https://img.shields.io/github/stars/pkgforge/soar.svg
 [stars-url]: https://github.com/pkgforge/soar/stargazers
@@ -29,7 +29,7 @@
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif?version=v0.5.0" alt="soar-list" width="850">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.5.4" alt="soar-list" width="850">
     </a><br>
 </p>
 
@@ -67,7 +67,12 @@ Simply run `soar --help` for general options.
 ## 📦 Packages
 We use a novel recipe format called [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) at [pkgforge-dev/soarpkgs](https://github.com/pkgforge/soarpkgs).
 Our CI Infra builds these [packages](https://pkgs.pkgforge.dev/) periodically & syncs to the [cache](https://docs.pkgforge.dev/repositories/soarpkgs/faq#cache).
-To request new packages or report an issue with an existing one, please use the [pkgforge-dev/soarpkgs](https://github.com/pkgforge/soarpkgs) repository.
+To request new packages or report an issue with an existing one, please use the [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs) repository.<br>
+Additionally we also support [AM](https://github.com/ivan-hc/AM) & [appimage.github.io](https://github.com/AppImage/appimage.github.io)
+> [!NOTE]
+> [External repositories](https://docs.pkgforge.dev/) aren't enabled enabled by default.
+> Enable them with `soar defconfig --external`
+
 
 What Packages are Available?
 - Type `soar list` for a list
