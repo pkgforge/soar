@@ -132,9 +132,10 @@ fn resolve_packages(
                 }
                 let pkg = if packages.total > 1 {
                     let pkgs = packages.items;
-                    select_package_interactively(pkgs, &query.name.unwrap())?.unwrap()
+                    &select_package_interactively(pkgs, &query.name.unwrap_or(package.clone()))?
+                        .unwrap()
                 } else {
-                    packages.items.first().unwrap().clone()
+                    packages.items.first().unwrap()
                 };
                 query.pkg_id = Some(pkg.pkg_id.clone());
                 query.name = None;

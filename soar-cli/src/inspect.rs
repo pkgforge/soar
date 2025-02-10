@@ -1,18 +1,27 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    fs,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use futures::StreamExt;
 use indicatif::HumanBytes;
+use rusqlite::Connection;
 use soar_core::{
     database::{
         models::Package,
-        packages::{PackageQueryBuilder, PaginatedResponse},
+        packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse},
     },
     package::query::PackageQuery,
     SoarResult,
 };
 use tracing::{error, info};
 
-use crate::{state::AppState, utils::interactive_ask};
+use crate::{
+    state::AppState,
+    utils::{interactive_ask, select_package_interactively},
+};
 
 pub enum InspectType {
     BuildLog,
@@ -28,12 +37,35 @@ impl Display for InspectType {
     }
 }
 
+fn get_installed_path(
+    core_db: &Arc<Mutex<Connection>>,
+    package: &Package,
+) -> SoarResult<Option<PathBuf>> {
+    let installed_pkgs = PackageQueryBuilder::new(core_db.clone())
+        .where_and("repo_name", FilterCondition::Eq(package.repo_name.clone()))
+        .where_and("pkg_id", FilterCondition::Eq(package.pkg_id.clone()))
+        .where_and("pkg_name", FilterCondition::Eq(package.pkg_name.clone()))
+        .where_and("version", FilterCondition::Eq(package.version.clone()))
+        .limit(1)
+        .load_installed()?
+        .items;
+
+    if installed_pkgs.len() > 0 {
+        let pkg = installed_pkgs.first().unwrap();
+        if pkg.is_installed {
+            return Ok(Some(PathBuf::from(pkg.installed_path.clone())));
+        }
+    }
+    Ok(None)
+}
+
 pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult<()> {
     let state = AppState::new();
+    let core_db = state.core_db()?;
     let repo_db = state.repo_db().await?;
 
     let query = PackageQuery::try_from(package)?;
-    let builder = PackageQueryBuilder::new(repo_db.clone()).limit(1);
+    let builder = PackageQueryBuilder::new(repo_db.clone());
     let builder = query.apply_filters(builder);
 
     let packages: PaginatedResponse<Package> = builder.load()?;
@@ -41,16 +73,47 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
     if packages.items.is_empty() {
         error!("Package {} not found", package);
     } else {
-        let first_pkg = packages.items.first().unwrap();
+        let selected_pkg = if packages.total > 1 {
+            &select_package_interactively(
+                packages.items,
+                &query.name.unwrap_or(package.to_string()),
+            )?
+            .unwrap()
+        } else {
+            packages.items.first().unwrap()
+        };
+
+        if let Some(installed_path) = get_installed_path(core_db, &selected_pkg)? {
+            let file = if matches!(inspect_type, InspectType::BuildLog) {
+                installed_path.join(format!("{}.log", selected_pkg.pkg_name))
+            } else {
+                installed_path.join("SBUILD")
+            };
+
+            if file.exists() && file.is_file() {
+                info!(
+                    "Reading build {inspect_type} from {} [{}]",
+                    file.display(),
+                    HumanBytes(file.metadata()?.len())
+                );
+                let output = fs::read_to_string(file)?.replace("\r", "\n");
+
+                info!("\n{}", output);
+                return Ok(());
+            }
+        };
 
         let url = if matches!(inspect_type, InspectType::BuildLog) {
-            &first_pkg.build_log
+            &selected_pkg.build_log
         } else {
-            &first_pkg.build_script
+            &selected_pkg.build_script
         };
 
         let Some(url) = url else {
-            error!("No build {} found for {}", inspect_type, first_pkg.pkg_name);
+            error!(
+                "No build {} found for {}",
+                inspect_type, selected_pkg.pkg_name
+            );
             return Ok(());
         };
 
