@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::{
     error::SoarError,
@@ -277,18 +278,24 @@ pub fn generate_default_config(external: bool) -> Result<()> {
     if external {
         def_config.repositories.extend([
             Repository {
-                name: "appimage".to_string(),
-                url: "https://meta.pkgforge.dev/external/am/x86_64-Linux.json.zstd".to_string(),
+                name: "ivan-hc-am".to_string(),
+                url: format!(
+                    "https://meta.pkgforge.dev/external/am/{}.json.zstd",
+                    get_platform()
+                ),
             },
             Repository {
                 name: "appimage-github-io".to_string(),
-                url: "https://meta.pkgforge.dev/external/appimage.github.io/x86_64-Linux.json.zstd"
-                    .to_string(),
+                url: format!(
+                    "https://meta.pkgforge.dev/external/appimage.github.io/{}.json.zstd",
+                    get_platform()
+                ),
             },
         ]);
     }
     let serialized = toml::to_string_pretty(&def_config)?;
     fs::write(&config_path, &serialized)?;
+    info!("Default config written at: {}", config_path.display());
 
     Ok(())
 }
