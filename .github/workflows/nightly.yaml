@@ -66,21 +66,32 @@ jobs:
       - name: Build
         run: SOAR_NIGHTLY=1 cargo build --release --locked --target ${{ matrix.build.TARGET }}
 
-      - name: Prepare nightly binary
+      - name: Prepare release assets
         shell: bash
         run: |
-          mkdir -p nightly
-          cp "target/${{ matrix.build.TARGET }}/release/soar" nightly/soar-nightly-${{ matrix.build.NAME }}
-          b3sum nightly/soar-nightly-${{ matrix.build.NAME }} > nightly/soar-nightly-${{ matrix.build.NAME }}.b3sum
+          mkdir -p release
+          cp {LICENSE,README.md,CHANGELOG.md} release/
+          cp "target/${{ matrix.build.TARGET }}/release/soar" release/
 
-      - name: Upload nightly binary
-        uses: softprops/action-gh-release@v2
+      - name: Create release artifacts
+        shell: bash
+        run: |
+            cp release/soar soar-${{ matrix.build.NAME }}
+            b3sum soar-${{ matrix.build.NAME }} \
+              > soar-${{ matrix.build.NAME }}.b3sum
+            tar -czvf soar-${{ matrix.build.NAME }}.tar.gz \
+              release/
+            b3sum soar-${{ matrix.build.NAME }}.tar.gz \
+              > soar-${{ matrix.build.NAME }}.tar.gz.b3sum
+
+      - name: Publish to GitHub (nightly)
+        uses: svenstaro/upload-release-action@v2
         with:
-          files: nightly/*
-          tag_name: nightly
-          name: ${{ steps.version.outputs.version }}
-          body: "This is an automated nightly build of Soar."
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: soar-${{ matrix.build.NAME }}*
+          file_glob: true
+          overwrite: true
+          tag: nightly
+          release_name: "${{ steps.version.outputs.version }}"
           prerelease: true
-          draft: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
