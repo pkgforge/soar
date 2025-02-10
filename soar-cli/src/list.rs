@@ -84,7 +84,7 @@ pub async fn search_packages(
             package
                 .pkg_type
                 .as_ref()
-                .map(|pkg_type| format!("{}", Colored(Magenta, &pkg_type)))
+                .map(|pkg_type| format!("{}-", Colored(Magenta, &pkg_type)))
                 .unwrap_or_default(),
             Colored(Magenta, &package.version),
             package

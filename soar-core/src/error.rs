@@ -2,7 +2,43 @@ use std::error::Error;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Invalid configuration")]
+    InvalidConfig,
+
+    #[error("Configuration file already exists")]
+    ConfigAlreadyExists,
+
+    #[error("Invalid profile: {0}")]
+    InvalidProfile(String),
+
+    #[error("TOML deserialization error: {0}")]
+    TomlDeError(#[from] toml::de::Error),
+
+    #[error("TOML serialization error: {0}")]
+    TomlSerError(#[from] toml::ser::Error),
+
+    #[error("IO error reading config: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("Default profile '{0}' does not exist")]
+    MissingDefaultProfile(String),
+
+    #[error("Reserved repository name 'local' is not allowed")]
+    ReservedRepositoryName,
+
+    #[error("Duplicate repository name '{0}'")]
+    DuplicateRepositoryName(String),
+
+    #[error("Profile '{0}' does not exist")]
+    MissingProfile(String),
+}
+
+#[derive(Error, Debug)]
 pub enum SoarError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+
     #[error("System error: {0}")]
     Errno(#[from] nix::errno::Errno),
 
@@ -57,9 +93,6 @@ pub enum SoarError {
     #[error("Invalid checksum detected")]
     InvalidChecksum,
 
-    #[error("Invalid configuration")]
-    InvalidConfig,
-
     #[error("Configuration file already exists")]
     ConfigAlreadyExists,
 
@@ -98,6 +131,7 @@ impl SoarError {
                 e.source()
                     .map_or_else(|| e.to_string(), |source| source.to_string())
             ),
+            Self::Config(err) => err.to_string(),
             _ => self.to_string(),
         }
     }

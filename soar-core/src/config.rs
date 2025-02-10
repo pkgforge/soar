@@ -9,11 +9,11 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::{
-    error::SoarError,
+    error::{ConfigError, SoarError},
     utils::{build_path, get_platform, home_config_path, home_data_path},
 };
 
-type Result<T> = std::result::Result<T, SoarError>;
+type Result<T> = std::result::Result<T, ConfigError>;
 
 #[derive(Deserialize, Serialize)]
 pub struct Profile {
@@ -136,7 +136,7 @@ pub fn set_current_profile(name: &str) -> Result<()> {
     let mut profile = CURRENT_PROFILE.write().unwrap();
     match config.profile.contains_key(name) {
         true => *profile = Some(name.to_string()),
-        false => return Err(SoarError::InvalidProfile(name.to_string())),
+        false => return Err(ConfigError::InvalidProfile(name.to_string())),
     }
     Ok(())
 }
@@ -152,14 +152,14 @@ impl Config {
         let mut config = match fs::read_to_string(&config_path) {
             Ok(content) => match toml::from_str(&content) {
                 Ok(c) => Ok(c),
-                Err(_) => Err(SoarError::InvalidConfig),
+                Err(err) => Err(ConfigError::TomlDeError(err)),
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(_) => Err(SoarError::InvalidConfig),
+            Err(err) => Err(ConfigError::IoError(err)),
         }?;
 
         if !config.profile.contains_key(&config.default_profile) {
-            return Err(SoarError::InvalidConfig);
+            return Err(ConfigError::MissingDefaultProfile(config.default_profile));
         }
 
         if config.parallel.unwrap_or(true) {
@@ -169,10 +169,10 @@ impl Config {
         let mut seen = HashSet::new();
         for repo in &config.repositories {
             if repo.name == "local" {
-                return Err(SoarError::InvalidConfig);
+                return Err(ConfigError::ReservedRepositoryName);
             }
             if !seen.insert(&repo.name) {
-                return Err(SoarError::InvalidConfig);
+                return Err(ConfigError::DuplicateRepositoryName(repo.name.clone()));
             }
         }
 
@@ -182,14 +182,16 @@ impl Config {
     pub fn default_profile(&self) -> Result<&Profile> {
         self.profile
             .get(&self.default_profile)
-            .ok_or(SoarError::InvalidConfig)
+            .ok_or_else(|| unreachable!())
     }
 
     pub fn get_profile(&self, name: &str) -> Result<&Profile> {
-        self.profile.get(name).ok_or(SoarError::InvalidConfig)
+        self.profile
+            .get(name)
+            .ok_or(ConfigError::MissingProfile(name.to_string()))
     }
 
-    pub fn get_root_path(&self) -> Result<PathBuf> {
+    pub fn get_root_path(&self) -> std::result::Result<PathBuf, SoarError> {
         Ok(build_path(
             &self.get_profile(&get_current_profile())?.root_path,
         )?)
@@ -199,7 +201,7 @@ impl Config {
         Ok(self.default_profile()?.get_bin_path())
     }
 
-    pub fn get_db_path(&self) -> Result<PathBuf> {
+    pub fn get_db_path(&self) -> std::result::Result<PathBuf, SoarError> {
         if let Some(soar_db) = &self.db_path {
             build_path(soar_db)
         } else {
@@ -268,7 +270,7 @@ pub fn generate_default_config(external: bool) -> Result<()> {
     let config_path = PathBuf::from(home_config).join("soar").join("config.toml");
 
     if config_path.exists() {
-        return Err(SoarError::ConfigAlreadyExists);
+        return Err(ConfigError::ConfigAlreadyExists);
     }
 
     fs::create_dir_all(config_path.parent().unwrap())?;
