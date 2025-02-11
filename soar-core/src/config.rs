@@ -76,7 +76,7 @@ pub struct Config {
     pub repositories: Vec<Repository>,
     pub profile: HashMap<String, Profile>,
 
-    /// Path to the directory where app data is stored.
+    /// Path to the directory where soar database is stored.
     #[serde(skip_serializing)]
     pub db_path: Option<String>,
 
@@ -118,6 +118,13 @@ pub fn init() {
 pub static CONFIG: LazyLock<RwLock<Config>> =
     LazyLock::new(|| RwLock::new(Config::new().expect("Failed to initialize config")));
 pub static CURRENT_PROFILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
+pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
+    RwLock::new(
+        PathBuf::from(home_config_path())
+            .join("soar")
+            .join("config.toml"),
+    )
+});
 
 pub fn get_config() -> RwLockReadGuard<'static, Config> {
     CONFIG.read().unwrap()
@@ -145,9 +152,10 @@ impl Config {
     /// Creates a new configuration by loading it from the configuration file.
     /// If the configuration file is not found, it uses the default configuration.
     pub fn new() -> Result<Self> {
-        let home_config = home_config_path();
-        let pkg_config = PathBuf::from(home_config).join("soar");
-        let config_path = pkg_config.join("config.toml");
+        if std::env::var("SOAR_ROOT").is_ok() {
+            return Ok(Self::default());
+        }
+        let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
 
         let mut config = match fs::read_to_string(&config_path) {
             Ok(content) => match toml::from_str(&content) {
@@ -225,7 +233,8 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let soar_root = format!("{}/soar", home_data_path());
+        let soar_root =
+            std::env::var("SOAR_ROOT").unwrap_or_else(|_| format!("{}/soar", home_data_path()));
         let default_profile = Profile {
             root_path: soar_root.clone(),
             cache_path: Some(format!("{}/cache", soar_root)),
@@ -266,8 +275,7 @@ impl Default for Config {
 }
 
 pub fn generate_default_config(external: bool) -> Result<()> {
-    let home_config = home_config_path();
-    let config_path = PathBuf::from(home_config).join("soar").join("config.toml");
+    let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
 
     if config_path.exists() {
         return Err(ConfigError::ConfigAlreadyExists);

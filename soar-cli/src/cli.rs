@@ -28,6 +28,9 @@ pub struct Args {
     #[arg(short, long)]
     pub profile: Option<String>,
 
+    #[arg(short, long)]
+    pub config: Option<String>,
+
     #[clap(subcommand)]
     pub command: Commands,
 }

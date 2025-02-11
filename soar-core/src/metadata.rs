@@ -24,6 +24,11 @@ fn handle_json_metadata<P: AsRef<Path>>(
     repo: &Repository,
     etag: &str,
 ) -> SoarResult<()> {
+    let metadata_db = metadata_db.as_ref();
+    if metadata_db.exists() {
+        fs::remove_file(metadata_db)?;
+    }
+
     let conn = Connection::open(&metadata_db)?;
     let mut manager = MigrationManager::new(conn)?;
     manager.migrate_from_dir(METADATA_MIGRATIONS)?;

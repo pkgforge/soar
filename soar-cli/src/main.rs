@@ -11,12 +11,12 @@ use remove::remove_packages;
 use run::run_package;
 use self_actions::process_self_action;
 use soar_core::{
-    config::{generate_default_config, get_config, set_current_profile},
-    utils::{cleanup_cache, remove_broken_symlinks, setup_required_paths},
+    config::{generate_default_config, get_config, set_current_profile, CONFIG_PATH},
+    utils::{build_path, cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
 };
 use state::AppState;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use update::update_packages;
 use use_package::use_alternate_package;
 use utils::COLOR;
@@ -70,6 +70,17 @@ async fn handle_cli() -> SoarResult<()> {
 
     if let Some(ref profile) = args.profile {
         set_current_profile(profile)?;
+    }
+
+    if let Some(ref c) = args.config {
+        let mut config_path = CONFIG_PATH.write().unwrap();
+        let path = build_path(c)?;
+        let path = if path.is_absolute() {
+            path
+        } else {
+            env::current_dir()?.join(path)
+        };
+        *config_path = path;
     }
 
     match args.command {
@@ -180,6 +191,10 @@ async fn handle_cli() -> SoarResult<()> {
         cli::Commands::DefConfig { external } => generate_default_config(external)?,
         cli::Commands::Env => {
             let config = get_config();
+
+            warn!("These values are not configurable via environment variables. They are derived from the config file or defaults.");
+
+            info!("SOAR_CONFIG={}", CONFIG_PATH.read()?.display());
             info!("SOAR_BIN={}", config.get_bin_path()?.display());
             info!("SOAR_DB={}", config.get_db_path()?.display());
             info!("SOAR_CACHE={}", config.get_cache_path()?.display());
