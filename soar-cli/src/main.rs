@@ -1,4 +1,4 @@
-use std::{env, io::Read};
+use std::{env, fs, io::Read, process::Command};
 
 use clap::Parser;
 use cli::Args;
@@ -217,6 +217,22 @@ async fn handle_cli() -> SoarResult<()> {
             if broken_symlinks {
                 remove_broken_symlinks()?;
             }
+        }
+        cli::Commands::Config { edit } => {
+            let config_path = CONFIG_PATH.read().unwrap();
+            match edit {
+                Some(editor) => {
+                    let editor = editor
+                        .or_else(|| env::var("EDITOR").ok())
+                        .unwrap_or_else(|| "vi".to_string());
+                    Command::new(editor).arg(&*config_path).status()?;
+                }
+                None => {
+                    let content = fs::read_to_string(&*config_path)?;
+                    info!("{}", content);
+                    return Ok(());
+                }
+            };
         }
     }
 

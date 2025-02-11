@@ -45,6 +45,14 @@ pub enum SelfAction {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Print the configuration file to stdout
+    Config {
+        /// Open the configuration file in editor
+        /// Optional value can be passed to set as editor (default is $EDITOR)
+        #[arg(required = false, short, long)]
+        edit: Option<Option<String>>,
+    },
+
     /// Install packages
     #[command(arg_required_else_help = true)]
     #[clap(name = "install", visible_alias = "i", visible_alias = "add")]
