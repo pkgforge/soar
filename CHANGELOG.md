@@ -1,4 +1,21 @@
 
+## [0.5.5](https://github.com/pkgforge/soar/compare/v0.5.4..v0.5.5) - 2025-02-11
+
+### ⛰️  Features
+
+- *(config)* Add subcommand to print or edit config - ([e2e6687](https://github.com/pkgforge/soar/commit/e2e668737fcdc9f00d1a622a1803f8f218403499))
+- *(config)* Add ability to use custom config path and set custom root for default config - ([04d2e9b](https://github.com/pkgforge/soar/commit/04d2e9ba40d8e76e1ed789b69d51e1bb2031f698))
+
+### 🐛 Bug Fixes
+
+- *(install)* Improve force install - ([17fcb2e](https://github.com/pkgforge/soar/commit/17fcb2e9463528c6121f8d46f4b1b1f434059bf2))
+- *(metadata)* Handle etag updates correctly - ([d5787a7](https://github.com/pkgforge/soar/commit/d5787a7bde93c4922bfd192be38357dbd7398260))
+
+### ⚡ Performance
+
+- *(list)* Optimise package search and list - ([81576e8](https://github.com/pkgforge/soar/commit/81576e8c5664228999373b71f66e88249d0e97f3))
+
+
 ## [0.5.4](https://github.com/pkgforge/soar/compare/v0.5.3..v0.5.4) - 2025-02-11
 
 ### ⛰️  Features
@@ -22,6 +39,7 @@
 ### ⚙️ Miscellaneous Tasks
 
 - *(workflow)* Update github workflows - ([baffeff](https://github.com/pkgforge/soar/commit/baffeff5ab1c8360b0d54f4cfbdaf80dfa910a4e))
+
 
 ## [0.5.3](https://github.com/pkgforge/soar/compare/v0.5.2..v0.5.3) - 2025-02-04
 
