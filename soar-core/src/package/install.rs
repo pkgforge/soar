@@ -68,14 +68,14 @@ impl PackageInstaller {
             let mut stmt = prepare_and_bind!(
                 conn,
                 "INSERT INTO packages (
-                repo_name, pkg, pkg_id, pkg_name, pkg_type, version, size,
-                installed_path, installed_date, with_pkg_id, profile
-            )
-            VALUES
-            (
-                $repo_name, $pkg, $pkg_id, $pkg_name, $pkg_type, $version, $size,
-                $installed_path, datetime(), $with_pkg_id, $profile
-            )"
+                    repo_name, pkg, pkg_id, pkg_name, pkg_type, version, size,
+                    installed_path, installed_date, with_pkg_id, profile
+                )
+                VALUES
+                (
+                    $repo_name, $pkg, $pkg_id, $pkg_name, $pkg_type, $version, $size,
+                    $installed_path, datetime(), $with_pkg_id, $profile
+                )"
             );
             stmt.raw_execute()?;
         }
@@ -183,9 +183,12 @@ impl PackageInstaller {
             pkg_name,
             pkg_id,
             version,
+            ghcr_size,
+            size,
             ..
         } = package;
         let provides = serde_json::to_string(&package.provides).unwrap();
+        let size = ghcr_size.unwrap_or(size.unwrap_or(0));
 
         let with_pkg_id = self.with_pkg_id;
         let tx = conn.transaction()?;
@@ -195,6 +198,8 @@ impl PackageInstaller {
                 tx,
                 "UPDATE packages
                 SET
+                    version = $version,
+                    size = $size,
                     bin_path = $bin_path,
                     icon_path = $icon_path,
                     desktop_path = $desktop_path,
@@ -207,7 +212,11 @@ impl PackageInstaller {
                     repo_name = $repo_name
                     AND pkg_name = $pkg_name
                     AND pkg_id = $pkg_id
-                    AND version = $version
+                    AND (
+                        pinned = false
+                        OR
+                        version = $version
+                    )
             "
             );
             stmt.raw_execute()?;

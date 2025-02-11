@@ -90,7 +90,7 @@ main() {
         echo "Downloading Soar..."
         case "$SOAR_VERSION" in
             *nightly*)
-                RELEASE_URL="https://github.com/pkgforge/soar/releases/download/nightly/soar-nightly-$ARCH-linux"
+                RELEASE_URL="https://github.com/pkgforge/soar/releases/download/nightly/soar-$ARCH-linux"
                 ;;
             *latest*)
                 RELEASE_URL="https://github.com/pkgforge/soar/releases/latest/download/soar-$ARCH-linux"

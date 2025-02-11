@@ -58,8 +58,8 @@ Soar comes as a single-file, statically-linked executable with no dependencies t
 Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration.html) & [all repositories](https://docs.pkgforge.dev/repositories/) preconfigured at `~/.config/soar/config.toml`<br>
 For additional configuration guide, click [here](https://soar.qaidvoid.dev/configuration.html)
 > [!NOTE]
-> [External repositories](https://docs.pkgforge.dev/repositories/external) aren't enabled enabled by default.
-> Enable them with `soar defconfig --external`
+> Soar provides [External repositories](https://docs.pkgforge.dev/repositories/external), which aren't enabled by default.
+> Enable them with `soar defconfig --external` if you haven't created configuration file yet. Or, add them manually using metadata from [here](https://meta.pkgforge.dev/external/).
 
 ## 🎯 Usage
 
