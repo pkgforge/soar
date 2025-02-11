@@ -7,10 +7,7 @@ use std::{
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{self, Magenta};
 use serde::Serialize;
-use soar_core::{
-    database::models::{Package, PackageExt},
-    SoarResult,
-};
+use soar_core::{database::models::PackageExt, SoarResult};
 use tracing::{error, info};
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
@@ -83,14 +80,9 @@ pub fn has_no_desktop_integration(pkg_type: Option<&str>, notes: Option<&[String
         })
 }
 
-pub fn pretty_package_size(package: &Package) -> String {
-    package
-        .ghcr_size
+pub fn pretty_package_size(ghcr_size: Option<u64>, size: Option<u64>) -> String {
+    ghcr_size
         .map(|size| format!("{}", Colored(Magenta, HumanBytes(size))))
-        .or_else(|| {
-            package
-                .size
-                .map(|size| format!("{}", Colored(Magenta, HumanBytes(size))))
-        })
+        .or_else(|| size.map(|size| format!("{}", Colored(Magenta, HumanBytes(size)))))
         .unwrap_or_default()
 }

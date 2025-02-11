@@ -1,11 +1,8 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-};
+use std::collections::{HashMap, HashSet};
 
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Purple, Red, White, Yellow};
-use rusqlite::Connection;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use soar_core::{
     config::get_config,
     database::{
@@ -21,25 +18,33 @@ use crate::{
     utils::{pretty_package_size, vec_string, Colored},
 };
 
-fn get_package_install_state(
-    core_db: &Arc<Mutex<Connection>>,
-    package: &Package,
-) -> SoarResult<String> {
-    let installed_pkgs = PackageQueryBuilder::new(core_db.clone())
-        .where_and("repo_name", FilterCondition::Eq(package.repo_name.clone()))
-        .where_and("pkg_id", FilterCondition::Eq(package.pkg_id.clone()))
-        .where_and("pkg_name", FilterCondition::Eq(package.pkg_name.clone()))
-        .limit(1)
-        .load_installed()?
-        .items;
+#[derive(Debug, Clone)]
+pub struct PackageSearchList {
+    pkg_id: String,
+    pkg_name: String,
+    repo_name: String,
+    pkg_type: Option<String>,
+    version: String,
+    version_upstream: Option<String>,
+    description: String,
+    ghcr_size: Option<u64>,
+    size: Option<u64>,
+}
 
-    let install_status = match installed_pkgs {
-        _ if installed_pkgs.is_empty() => "-",
-        _ if installed_pkgs.first().unwrap().is_installed => "+",
-        _ => "?",
-    };
-
-    Ok(install_status.to_string())
+impl FromRow for PackageSearchList {
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        Ok(PackageSearchList {
+            pkg_id: row.get("pkg_id")?,
+            pkg_name: row.get("pkg_name")?,
+            repo_name: row.get("repo_name")?,
+            pkg_type: row.get("pkg_type")?,
+            version: row.get("version")?,
+            version_upstream: row.get("version_upstream")?,
+            description: row.get("description")?,
+            ghcr_size: row.get("ghcr_size")?,
+            size: row.get("size")?,
+        })
+    }
 }
 
 pub async fn search_packages(
@@ -56,16 +61,45 @@ pub async fn search_packages(
     } else {
         FilterCondition::ILike(query)
     };
-    let packages = PackageQueryBuilder::new(repo_db.clone())
+    let packages: PaginatedResponse<PackageSearchList> = PackageQueryBuilder::new(repo_db.clone())
         .where_or("pkg_name", filter_condition.clone())
         .where_or("pkg_id", filter_condition.clone())
         .where_or("pkg", filter_condition.clone())
         .json_where_or("provides", "target_name", filter_condition.clone())
         .limit(limit.or(get_config().search_limit).unwrap_or(20) as u32)
+        .select(&[
+            "pkg_id",
+            "pkg_name",
+            "pkg_type",
+            "version",
+            "version_upstream",
+            "description",
+            "ghcr_size",
+            "size",
+        ])
         .load()?;
 
+    let installed_pkgs: HashMap<(String, String, String), bool> =
+        PackageQueryBuilder::new(core_db.clone())
+            .load_installed()?
+            .items
+            .into_par_iter()
+            .map(|pkg| ((pkg.repo_name, pkg.pkg_id, pkg.pkg_name), pkg.is_installed))
+            .collect();
+
     for package in packages.items {
-        let install_state = get_package_install_state(&core_db, &package)?;
+        let key = (
+            package.repo_name.clone(),
+            package.pkg_id.clone(),
+            package.pkg_name.clone(),
+        );
+        let install_state = match installed_pkgs.get(&key) {
+            Some(is_installed) => match is_installed {
+                true => "+",
+                false => "?",
+            },
+            None => "-",
+        };
 
         info!(
             pkg_name = package.pkg_name,
@@ -94,7 +128,7 @@ pub async fn search_packages(
                 .map(|upstream| format!(":{}", Colored(Yellow, &upstream)))
                 .unwrap_or_default(),
             package.description,
-            pretty_package_size(&package)
+            pretty_package_size(package.ghcr_size, package.size)
         );
     }
 
@@ -164,7 +198,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
             format!(
                 "{}: {}",
                 Colored(Purple, "Size"),
-                pretty_package_size(&package)
+                pretty_package_size(package.ghcr_size, package.size)
             ),
             format!("{}:", Colored(Purple, "Checksums")),
             package
@@ -399,7 +433,7 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
 
     let mut builder = PackageQueryBuilder::new(repo_db.clone())
         .sort_by("pkg_name", SortDirection::Asc)
-        .limit(1000);
+        .limit(3000);
 
     if let Some(repo_name) = repo_name {
         builder = builder.where_and("repo_name", FilterCondition::Eq(repo_name));
@@ -413,21 +447,29 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
         "version_upstream",
     ]);
 
+    let installed_pkgs: HashMap<(String, String, String), bool> =
+        PackageQueryBuilder::new(core_db.clone())
+            .load_installed()?
+            .items
+            .into_par_iter()
+            .map(|pkg| ((pkg.repo_name, pkg.pkg_id, pkg.pkg_name), pkg.is_installed))
+            .collect();
+
     loop {
         let packages: PaginatedResponse<PackageList> = builder.load()?;
-        for package in &packages.items {
-            let installed_pkgs = PackageQueryBuilder::new(core_db.clone())
-                .where_and("repo_name", FilterCondition::Eq(package.repo_name.clone()))
-                .where_and("pkg_id", FilterCondition::Eq(package.pkg_id.clone()))
-                .where_and("pkg_name", FilterCondition::Eq(package.pkg_name.clone()))
-                .limit(1)
-                .load_installed()?
-                .items;
 
-            let install_state = match installed_pkgs {
-                _ if installed_pkgs.is_empty() => "-",
-                _ if installed_pkgs.first().unwrap().is_installed => "+",
-                _ => "?",
+        for package in &packages.items {
+            let key = (
+                package.repo_name.clone(),
+                package.pkg_id.clone(),
+                package.pkg_name.clone(),
+            );
+            let install_state = match installed_pkgs.get(&key) {
+                Some(is_installed) => match is_installed {
+                    true => "+",
+                    false => "?",
+                },
+                None => "-",
             };
 
             info!(
