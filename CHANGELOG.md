@@ -1,4 +1,28 @@
 
+## [0.5.4](https://github.com/pkgforge/soar/compare/v0.5.3..v0.5.4) - 2025-02-11
+
+### ⛰️  Features
+
+- *(inspect)* Read logs and build script from existing install - ([5ee8912](https://github.com/pkgforge/soar/commit/5ee89120ee31526a59e7294289d2ac34d0036963))
+- *(install)* Track portable dirs - ([6daca67](https://github.com/pkgforge/soar/commit/6daca67d37d4447149131542b67df338b10c52b7))
+- *(install)* Add flag to suppress install notes - ([8b4ae6f](https://github.com/pkgforge/soar/commit/8b4ae6fed85acd656abeec73710df86562c93b6b))
+- *(repos)* Allow setting up external repos - ([6ef67bf](https://github.com/pkgforge/soar/commit/6ef67bf3a3272e895f7b07f6f5082f3d6db6ead7))
+
+### 🐛 Bug Fixes
+
+- *(download)* Retry on GHCR rate limit - ([393df6a](https://github.com/pkgforge/soar/commit/393df6a43d8e41447474645fd696eb70234f272d))
+- *(repos)* Use platform specific external repos - ([cc017b5](https://github.com/pkgforge/soar/commit/cc017b58ec8e5b151773e064198d8857dde7aa2d))
+
+### 🚜 Refactor
+
+- *(error)* Improve config errors - ([c8f39ab](https://github.com/pkgforge/soar/commit/c8f39ab28e5a82d7c16235a2dc3d0a35ed43664b))
+- *(install)* Show package notes after installation - ([55b5526](https://github.com/pkgforge/soar/commit/55b55269491c87847e79ebf64ea40f1959e4b186))
+- *(type)* Loosen up package types - ([41acaea](https://github.com/pkgforge/soar/commit/41acaea42e1950b3ed67e593023f65743d23329e))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(workflow)* Update github workflows - ([baffeff](https://github.com/pkgforge/soar/commit/baffeff5ab1c8360b0d54f4cfbdaf80dfa910a4e))
+
 ## [0.5.3](https://github.com/pkgforge/soar/compare/v0.5.2..v0.5.3) - 2025-02-04
 
 ### ⛰️  Features
