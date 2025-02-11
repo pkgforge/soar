@@ -19,22 +19,14 @@ impl<'a> PackageRepository<'a> {
     }
 
     pub fn import_packages(&mut self, metadata: &[RemotePackage], etag: &str) -> Result<()> {
-        self.get_or_create_repo(self.repo_name, etag)?;
+        self.statements
+            .repo_insert
+            .execute(params![self.repo_name, etag])?;
 
         for package in metadata {
             self.insert_package(package)?;
         }
         Ok(())
-    }
-
-    fn get_or_create_repo(&mut self, name: &str, etag: &str) -> Result<()> {
-        self.statements
-            .repo_check
-            .query_row([], |_| Ok(()))
-            .or_else(|_| {
-                self.statements.repo_insert.execute(params![name, etag])?;
-                Ok(())
-            })
     }
 
     fn get_or_create_maintainer(&mut self, name: &str, contact: &str) -> Result<i64> {

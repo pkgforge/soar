@@ -2,7 +2,6 @@ use rusqlite::{Statement, Transaction};
 
 pub struct DbStatements<'a> {
     pub repo_insert: Statement<'a>,
-    pub repo_check: Statement<'a>,
     pub package_insert: Statement<'a>,
     pub maintainer_insert: Statement<'a>,
     pub maintainer_check: Statement<'a>,
@@ -12,8 +11,11 @@ pub struct DbStatements<'a> {
 impl<'a> DbStatements<'a> {
     pub fn new(tx: &'a Transaction) -> rusqlite::Result<Self> {
         Ok(Self {
-            repo_insert: tx.prepare("INSERT INTO repository (name, etag) VALUES (?1, ?2)")?,
-            repo_check: tx.prepare("SELECT name FROM repository LIMIT 1")?,
+            repo_insert: tx.prepare(
+                "INSERT INTO repository (name, etag)
+                VALUES (?1, ?2)
+                ON CONFLICT (name) DO UPDATE SET etag = ?2"
+            )?,
             maintainer_insert: tx
                 .prepare("INSERT INTO maintainers (name, contact) VALUES (?1, ?2)")?,
             maintainer_check: tx.prepare("SELECT id FROM maintainers WHERE contact=?1 LIMIT 1")?,
