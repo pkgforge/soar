@@ -115,7 +115,7 @@ impl PackageInstaller {
                 output_path: Some(output_path.to_string_lossy().to_string()),
                 progress_callback: self.progress_callback.clone(),
                 api: None,
-                concurrency: Some(8),
+                concurrency: Some(get_config().ghcr_concurrency.unwrap_or(8)),
                 regex_patterns: Vec::new(),
                 exclude_keywords: Vec::new(),
                 match_keywords: Vec::new(),

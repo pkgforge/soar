@@ -9,7 +9,7 @@ use soar_core::{
     utils::calculate_checksum,
     SoarResult,
 };
-use soar_dl::downloader::{DownloadOptions, Downloader};
+use soar_dl::downloader::{DownloadOptions, Downloader, OciDownloadOptions, OciDownloader};
 
 use crate::{
     progress::{self, create_progress_bar},
@@ -64,14 +64,32 @@ pub async fn run_package(
             progress::handle_progress(state, &progress_bar);
         });
 
-        let downloader = Downloader::default();
-        let options = DownloadOptions {
-            url: package.download_url.clone(),
-            output_path: Some(output_path.to_string_lossy().to_string()),
-            progress_callback: Some(progress_callback),
-        };
+        if let Some(url) = package.ghcr_blob {
+            let options = OciDownloadOptions {
+                url: url.to_string(),
+                output_path: Some(output_path.to_string_lossy().to_string()),
+                progress_callback: Some(progress_callback.clone()),
+                api: None,
+                concurrency: Some(1),
+                regex_patterns: Vec::new(),
+                exclude_keywords: Vec::new(),
+                match_keywords: Vec::new(),
+                exact_case: false,
+            };
 
-        downloader.download(options).await?;
+            let mut downloader = OciDownloader::new(options);
+
+            downloader.download_oci().await?;
+        } else {
+            let downloader = Downloader::default();
+            let options = DownloadOptions {
+                url: package.download_url.clone(),
+                output_path: Some(output_path.to_string_lossy().to_string()),
+                progress_callback: Some(progress_callback),
+            };
+
+            downloader.download(options).await?;
+        }
 
         let checksum = calculate_checksum(&output_path)?;
         if let Some(bsum) = package.bsum {
