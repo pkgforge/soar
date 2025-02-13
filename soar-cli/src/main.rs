@@ -16,10 +16,10 @@ use soar_core::{
     SoarResult,
 };
 use state::AppState;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use update::update_packages;
 use use_package::use_alternate_package;
-use utils::COLOR;
+use utils::{Colored, COLOR};
 
 mod cli;
 mod download;
@@ -192,7 +192,11 @@ async fn handle_cli() -> SoarResult<()> {
         cli::Commands::Env => {
             let config = get_config();
 
-            warn!("These values are not configurable via environment variables. They are derived from the config file or defaults.");
+            info!(
+                "[{}]: These values are not configurable via environment \
+                variables. They are derived from the config file or defaults.",
+                Colored(nu_ansi_term::Color::Yellow, "NOTE")
+            );
 
             info!("SOAR_CONFIG={}", CONFIG_PATH.read()?.display());
             info!("SOAR_BIN={}", config.get_bin_path()?.display());
