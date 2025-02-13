@@ -12,7 +12,7 @@
 [issues-url]: https://github.com/pkgforge/soar/issues
 [license-shield]: https://img.shields.io/github/license/pkgforge/soar.svg
 [license-url]: https://github.com/pkgforge/soar/blob/main/LICENSE
-[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/TOTAL_INSTALLABLE.json&query=$[4].total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
+[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/TOTAL_INSTALLABLE.json&query=$[5].total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
 [packages-url]: https://pkgs.pkgforge.dev
 [stars-shield]: https://img.shields.io/github/stars/pkgforge/soar.svg
 [stars-url]: https://github.com/pkgforge/soar/stargazers
@@ -70,7 +70,7 @@ Simply run `soar --help` for general options.
 ## 📦 Packages
 Our [Official repositories](https://docs.pkgforge.dev/repositories) use a novel recipe format called [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) at [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs).
 Our CI Infra builds these [packages](https://pkgs.pkgforge.dev/) periodically & syncs to the [cache](https://docs.pkgforge.dev/repositories/soarpkgs/faq#cache).<br>
-Additionally we also support [AM](https://github.com/ivan-hc/AM) & [appimage.github.io](https://github.com/AppImage/appimage.github.io) as [external repositories](https://docs.pkgforge.dev/repositories/external)
+Additionally we also support [AM](https://github.com/ivan-hc/AM), [AppImageHub](https://www.appimagehub.com/) & [appimage.github.io](https://github.com/AppImage/appimage.github.io) as [external repositories](https://docs.pkgforge.dev/repositories/external)
 
 
 What Packages are Available?
