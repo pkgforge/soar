@@ -150,7 +150,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
 
     let (icon_path, desktop_path) = if pkg
         .iter()
-        .any(|p| has_no_desktop_integration(p.pkg_type.as_deref(), p.notes.as_deref()))
+        .any(|p| has_no_desktop_integration(&p.repo_name, p.notes.as_deref()))
     {
         (None, None)
     } else {

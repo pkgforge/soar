@@ -489,10 +489,8 @@ pub async fn install_single_package(
     }
 
     let (icon_path, desktop_path) = if unlinked
-        || has_no_desktop_integration(
-            target.package.pkg_type.as_deref(),
-            target.package.notes.as_deref(),
-        ) {
+        || has_no_desktop_integration(&target.package.repo_name, target.package.notes.as_deref())
+    {
         (None, None)
     } else {
         integrate_package(

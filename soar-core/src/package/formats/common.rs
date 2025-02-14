@@ -1,4 +1,5 @@
 use std::{
+    env,
     ffi::OsStr,
     fs::{self, File},
     io::{BufReader, BufWriter, Write},
@@ -19,7 +20,9 @@ use crate::{
     SoarResult,
 };
 
-use super::{appimage::integrate_appimage, get_file_type};
+use super::{
+    appimage::integrate_appimage, get_file_type, wrappe::setup_wrappe_portable_dir, PackageFormat,
+};
 
 const SUPPORTED_DIMENSIONS: &[(u32, u32)] = &[
     (16, 16),
@@ -185,18 +188,38 @@ pub async fn integrate_remote<P: AsRef<Path>>(
     Ok(())
 }
 
+pub fn create_portable_link<P: AsRef<Path>>(
+    portable_path: P,
+    real_path: P,
+    pkg_name: &str,
+    extension: &str,
+) -> SoarResult<()> {
+    let base_dir = env::current_dir()?;
+    let portable_path = portable_path.as_ref();
+    let portable_path = if portable_path.is_absolute() {
+        portable_path
+    } else {
+        &base_dir.join(portable_path)
+    };
+    let portable_path = portable_path.join(pkg_name).with_extension(extension);
+
+    fs::create_dir_all(&portable_path)?;
+    create_symlink(&portable_path, &real_path.as_ref().to_path_buf())?;
+    Ok(())
+}
+
 pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
-    package_path: P,
+    bin_path: P,
     package: &T,
     portable: Option<&str>,
     portable_home: Option<&str>,
     portable_config: Option<&str>,
 ) -> SoarResult<()> {
-    let package_path = package_path.as_ref();
+    let bin_path = bin_path.as_ref();
 
     let pkg_name = package.pkg_name();
-    let pkg_config = package_path.with_extension("config");
-    let pkg_home = package_path.with_extension("home");
+    let pkg_config = bin_path.with_extension("config");
+    let pkg_home = bin_path.with_extension("home");
 
     let (portable_home, portable_config) = if let Some(portable) = portable {
         (Some(portable), Some(portable))
@@ -208,11 +231,8 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
         if portable_home.is_empty() {
             fs::create_dir(&pkg_home)?;
         } else {
-            let portable_home = PathBuf::from(portable_home)
-                .join(pkg_name)
-                .with_extension("home");
-            fs::create_dir_all(&portable_home)?;
-            create_symlink(&portable_home, &pkg_home)?;
+            let portable_home = PathBuf::from(portable_home);
+            create_portable_link(&portable_home, &pkg_home, pkg_name, "home")?;
         }
     }
 
@@ -220,11 +240,8 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
         if portable_config.is_empty() {
             fs::create_dir(&pkg_config)?;
         } else {
-            let portable_config = PathBuf::from(portable_config)
-                .join(pkg_name)
-                .with_extension("config");
-            fs::create_dir_all(&portable_config)?;
-            create_symlink(&portable_config, &pkg_config)?;
+            let portable_config = PathBuf::from(portable_config);
+            create_portable_link(&portable_config, &pkg_config, pkg_name, "config")?;
         }
     }
 
@@ -274,10 +291,10 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     };
 
     let mut reader = BufReader::new(File::open(&bin_path)?);
-    let file_type = get_file_type(&mut reader);
+    let file_type = get_file_type(&mut reader)?;
 
     match file_type {
-        super::PackageFormat::AppImage => {
+        PackageFormat::AppImage => {
             if integrate_appimage(
                 install_dir,
                 &bin_path,
@@ -291,8 +308,17 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                 setup_portable_dir(bin_path, package, portable, portable_home, portable_config)?;
             }
         }
-        super::PackageFormat::FlatImage => {
-            setup_portable_dir(bin_path, package, None, None, portable_config)?;
+        PackageFormat::FlatImage => {
+            setup_portable_dir(
+                format!("{}/.{}", bin_path.parent().unwrap().display(), pkg_name),
+                package,
+                None,
+                None,
+                portable_config,
+            )?;
+        }
+        PackageFormat::Wrappe => {
+            setup_wrappe_portable_dir(&bin_path, pkg_name, portable)?;
         }
         _ => {}
     }

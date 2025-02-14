@@ -62,6 +62,9 @@ pub struct Repository {
 
     /// Metadata URL.
     pub url: String,
+
+    /// Whether to enable desktop integration for this repository
+    pub desktop_integration: Option<bool>,
 }
 
 impl Repository {
@@ -175,12 +178,22 @@ impl Config {
         }
 
         let mut seen = HashSet::new();
-        for repo in &config.repositories {
+        for repo in &mut config.repositories {
             if repo.name == "local" {
                 return Err(ConfigError::ReservedRepositoryName);
             }
             if !seen.insert(&repo.name) {
                 return Err(ConfigError::DuplicateRepositoryName(repo.name.clone()));
+            }
+
+            if repo.desktop_integration.is_none() {
+                match repo.name.as_str() {
+                    "bincache" => repo.desktop_integration = Some(false),
+                    "pkgcache" | "ivan-hc-am" | "appimage.github.io" => {
+                        repo.desktop_integration = Some(true)
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -229,6 +242,14 @@ impl Config {
     pub fn get_repositories_path(&self) -> Result<PathBuf> {
         Ok(self.default_profile()?.get_repositories_path())
     }
+
+    pub fn has_desktop_integration(&self, repo_name: &str) -> bool {
+        self.repositories
+            .iter()
+            .find(|repo| repo.name == repo_name)
+            .map(|repo| repo.desktop_integration.unwrap_or(false))
+            .unwrap_or(false)
+    }
 }
 
 impl Default for Config {
@@ -256,6 +277,7 @@ impl Default for Config {
                         "https://meta.pkgforge.dev/bincache/{}.sdb.zstd",
                         get_platform()
                     ),
+                    desktop_integration: Some(false),
                 },
                 Repository {
                     name: "pkgcache".to_owned(),
@@ -263,6 +285,7 @@ impl Default for Config {
                         "https://meta.pkgforge.dev/pkgcache/{}.sdb.zstd",
                         get_platform()
                     ),
+                    desktop_integration: Some(true),
                 },
             ],
             parallel: Some(true),
@@ -293,6 +316,7 @@ pub fn generate_default_config(external: bool) -> Result<()> {
                     "https://meta.pkgforge.dev/external/am/{}.json.zstd",
                     get_platform()
                 ),
+                desktop_integration: Some(true),
             },
             Repository {
                 name: "appimage-github-io".to_string(),
@@ -300,6 +324,7 @@ pub fn generate_default_config(external: bool) -> Result<()> {
                     "https://meta.pkgforge.dev/external/appimage.github.io/{}.json.zstd",
                     get_platform()
                 ),
+                desktop_integration: Some(true),
             },
         ]);
     }

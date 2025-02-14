@@ -7,7 +7,7 @@ use std::{
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{self, Magenta};
 use serde::Serialize;
-use soar_core::{database::models::PackageExt, SoarResult};
+use soar_core::{config::get_config, database::models::PackageExt, SoarResult};
 use tracing::{error, info};
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
@@ -72,9 +72,8 @@ pub fn select_package_interactively<T: PackageExt>(
     Ok(pkgs.into_iter().nth(selection))
 }
 
-pub fn has_no_desktop_integration(pkg_type: Option<&str>, notes: Option<&[String]>) -> bool {
-    pkg_type == Some("static")
-        || pkg_type == Some("dynamic")
+pub fn has_no_desktop_integration(repo_name: &str, notes: Option<&[String]>) -> bool {
+    !get_config().has_desktop_integration(repo_name)
         || notes.map_or(false, |all| {
             all.iter().any(|note| note == "NO_DESKTOP_INTEGRATION")
         })
