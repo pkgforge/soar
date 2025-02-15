@@ -4,7 +4,7 @@ use std::{
         consts::{ARCH, OS},
     },
     fs::{self, File},
-    io::{BufReader, Read, Seek},
+    io::{self, BufReader, Read, Seek},
     os,
     path::{Path, PathBuf},
 };
@@ -185,4 +185,24 @@ pub fn remove_broken_symlinks() -> Result<()> {
 /// system (e.g., `Linux`) into a single string to identify the platform.
 pub fn get_platform() -> String {
     format!("{}-{}{}", ARCH, &OS[..1].to_uppercase(), &OS[1..])
+}
+
+pub fn calculate_dir_size<P: AsRef<Path>>(path: P) -> io::Result<u64> {
+    let mut total_size = 0;
+    let path = path.as_ref();
+
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+
+            if metadata.is_file() {
+                total_size += metadata.len();
+            } else if metadata.is_dir() {
+                total_size += calculate_dir_size(entry.path())?;
+            }
+        }
+    }
+
+    Ok(total_size)
 }

@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Purple, Red, White, Yellow};
@@ -9,6 +12,7 @@ use soar_core::{
         models::{FromRow, Package},
         packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse, SortDirection},
     },
+    utils::calculate_dir_size,
     SoarResult,
 };
 use tracing::info;
@@ -526,6 +530,9 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
             (0, 0, 0, 0, 0),
             |(installed_count, unique_count, broken_count, installed_size, broken_size),
              package| {
+                let installed_path = PathBuf::from(&package.installed_path);
+                let size = calculate_dir_size(&installed_path).unwrap_or(0);
+                let is_installed = package.is_installed && installed_path.exists();
                 info!(
                     pkg_name = package.pkg_name,
                     version = package.version,
@@ -537,23 +544,24 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
                     Colored(Magenta, &package.version),
                     Colored(Cyan, &package.repo_name),
                     Colored(Blue, &package.installed_date.clone()),
-                    HumanBytes(package.size),
-                    if package.is_installed {
+                    HumanBytes(size),
+                    if is_installed {
                         "".to_string()
                     } else {
                         Colored(Red, " [Broken]").to_string()
-                    }
+                    },
                 );
 
-                let unique_count =
-                    unique_pkgs.insert(format!("{}-{}", package.pkg_id, package.pkg_name)) as u32
+                if is_installed {
+                    let unique_count = unique_pkgs
+                        .insert(format!("{}-{}", package.pkg_id, package.pkg_name))
+                        as u32
                         + unique_count;
-                if package.is_installed {
                     (
                         installed_count + 1,
                         unique_count,
                         broken_count,
-                        installed_size + package.size,
+                        installed_size + size,
                         broken_size,
                     )
                 } else {
@@ -562,7 +570,7 @@ pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()
                         unique_count,
                         broken_count + 1,
                         installed_size,
-                        broken_size + package.size,
+                        broken_size + size,
                     )
                 }
             },
