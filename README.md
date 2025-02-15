@@ -70,7 +70,7 @@ Simply run `soar --help` for general options.
 ## 📦 Packages
 Our [Official repositories](https://docs.pkgforge.dev/repositories) use a novel recipe format called [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) at [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs).
 Our CI Infra builds these [packages](https://pkgs.pkgforge.dev/) periodically & syncs to the [cache](https://docs.pkgforge.dev/repositories/soarpkgs/faq#cache).<br>
-Additionally we also support [AM](https://github.com/ivan-hc/AM), [AppImageHub](https://www.appimagehub.com/) & [appimage.github.io](https://github.com/AppImage/appimage.github.io) as [external repositories](https://docs.pkgforge.dev/repositories/external)
+Additionally we also support [AM](https://github.com/ivan-hc/AM), & [appimage.github.io](https://github.com/AppImage/appimage.github.io) as [external repositories](https://docs.pkgforge.dev/repositories/external)
 
 
 What Packages are Available?
