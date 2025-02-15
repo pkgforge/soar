@@ -1,4 +1,19 @@
 
+## [0.5.6](https://github.com/pkgforge/soar/compare/v0.5.5..0.5.6) - 2025-02-15
+
+### ⛰️  Features
+
+- *(signature)* Add minisign signature verification - ([afe39a6](https://github.com/pkgforge/soar/commit/afe39a6f59373a6be985806062bde2294a35ab3f))
+- *(sync)* Add option to set sync interval for each repository - ([06c7b64](https://github.com/pkgforge/soar/commit/06c7b646d1a5044f33b9c5019db9cdb53f4bb640))
+- *(wrappe)* Add wrappe desktop integration support - ([a8d362f](https://github.com/pkgforge/soar/commit/a8d362f5e30e3e43da178e89480ff6f7b83f9a79))
+
+### 🐛 Bug Fixes
+
+- *(env)* Use info instead of warn for `env` command output note - ([0cb5874](https://github.com/pkgforge/soar/commit/0cb5874651621b961fefa485f3319e52f41235c8))
+- *(run)* Use ghcr_blob to pull the binary - ([322cc01](https://github.com/pkgforge/soar/commit/322cc01d62b2fc18ce107cf001c8ebce845107b1))
+- *(size)* Calculate directory size for installed packages info - ([0698f0f](https://github.com/pkgforge/soar/commit/0698f0f741fbd7583f1e6aff62b99ad6a9b99723))
+
+
 ## [0.5.5](https://github.com/pkgforge/soar/compare/v0.5.4..v0.5.5) - 2025-02-11
 
 ### ⛰️  Features

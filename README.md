@@ -12,7 +12,7 @@
 [issues-url]: https://github.com/pkgforge/soar/issues
 [license-shield]: https://img.shields.io/github/license/pkgforge/soar.svg
 [license-url]: https://github.com/pkgforge/soar/blob/main/LICENSE
-[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/TOTAL_INSTALLABLE.json&query=$[4].total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
+[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/TOTAL_INSTALLABLE.json&query=$[5].total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
 [packages-url]: https://pkgs.pkgforge.dev
 [stars-shield]: https://img.shields.io/github/stars/pkgforge/soar.svg
 [stars-url]: https://github.com/pkgforge/soar/stargazers
@@ -29,7 +29,7 @@
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif?version=v0.5.4" alt="soar-list" width="850">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.5.6" alt="soar-list" width="850">
     </a><br>
 </p>
 
