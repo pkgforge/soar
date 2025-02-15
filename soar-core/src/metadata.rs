@@ -39,6 +39,34 @@ fn handle_json_metadata<P: AsRef<Path>>(
     Ok(())
 }
 
+pub async fn fetch_public_key<P: AsRef<Path>>(
+    client: &reqwest::Client,
+    repo_path: P,
+    pubkey_url: &str,
+) -> SoarResult<()> {
+    let repo_path = repo_path.as_ref();
+    let pubkey_file = repo_path.join("minisign.pub");
+
+    if pubkey_file.exists() {
+        // skip if we already have the public key file
+        return Ok(());
+    }
+
+    let resp = client.get(pubkey_url).send().await?;
+
+    info!("Fetching public key from {}", pubkey_url);
+
+    if !resp.status().is_success() {
+        let msg = format!("{} [{}]", pubkey_url, resp.status());
+        return Err(SoarError::FailedToFetchRemote(msg));
+    }
+
+    let content = resp.bytes().await?;
+    fs::write(pubkey_file, content)?;
+
+    Ok(())
+}
+
 pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
     let repo_path = repo.get_path()?;
     if !repo_path.is_dir() {
@@ -46,6 +74,10 @@ pub async fn fetch_metadata(repo: Repository) -> SoarResult<()> {
     }
 
     let client = reqwest::Client::new();
+
+    if let Some(ref pubkey_url) = repo.pubkey {
+        fetch_public_key(&client, &repo_path, &pubkey_url).await?;
+    }
 
     let mut header_map = HeaderMap::new();
     header_map.insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());

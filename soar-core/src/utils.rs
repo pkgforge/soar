@@ -122,15 +122,6 @@ pub fn calculate_checksum(file_path: &Path) -> Result<String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-pub fn validate_checksum(checksum: &str, file_path: &Path) -> Result<()> {
-    let final_checksum = calculate_checksum(file_path)?;
-    if final_checksum == *checksum {
-        Ok(())
-    } else {
-        Err(SoarError::InvalidChecksum)
-    }
-}
-
 pub fn setup_required_paths() -> Result<()> {
     let config = get_config();
     let bin_path = config.get_bin_path()?;

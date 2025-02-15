@@ -1,6 +1,8 @@
 use std::{
     collections::HashSet,
-    os::unix::fs,
+    fs::{self, File},
+    io::{BufReader, Read},
+    os::unix,
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -9,6 +11,7 @@ use std::{
 };
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use minisign_verify::{PublicKey, Signature};
 use rand::{distributions::Alphanumeric, Rng};
 use rusqlite::Connection;
 use soar_core::{
@@ -442,6 +445,74 @@ pub async fn install_single_package(
 
     installer.install().await?;
 
+    if let Some(repository) = get_config().get_repository(&target.package.repo_name) {
+        if repository.signature_verification() {
+            let repository_path = repository.get_path()?;
+            let pubkey_file = repository_path.join("minisign.pub");
+            if pubkey_file.exists() {
+                let pubkey = PublicKey::from_base64(&fs::read_to_string(&pubkey_file)?.trim())
+                    .map_err(|err| {
+                        SoarError::Custom(format!(
+                            "Failed to load public key from {}: {}",
+                            pubkey_file.display(),
+                            err
+                        ))
+                    })?;
+                let entries = fs::read_dir(&install_dir)?;
+                for entry in entries {
+                    let path = entry?.path();
+                    let is_signature_file =
+                        path.extension().map_or_else(|| false, |ext| ext == "sig");
+                    if is_signature_file && path.is_file() {
+                        let signature = Signature::from_file(&path).map_err(|err| {
+                            SoarError::Custom(format!(
+                                "Failed to load signature file from {}: {}",
+                                path.display(),
+                                err
+                            ))
+                        })?;
+                        let mut stream_verifier =
+                            pubkey.verify_stream(&signature).map_err(|err| {
+                                SoarError::Custom(format!(
+                                    "Failed to setup stream verifier: {}",
+                                    err
+                                ))
+                            })?;
+
+                        let original_file = path.with_extension("");
+                        let file = File::open(&original_file)?;
+                        let mut buf_reader = BufReader::new(file);
+
+                        let mut buffer = [0u8; 8192];
+                        loop {
+                            match buf_reader.read(&mut buffer)? {
+                                0 => break,
+                                n => {
+                                    stream_verifier.update(&buffer[..n]);
+                                }
+                            }
+                        }
+
+                        stream_verifier.finalize().map_err(|_| {
+                            SoarError::Custom(format!(
+                                "Signature verification failed for {}",
+                                original_file.display()
+                            ))
+                        })?;
+
+                        // we can safely remove the signature file
+                        fs::remove_file(&path)?;
+                    }
+                }
+            } else {
+                ctx.warnings.lock().unwrap().push(format!(
+                    "{}#{} - Signature verification skipped as no pubkey was found.",
+                    target.package.pkg_name, target.package.pkg_id
+                ))
+            }
+        }
+    }
+
     let final_checksum = calculate_checksum(&real_bin)?;
     if let Some(ref checksum) = target.package.bsum {
         if final_checksum != *checksum {
@@ -466,7 +537,7 @@ pub async fn install_single_package(
                 )));
             }
         }
-        fs::symlink(&real_bin, &def_bin_path)?;
+        unix::fs::symlink(&real_bin, &def_bin_path)?;
     }
 
     if let Some(provides) = &target.package.provides {
@@ -482,7 +553,7 @@ pub async fn install_single_package(
                     if target_name.is_symlink() || target_name.is_file() {
                         std::fs::remove_file(&target_name)?;
                     }
-                    fs::symlink(&real_path, &target_name)?;
+                    unix::fs::symlink(&real_path, &target_name)?;
                 }
             }
         }

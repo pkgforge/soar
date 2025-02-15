@@ -65,11 +65,21 @@ pub struct Repository {
 
     /// Whether to enable desktop integration for this repository
     pub desktop_integration: Option<bool>,
+
+    /// Public key URL for signature verification
+    pub pubkey: Option<String>,
+
+    /// Whether to enable signature verification
+    signature_verification: Option<bool>,
 }
 
 impl Repository {
     pub fn get_path(&self) -> Result<PathBuf> {
         Ok(get_config().get_repositories_path()?.join(&self.name))
+    }
+
+    pub fn signature_verification(&self) -> bool {
+        self.signature_verification.unwrap_or(true)
     }
 }
 
@@ -195,6 +205,30 @@ impl Config {
                     _ => {}
                 }
             }
+
+            if repo.pubkey.is_none() {
+                match repo.name.as_str() {
+                    "bincache" => {
+                        repo.pubkey =
+                            Some("https://meta.pkgforge.dev/bincache/minisign.pub".to_string())
+                    }
+                    "pkgcache" => {
+                        repo.pubkey =
+                            Some("https://meta.pkgforge.dev/pkgcache/minisign.pub".to_string())
+                    }
+                    _ => {}
+                }
+            }
+
+            if repo.signature_verification.is_none() {
+                match repo.name.as_str() {
+                    "bincache" | "pkgcache" => repo.signature_verification = Some(true),
+                    "ivan-hc-am" | "appimage.github.io" => {
+                        repo.signature_verification = Some(false)
+                    }
+                    _ => {}
+                };
+            }
         }
 
         Ok(config)
@@ -243,6 +277,10 @@ impl Config {
         Ok(self.default_profile()?.get_repositories_path())
     }
 
+    pub fn get_repository(&self, repo_name: &str) -> Option<&Repository> {
+        self.repositories.iter().find(|repo| repo.name == repo_name)
+    }
+
     pub fn has_desktop_integration(&self, repo_name: &str) -> bool {
         self.repositories
             .iter()
@@ -277,7 +315,9 @@ impl Default for Config {
                         "https://meta.pkgforge.dev/bincache/{}.sdb.zstd",
                         get_platform()
                     ),
+                    pubkey: Some("https://meta.pkgforge.dev/bincache/minisign.pub".to_string()),
                     desktop_integration: Some(false),
+                    signature_verification: Some(true),
                 },
                 Repository {
                     name: "pkgcache".to_owned(),
@@ -285,7 +325,9 @@ impl Default for Config {
                         "https://meta.pkgforge.dev/pkgcache/{}.sdb.zstd",
                         get_platform()
                     ),
+                    pubkey: Some("https://meta.pkgforge.dev/pkgcache/minisign.pub".to_string()),
                     desktop_integration: Some(true),
+                    signature_verification: Some(true),
                 },
             ],
             parallel: Some(true),
@@ -316,7 +358,9 @@ pub fn generate_default_config(external: bool) -> Result<()> {
                     "https://meta.pkgforge.dev/external/am/{}.json.zstd",
                     get_platform()
                 ),
+                pubkey: None,
                 desktop_integration: Some(true),
+                signature_verification: Some(false),
             },
             Repository {
                 name: "appimage-github-io".to_string(),
@@ -324,7 +368,9 @@ pub fn generate_default_config(external: bool) -> Result<()> {
                     "https://meta.pkgforge.dev/external/appimage.github.io/{}.json.zstd",
                     get_platform()
                 ),
+                pubkey: None,
                 desktop_integration: Some(true),
+                signature_verification: Some(false),
             },
         ]);
     }
