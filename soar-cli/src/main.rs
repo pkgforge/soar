@@ -128,7 +128,7 @@ async fn handle_cli() -> SoarResult<()> {
         }
         cli::Commands::Sync => {
             let state = AppState::new();
-            state.repo_db().await?;
+            state.sync().await?;
             info!("All repositories up to date");
         }
         cli::Commands::Update { packages, keep } => {

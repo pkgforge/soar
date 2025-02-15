@@ -39,7 +39,11 @@ impl AppState {
         }
     }
 
-    async fn init_repo_dbs(&self) -> SoarResult<()> {
+    pub async fn sync(&self) -> SoarResult<()> {
+        self.init_repo_dbs(true).await
+    }
+
+    async fn init_repo_dbs(&self, force: bool) -> SoarResult<()> {
         let mut tasks = Vec::new();
 
         for repo in &self.inner.config.repositories {
@@ -49,7 +53,7 @@ impl AppState {
                 File::create(&db_file)?;
             }
             let repo_clone = repo.clone();
-            let task = tokio::task::spawn(async move { fetch_metadata(repo_clone).await });
+            let task = tokio::task::spawn(async move { fetch_metadata(repo_clone, force).await });
             tasks.push(task);
         }
 
@@ -89,7 +93,7 @@ impl AppState {
     }
 
     pub async fn repo_db(&self) -> SoarResult<&Arc<Mutex<Connection>>> {
-        self.init_repo_dbs().await?;
+        self.init_repo_dbs(false).await?;
         self.inner
             .repo_db
             .get_or_try_init(|| self.create_repo_db())

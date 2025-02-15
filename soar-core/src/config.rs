@@ -10,7 +10,7 @@ use tracing::info;
 
 use crate::{
     error::{ConfigError, SoarError},
-    utils::{build_path, get_platform, home_config_path, home_data_path},
+    utils::{build_path, get_platform, home_config_path, home_data_path, parse_duration},
 };
 
 type Result<T> = std::result::Result<T, ConfigError>;
@@ -71,6 +71,9 @@ pub struct Repository {
 
     /// Whether to enable signature verification
     signature_verification: Option<bool>,
+
+    /// Sync interval for the repo
+    sync_interval: Option<String>,
 }
 
 impl Repository {
@@ -80,6 +83,24 @@ impl Repository {
 
     pub fn signature_verification(&self) -> bool {
         self.signature_verification.unwrap_or(true)
+    }
+
+    pub fn sync_interval(&self) -> u128 {
+        match &self.sync_interval {
+            Some(value) => match value.as_str() {
+                "always" => 0,
+                "never" => u128::MAX,
+                "auto" => 3 * 3600 * 1000,
+                _ => {
+                    if let Some(ms) = parse_duration(value) {
+                        ms
+                    } else {
+                        3600 * 1000
+                    }
+                }
+            },
+            None => 3 * 3600 * 1000,
+        }
     }
 }
 
@@ -318,6 +339,7 @@ impl Default for Config {
                     pubkey: Some("https://meta.pkgforge.dev/bincache/minisign.pub".to_string()),
                     desktop_integration: Some(false),
                     signature_verification: Some(true),
+                    sync_interval: Some("3h".to_string()),
                 },
                 Repository {
                     name: "pkgcache".to_owned(),
@@ -328,6 +350,7 @@ impl Default for Config {
                     pubkey: Some("https://meta.pkgforge.dev/pkgcache/minisign.pub".to_string()),
                     desktop_integration: Some(true),
                     signature_verification: Some(true),
+                    sync_interval: Some("3h".to_string()),
                 },
             ],
             parallel: Some(true),
@@ -361,6 +384,7 @@ pub fn generate_default_config(external: bool) -> Result<()> {
                 pubkey: None,
                 desktop_integration: Some(true),
                 signature_verification: Some(false),
+                sync_interval: Some("3h".to_string()),
             },
             Repository {
                 name: "appimage-github-io".to_string(),
@@ -371,6 +395,7 @@ pub fn generate_default_config(external: bool) -> Result<()> {
                 pubkey: None,
                 desktop_integration: Some(true),
                 signature_verification: Some(false),
+                sync_interval: Some("3h".to_string()),
             },
         ]);
     }

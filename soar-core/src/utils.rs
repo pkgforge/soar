@@ -193,8 +193,12 @@ pub fn calculate_dir_size<P: AsRef<Path>>(path: P) -> io::Result<u64> {
 
     if path.is_dir() {
         for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let metadata = entry.metadata()?;
+            let Ok(entry) = entry else {
+                continue;
+            };
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
 
             if metadata.is_file() {
                 total_size += metadata.len();
@@ -205,4 +209,20 @@ pub fn calculate_dir_size<P: AsRef<Path>>(path: P) -> io::Result<u64> {
     }
 
     Ok(total_size)
+}
+
+pub fn parse_duration(input: &str) -> Option<u128> {
+    let (num_part, unit_part) = input
+        .trim()
+        .split_at(input.find(|c: char| !c.is_numeric()).unwrap_or(input.len()));
+    let number: u128 = num_part.parse().ok()?;
+    let multiplier = match unit_part {
+        "s" => 1000,
+        "m" => 60 * 1000,
+        "h" => 60 * 60 * 1000,
+        "d" => 24 * 60 * 60 * 1000,
+        _ => return None,
+    };
+
+    Some(multiplier * number)
 }
