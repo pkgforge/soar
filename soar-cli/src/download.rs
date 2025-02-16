@@ -160,7 +160,7 @@ pub async fn handle_direct_downloads(
                 if let Some(ref url) = package.ghcr_blob {
                     let options = OciDownloadOptions {
                         url: url.to_string(),
-                        output_path: None,
+                        output_path: output.clone(),
                         progress_callback: Some(progress_callback.clone()),
                         api: None,
                         concurrency: Some(1),
@@ -177,7 +177,7 @@ pub async fn handle_direct_downloads(
                     let downloader = Downloader::default();
                     let options = DownloadOptions {
                         url: package.download_url.clone(),
-                        output_path: None,
+                        output_path: output.clone(),
                         progress_callback: Some(progress_callback.clone()),
                     };
 

@@ -12,6 +12,7 @@ use soar_core::{
         models::{FromRow, Package},
         packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse, SortDirection},
     },
+    package::query::PackageQuery,
     utils::calculate_dir_size,
     SoarResult,
 };
@@ -155,10 +156,10 @@ pub async fn query_package(query: String) -> SoarResult<()> {
     let state = AppState::new();
     let repo_db = state.repo_db().await?;
 
-    let packages: Vec<Package> = PackageQueryBuilder::new(repo_db.clone())
-        .where_and("pkg_name", FilterCondition::Eq(query))
-        .load()?
-        .items;
+    let query = PackageQuery::try_from(query.as_str())?;
+    let builder = PackageQueryBuilder::new(repo_db.clone());
+    let builder = query.apply_filters(builder);
+    let packages: Vec<Package> = builder.load()?.items;
 
     for package in packages {
         let fields = [
