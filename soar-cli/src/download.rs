@@ -4,7 +4,12 @@ use indicatif::HumanBytes;
 use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
-use soar_core::{config::get_config, SoarResult};
+use soar_core::{
+    config::get_config,
+    database::{models::Package, packages::PackageQueryBuilder},
+    package::query::PackageQuery,
+    SoarResult,
+};
 use soar_dl::{
     downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions, OciDownloader},
     error::DownloadError,
@@ -19,7 +24,8 @@ use tracing::{error, info};
 
 use crate::{
     progress::{self, create_progress_bar},
-    utils::interactive_ask,
+    state::AppState,
+    utils::{interactive_ask, select_package_interactively},
 };
 
 pub struct DownloadContext {
@@ -127,7 +133,57 @@ pub async fn handle_direct_downloads(
                     eprintln!("{}", e);
                 };
             }
-            Err(err) => eprintln!("Error parsing URL '{}' : {}", link, err),
+            Err(_) => {
+                // if it's not a url, try to parse it as package
+                let state = AppState::new();
+                let repo_db = state.repo_db().await?;
+                let query = PackageQuery::try_from(link.as_str())?;
+                let builder = PackageQueryBuilder::new(repo_db.clone());
+                let builder = query.apply_filters(builder);
+                let packages: Vec<Package> = builder.load()?.items;
+
+                if packages.is_empty() {
+                    eprintln!("Invalid download resource '{}'", link);
+                    break;
+                }
+
+                let package = if packages.len() > 1 {
+                    &select_package_interactively(packages, link)?.unwrap()
+                } else {
+                    packages.first().unwrap()
+                };
+
+                info!(
+                    "Downloading package: {}#{}",
+                    package.pkg_name, package.pkg_id
+                );
+                if let Some(ref url) = package.ghcr_blob {
+                    let options = OciDownloadOptions {
+                        url: url.to_string(),
+                        output_path: None,
+                        progress_callback: Some(progress_callback.clone()),
+                        api: None,
+                        concurrency: Some(1),
+                        regex_patterns: Vec::new(),
+                        exclude_keywords: Vec::new(),
+                        match_keywords: Vec::new(),
+                        exact_case: false,
+                    };
+
+                    let mut downloader = OciDownloader::new(options);
+
+                    downloader.download_oci().await?;
+                } else {
+                    let downloader = Downloader::default();
+                    let options = DownloadOptions {
+                        url: package.download_url.clone(),
+                        output_path: None,
+                        progress_callback: Some(progress_callback.clone()),
+                    };
+
+                    downloader.download(options).await?;
+                }
+            }
         };
     }
 
