@@ -11,12 +11,13 @@ use remove::remove_packages;
 use run::run_package;
 use self_actions::process_self_action;
 use soar_core::{
-    config::{generate_default_config, get_config, set_current_profile, CONFIG_PATH},
+    config::{generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH},
+    error::SoarError,
     utils::{build_path, cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
 };
 use state::AppState;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use update::update_packages;
 use use_package::use_alternate_package;
 use utils::{Colored, COLOR};
@@ -232,7 +233,15 @@ async fn handle_cli() -> SoarResult<()> {
                     Command::new(editor).arg(&*config_path).status()?;
                 }
                 None => {
-                    let content = fs::read_to_string(&*config_path)?;
+                    let content = match fs::read_to_string(&*config_path) {
+                        Ok(v) => v,
+                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                            warn!("Config file {} not found", config_path.display());
+                            let def_config = Config::default();
+                            toml::to_string_pretty(&def_config)?
+                        }
+                        Err(err) => return Err(SoarError::IoError(err)),
+                    };
                     info!("{}", content);
                     return Ok(());
                 }
