@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File},
+    fs::File,
     path::PathBuf,
     sync::{Arc, Mutex, RwLockReadGuard},
 };

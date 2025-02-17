@@ -1,5 +1,18 @@
 
-## [0.5.6](https://github.com/pkgforge/soar/compare/v0.5.5..0.5.6) - 2025-02-15
+## [0.5.7](https://github.com/pkgforge/soar/compare/v0.5.6..v0.5.7) - 2025-02-17
+
+### ⛰️  Features
+
+- *(download)* Try downloading package if url is invalid - ([6bd2a34](https://github.com/pkgforge/soar/commit/6bd2a34123b0e7c41c8923e44ffd9ae205013438))
+
+### 🐛 Bug Fixes
+
+- *(config)* Print default config if config file doesn't exist - ([3ba2a63](https://github.com/pkgforge/soar/commit/3ba2a63e2e67db511ba57340b73a328615148db1))
+- *(metadata)* Fix metadata sync interval handling - ([c2de6a7](https://github.com/pkgforge/soar/commit/c2de6a78d83cbbeaf9b8eec69daef6a6a5fbf0ea))
+- *(query)* Handle full package query - ([bb944c0](https://github.com/pkgforge/soar/commit/bb944c0eef586c64e817370545522c63b59e9498))
+
+
+## [0.5.6](https://github.com/pkgforge/soar/compare/v0.5.5..v0.5.6) - 2025-02-15
 
 ### ⛰️  Features
 
