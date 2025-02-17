@@ -69,12 +69,19 @@ pub async fn fetch_public_key<P: AsRef<Path>>(
 
 pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
     let repo_path = repo.get_path()?;
-    if !repo_path.is_dir() {
-        return Err(SoarError::InvalidPath);
+    let metadata_db = repo_path.join("metadata.db");
+
+    if !metadata_db.exists() {
+        fs::create_dir_all(repo.get_path()?)?;
+        File::create(&metadata_db)?;
     }
 
-    let metadata_db = repo_path.join("metadata.db");
-    if !force {
+    let conn = Connection::open(&metadata_db)?;
+    let etag: String = conn
+        .query_row("SELECT etag FROM repository", [], |row| row.get(0))
+        .unwrap_or_default();
+
+    if !force && !etag.is_empty() {
         let file_info = metadata_db.metadata()?;
         if let Ok(created) = file_info.created() {
             if repo.sync_interval() >= created.elapsed()?.as_millis() as u128 {
@@ -82,6 +89,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
             }
         }
     }
+    drop(conn);
 
     let client = reqwest::Client::new();
 
@@ -100,11 +108,6 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
     }
 
     let etag = {
-        let conn = Connection::open(&metadata_db)?;
-        let etag: String = conn
-            .query_row("SELECT etag FROM repository", [], |row| row.get(0))
-            .unwrap_or_default();
-
         match resp.headers().get(header::ETAG) {
             Some(remote_etag) => {
                 let remote_etag = remote_etag.to_str().unwrap();

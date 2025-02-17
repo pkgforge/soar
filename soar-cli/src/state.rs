@@ -47,11 +47,6 @@ impl AppState {
         let mut tasks = Vec::new();
 
         for repo in &self.inner.config.repositories {
-            let db_file = repo.get_path()?.join("metadata.db");
-            if !db_file.exists() {
-                fs::create_dir_all(repo.get_path()?)?;
-                File::create(&db_file)?;
-            }
             let repo_clone = repo.clone();
             let task = tokio::task::spawn(async move { fetch_metadata(repo_clone, force).await });
             tasks.push(task);
