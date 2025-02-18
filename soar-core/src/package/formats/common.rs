@@ -87,10 +87,6 @@ pub async fn symlink_icon<P: AsRef<Path>>(real_path: P, pkg_name: &str) -> SoarR
         home_data_path()
     ));
 
-    if let Some(parent) = final_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
     create_symlink(real_path, &final_path)?;
     Ok(final_path)
 }

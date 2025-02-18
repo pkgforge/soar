@@ -156,6 +156,11 @@ pub fn calc_magic_bytes<P: AsRef<Path>>(file_path: P, size: usize) -> Result<Vec
 
 pub fn create_symlink<P: AsRef<Path>>(from: P, to: P) -> SoarResult<()> {
     let to = to.as_ref();
+
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
     if to.is_symlink() {
         fs::remove_file(to)?;
     }
