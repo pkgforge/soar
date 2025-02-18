@@ -10,6 +10,7 @@ use std::{
 };
 
 use nix::unistd::{geteuid, User};
+use tracing::info;
 
 use crate::{config::get_config, error::SoarError, SoarResult};
 
@@ -164,17 +165,50 @@ pub fn create_symlink<P: AsRef<Path>>(from: P, to: P) -> SoarResult<()> {
 
 pub fn cleanup_cache() -> Result<()> {
     let cache_path = get_config().get_cache_path()?;
-    Ok(fs::remove_dir_all(cache_path)?)
+    if cache_path.exists() {
+        fs::remove_dir_all(&cache_path)?;
+        info!("Nuked cache directory: {}", cache_path.display());
+    }
+
+    Ok(())
+}
+
+fn remove_broken_symlinks_impl<P: AsRef<Path>>(dir: P, filter: Option<&str>) -> Result<()> {
+    let dir = dir.as_ref();
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+
+        if path.is_dir() {
+            remove_broken_symlinks_impl(&path, filter)?;
+            continue;
+        }
+
+        let should_check = match filter {
+            Some(f) => path.to_string_lossy().contains(f),
+            None => true,
+        };
+
+        if should_check && !path.is_file() {
+            fs::remove_file(&path)?;
+            info!("Removed broken symlink: {}", path.display());
+        }
+    }
+
+    Ok(())
 }
 
 pub fn remove_broken_symlinks() -> Result<()> {
-    let entries = fs::read_dir(get_config().get_bin_path()?)?;
-    for entry in entries {
-        let path = entry?.path();
-        if !path.is_file() && !path.is_dir() {
-            fs::remove_file(path)?;
-        }
-    }
+    remove_broken_symlinks_impl(&get_config().get_bin_path()?, None)?;
+
+    let desktop_entries = format!("{}/applications", home_data_path());
+    remove_broken_symlinks_impl(&desktop_entries, Some("-soar"))?;
+
+    let icons_base = format!("{}/icons/hicolor", home_data_path());
+    remove_broken_symlinks_impl(&icons_base, Some("-soar"))?;
 
     Ok(())
 }

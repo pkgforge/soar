@@ -216,10 +216,10 @@ async fn handle_cli() -> SoarResult<()> {
             cache,
             broken_symlinks,
         } => {
-            if cache {
+            if !broken_symlinks || cache {
                 cleanup_cache()?;
             }
-            if broken_symlinks {
+            if !cache || broken_symlinks {
                 remove_broken_symlinks()?;
             }
         }
