@@ -104,7 +104,7 @@ pub async fn handle_direct_downloads(
                 let _ = downloader
                     .download(options)
                     .await
-                    .map_err(|e| eprintln!("{}", e));
+                    .map_err(|e| error!("{}", e));
             }
             Ok(PlatformUrl::Github(project)) => {
                 info!("Detected GitHub URL, processing as GitHub release");
@@ -114,7 +114,7 @@ pub async fn handle_direct_downloads(
                 )
                 .await
                 {
-                    eprintln!("{}", e);
+                    error!("{}", e);
                 }
             }
             Ok(PlatformUrl::Gitlab(project)) => {
@@ -125,12 +125,12 @@ pub async fn handle_direct_downloads(
                 )
                 .await
                 {
-                    eprintln!("{}", e);
+                    error!("{}", e);
                 }
             }
             Ok(PlatformUrl::Oci(url)) => {
                 if let Err(e) = handle_oci_download(ctx, &url).await {
-                    eprintln!("{}", e);
+                    error!("{}", e);
                 };
             }
             Err(_) => {
@@ -143,14 +143,14 @@ pub async fn handle_direct_downloads(
                 let packages: Vec<Package> = builder.load()?.items;
 
                 if packages.is_empty() {
-                    eprintln!("Invalid download resource '{}'", link);
+                    error!("Invalid download resource '{}'", link);
                     break;
                 }
 
-                let package = if packages.len() > 1 {
-                    &select_package_interactively(packages, link)?.unwrap()
-                } else {
+                let package = if packages.len() == 1 || ctx.yes {
                     packages.first().unwrap()
+                } else {
+                    &select_package_interactively(packages, link)?.unwrap()
                 };
 
                 info!(
@@ -209,7 +209,7 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
     let mut retries = 0;
     loop {
         if retries > 5 {
-            eprintln!("Max retries exhausted. Aborting.");
+            error!("Max retries exhausted. Aborting.");
             break;
         }
         match downloader.download_oci().await {
@@ -222,7 +222,7 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
                 | DownloadError::ChunkError,
             ) => sleep(Duration::from_secs(5)),
             Err(err) => {
-                eprintln!("{}", err);
+                error!("{}", err);
                 break;
             }
         };
@@ -307,7 +307,7 @@ pub async fn handle_github_downloads(
         if let Err(e) =
             handle_platform_download::<_, GithubRelease, _>(ctx, &handler, project).await
         {
-            eprintln!("{}", e);
+            error!("{}", e);
         }
     }
     Ok(())
@@ -323,7 +323,7 @@ pub async fn handle_gitlab_downloads(
         if let Err(e) =
             handle_platform_download::<_, GitlabRelease, _>(ctx, &handler, project).await
         {
-            eprintln!("{}", e);
+            error!("{}", e);
         }
     }
     Ok(())
