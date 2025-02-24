@@ -12,7 +12,7 @@ use std::{
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use minisign_verify::{PublicKey, Signature};
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use rusqlite::Connection;
 use soar_core::{
     config::get_config,
@@ -397,7 +397,7 @@ pub async fn install_single_package(
                 existing.portable_config.as_deref(),
             )
         } else {
-            let rand_str: String = rand::thread_rng()
+            let rand_str: String = rand::rng()
                 .sample_iter(&Alphanumeric)
                 .take(12)
                 .map(char::from)

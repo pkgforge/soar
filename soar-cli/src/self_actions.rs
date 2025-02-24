@@ -30,7 +30,7 @@ pub async fn process_self_action(
 
             let handler = ReleaseHandler::<Github>::new();
             let releases = handler
-                .fetch_releases::<GithubRelease>("pkgforge/soar")
+                .fetch_releases::<GithubRelease>("pkgforge/soar", None)
                 .await?;
 
             let release = releases.iter().find(|rel| {

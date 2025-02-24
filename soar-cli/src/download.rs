@@ -283,7 +283,7 @@ where
     };
 
     let options = create_platform_options(&ctx, tag.map(String::from));
-    let releases = handler.fetch_releases::<R>(project).await?;
+    let releases = handler.fetch_releases::<R>(project, tag).await?;
     let assets = handler.filter_releases(&releases, &options).await?;
 
     let selected_asset = if assets.len() == 1 || ctx.yes {
