@@ -10,7 +10,7 @@ use soar_core::{
         models::Package,
         packages::{FilterCondition, PackageQueryBuilder},
     },
-    error::SoarError,
+    error::{ErrorContext, SoarError},
     package::{install::InstallTarget, query::PackageQuery},
     SoarResult,
 };
@@ -308,7 +308,8 @@ fn remove_old_package(package: &Package, core_db: Arc<Mutex<Connection>>) -> Soa
     for path in paths {
         let path = Path::new(&path);
         if path.exists() {
-            fs::remove_dir_all(&path)?;
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("removing directory {}", path.display()))?;
         }
     }
 

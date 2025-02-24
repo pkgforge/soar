@@ -5,7 +5,7 @@ use soar_core::{
         models::Package,
         packages::{FilterCondition, PackageQueryBuilder},
     },
-    error::SoarError,
+    error::{ErrorContext, SoarError},
     utils::calculate_checksum,
     SoarResult,
 };
@@ -55,7 +55,8 @@ pub async fn run_package(
     .unwrap();
 
     let cache_bin = state.config().get_cache_path()?.join("bin");
-    fs::create_dir_all(&cache_bin)?;
+    fs::create_dir_all(&cache_bin)
+        .with_context(|| format!("creating directory {}", cache_bin.display()))?;
 
     let output_path = cache_bin.join(&package.pkg_name);
     if !output_path.exists() {
@@ -102,7 +103,10 @@ pub async fn run_package(
         }
     }
 
-    Command::new(output_path).args(args).status()?;
+    Command::new(&output_path)
+        .args(args)
+        .status()
+        .with_context(|| format!("executing command {}", output_path.display()))?;
 
     Ok(())
 }

@@ -9,7 +9,7 @@ use soar_core::{
         models::{InstalledPackage, Package, PackageExt},
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy, SortDirection},
     },
-    error::SoarError,
+    error::{ErrorContext, SoarError},
     package::formats::common::integrate_package,
     SoarResult,
 };
@@ -110,7 +110,13 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
                 )));
             }
         }
-        os::unix::fs::symlink(&real_bin, &def_bin_path)?;
+        os::unix::fs::symlink(&real_bin, &def_bin_path).with_context(|| {
+            format!(
+                "creating symlink {} -> {}",
+                real_bin.display(),
+                def_bin_path.display()
+            )
+        })?;
     }
 
     if let Some(provides) = &selected_package.provides {
@@ -124,9 +130,17 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
                 if is_symlink {
                     let target_name = bin_dir.join(&target);
                     if target_name.is_symlink() || target_name.is_file() {
-                        std::fs::remove_file(&target_name)?;
+                        std::fs::remove_file(&target_name).with_context(|| {
+                            format!("removing provide from {}", target_name.display())
+                        })?;
                     }
-                    os::unix::fs::symlink(&real_path, &target_name)?;
+                    os::unix::fs::symlink(&real_path, &target_name).with_context(|| {
+                        format!(
+                            "creating symlink {} -> {}",
+                            real_path.display(),
+                            target_name.display()
+                        )
+                    })?;
                 }
             }
         }

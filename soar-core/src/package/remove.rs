@@ -8,6 +8,7 @@ use rusqlite::{params, Connection};
 
 use crate::{
     database::{models::InstalledPackage, packages::ProvideStrategy},
+    error::ErrorContext,
     SoarResult,
 };
 
@@ -32,7 +33,8 @@ impl PackageRemover {
             let bin_path = PathBuf::from(self.package.bin_path.clone().unwrap());
             let def_bin = bin_path.join(&self.package.pkg_name);
             if def_bin.is_symlink() && def_bin.is_file() {
-                fs::remove_file(def_bin)?;
+                fs::remove_file(&def_bin)
+                    .with_context(|| format!("removing binary {}", def_bin.display()))?;
             }
 
             if let Some(provides) = &self.package.provides {
@@ -46,7 +48,9 @@ impl PackageRemover {
                         if is_symlink {
                             let target_name = bin_path.join(&target);
                             if target_name.exists() {
-                                std::fs::remove_file(&target_name)?;
+                                std::fs::remove_file(&target_name).with_context(|| {
+                                    format!("removing provide {}", target_name.display())
+                                })?;
                             }
                         }
                     }
@@ -69,7 +73,9 @@ impl PackageRemover {
         if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {
             // if not found, the package is already removed.
             if err.kind() != std::io::ErrorKind::NotFound {
-                return Err(err)?;
+                return Err(err).with_context(|| {
+                    format!("removing package directory {}", self.package.installed_path)
+                })?;
             }
         };
 

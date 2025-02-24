@@ -15,7 +15,7 @@ use crate::{
     config::get_config,
     constants::PNG_MAGIC_BYTES,
     database::models::{Package, PackageExt},
-    error::SoarError,
+    error::{ErrorContext, SoarError},
     utils::{calc_magic_bytes, create_symlink, home_data_path},
     SoarResult,
 };
@@ -122,8 +122,13 @@ pub async fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         .to_string()
     };
 
-    let mut writer = BufWriter::new(File::create(real_path)?);
-    writer.write_all(final_content.as_bytes())?;
+    let mut writer = BufWriter::new(
+        File::create(real_path)
+            .with_context(|| format!("creating desktop file {}", real_path.display()))?,
+    );
+    writer
+        .write_all(final_content.as_bytes())
+        .with_context(|| format!("writing desktop file to {}", real_path.display()))?;
 
     let final_path = PathBuf::from(format!(
         "{}/applications/{}-soar.desktop",
@@ -173,7 +178,9 @@ pub async fn integrate_remote<P: AsRef<Path>>(
         downloader.download(options).await?;
     } else {
         let content = create_default_desktop_entry(&package.pkg_name, "Utility");
-        fs::write(&desktop_output_path, &content)?;
+        fs::write(&desktop_output_path, &content).with_context(|| {
+            format!("writing to desktop file {}", desktop_output_path.display())
+        })?;
     }
 
     try_join!(
@@ -190,7 +197,8 @@ pub fn create_portable_link<P: AsRef<Path>>(
     pkg_name: &str,
     extension: &str,
 ) -> SoarResult<()> {
-    let base_dir = env::current_dir()?;
+    let base_dir = env::current_dir()
+        .map_err(|_| SoarError::Custom("Error retrieving current directory".into()))?;
     let portable_path = portable_path.as_ref();
     let portable_path = if portable_path.is_absolute() {
         portable_path
@@ -199,7 +207,8 @@ pub fn create_portable_link<P: AsRef<Path>>(
     };
     let portable_path = portable_path.join(pkg_name).with_extension(extension);
 
-    fs::create_dir_all(&portable_path)?;
+    fs::create_dir_all(&portable_path)
+        .with_context(|| format!("creating directory {}", portable_path.display()))?;
     create_symlink(&portable_path, &real_path.as_ref().to_path_buf())?;
     Ok(())
 }
@@ -225,7 +234,9 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
 
     if let Some(portable_home) = portable_home {
         if portable_home.is_empty() {
-            fs::create_dir(&pkg_home)?;
+            fs::create_dir(&pkg_home).with_context(|| {
+                format!("creating portable home directory {}", pkg_home.display())
+            })?;
         } else {
             let portable_home = PathBuf::from(portable_home);
             create_portable_link(&portable_home, &pkg_home, pkg_name, "home")?;
@@ -234,7 +245,12 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
 
     if let Some(portable_config) = portable_config {
         if portable_config.is_empty() {
-            fs::create_dir(&pkg_config)?;
+            fs::create_dir(&pkg_config).with_context(|| {
+                format!(
+                    "creating portable config directory {}",
+                    pkg_config.display()
+                )
+            })?;
         } else {
             let portable_config = PathBuf::from(portable_config);
             create_portable_link(&portable_config, &pkg_config, pkg_name, "config")?;
@@ -286,7 +302,9 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         None
     };
 
-    let mut reader = BufReader::new(File::open(&bin_path)?);
+    let mut reader = BufReader::new(
+        File::open(&bin_path).with_context(|| format!("opening {}", bin_path.display()))?,
+    );
     let file_type = get_file_type(&mut reader)?;
 
     match file_type {

@@ -45,8 +45,11 @@ pub enum SoarError {
     #[error("Environment variable error: {0}")]
     VarError(#[from] std::env::VarError),
 
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
+    #[error("IO error while {action}: {source}")]
+    IoError {
+        action: String,
+        source: std::io::Error,
+    },
 
     #[error("System time error: {0}")]
     SystemTimeError(#[from] std::time::SystemTimeError),
@@ -116,11 +119,6 @@ impl SoarError {
 
     pub fn root_cause(&self) -> String {
         match self {
-            Self::IoError(e) => format!(
-                "Root cause: {}",
-                e.source()
-                    .map_or_else(|| e.to_string(), |source| source.to_string())
-            ),
             Self::ReqwestError(e) => format!(
                 "Root cause: {}",
                 e.source()
@@ -146,5 +144,23 @@ impl<T> From<std::sync::PoisonError<T>> for SoarError {
 impl From<soar_dl::error::PlatformError> for SoarError {
     fn from(value: soar_dl::error::PlatformError) -> Self {
         Self::PlatformError(value)
+    }
+}
+
+pub trait ErrorContext<T> {
+    fn with_context<C>(self, context: C) -> Result<T, SoarError>
+    where
+        C: FnOnce() -> String;
+}
+
+impl<T> ErrorContext<T> for std::io::Result<T> {
+    fn with_context<C>(self, context: C) -> Result<T, SoarError>
+    where
+        C: FnOnce() -> String,
+    {
+        self.map_err(|err| SoarError::IoError {
+            action: context(),
+            source: err,
+        })
     }
 }

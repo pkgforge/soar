@@ -12,7 +12,7 @@ use run::run_package;
 use self_actions::process_self_action;
 use soar_core::{
     config::{generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH},
-    error::SoarError,
+    error::{ErrorContext, SoarError},
     utils::{build_path, cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
 };
@@ -79,7 +79,9 @@ async fn handle_cli() -> SoarResult<()> {
         let path = if path.is_absolute() {
             path
         } else {
-            env::current_dir()?.join(path)
+            env::current_dir()
+                .with_context(|| "retrieving current directory".into())?
+                .join(path)
         };
         *config_path = path;
     }
@@ -230,7 +232,12 @@ async fn handle_cli() -> SoarResult<()> {
                     let editor = editor
                         .or_else(|| env::var("EDITOR").ok())
                         .unwrap_or_else(|| "vi".to_string());
-                    Command::new(editor).arg(&*config_path).status()?;
+                    Command::new(&editor)
+                        .arg(&*config_path)
+                        .status()
+                        .with_context(|| {
+                            format!("executing command {} {}", editor, config_path.display())
+                        })?;
                 }
                 None => {
                     let content = match fs::read_to_string(&*config_path) {
@@ -240,7 +247,12 @@ async fn handle_cli() -> SoarResult<()> {
                             let def_config = Config::default();
                             toml::to_string_pretty(&def_config)?
                         }
-                        Err(err) => return Err(SoarError::IoError(err)),
+                        Err(err) => {
+                            return Err(SoarError::IoError {
+                                action: "reading config".to_string(),
+                                source: err,
+                            })
+                        }
                     };
                     info!("{}", content);
                     return Ok(());

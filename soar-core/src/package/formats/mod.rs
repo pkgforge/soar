@@ -2,6 +2,7 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 
 use crate::{
     constants::{APPIMAGE_MAGIC_BYTES, ELF_MAGIC_BYTES, FLATIMAGE_MAGIC_BYTES, WRAPPE_MAGIC_BYTES},
+    error::SoarError,
     SoarResult,
 };
 
@@ -23,7 +24,8 @@ where
     T: Read + Seek,
 {
     let mut magic_bytes = [0u8; 12];
-    file.read_exact(&mut magic_bytes)?;
+    file.read_exact(&mut magic_bytes)
+        .map_err(|_| SoarError::Custom("Error reading magic bytes".into()))?;
 
     if magic_bytes[8..] == APPIMAGE_MAGIC_BYTES {
         return Ok(PackageFormat::AppImage);
@@ -32,13 +34,19 @@ where
         return Ok(PackageFormat::FlatImage);
     }
 
-    let start = file.seek(SeekFrom::End(0))?.wrapping_sub(801);
-    file.rewind()?;
+    let start = file
+        .seek(SeekFrom::End(0))
+        .map_err(|_| SoarError::Custom("Error seeking to end of file".into()))?
+        .wrapping_sub(801);
+    file.rewind()
+        .map_err(|_| SoarError::Custom("Error rewinding file".into()))?;
 
     if file.seek(SeekFrom::Start(start)).is_ok() {
         let mut magic_bytes = [0u8; 8];
-        file.read_exact(&mut magic_bytes)?;
-        file.rewind()?;
+        file.read_exact(&mut magic_bytes)
+            .map_err(|_| SoarError::Custom("Error reading magic bytes".into()))?;
+        file.rewind()
+            .map_err(|_| SoarError::Custom("Error rewinding file".into()))?;
         if magic_bytes[0..8] == WRAPPE_MAGIC_BYTES {
             return Ok(PackageFormat::Wrappe);
         }

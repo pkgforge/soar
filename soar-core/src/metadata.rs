@@ -13,7 +13,7 @@ use crate::{
     config::Repository,
     constants::{METADATA_MIGRATIONS, SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES},
     database::{connection::Database, migration::MigrationManager, models::RemotePackage},
-    error::SoarError,
+    error::{ErrorContext, SoarError},
     utils::calc_magic_bytes,
     SoarResult,
 };
@@ -26,7 +26,8 @@ fn handle_json_metadata<P: AsRef<Path>>(
 ) -> SoarResult<()> {
     let metadata_db = metadata_db.as_ref();
     if metadata_db.exists() {
-        fs::remove_file(metadata_db)?;
+        fs::remove_file(metadata_db)
+            .with_context(|| format!("removing metadata file {}", metadata_db.display()))?;
     }
 
     let conn = Connection::open(&metadata_db)?;
@@ -62,7 +63,8 @@ pub async fn fetch_public_key<P: AsRef<Path>>(
     }
 
     let content = resp.bytes().await?;
-    fs::write(pubkey_file, content)?;
+    fs::write(&pubkey_file, content)
+        .with_context(|| format!("writing minisign key {}", pubkey_file.display()))?;
 
     Ok(())
 }
@@ -72,8 +74,10 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
     let metadata_db = repo_path.join("metadata.db");
 
     if !metadata_db.exists() {
-        fs::create_dir_all(repo.get_path()?)?;
-        File::create(&metadata_db)?;
+        fs::create_dir_all(&repo_path)
+            .with_context(|| format!("creating directory {}", repo_path.display()))?;
+        File::create(&metadata_db)
+            .with_context(|| format!("creating metadata database {}", metadata_db.display()))?;
     }
 
     let conn = Connection::open(&metadata_db)?;
@@ -82,7 +86,9 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
         .unwrap_or_default();
 
     if !force && !etag.is_empty() {
-        let file_info = metadata_db.metadata()?;
+        let file_info = metadata_db
+            .metadata()
+            .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
         if let Ok(created) = file_info.created() {
             if repo.sync_interval() >= created.elapsed()?.as_millis() as u128 {
                 return Ok(());
@@ -135,21 +141,26 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
 
     if content[..4] == ZST_MAGIC_BYTES {
         let tmp_path = format!("{}.part", metadata_db.display());
-        let mut tmp_file = File::create(&tmp_path)?;
+        let mut tmp_file = File::create(&tmp_path)
+            .with_context(|| format!("creating temporary file {}", tmp_path))?;
 
-        let mut decoder = zstd::Decoder::new(content.as_slice())?;
-        io::copy(&mut decoder, &mut tmp_file)?;
+        let mut decoder = zstd::Decoder::new(content.as_slice())
+            .with_context(|| format!("creating zstd decoder"))?;
+        io::copy(&mut decoder, &mut tmp_file)
+            .with_context(|| format!("decoding zstd from {}", tmp_path))?;
 
         let magic_bytes = calc_magic_bytes(&tmp_path, 4)?;
         if magic_bytes == SQLITE_MAGIC_BYTES {
-            fs::rename(&tmp_path, &metadata_db)?;
+            fs::rename(&tmp_path, &metadata_db)
+                .with_context(|| format!("renaming {} to {}", tmp_path, metadata_db.display()))?;
             let conn = Connection::open(&metadata_db)?;
             conn.execute(
                 "UPDATE repository SET name = ?, etag = ?",
                 params![repo.name, etag],
             )?;
         } else {
-            let tmp_file = File::open(&tmp_path)?;
+            let tmp_file = File::open(&tmp_path)
+                .with_context(|| format!("opening temporary file {}", tmp_path))?;
             let reader = BufReader::new(tmp_file);
             let metadata: Vec<RemotePackage> = serde_json::from_reader(reader).map_err(|err| {
                 SoarError::Custom(format!(
@@ -159,11 +170,17 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
             })?;
 
             handle_json_metadata(&metadata, metadata_db, &repo, &etag)?;
-            fs::remove_file(tmp_path)?;
+            fs::remove_file(tmp_path.clone())
+                .with_context(|| format!("removing temporary file {}", tmp_path))?;
         }
     } else if content[..4] == SQLITE_MAGIC_BYTES {
-        let mut writer = BufWriter::new(File::create(&metadata_db)?);
-        writer.write_all(&content)?;
+        let mut writer = BufWriter::new(
+            File::create(&metadata_db)
+                .with_context(|| format!("creating metadata file {}", metadata_db.display()))?,
+        );
+        writer
+            .write_all(&content)
+            .with_context(|| format!("writing to metadata file {}", metadata_db.display()))?;
         let conn = Connection::open(&metadata_db)?;
         conn.execute(
             "UPDATE repository SET name = ?, etag = ?",

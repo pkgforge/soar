@@ -10,7 +10,7 @@ use soar_core::{
     config::{get_config, Config},
     constants::CORE_MIGRATIONS,
     database::{connection::Database, migration::MigrationManager},
-    error::SoarError,
+    error::{ErrorContext, SoarError},
     metadata::fetch_metadata,
     SoarResult,
 };
@@ -74,7 +74,8 @@ impl AppState {
     fn create_core_db(&self) -> SoarResult<Database> {
         let core_db_file = self.inner.config.get_db_path()?.join("soar.db");
         if !core_db_file.exists() {
-            File::create(&core_db_file)?;
+            File::create(&core_db_file)
+                .with_context(|| format!("creating database file {}", core_db_file.display()))?;
         }
 
         let conn = Connection::open(&core_db_file)?;

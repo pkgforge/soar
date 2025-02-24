@@ -13,6 +13,7 @@ use soar_core::{
         models::Package,
         packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse},
     },
+    error::ErrorContext,
     package::query::PackageQuery,
     SoarResult,
 };
@@ -94,9 +95,15 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
                 info!(
                     "Reading build {inspect_type} from {} [{}]",
                     file.display(),
-                    HumanBytes(file.metadata()?.len())
+                    HumanBytes(
+                        file.metadata()
+                            .with_context(|| format!("reading file metadata {}", file.display()))?
+                            .len()
+                    )
                 );
-                let output = fs::read_to_string(file)?.replace("\r", "\n");
+                let output = fs::read_to_string(&file)
+                    .with_context(|| format!("reading file content from {}", file.display()))?
+                    .replace("\r", "\n");
 
                 info!("\n{}", output);
                 return Ok(());

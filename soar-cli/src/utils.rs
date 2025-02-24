@@ -7,7 +7,9 @@ use std::{
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{self, Magenta};
 use serde::Serialize;
-use soar_core::{config::get_config, database::models::PackageExt, SoarResult};
+use soar_core::{
+    config::get_config, database::models::PackageExt, error::ErrorContext, SoarResult,
+};
 use tracing::{error, info};
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
@@ -15,10 +17,14 @@ pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
 pub fn interactive_ask(ques: &str) -> SoarResult<String> {
     print!("{}", ques);
 
-    std::io::stdout().flush()?;
+    std::io::stdout()
+        .flush()
+        .with_context(|| format!("flushing stdout stream"))?;
 
     let mut response = String::new();
-    std::io::stdin().read_line(&mut response)?;
+    std::io::stdin()
+        .read_line(&mut response)
+        .with_context(|| format!("reading input from stdin"))?;
 
     Ok(response.trim().to_owned())
 }

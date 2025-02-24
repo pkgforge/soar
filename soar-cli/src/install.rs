@@ -20,7 +20,7 @@ use soar_core::{
         models::{InstalledPackage, Package, PackageExt},
         packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse, ProvideStrategy},
     },
-    error::SoarError,
+    error::{ErrorContext, SoarError},
     package::{
         formats::common::integrate_package,
         install::{InstallTarget, PackageInstaller},
@@ -450,17 +450,29 @@ pub async fn install_single_package(
             let repository_path = repository.get_path()?;
             let pubkey_file = repository_path.join("minisign.pub");
             if pubkey_file.exists() {
-                let pubkey = PublicKey::from_base64(&fs::read_to_string(&pubkey_file)?.trim())
-                    .map_err(|err| {
-                        SoarError::Custom(format!(
-                            "Failed to load public key from {}: {}",
-                            pubkey_file.display(),
-                            err
-                        ))
-                    })?;
-                let entries = fs::read_dir(&install_dir)?;
+                let pubkey = PublicKey::from_base64(
+                    &fs::read_to_string(&pubkey_file)
+                        .with_context(|| {
+                            format!("reading minisign key from {}", pubkey_file.display())
+                        })?
+                        .trim(),
+                )
+                .map_err(|err| {
+                    SoarError::Custom(format!(
+                        "Failed to load public key from {}: {}",
+                        pubkey_file.display(),
+                        err
+                    ))
+                })?;
+                let entries = fs::read_dir(&install_dir).with_context(|| {
+                    format!("reading package directory {}", install_dir.display())
+                })?;
                 for entry in entries {
-                    let path = entry?.path();
+                    let path = entry
+                        .with_context(|| {
+                            format!("reading entry from directory {}", install_dir.display())
+                        })?
+                        .path();
                     let is_signature_file =
                         path.extension().map_or_else(|| false, |ext| ext == "sig");
                     if is_signature_file && path.is_file() {
@@ -480,12 +492,19 @@ pub async fn install_single_package(
                             })?;
 
                         let original_file = path.with_extension("");
-                        let file = File::open(&original_file)?;
+                        let file = File::open(&original_file).with_context(|| {
+                            format!(
+                                "opening file {} for signature verification",
+                                original_file.display()
+                            )
+                        })?;
                         let mut buf_reader = BufReader::new(file);
 
                         let mut buffer = [0u8; 8192];
                         loop {
-                            match buf_reader.read(&mut buffer)? {
+                            match buf_reader.read(&mut buffer).with_context(|| {
+                                format!("reading to buffer from {}", original_file.display())
+                            })? {
                                 0 => break,
                                 n => {
                                     stream_verifier.update(&buffer[..n]);
@@ -501,7 +520,9 @@ pub async fn install_single_package(
                         })?;
 
                         // we can safely remove the signature file
-                        fs::remove_file(&path)?;
+                        fs::remove_file(&path).with_context(|| {
+                            format!("removing minisign file {}", path.display())
+                        })?;
                     }
                 }
             } else {
@@ -537,7 +558,13 @@ pub async fn install_single_package(
                 )));
             }
         }
-        unix::fs::symlink(&real_bin, &def_bin_path)?;
+        unix::fs::symlink(&real_bin, &def_bin_path).with_context(|| {
+            format!(
+                "creating binary symlink {} -> {}",
+                real_bin.display(),
+                def_bin_path.display()
+            )
+        })?;
     }
 
     if let Some(provides) = &target.package.provides {
@@ -551,9 +578,17 @@ pub async fn install_single_package(
                 if is_symlink {
                     let target_name = bin_dir.join(&target);
                     if target_name.is_symlink() || target_name.is_file() {
-                        std::fs::remove_file(&target_name)?;
+                        std::fs::remove_file(&target_name).with_context(|| {
+                            format!("removing provide {}", target_name.display())
+                        })?;
                     }
-                    unix::fs::symlink(&real_path, &target_name)?;
+                    unix::fs::symlink(&real_path, &target_name).with_context(|| {
+                        format!(
+                            "creating symlink {} -> {}",
+                            real_path.display(),
+                            target_name.display()
+                        )
+                    })?;
                 }
             }
         }

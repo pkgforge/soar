@@ -19,6 +19,7 @@ use crate::{
         models::{InstalledPackage, Package},
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
+    error::{ErrorContext, SoarError},
     SoarResult,
 };
 
@@ -234,7 +235,8 @@ impl PackageInstaller {
         )?;
 
         if portable.is_some() || portable_home.is_some() || portable_config.is_some() {
-            let base_dir = env::current_dir()?;
+            let base_dir = env::current_dir()
+                .map_err(|_| SoarError::Custom("Error retrieving current directory".into()))?;
             let portable = portable
                 .map(|p| {
                     let path = PathBuf::from(&p);
@@ -338,7 +340,8 @@ impl PackageInstaller {
                         .unwrap_or(true);
 
                     if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
-                        fs::remove_file(&alt_path)?;
+                        fs::remove_file(&alt_path)
+                            .with_context(|| format!("removing desktop file {}", alt_path))?;
                     }
                 }
 
@@ -349,7 +352,8 @@ impl PackageInstaller {
                         icon_path.as_ref().map(|dp| dp != &alt_path).unwrap_or(true);
 
                     if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
-                        fs::remove_file(&alt_path)?;
+                        fs::remove_file(&alt_path)
+                            .with_context(|| format!("removing icon file {}", alt_path))?;
                     }
                 }
 
@@ -364,7 +368,9 @@ impl PackageInstaller {
                             if is_symlink {
                                 let target_name = get_config().get_bin_path()?.join(&target);
                                 if target_name.is_symlink() || target_name.is_file() {
-                                    std::fs::remove_file(&target_name)?;
+                                    std::fs::remove_file(&target_name).with_context(|| {
+                                        format!("removing provide {}", target_name.display())
+                                    })?;
                                 }
                             }
                         }

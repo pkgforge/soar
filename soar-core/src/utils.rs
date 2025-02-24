@@ -12,7 +12,11 @@ use std::{
 use nix::unistd::{geteuid, User};
 use tracing::info;
 
-use crate::{config::get_config, error::SoarError, SoarResult};
+use crate::{
+    config::get_config,
+    error::{ErrorContext, SoarError},
+    SoarResult,
+};
 
 type Result<T> = std::result::Result<T, SoarError>;
 
@@ -119,7 +123,9 @@ pub fn parse_size(size_str: &str) -> Option<u64> {
 
 pub fn calculate_checksum(file_path: &Path) -> Result<String> {
     let mut hasher = blake3::Hasher::new();
-    hasher.update_mmap(file_path)?;
+    hasher
+        .update_mmap(file_path)
+        .with_context(|| format!("reading {} using memory mapping", file_path.display()))?;
     Ok(hasher.finalize().to_hex().to_string())
 }
 
@@ -127,18 +133,22 @@ pub fn setup_required_paths() -> Result<()> {
     let config = get_config();
     let bin_path = config.get_bin_path()?;
     if !bin_path.exists() {
-        fs::create_dir_all(bin_path)?;
+        fs::create_dir_all(&bin_path)
+            .with_context(|| format!("creating bin directory {}", bin_path.display()))?;
     }
 
     let db_path = config.get_db_path()?;
     if !db_path.exists() {
-        fs::create_dir_all(db_path)?
+        fs::create_dir_all(&db_path)
+            .with_context(|| format!("creating database directory {}", db_path.display()))?;
     }
 
     for (_, profile) in &config.profile {
         let packages_path = profile.get_packages_path();
         if !packages_path.exists() {
-            fs::create_dir_all(packages_path)?;
+            fs::create_dir_all(&packages_path).with_context(|| {
+                format!("creating packages directory {}", packages_path.display())
+            })?;
         }
     }
 
@@ -146,32 +156,38 @@ pub fn setup_required_paths() -> Result<()> {
 }
 
 pub fn calc_magic_bytes<P: AsRef<Path>>(file_path: P, size: usize) -> Result<Vec<u8>> {
-    let file = File::open(file_path)?;
+    let file_path = file_path.as_ref();
+    let file = File::open(file_path).with_context(|| format!("opening {}", file_path.display()))?;
     let mut file = BufReader::new(file);
     let mut magic_bytes = vec![0u8; size];
-    file.read_exact(&mut magic_bytes)?;
+    file.read_exact(&mut magic_bytes)
+        .with_context(|| format!("reading magic bytes from {}", file_path.display()))?;
     file.rewind().unwrap();
     Ok(magic_bytes)
 }
 
 pub fn create_symlink<P: AsRef<Path>>(from: P, to: P) -> SoarResult<()> {
+    let from = from.as_ref();
     let to = to.as_ref();
 
     if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(&parent)
+            .with_context(|| format!("creating parent directory {}", parent.display()))?;
     }
 
     if to.is_symlink() {
-        fs::remove_file(to)?;
+        fs::remove_file(to).with_context(|| format!("removing symlink {}", to.display()))?;
     }
-    os::unix::fs::symlink(from, to)?;
+    os::unix::fs::symlink(from, to)
+        .with_context(|| format!("creating symlink {} -> {}", from.display(), to.display()))?;
     Ok(())
 }
 
 pub fn cleanup_cache() -> Result<()> {
     let cache_path = get_config().get_cache_path()?;
     if cache_path.exists() {
-        fs::remove_dir_all(&cache_path)?;
+        fs::remove_dir_all(&cache_path)
+            .with_context(|| format!("removing directory {}", cache_path.display()))?;
         info!("Nuked cache directory: {}", cache_path.display());
     }
 
@@ -184,8 +200,12 @@ fn remove_broken_symlinks_impl<P: AsRef<Path>>(dir: P, filter: Option<&str>) -> 
         return Ok(());
     }
 
-    for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("reading directory {}", dir.display()))?
+    {
+        let path = entry
+            .with_context(|| format!("reading entry from directory {}", dir.display()))?
+            .path();
 
         if path.is_dir() {
             remove_broken_symlinks_impl(&path, filter)?;
@@ -197,8 +217,9 @@ fn remove_broken_symlinks_impl<P: AsRef<Path>>(dir: P, filter: Option<&str>) -> 
             None => true,
         };
 
-        if should_check && !path.is_file() {
-            fs::remove_file(&path)?;
+        if should_check && !path.is_file() && !path.is_dir() {
+            fs::remove_file(&path)
+                .with_context(|| format!("removing broken symlink {}", path.display()))?;
             info!("Removed broken symlink: {}", path.display());
         }
     }

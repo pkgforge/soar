@@ -6,7 +6,8 @@ use std::{
 use squishy::{appimage::AppImage, EntryKind};
 
 use crate::{
-    constants::PNG_MAGIC_BYTES, database::models::PackageExt, utils::calc_magic_bytes, SoarResult,
+    constants::PNG_MAGIC_BYTES, database::models::PackageExt, error::ErrorContext,
+    utils::calc_magic_bytes, SoarResult,
 };
 
 pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
@@ -38,7 +39,8 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
                     "svg"
                 };
                 let final_path = format!("{}/{}.{ext}", install_dir.display(), pkg_name);
-                fs::rename(&dest, &final_path)?;
+                fs::rename(&dest, &final_path)
+                    .with_context(|| format!("renaming from {} to {}", dest, final_path))?;
 
                 *icon = Some(PathBuf::from(&final_path));
             }
