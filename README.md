@@ -29,7 +29,7 @@
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif?version=v0.5.7" alt="soar-list" width="850">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.5.8" alt="soar-list" width="850">
     </a><br>
 </p>
 

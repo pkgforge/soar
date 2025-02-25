@@ -1,4 +1,21 @@
 
+## [0.5.8](https://github.com/pkgforge/soar/compare/v0.5.7..v0.5.8) - 2025-02-25
+
+### 🐛 Bug Fixes
+
+- *(integration)* Create parent dir if doesn't exist - ([c450fae](https://github.com/pkgforge/soar/commit/c450fae16496b3edb5f59708de947959b866b12a))
+- *(yes)* Handle auto-select first package in download - ([89aaa73](https://github.com/pkgforge/soar/commit/89aaa73c536d4ab33325973ce67e870f2986dd26))
+
+### 🚜 Refactor
+
+- *(cleanup)* Improve cleanup - ([83b2813](https://github.com/pkgforge/soar/commit/83b2813aad4291589498cf2016b4bbc4dd517838))
+- *(error)* Improve I/O error messages - ([ca7b971](https://github.com/pkgforge/soar/commit/ca7b97147ee478243712926db561038abda6f5a2))
+
+### ⚡ Performance
+
+- *(run)* Improve run performance for cached binary - ([b4178b3](https://github.com/pkgforge/soar/commit/b4178b3d5c5327518cd854e1b69e9288e63b6fa5))
+
+
 ## [0.5.7](https://github.com/pkgforge/soar/compare/v0.5.6..v0.5.7) - 2025-02-17
 
 ### ⛰️  Features
