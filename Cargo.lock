@@ -1824,9 +1824,9 @@ dependencies = [
 
 [[package]]
 name = "soar-dl"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d94a526ac0678fdd05219c92ed67c6a09dbe8f2771513e8ea2645fad679f524"
+checksum = "d4449d79b9fbd53ed658da7955083e6dc299b00797d59d8fcf20e3af10e86a6d"
 dependencies = [
  "futures",
  "regex",
