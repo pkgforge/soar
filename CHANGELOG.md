@@ -1,4 +1,17 @@
 
+## [0.5.9](https://github.com/pkgforge/soar/compare/v0.5.8..v0.5.9) - 2025-02-26
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update soar-dl to resolve append bug - ([65d56ce](https://github.com/pkgforge/soar/commit/65d56ceee940d905df346c4e8e1c9dd079af0a95))
+- *(exe)* Fix self executable path - ([2918a57](https://github.com/pkgforge/soar/commit/2918a576ba72401e3d698f3ed683a32f0e83eb58))
+- *(run)* Make soar flags passable after package name - ([c35e7d0](https://github.com/pkgforge/soar/commit/c35e7d0fecc6a0de87ba6c5abb4e258c8241f81e))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(script)* Improve install script (#24) - ([d83eb6e](https://github.com/pkgforge/soar/commit/d83eb6eb0e472ebb2d9e38b0a29e88c72192e0d9))
+
+
 ## [0.5.8](https://github.com/pkgforge/soar/compare/v0.5.7..v0.5.8) - 2025-02-25
 
 ### 🐛 Bug Fixes
