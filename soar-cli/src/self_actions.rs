@@ -3,7 +3,7 @@ use std::{
     fs,
 };
 
-use soar_core::SoarResult;
+use soar_core::{error::ErrorContext, SoarResult};
 use soar_dl::{
     downloader::{DownloadOptions, Downloader},
     github::{Github, GithubRelease},
@@ -13,11 +13,11 @@ use tracing::{error, info};
 
 use crate::cli::SelfAction;
 
-pub async fn process_self_action(
-    action: &SelfAction,
-    self_bin: String,
-    self_version: &str,
-) -> SoarResult<()> {
+pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
+    let self_bin =
+        env::current_exe().with_context(|| "Failed to get executable path".to_string())?;
+    let self_version = env!("CARGO_PKG_VERSION");
+
     match action {
         SelfAction::Update => {
             let is_nightly = self_version.starts_with("nightly");
@@ -63,7 +63,7 @@ pub async fn process_self_action(
                 let downloader = Downloader::default();
                 let options = DownloadOptions {
                     url: asset.download_url().to_string(),
-                    output_path: Some(self_bin),
+                    output_path: Some(self_bin.to_string_lossy().to_string()),
                     progress_callback: None,
                 };
                 downloader.download(options).await?;

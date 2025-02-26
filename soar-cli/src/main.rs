@@ -40,8 +40,6 @@ mod utils;
 
 async fn handle_cli() -> SoarResult<()> {
     let mut args = env::args().collect::<Vec<_>>();
-    let self_bin = args.first().unwrap().clone();
-    let self_version = env!("CARGO_PKG_VERSION");
 
     let mut i = 0;
     while i < args.len() {
@@ -212,7 +210,7 @@ async fn handle_cli() -> SoarResult<()> {
             );
         }
         cli::Commands::SelfCmd { action } => {
-            process_self_action(&action, self_bin, self_version).await?;
+            process_self_action(&action).await?;
         }
         cli::Commands::Clean {
             cache,
