@@ -77,7 +77,7 @@ pub struct Repository {
 }
 
 impl Repository {
-    pub fn get_path(&self) -> Result<PathBuf> {
+    pub fn get_path(&self) -> std::result::Result<PathBuf, SoarError> {
         Ok(get_config().get_repositories_path()?.join(&self.name))
     }
 
@@ -273,8 +273,12 @@ impl Config {
         )?)
     }
 
-    pub fn get_bin_path(&self) -> Result<PathBuf> {
-        Ok(self.default_profile()?.get_bin_path())
+    pub fn get_bin_path(&self) -> std::result::Result<PathBuf, SoarError> {
+        if let Some(bin_path) = &self.bin_path {
+            build_path(bin_path)
+        } else {
+            Ok(self.default_profile()?.get_bin_path())
+        }
     }
 
     pub fn get_db_path(&self) -> std::result::Result<PathBuf, SoarError> {
@@ -294,8 +298,12 @@ impl Config {
         Ok(self.get_profile(&get_current_profile())?.get_cache_path())
     }
 
-    pub fn get_repositories_path(&self) -> Result<PathBuf> {
-        Ok(self.default_profile()?.get_repositories_path())
+    pub fn get_repositories_path(&self) -> std::result::Result<PathBuf, SoarError> {
+        if let Some(repositories_path) = &self.repositories_path {
+            build_path(repositories_path)
+        } else {
+            Ok(self.default_profile()?.get_repositories_path())
+        }
     }
 
     pub fn get_repository(&self, repo_name: &str) -> Option<&Repository> {
