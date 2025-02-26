@@ -180,7 +180,7 @@ pub enum Commands {
         yes: bool,
 
         /// Command to execute
-        #[arg(required = true, trailing_var_arg = true)]
+        #[arg(required = true)]
         command: Vec<String>,
 
         /// Package id
