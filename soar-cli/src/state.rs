@@ -14,6 +14,7 @@ use soar_core::{
     metadata::fetch_metadata,
     SoarResult,
 };
+use tracing::error;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -53,8 +54,15 @@ impl AppState {
         }
 
         for task in tasks {
-            task.await
-                .map_err(|err| SoarError::Custom(format!("Join handle error: {}", err)))??;
+            if let Err(err) = task
+                .await
+                .map_err(|err| SoarError::Custom(format!("Join handle error: {}", err)))?
+            {
+                if !matches!(err, SoarError::FailedToFetchRemote(_)) {
+                    return Err(err);
+                }
+                error!("{err}");
+            };
         }
         Ok(())
     }
