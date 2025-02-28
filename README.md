@@ -55,7 +55,7 @@
 | ◆ **Custom Repositories** |
 | User's can setup their [own custom repositories](https://soar.qaidvoid.dev/configuration#custom-respository-support) if they prefer not to use the [default ones](https://docs.pkgforge.dev/repositories/) managed by us. This allows users to have full control over what packages, what sources and from where everything is installed. |
 | ◆ **Decentralized** |
-| Users can use soar completely independent of any of our core infra. Similar to homebrew's taps, Soar has Self Hosted Repositories called [nests](https://docs.pkgforge.dev/repositories/nests). Additionally, users can download any of our packages without using soar and then use another package manager to install them. |
+| Users can download any of our packages without using soar and then use another package manager to install them. |
 
 ## ☢️ Caveats
 #### Soar doesn't reinvent things
@@ -63,7 +63,7 @@ Soar isn't a package manager in the traditional sense, neither is it a [new stan
 This means soar is not a replacement for your distro's official package manager.<br>
 Instead, Soar complements existing package managers by providing your distro with additional packages or newer version of packages that your distro may not provide.<br>
 Soar is meant to coexist with existing package managers by avoiding conflicts, being completely functional in userspace & using XDG Specifications.<br>
-For more questions, check our [FAQ](https://docs.pkgforge.dev/repositories/soarpkgs/faq)
+For more questions, check our [FAQ](https://docs.pkgforge.dev/repositories/soarpkgs/faq) or [create a discussion](https://github.com/pkgforge/soar/discussions).
 
 ## 🔧 Installation
 
@@ -86,10 +86,7 @@ Simply run `soar --help` for general options.
 - Detailed guide regarding each format is at: [docs.pkgforge.dev](https://docs.pkgforge.dev/formats/packages)
 
 ## 📦 Packages
-Our [Official package repository](https://docs.pkgforge.dev/repositories) is at [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs).
-> [!WARNING]
-> DO NOT use the Issues page to request packages or report broken binaries<br>
-> All of those will be auto-closed/moved to: https://github.com/pkgforge/soarpkgs
+For reporting any issues related to packaging, please use our [Official package repository](https://docs.pkgforge.dev/repositories) at [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs).<br>
 
 ## 💬 Community
 
