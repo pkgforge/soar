@@ -38,31 +38,32 @@
 
 | 🌟 Key Features |
 |:--:|
-| **Portable Packages** |
+| ◆ **Portable Packages** |
 | We only include packages that are [`portable`](https://docs.pkgforge.dev/formats/) i.e., they don't need dependencies/libraries. We do this by [statically linking](https://docs.pkgforge.dev/formats/binaries/static) everything wherever possible into a single executable. Otherwise, we bundle all dependencies/libraries into a [self-extractable](https://docs.pkgforge.dev/formats/packages/archive) or [fuse-mountable](https://docs.pkgforge.dev/formats/packages/appimage) bundle. Soar supports all these [universal formats](https://soar.qaidvoid.dev/#universal-package-support) out of the box. This makes Soar [Distro Agnostic](https://docs.pkgforge.dev/soar/readme/packages#portability), meaning most packages are truly standalone and will work on any Linux distro out of the box. |
-| **System Integration** |
+| ◆ **System Integration** |
 | Soar [natively integrates](https://soar.qaidvoid.dev/#desktop-integration) any package you install so they show up properly in your system menus, paths etc., just like a native package. |
-| **AUR like Package Repository** |
+| ◆ **AUR like Package Repository** |
 | Our [Official repositories](https://docs.pkgforge.dev/repositories) use a novel recipe format called [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) at [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs). Anyone can submit their own `.SBUILD` for a package & our [linters](https://github.com/pkgforge/sbuilder) will validate it, our [maintainers](https://github.com/orgs/pkgforge/people) will approve it & Our CI Infra will build these [packages](https://pkgs.pkgforge.dev/). We compile most (`80%`) our packages from source with sensible profiles: MUSL for lightweightness, LTO for performance, ASLR/PIE for security. We also re-package some packages from other distros by using [container based formats](https://docs.pkgforge.dev/formats/packages). For example, if a package is only on Arch repos, but you use a debian distro, you can still run our packages which was sourced from Arch without changing your distro or using docker/distrobox. |
-| **Chaotic by Default** |
+| ◆ **Chaotic by Default** |
 | Soar provides up-to-date [**prebuilts**](https://docs.pkgforge.dev/repositories/soarpkgs/faq#cache) for 100% of it's [official packages](https://github.com/pkgforge/soar#-packages). This means installs are instant, limited only by your bandwidth. |
-| **Secure by Default** |
+| ◆ **Secure by Default** |
 | Soar enforces security through checksums & signing. And our CI Infra meet [SLSA Build L2 Security Guarantees](https://docs.pkgforge.dev/soar/readme/security). |
-| **Large Pool of Packages** |
+| ◆ **Large Pool of Packages** |
 | We have the [largest collection](https://docs.pkgforge.dev/soar/readme/packages#total) of portable packages. It is likely we already have your favourite packages, to check type `soar list` for a list or visit [pkgs.pkgforge.dev](https://pkgs.pkgforge.dev/). To request new packages or report an issue with an existing one, please use the [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs) repository. |
-| **External Repositories** |
+| ◆ **External Repositories** |
 | In addition to our [officially curated repositories](https://docs.pkgforge.dev/repositories/), we also let users use external repositories like [ivan-hc/AM](https://github.com/ivan-hc/AM), [appimage.github.io](https://github.com/AppImage/appimage.github.io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) & [more](https://docs.pkgforge.dev/repositories/external). However be **careful** as we don't curate/verify any of these external sources. |
-| **Custom Repositories** |
+| ◆ **Custom Repositories** |
 | User's can setup their [own custom repositories](https://soar.qaidvoid.dev/configuration#custom-respository-support) if they prefer not to use the [default ones](https://docs.pkgforge.dev/repositories/) managed by us. This allows users to have full control over what packages, what sources and from where everything is installed. |
-| **Decentralized** |
+| ◆ **Decentralized** |
 | Users can use soar completely independent of any of our core infra. Similar to homebrew's taps, Soar has Self Hosted Repositories called [nests](https://docs.pkgforge.dev/repositories/nests). Additionally, users can download any of our packages without using soar and then use another package manager to install them. |
 
 ## ☢️ Caveats
-- #### Soar doesn't reinvent things
+#### Soar doesn't reinvent things
 Soar isn't a package manager in the traditional sense, neither is it a [new standard](https://xkcd.com/927/), thus soar doesn't handle core system tools/libraries by design.
 This means soar is not a replacement for your distro's official package manager.<br>
 Instead, Soar complements existing package managers by providing your distro with additional packages or newer version of packages that your distro may not provide.<br>
-Soar is meant to coexist with existing package managers by avoiding conflicts, being completely functional in userspace & using XDG Specifications.
+Soar is meant to coexist with existing package managers by avoiding conflicts, being completely functional in userspace & using XDG Specifications.<br>
+For more questions, check our [FAQ](https://docs.pkgforge.dev/repositories/soarpkgs/faq)
 
 ## 🔧 Installation
 
