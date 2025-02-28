@@ -51,9 +51,9 @@
 | ◆ **Large Pool of Packages** |
 | We have the [largest collection](https://docs.pkgforge.dev/soar/readme/packages#total) of portable packages. It is likely we already have your favourite packages, to check type `soar list` for a list or visit [pkgs.pkgforge.dev](https://pkgs.pkgforge.dev/). To request new packages or report an issue with an existing one, please use the [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs) repository. |
 | ◆ **External Repositories** |
-| In addition to our [officially curated repositories](https://docs.pkgforge.dev/repositories/), we also let users use external repositories like [ivan-hc/AM](https://github.com/ivan-hc/AM), [appimage.github.io](https://github.com/AppImage/appimage.github.io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) & [more](https://docs.pkgforge.dev/repositories/external). However be **careful** as we don't curate/verify any of these external sources. |
+| In addition to our [officially curated repositories](https://docs.pkgforge.dev/repositories/), we also provide support for external repositories like [ivan-hc/AM](https://github.com/ivan-hc/AM), [appimage.github.io](https://github.com/AppImage/appimage.github.io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) & [more](https://docs.pkgforge.dev/repositories/external). However be **careful** as we don't curate/verify any of these external sources. |
 | ◆ **Custom Repositories** |
-| User's can setup their [own custom repositories](https://soar.qaidvoid.dev/configuration#custom-respository-support) if they prefer not to use the [default ones](https://docs.pkgforge.dev/repositories/) managed by us. This allows users to have full control over what packages, what sources and from where everything is installed. |
+| Users can setup their [own custom repositories](https://soar.qaidvoid.dev/configuration#custom-respository-support) if they prefer not to use the [default ones](https://docs.pkgforge.dev/repositories/) managed by us. This allows users to have full control over what packages, what sources and from where everything is installed. |
 | ◆ **Decentralized** |
 | Users can download any of our packages without using soar and then use another package manager to install them. |
 
@@ -73,11 +73,8 @@ Soar comes as a single-file, statically-linked executable with no dependencies t
 
 ## ⚙️ Configuration
 
-Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration.html) & [all repositories](https://docs.pkgforge.dev/repositories/) preconfigured at `~/.config/soar/config.toml`<br>
-For additional configuration guide, click [here](https://soar.qaidvoid.dev/configuration.html)
-> [!NOTE]
-> Soar provides [External repositories](https://docs.pkgforge.dev/repositories/external), which aren't enabled by default.
-> Enable them with `soar defconfig --external` if you haven't created configuration file yet. Or, add them manually using metadata from [here](https://meta.pkgforge.dev/external/).
+Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration.html) & [official repositories](https://docs.pkgforge.dev/repositories/) preconfigured<br>
+For additional configuration guide, see [here](https://soar.qaidvoid.dev/configuration.html)
 
 ## 🎯 Usage
 
