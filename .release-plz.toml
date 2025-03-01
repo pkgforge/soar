@@ -1,0 +1,11 @@
+[workspace]
+allow_dirty = false
+changelog_config = "cliff.toml"
+changelog_update = true
+dependencies_update = true
+git_release_enable = false
+pr_name = "Release {{ package }} v{{ version }}"
+pr_labels = ["release"]
+publish_allow_dirty = false
+semver_check = true
+release_always = false
