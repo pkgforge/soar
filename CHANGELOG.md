@@ -1,4 +1,10 @@
 
+## [0.5.11](https://github.com/pkgforge/soar/compare/v0.5.10...v0.5.11) - 2025-03-01
+
+### 🐛 Bug Fixes
+
+- *(self_update)* Use semver version comparison - ([96af984](https://github.com/pkgforge/soar/commit/96af984560e9924f63a75f0c65d2b4868c03afd5))
+
 ## [0.5.10](https://github.com/pkgforge/soar/compare/v0.5.9...v0.5.10) - 2025-03-01
 
 ### ⛰️  Features
