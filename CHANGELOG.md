@@ -1,4 +1,19 @@
 
+## [0.5.10](https://github.com/pkgforge/soar/compare/v0.5.9...v0.5.10) - 2025-03-01
+
+### ⛰️  Features
+
+- *(health)* Add basic health functionality - ([b5ba25b](https://github.com/pkgforge/soar/commit/b5ba25b090daf36023ff752bd06a4592a445030a))
+
+### 🐛 Bug Fixes
+
+- *(config)* Handle bin and repositories path - ([e7537de](https://github.com/pkgforge/soar/commit/e7537de771d9540ea0838b873d2f903ca4055c05))
+- *(metadata)* Prevent crash on metadata fetch failure - ([42cf13f](https://github.com/pkgforge/soar/commit/42cf13f8375895121bb8d295a8d8a1fb0b568b28))
+
+### Contributors
+
+* @QaidVoid
+
 ## [0.5.9](https://github.com/pkgforge/soar/compare/v0.5.8..v0.5.9) - 2025-02-26
 
 ### 🐛 Bug Fixes
