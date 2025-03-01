@@ -3,6 +3,7 @@ use std::{
     fs,
 };
 
+use semver::Version;
 use soar_core::{error::ErrorContext, SoarResult};
 use soar_dl::{
     downloader::{DownloadOptions, Downloader},
@@ -38,8 +39,17 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                 if target_nightly {
                     is_nightly_release && rel.name() != self_version
                 } else {
-                    !is_nightly_release
-                        && (is_nightly || rel.tag_name().trim_start_matches("v") > self_version)
+                    let release_version = rel.tag_name().trim_start_matches("v");
+
+                    let release_version = Version::parse(release_version).ok();
+                    let self_version = Version::parse(self_version).ok();
+
+                    match (release_version, self_version) {
+                        (Some(release_ver), Some(self_ver)) => {
+                            !is_nightly_release && (is_nightly || release_ver > self_ver)
+                        }
+                        _ => false,
+                    }
                 }
             });
 
