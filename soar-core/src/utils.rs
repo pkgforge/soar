@@ -189,12 +189,21 @@ pub fn cleanup_cache() -> Result<()> {
         fs::remove_dir_all(&cache_path)
             .with_context(|| format!("removing directory {}", cache_path.display()))?;
         info!("Nuked cache directory: {}", cache_path.display());
+    } else {
+        info!("Cache directory is clean.");
     }
 
     Ok(())
 }
 
-fn remove_broken_symlinks_impl<P: AsRef<Path>>(dir: P, filter: Option<&str>) -> Result<()> {
+pub fn process_broken_symlinks<P: AsRef<Path>, F>(
+    dir: P,
+    filter: Option<&str>,
+    action: &mut F,
+) -> Result<()>
+where
+    F: FnMut(&Path) -> Result<()>,
+{
     let dir = dir.as_ref();
     if !dir.exists() {
         return Ok(());
@@ -208,7 +217,7 @@ fn remove_broken_symlinks_impl<P: AsRef<Path>>(dir: P, filter: Option<&str>) -> 
             .path();
 
         if path.is_dir() {
-            remove_broken_symlinks_impl(&path, filter)?;
+            process_broken_symlinks(&path, filter, action)?;
             continue;
         }
 
@@ -218,9 +227,7 @@ fn remove_broken_symlinks_impl<P: AsRef<Path>>(dir: P, filter: Option<&str>) -> 
         };
 
         if should_check && !path.is_file() && !path.is_dir() {
-            fs::remove_file(&path)
-                .with_context(|| format!("removing broken symlink {}", path.display()))?;
-            info!("Removed broken symlink: {}", path.display());
+            action(&path)?;
         }
     }
 
@@ -228,13 +235,20 @@ fn remove_broken_symlinks_impl<P: AsRef<Path>>(dir: P, filter: Option<&str>) -> 
 }
 
 pub fn remove_broken_symlinks() -> Result<()> {
-    remove_broken_symlinks_impl(&get_config().get_bin_path()?, None)?;
+    let mut remove_action = |path: &Path| -> Result<()> {
+        fs::remove_file(&path)
+            .with_context(|| format!("removing broken symlink {}", path.display()))?;
+        info!("Removed broken symlink: {}", path.display());
+        Ok(())
+    };
+
+    process_broken_symlinks(&get_config().get_bin_path()?, None, &mut remove_action)?;
 
     let desktop_entries = format!("{}/applications", home_data_path());
-    remove_broken_symlinks_impl(&desktop_entries, Some("-soar"))?;
+    process_broken_symlinks(&desktop_entries, Some("-soar"), &mut remove_action)?;
 
     let icons_base = format!("{}/icons/hicolor", home_data_path());
-    remove_broken_symlinks_impl(&icons_base, Some("-soar"))?;
+    process_broken_symlinks(&icons_base, Some("-soar"), &mut remove_action)?;
 
     Ok(())
 }

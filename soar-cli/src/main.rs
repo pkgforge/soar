@@ -3,6 +3,7 @@ use std::{env, fs, io::Read, process::Command};
 use clap::Parser;
 use cli::Args;
 use download::download;
+use health::{display_health, remove_broken_packages};
 use inspect::{inspect_log, InspectType};
 use install::install_packages;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
@@ -24,6 +25,7 @@ use utils::{Colored, COLOR};
 
 mod cli;
 mod download;
+mod health;
 mod inspect;
 mod install;
 mod list;
@@ -188,7 +190,7 @@ async fn handle_cli() -> SoarResult<()> {
             )
             .await?;
         }
-        cli::Commands::Health => unreachable!(),
+        cli::Commands::Health => display_health().await?,
         cli::Commands::DefConfig { external } => generate_default_config(external)?,
         cli::Commands::Env => {
             let config = get_config();
@@ -215,12 +217,17 @@ async fn handle_cli() -> SoarResult<()> {
         cli::Commands::Clean {
             cache,
             broken_symlinks,
+            broken,
         } => {
-            if !broken_symlinks || cache {
+            let unspecified = !cache && !broken_symlinks && !broken;
+            if unspecified || cache {
                 cleanup_cache()?;
             }
-            if !cache || broken_symlinks {
+            if unspecified || broken_symlinks {
                 remove_broken_symlinks()?;
+            }
+            if unspecified || broken {
+                remove_broken_packages()?;
             }
         }
         cli::Commands::Config { edit } => {

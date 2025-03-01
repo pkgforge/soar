@@ -270,8 +270,12 @@ pub enum Commands {
         cache: bool,
 
         /// Clean broken symlinks
-        #[arg(required = false, short, long)]
+        #[arg(required = false, long)]
         broken_symlinks: bool,
+
+        /// Clean broken packages
+        #[arg(required = false, long)]
+        broken: bool,
     },
 
     /// Modify the soar installation
