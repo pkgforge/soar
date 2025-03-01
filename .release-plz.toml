@@ -24,10 +24,6 @@ git_release_enable = true
 changelog_include=["soar-core"]
 changelog_path="./CHANGELOG.md"
 
-[[package]]
-name = "soar-core"
-git_tag_enable = false
-
 [changelog]
 header = """
 """
