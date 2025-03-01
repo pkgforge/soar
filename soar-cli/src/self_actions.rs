@@ -10,7 +10,7 @@ use soar_dl::{
     github::{Github, GithubRelease},
     platform::{Release, ReleaseAsset, ReleaseHandler},
 };
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::cli::SelfAction;
 
@@ -19,9 +19,12 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
         env::current_exe().with_context(|| "Failed to get executable path".to_string())?;
     let self_version = env!("CARGO_PKG_VERSION");
 
+    debug!("Executable path: {}", self_bin.display());
+
     match action {
         SelfAction::Update => {
             let is_nightly = self_version.starts_with("nightly");
+            debug!("Current version: {}", self_version);
 
             let target_nightly = match (env::var("SOAR_NIGHTLY"), env::var("SOAR_RELEASE")) {
                 (Ok(_), Err(_)) => true,
@@ -36,26 +39,48 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
 
             let release = releases.iter().find(|rel| {
                 let is_nightly_release = rel.tag_name().starts_with("nightly");
+
+                debug!(
+                    "Checking release: {}, Release Channel: {}",
+                    rel.tag_name(),
+                    if is_nightly_release {
+                        "nightly"
+                    } else {
+                        "stable"
+                    }
+                );
                 if target_nightly {
                     is_nightly_release && rel.name() != self_version
                 } else {
                     let release_version = rel.tag_name().trim_start_matches("v");
 
-                    let release_version = Version::parse(release_version).ok();
-                    let self_version = Version::parse(self_version).ok();
+                    let parsed_release_version = Version::parse(release_version).ok();
+                    let parsed_self_version = Version::parse(self_version).ok();
 
-                    match (release_version, self_version) {
+                    match (parsed_release_version, parsed_self_version) {
                         (Some(release_ver), Some(self_ver)) => {
-                            !is_nightly_release && (is_nightly || release_ver > self_ver)
+                            let should_update = !is_nightly_release && release_ver > self_ver;
+                            debug!(
+                                "Comparing versions: release_ver={}, self_ver={}, should_update={}",
+                                release_ver, self_ver, should_update
+                            );
+                            should_update
                         }
-                        _ => false,
+                        (_, None) => is_nightly,
+                        _ => {
+                            debug!(
+                                "Skipping release {} due to invalid version.",
+                                release_version
+                            );
+                            false
+                        }
                     }
                 }
             });
 
             if let Some(release) = release {
                 if target_nightly != is_nightly {
-                    println!(
+                    info!(
                         "Switching from {} to {} channel",
                         if is_nightly { "nightly" } else { "stable" },
                         if target_nightly { "nightly" } else { "stable" }
@@ -70,12 +95,17 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                         a.name.contains(ARCH) && !a.name.contains("tar") && !a.name.contains("sum")
                     })
                     .unwrap();
+
+                debug!("Selected asset: {}", asset.name);
+
                 let downloader = Downloader::default();
                 let options = DownloadOptions {
                     url: asset.download_url().to_string(),
                     output_path: Some(self_bin.to_string_lossy().to_string()),
                     progress_callback: None,
                 };
+
+                debug!("Downloading update from: {}", options.url);
                 downloader.download(options).await?;
                 info!("Soar updated to {}", release.tag_name());
             } else {
