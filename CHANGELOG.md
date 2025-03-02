@@ -1,4 +1,11 @@
 
+## [0.5.12](https://github.com/pkgforge/soar/compare/v0.5.11...v0.5.12) - 2025-03-02
+
+### 🐛 Bug Fixes
+
+- *(args)* Make top level flags global - ([2b6d14b](https://github.com/pkgforge/soar/commit/2b6d14b5b0a90342920c15f5e3d638a4319457f7))
+- *(self_update)* Fix channel switch - ([aff38ec](https://github.com/pkgforge/soar/commit/aff38ec43d6448fc87e9f1e261c551ff7b60270a))
+
 ## [0.5.11](https://github.com/pkgforge/soar/compare/v0.5.10...v0.5.11) - 2025-03-01
 
 ### 🐛 Bug Fixes
