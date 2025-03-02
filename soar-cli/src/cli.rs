@@ -13,22 +13,22 @@ use clap::{ArgAction, Parser, Subcommand, ValueHint};
     arg_required_else_help = true
 )]
 pub struct Args {
-    #[arg(short = 'v', long, action = ArgAction::Count)]
+    #[arg(short = 'v', long, action = ArgAction::Count, global = true)]
     pub verbose: u8,
 
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub quiet: bool,
 
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub json: bool,
 
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub no_color: bool,
 
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub profile: Option<String>,
 
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub config: Option<String>,
 
     #[clap(subcommand)]
@@ -70,7 +70,7 @@ pub enum Commands {
         yes: bool,
 
         /// Set portable dir for home & config
-        #[arg(required = false, short, long, num_args = 0..=1, value_hint = ValueHint::AnyPath)]
+        #[arg(required = false, long, num_args = 0..=1, value_hint = ValueHint::AnyPath)]
         portable: Option<Option<String>>,
 
         /// Set portable home
@@ -184,7 +184,7 @@ pub enum Commands {
         command: Vec<String>,
 
         /// Package id
-        #[arg(required = false, short, long)]
+        #[arg(required = false, long)]
         pkg_id: Option<String>,
 
         /// Repo name
