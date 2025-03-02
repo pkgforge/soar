@@ -1,0 +1,56 @@
+name: Bug Report
+description: Report a problem in Soar
+type: 'bug'
+body:
+
+  - type: markdown
+    attributes:
+      value: |
+        *Before reporting:*
+        - Confirm the problem is reproducible on [**nightly**](https://github.com/pkgforge/soar/releases/nightly) or [**latest stable**](https://github.com/pkgforge/soar/releases/latest) release
+        - Search [existing issues](https://github.com/pkgforge/soar/issues?q=is%3Aissue%20AND%20(label%3Abug%20OR%20type%3ABug))
+
+        Usage or "How to" questions belong on [discussions](https://github.com/pkgforge/soar/discussions) and will be closed.
+  - type: textarea
+    attributes:
+      label: "Problem"
+      description: "Describe the current behavior."
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Steps to reproduce"
+      description: |
+        - List the command(s) used.
+        - Include configuration file (if applicable).
+      placeholder: |
+        Run `soar add 7z`
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Expected behavior"
+      description: "Describe the behavior you expect."
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: "Soar version (soar -V)"
+      placeholder: "soar-cli 0.5.12"
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: "Operating system (if issue is related to OS)"
+      placeholder: "NixOS"
+    validations:
+      required: false
+
+  - type: input
+    attributes:
+      label: "Installation"
+      description: "How did you install soar: build from repo / system package manager / github release / other (describe)?"
+      placeholder: "Arch User Repository (AUR)"
+    validations:
+      required: false

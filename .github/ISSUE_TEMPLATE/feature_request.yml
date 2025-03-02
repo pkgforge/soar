@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest an idea for Soar
+type: 'enhancement'
+body:
+
+  - type: markdown
+    attributes:
+      value: |
+        Before requesting: search [existing feature requests](https://github.com/pkgforge/soar/issues?q=type%3AFeature%20OR%20type%3ATask).
+
+  - type: textarea
+    attributes:
+      label: "Problem"
+      description: "Describe the problem to be solved. Include references to other projects if relevant."
+      placeholder: "No declarative package installation available. Declarative package installation would be useful because ..."
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Expected behavior"
+      description: "Describe what the new feature or behavior would look like."
+    validations:
+      required: true
