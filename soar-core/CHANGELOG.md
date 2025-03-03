@@ -1,4 +1,10 @@
 
+## [0.2.0](https://github.com/pkgforge/soar/compare/soar-core-v0.1.10...soar-core-v0.2.0) - 2025-03-03
+
+### ⛰️  Features
+
+- *(package)* Handle replaced pkg_id - ([61a47fb](https://github.com/pkgforge/soar/commit/61a47fb0aa52e47719c845e21d94e524fa26466e))
+
 ## [0.1.10](https://github.com/pkgforge/soar/compare/soar-core-v0.1.9...soar-core-v0.1.10) - 2025-03-01
 
 ### ⛰️  Features
