@@ -1,6 +1,6 @@
 name: Feature request
 description: Suggest an idea for Soar
-type: 'enhancement'
+type: 'feature'
 body:
 
   - type: markdown
