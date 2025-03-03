@@ -240,6 +240,7 @@ impl PackageQueryBuilder {
                         "json(provides) AS provides",
                         "json(snapshots) AS snapshots",
                         "json(repology) AS repology",
+                        "json(replaces) AS replaces",
                         "download_count",
                         "download_count_week",
                         "download_count_month",

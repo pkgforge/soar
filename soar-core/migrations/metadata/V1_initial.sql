@@ -58,6 +58,7 @@ CREATE TABLE packages (
   provides JSONB,
   snapshots JSONB,
   repology JSONB,
+  replaces JSONB,
   download_count INTEGER,
   download_count_week INTEGER,
   download_count_month INTEGER,

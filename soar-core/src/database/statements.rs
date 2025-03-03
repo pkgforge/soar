@@ -34,7 +34,7 @@ impl<'a> DbStatements<'a> {
                     bsum, shasum, icon, desktop, appstream, homepages, notes,
                     source_urls, tags, categories, build_id, build_date,
                     build_action, build_script, build_log, provides, snapshots,
-                    repology, download_count, download_count_week,
+                    repology, replaces, download_count, download_count_week,
                     download_count_month
                 )
                 VALUES
@@ -42,7 +42,7 @@ impl<'a> DbStatements<'a> {
                     ?1, jsonb(?2), ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
                     jsonb(?14), ?15, ?16, ?17, ?18, jsonb(?19), ?20, ?21, ?22, ?23, ?24, ?25,
                     ?26, jsonb(?27), jsonb(?28), jsonb(?29), jsonb(?30), jsonb(?31), ?32, ?33, ?34, ?35, ?36,
-                    jsonb(?37), jsonb(?38), jsonb(?39), ?40, ?41, ?42
+                    jsonb(?37), jsonb(?38), jsonb(?39), jsonb(?40), ?41, ?42, ?43
                 )
                 ON CONFLICT (pkg_id, pkg_name, version) DO NOTHING",
             )?,

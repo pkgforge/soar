@@ -18,10 +18,12 @@ impl<'a> PackageRepository<'a> {
         }
     }
 
-    pub fn import_packages(&mut self, metadata: &[RemotePackage], etag: &str) -> Result<()> {
+    pub fn import_packages(&mut self, metadata: &[RemotePackage]) -> Result<()> {
         self.statements
             .repo_insert
-            .execute(params![self.repo_name, etag])?;
+            // to prevent incomplete sync, etag should only be updated once
+            // all checks are done
+            .execute(params![self.repo_name, ""])?;
 
         for package in metadata {
             self.insert_package(package)?;
@@ -64,6 +66,7 @@ impl<'a> PackageRepository<'a> {
         let categories = serde_json::to_string(&package.categories).unwrap();
         let snapshots = serde_json::to_string(&package.snapshots).unwrap();
         let repology = serde_json::to_string(&package.repology).unwrap();
+        let replaces = serde_json::to_string(&package.replaces).unwrap();
 
         let provides = package.provides.clone().map(|vec| {
             vec.iter()
@@ -121,6 +124,7 @@ impl<'a> PackageRepository<'a> {
             provides,
             snapshots,
             repology,
+            replaces,
             package.download_count,
             package.download_count_week,
             package.download_count_month

@@ -42,12 +42,7 @@ impl Database {
         Ok(Database { conn })
     }
 
-    pub fn from_remote_metadata(
-        &self,
-        metadata: &[RemotePackage],
-        repo_name: &str,
-        etag: &str,
-    ) -> Result<()> {
+    pub fn from_remote_metadata(&self, metadata: &[RemotePackage], repo_name: &str) -> Result<()> {
         let mut guard = self.conn.lock().unwrap();
         let _: String = guard.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
 
@@ -55,7 +50,7 @@ impl Database {
         {
             let statements = DbStatements::new(&tx)?;
             let mut repo = PackageRepository::new(&tx, statements, repo_name);
-            repo.import_packages(&metadata, etag)?;
+            repo.import_packages(&metadata)?;
         }
         tx.commit()?;
         Ok(())

@@ -81,6 +81,7 @@ pub struct Package {
     pub download_count_month: Option<u64>,
     pub download_count_week: Option<u64>,
     pub maintainers: Option<Vec<Maintainer>>,
+    pub replaces: Option<Vec<String>>,
 }
 
 impl FromRow for Package {
@@ -111,6 +112,7 @@ impl FromRow for Package {
         let provides = parse_provides("provides")?;
         let snapshots = parse_json_vec("snapshots")?;
         let repology = parse_json_vec("repology")?;
+        let replaces = parse_json_vec("replaces")?;
 
         Ok(Package {
             id: row.get("id")?,
@@ -158,6 +160,7 @@ impl FromRow for Package {
             download_count_month: row.get("download_count_month")?,
             repo_name: row.get("repo_name")?,
             maintainers,
+            replaces,
         })
     }
 }
@@ -384,6 +387,7 @@ pub struct RemotePackage {
 
     pub repology: Option<Vec<String>>,
     pub snapshots: Option<Vec<String>>,
+    pub replaces: Option<Vec<String>>,
 }
 
 fn should_create_original_symlink_impl(provides: Option<&Vec<PackageProvide>>) -> bool {

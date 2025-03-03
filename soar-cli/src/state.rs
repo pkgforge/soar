@@ -4,17 +4,25 @@ use std::{
     sync::{Arc, Mutex, RwLockReadGuard},
 };
 
+use nu_ansi_term::Color::{Blue, Green, Magenta, Red};
 use once_cell::sync::OnceCell;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use soar_core::{
-    config::{get_config, Config},
+    config::{get_config, Config, Repository},
     constants::CORE_MIGRATIONS,
-    database::{connection::Database, migration::MigrationManager},
+    database::{
+        connection::Database,
+        migration::MigrationManager,
+        models::FromRow,
+        packages::{FilterCondition, PackageQueryBuilder},
+    },
     error::{ErrorContext, SoarError},
     metadata::fetch_metadata,
     SoarResult,
 };
-use tracing::error;
+use tracing::{error, info};
+
+use crate::utils::Colored;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -50,20 +58,103 @@ impl AppState {
         for repo in &self.inner.config.repositories {
             let repo_clone = repo.clone();
             let task = tokio::task::spawn(async move { fetch_metadata(repo_clone, force).await });
-            tasks.push(task);
+            tasks.push((task, repo));
         }
 
-        for task in tasks {
-            if let Err(err) = task
+        for (task, repo) in tasks {
+            match task
                 .await
                 .map_err(|err| SoarError::Custom(format!("Join handle error: {}", err)))?
             {
-                if !matches!(err, SoarError::FailedToFetchRemote(_)) {
-                    return Err(err);
+                Ok(Some(etag)) => {
+                    self.validate_packages(&repo, &etag).await?;
+                    info!("[{}] Repository synced", Colored(Magenta, &repo.name));
                 }
-                error!("{err}");
+                Err(err) => {
+                    if !matches!(err, SoarError::FailedToFetchRemote(_)) {
+                        return Err(err);
+                    }
+                    error!("{err}");
+                }
+                _ => {}
             };
         }
+
+        Ok(())
+    }
+
+    async fn validate_packages(&self, repo: &Repository, etag: &str) -> SoarResult<()> {
+        let core_db = self.core_db()?;
+        let repo_name = repo.name.clone();
+
+        let repo_path = repo.get_path()?;
+        let metadata_db = repo_path.join("metadata.db");
+
+        let repo_db = Arc::new(Mutex::new(Connection::open(&metadata_db)?));
+
+        let installed_packages = PackageQueryBuilder::new(core_db.clone())
+            .where_and("repo_name", FilterCondition::Eq(repo_name.to_string()))
+            .load_installed()?;
+
+        struct RepoPackage {
+            pkg_id: String,
+        }
+
+        impl FromRow for RepoPackage {
+            fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+                Ok(Self {
+                    pkg_id: row.get("pkg_id")?,
+                })
+            }
+        }
+
+        for pkg in installed_packages.items {
+            let repo_package: Vec<RepoPackage> = PackageQueryBuilder::new(repo_db.clone())
+                .select(&["pkg_id"])
+                .where_and("pkg_id", FilterCondition::Eq(pkg.pkg_id.clone()))
+                .where_and("repo_name", FilterCondition::Eq(pkg.repo_name.clone()))
+                .load()?
+                .items;
+
+            if repo_package.is_empty() {
+                let replaced_by: Vec<RepoPackage> = PackageQueryBuilder::new(repo_db.clone())
+                    .select(&["pkg_id"])
+                    .where_and("repo_name", FilterCondition::Eq(pkg.repo_name))
+                    // there's no easy way to do this, could create scalar SQL
+                    // function, but this is enough for now
+                    .where_and(
+                        &format!("EXISTS (SELECT 1 FROM json_each(p.replaces) WHERE json_each.value = '{}')", pkg.pkg_id),
+                        FilterCondition::None,
+                    )
+                    .limit(1)
+                    .load()?
+                    .items;
+
+                if !replaced_by.is_empty() {
+                    let new_pkg_id = &replaced_by.first().unwrap().pkg_id;
+                    info!(
+                        "[{}] {} is replaced by {} in {}",
+                        Colored(Blue, "Note"),
+                        Colored(Red, &pkg.pkg_id),
+                        Colored(Green, new_pkg_id),
+                        Colored(Magenta, &repo_name)
+                    );
+
+                    let conn = core_db.lock()?;
+                    conn.execute(
+                        "UPDATE packages SET pkg_id = ? WHERE pkg_id = ? AND repo_name = ?",
+                        params![new_pkg_id, pkg.pkg_id, repo_name],
+                    )?;
+                }
+            }
+        }
+
+        let conn = repo_db.lock()?;
+        conn.execute(
+            "UPDATE repository SET name = ?, etag = ?",
+            params![repo.name, etag],
+        )?;
+
         Ok(())
     }
 

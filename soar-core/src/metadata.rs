@@ -6,7 +6,7 @@ use std::{
 
 use futures::TryStreamExt;
 use reqwest::header::{self, HeaderMap};
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 use tracing::info;
 
 use crate::{
@@ -22,7 +22,6 @@ fn handle_json_metadata<P: AsRef<Path>>(
     metadata: &[RemotePackage],
     metadata_db: P,
     repo: &Repository,
-    etag: &str,
 ) -> SoarResult<()> {
     let metadata_db = metadata_db.as_ref();
     if metadata_db.exists() {
@@ -35,7 +34,7 @@ fn handle_json_metadata<P: AsRef<Path>>(
     manager.migrate_from_dir(METADATA_MIGRATIONS)?;
 
     let db = Database::new(metadata_db)?;
-    db.from_remote_metadata(metadata.as_ref(), &repo.name, &etag)?;
+    db.from_remote_metadata(metadata.as_ref(), &repo.name)?;
 
     Ok(())
 }
@@ -69,7 +68,7 @@ pub async fn fetch_public_key<P: AsRef<Path>>(
     Ok(())
 }
 
-pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
+pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<String>> {
     let repo_path = repo.get_path()?;
     let metadata_db = repo_path.join("metadata.db");
 
@@ -91,7 +90,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
             .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
         if let Ok(created) = file_info.created() {
             if repo.sync_interval() >= created.elapsed()?.as_millis() as u128 {
-                return Ok(());
+                return Ok(None);
             }
         }
     }
@@ -118,7 +117,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
             Some(remote_etag) => {
                 let remote_etag = remote_etag.to_str().unwrap();
                 if !force && etag == remote_etag {
-                    return Ok(());
+                    return Ok(None);
                 }
                 remote_etag.to_string()
             }
@@ -153,11 +152,6 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
         if magic_bytes == SQLITE_MAGIC_BYTES {
             fs::rename(&tmp_path, &metadata_db)
                 .with_context(|| format!("renaming {} to {}", tmp_path, metadata_db.display()))?;
-            let conn = Connection::open(&metadata_db)?;
-            conn.execute(
-                "UPDATE repository SET name = ?, etag = ?",
-                params![repo.name, etag],
-            )?;
         } else {
             let tmp_file = File::open(&tmp_path)
                 .with_context(|| format!("opening temporary file {}", tmp_path))?;
@@ -169,7 +163,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
                 ))
             })?;
 
-            handle_json_metadata(&metadata, metadata_db, &repo, &etag)?;
+            handle_json_metadata(&metadata, metadata_db, &repo)?;
             fs::remove_file(tmp_path.clone())
                 .with_context(|| format!("removing temporary file {}", tmp_path))?;
         }
@@ -181,11 +175,6 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
         writer
             .write_all(&content)
             .with_context(|| format!("writing to metadata file {}", metadata_db.display()))?;
-        let conn = Connection::open(&metadata_db)?;
-        conn.execute(
-            "UPDATE repository SET name = ?, etag = ?",
-            params![repo.name, etag],
-        )?;
     } else {
         let remote_metadata: Vec<RemotePackage> =
             serde_json::from_slice(&content).map_err(|err| {
@@ -195,8 +184,8 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<()> {
                 ))
             })?;
 
-        handle_json_metadata(&remote_metadata, metadata_db, &repo, &etag)?;
+        handle_json_metadata(&remote_metadata, metadata_db, &repo)?;
     }
 
-    Ok(())
+    Ok(Some(etag))
 }
