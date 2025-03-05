@@ -1,26 +1,15 @@
 name: soar nightly
 
 on:
-  # push:
-  #   branches:
-  #     - main
+  push:
+    tags:
+      - nightly
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  remove-nightly-tag:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Remove existing nightly tag
-        run: |
-          gh release delete nightly --cleanup-tag || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   publish-nightly:
     name: Publish nightly binaries
     runs-on: ubuntu-latest
@@ -54,7 +43,7 @@ jobs:
             --allow-unauthenticated musl-tools b3sum
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.build.TARGET }}
 
@@ -83,6 +72,12 @@ jobs:
               release/
             b3sum soar-${{ matrix.build.NAME }}.tar.gz \
               > soar-${{ matrix.build.NAME }}.tar.gz.b3sum
+
+      - name: Remove existing nightly tag
+        run: |
+          gh release delete nightly --cleanup-tag || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to GitHub (nightly)
         uses: svenstaro/upload-release-action@v2

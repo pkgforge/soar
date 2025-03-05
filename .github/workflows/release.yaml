@@ -39,7 +39,7 @@ jobs:
             --allow-unauthenticated musl-tools b3sum
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.build.TARGET }}
 
