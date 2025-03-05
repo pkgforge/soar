@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread::sleep,
@@ -20,6 +22,7 @@ use crate::{
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
     error::{ErrorContext, SoarError},
+    utils::{desktop_dir, icons_dir, process_dir},
     SoarResult,
 };
 
@@ -166,8 +169,6 @@ impl PackageInstaller {
     pub async fn record<P: AsRef<Path>>(
         &self,
         bin_path: P,
-        icon_path: Option<PathBuf>,
-        desktop_path: Option<PathBuf>,
         unlinked: bool,
         final_checksum: String,
         portable: Option<&str>,
@@ -177,8 +178,6 @@ impl PackageInstaller {
         let mut conn = self.db.lock()?;
         let package = &self.package;
         let bin_path = bin_path.as_ref().to_string_lossy();
-        let icon_path = icon_path.map(|path| path.to_string_lossy().into_owned());
-        let desktop_path = desktop_path.map(|path| path.to_string_lossy().into_owned());
         let Package {
             repo_name,
             pkg_name,
@@ -202,8 +201,6 @@ impl PackageInstaller {
                     version = $version,
                     size = $size,
                     bin_path = $bin_path,
-                    icon_path = $icon_path,
-                    desktop_path = $desktop_path,
                     installed_date = datetime(),
                     is_installed = true,
                     provides = $provides,
@@ -323,6 +320,10 @@ impl PackageInstaller {
         drop(conn);
 
         if !unlinked {
+            // FIXME: alternate package could be the same package but different version
+            // or different package but same version
+            //
+            // this makes assumption that the pkg_id and version both are different
             let alternate_packages = PackageQueryBuilder::new(self.db.clone())
                 .where_and("pkg_name", FilterCondition::Eq(pkg_name.to_owned()))
                 .where_and("pkg_id", FilterCondition::Ne(pkg_id.to_owned()))
@@ -331,31 +332,33 @@ impl PackageInstaller {
                 .items;
 
             for package in alternate_packages {
-                if let Some(alt_path) = package.desktop_path {
-                    let alt_pathbuf = PathBuf::from(&alt_path);
+                let installed_path = PathBuf::from(&package.installed_path);
 
-                    let should_remove = desktop_path
-                        .as_ref()
-                        .map(|dp| dp != &alt_path)
-                        .unwrap_or(true);
-
-                    if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
-                        fs::remove_file(&alt_path)
-                            .with_context(|| format!("removing desktop file {}", alt_path))?;
+                let mut remove_action = |path: &Path| -> SoarResult<()> {
+                    if path.extension() == Some(&OsString::from("desktop")) {
+                        if let Ok(real_path) = fs::read_link(&path) {
+                            if real_path.parent() == Some(&installed_path) {
+                                fs::remove_file(&path).with_context(|| {
+                                    format!("removing desktop file {}", path.display())
+                                })?;
+                            }
+                        }
                     }
-                }
+                    Ok(())
+                };
+                process_dir(desktop_dir(), None, &mut remove_action)?;
 
-                if let Some(alt_path) = package.icon_path {
-                    let alt_pathbuf = PathBuf::from(&alt_path);
-
-                    let should_remove =
-                        icon_path.as_ref().map(|dp| dp != &alt_path).unwrap_or(true);
-
-                    if should_remove && (alt_pathbuf.is_symlink() || alt_pathbuf.is_file()) {
-                        fs::remove_file(&alt_path)
-                            .with_context(|| format!("removing icon file {}", alt_path))?;
+                let mut remove_action = |path: &Path| -> SoarResult<()> {
+                    if let Ok(real_path) = fs::read_link(&path) {
+                        if real_path.parent() == Some(&installed_path) {
+                            fs::remove_file(&path).with_context(|| {
+                                format!("removing icon file {}", path.display())
+                            })?;
+                        }
                     }
-                }
+                    Ok(())
+                };
+                process_dir(icons_dir(), None, &mut remove_action)?;
 
                 if let Some(provides) = package.provides {
                     for provide in provides {

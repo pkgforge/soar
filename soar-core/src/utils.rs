@@ -196,16 +196,12 @@ pub fn cleanup_cache() -> Result<()> {
     Ok(())
 }
 
-pub fn process_broken_symlinks<P: AsRef<Path>, F>(
-    dir: P,
-    filter: Option<&str>,
-    action: &mut F,
-) -> Result<()>
+pub fn process_dir<P: AsRef<Path>, F>(dir: P, filter: Option<&str>, action: &mut F) -> Result<()>
 where
     F: FnMut(&Path) -> Result<()>,
 {
     let dir = dir.as_ref();
-    if !dir.exists() {
+    if !dir.is_dir() {
         return Ok(());
     }
 
@@ -217,7 +213,7 @@ where
             .path();
 
         if path.is_dir() {
-            process_broken_symlinks(&path, filter, action)?;
+            process_dir(&path, filter, action)?;
             continue;
         }
 
@@ -226,7 +222,7 @@ where
             None => true,
         };
 
-        if should_check && !path.is_file() && !path.is_dir() {
+        if should_check {
             action(&path)?;
         }
     }
@@ -236,21 +232,27 @@ where
 
 pub fn remove_broken_symlinks() -> Result<()> {
     let mut remove_action = |path: &Path| -> Result<()> {
-        fs::remove_file(&path)
-            .with_context(|| format!("removing broken symlink {}", path.display()))?;
-        info!("Removed broken symlink: {}", path.display());
+        if !path.exists() {
+            fs::remove_file(&path)
+                .with_context(|| format!("removing broken symlink {}", path.display()))?;
+            info!("Removed broken symlink: {}", path.display());
+        }
         Ok(())
     };
 
-    process_broken_symlinks(&get_config().get_bin_path()?, None, &mut remove_action)?;
-
-    let desktop_entries = format!("{}/applications", home_data_path());
-    process_broken_symlinks(&desktop_entries, Some("-soar"), &mut remove_action)?;
-
-    let icons_base = format!("{}/icons/hicolor", home_data_path());
-    process_broken_symlinks(&icons_base, Some("-soar"), &mut remove_action)?;
+    process_dir(&get_config().get_bin_path()?, None, &mut remove_action)?;
+    process_dir(&desktop_dir(), Some("-soar"), &mut remove_action)?;
+    process_dir(&icons_dir(), Some("-soar"), &mut remove_action)?;
 
     Ok(())
+}
+
+pub fn desktop_dir() -> String {
+    format!("{}/applications", home_data_path())
+}
+
+pub fn icons_dir() -> String {
+    format!("{}/icons/hicolor", home_data_path())
 }
 
 /// Retrieves the platform string in the format `ARCH-Os`.

@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
 use squishy::{appimage::AppImage, EntryKind};
 
@@ -10,14 +7,16 @@ use crate::{
     utils::calc_magic_bytes, SoarResult,
 };
 
+use super::common::{symlink_desktop, symlink_icon};
+
 pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
     file_path: P,
     package: &T,
-    icon: &mut Option<PathBuf>,
-    desktop: &mut Option<PathBuf>,
+    has_icon: bool,
+    has_desktop: bool,
 ) -> SoarResult<()> {
-    if icon.is_some() && desktop.is_some() {
+    if has_icon && has_desktop {
         return Ok(());
     }
 
@@ -26,7 +25,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     let appimage = AppImage::new(None, &file_path, None)?;
     let squashfs = &appimage.squashfs;
 
-    if icon.is_none() {
+    if !has_icon {
         if let Some(entry) = appimage.find_icon() {
             if let EntryKind::File(basic_file) = entry.kind {
                 let dest = format!("{}/{}.DirIcon", install_dir.display(), pkg_name);
@@ -42,17 +41,17 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
                 fs::rename(&dest, &final_path)
                     .with_context(|| format!("renaming from {} to {}", dest, final_path))?;
 
-                *icon = Some(PathBuf::from(&final_path));
+                symlink_icon(final_path)?;
             }
         }
     }
 
-    if desktop.is_none() {
+    if !has_desktop {
         if let Some(entry) = appimage.find_desktop() {
             if let EntryKind::File(basic_file) = entry.kind {
                 let dest = format!("{}/{}.desktop", install_dir.display(), pkg_name);
                 let _ = squashfs.write_file(basic_file, &dest);
-                *desktop = Some(PathBuf::from(&dest));
+                symlink_desktop(dest, package)?;
             }
         }
     }

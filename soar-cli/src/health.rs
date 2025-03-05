@@ -5,7 +5,7 @@ use rusqlite::prepare_and_bind;
 use soar_core::{
     config::get_config,
     database::packages::{FilterCondition, PackageQueryBuilder},
-    utils::{home_data_path, process_broken_symlinks},
+    utils::{desktop_dir, icons_dir, process_dir},
     SoarResult,
 };
 use tracing::info;
@@ -58,17 +58,15 @@ pub fn list_broken_symlinks() -> SoarResult<()> {
     let mut broken_symlinks = Vec::new();
 
     let mut collect_action = |path: &Path| -> SoarResult<()> {
-        broken_symlinks.push(path.to_path_buf());
+        if !path.exists() {
+            broken_symlinks.push(path.to_path_buf());
+        }
         Ok(())
     };
 
-    process_broken_symlinks(&get_config().get_bin_path()?, None, &mut collect_action)?;
-
-    let desktop_entries = format!("{}/applications", home_data_path());
-    process_broken_symlinks(&desktop_entries, Some("-soar"), &mut collect_action)?;
-
-    let icons_base = format!("{}/icons/hicolor", home_data_path());
-    process_broken_symlinks(&icons_base, Some("-soar"), &mut collect_action)?;
+    process_dir(&get_config().get_bin_path()?, None, &mut collect_action)?;
+    process_dir(&desktop_dir(), Some("-soar"), &mut collect_action)?;
+    process_dir(&icons_dir(), Some("-soar"), &mut collect_action)?;
 
     if broken_symlinks.is_empty() {
         info!("No broken symlinks found.");

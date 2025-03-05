@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    path::{Path, PathBuf},
-};
+use std::fmt::Display;
 
 use rusqlite::types::Value;
 use serde::{de, Deserialize, Deserializer, Serialize};
@@ -25,8 +22,6 @@ pub trait PackageExt {
     fn pkg_id(&self) -> &str;
     fn version(&self) -> &str;
     fn repo_name(&self) -> &str;
-    fn icon(&self) -> Option<PathBuf>;
-    fn desktop(&self) -> Option<PathBuf>;
     fn should_create_original_symlink(&self) -> bool;
 }
 
@@ -179,8 +174,6 @@ pub struct InstalledPackage {
     pub installed_path: String,
     pub installed_date: String,
     pub bin_path: Option<String>,
-    pub icon_path: Option<String>,
-    pub desktop_path: Option<String>,
     pub appstream_path: Option<String>,
     pub profile: String,
     pub pinned: bool,
@@ -216,8 +209,6 @@ impl FromRow for InstalledPackage {
             installed_path: row.get("installed_path")?,
             installed_date: row.get("installed_date")?,
             bin_path: row.get("bin_path")?,
-            icon_path: row.get("icon_path")?,
-            desktop_path: row.get("desktop_path")?,
             appstream_path: row.get("appstream_path")?,
             profile: row.get("profile")?,
             pinned: row.get("pinned")?,
@@ -409,14 +400,6 @@ impl PackageExt for Package {
         &self.pkg_name
     }
 
-    fn icon(&self) -> Option<PathBuf> {
-        self.icon.as_ref().map(PathBuf::from)
-    }
-
-    fn desktop(&self) -> Option<PathBuf> {
-        self.desktop.as_ref().map(PathBuf::from)
-    }
-
     fn pkg_id(&self) -> &str {
         &self.pkg_id
     }
@@ -437,22 +420,6 @@ impl PackageExt for InstalledPackage {
 
     fn pkg_name(&self) -> &str {
         &self.pkg_name
-    }
-
-    fn icon(&self) -> Option<PathBuf> {
-        self.icon_path
-            .as_deref()
-            .map(Path::new)
-            .and_then(|icon| icon.file_name())
-            .map(|file_name| Path::new(&self.installed_path).join(file_name))
-    }
-
-    fn desktop(&self) -> Option<PathBuf> {
-        self.desktop_path
-            .as_deref()
-            .map(Path::new)
-            .and_then(|desktop| desktop.file_name())
-            .map(|file_name| Path::new(&self.installed_path).join(file_name))
     }
 
     fn pkg_id(&self) -> &str {

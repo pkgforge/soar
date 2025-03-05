@@ -162,26 +162,20 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         .load()?
         .items;
 
-    let (icon_path, desktop_path) = if pkg
+    if !pkg
         .iter()
         .any(|p| has_no_desktop_integration(&p.repo_name, p.notes.as_deref()))
     {
-        (None, None)
-    } else {
-        integrate_package(&install_dir, &selected_package, None, None, None).await?
-    };
+        integrate_package(&install_dir, &selected_package, None, None, None).await?;
+    }
 
     {
-        let icon_path = icon_path.map(|path| path.to_string_lossy().into_owned());
-        let desktop_path = desktop_path.map(|path| path.to_string_lossy().into_owned());
         let bin_path = def_bin_path.to_string_lossy();
         let mut stmt = prepare_and_bind!(
             tx,
             "UPDATE packages
             SET
                 bin_path = $bin_path,
-                icon_path = $icon_path,
-                desktop_path = $desktop_path,
                 unlinked = false
             WHERE
                 pkg_name = $pkg_name

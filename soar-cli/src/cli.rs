@@ -266,7 +266,7 @@ pub enum Commands {
     #[clap(name = "clean")]
     Clean {
         /// Clean cache
-        #[arg(required = false, short, long)]
+        #[arg(required = false, long)]
         cache: bool,
 
         /// Clean broken symlinks

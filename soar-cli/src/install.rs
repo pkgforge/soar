@@ -594,11 +594,9 @@ pub async fn install_single_package(
         }
     }
 
-    let (icon_path, desktop_path) = if unlinked
-        || has_no_desktop_integration(&target.package.repo_name, target.package.notes.as_deref())
+    if !(unlinked
+        || has_no_desktop_integration(&target.package.repo_name, target.package.notes.as_deref()))
     {
-        (None, None)
-    } else {
         integrate_package(
             &install_dir,
             &target.package,
@@ -606,14 +604,12 @@ pub async fn install_single_package(
             portable_home,
             portable_config,
         )
-        .await?
-    };
+        .await?;
+    }
 
     installer
         .record(
             &bin_dir,
-            icon_path,
-            desktop_path,
             unlinked,
             final_checksum,
             portable,

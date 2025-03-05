@@ -1,6 +1,7 @@
 use std::{
+    ffi::OsString,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -9,6 +10,7 @@ use rusqlite::{params, Connection};
 use crate::{
     database::{models::InstalledPackage, packages::ProvideStrategy},
     error::ErrorContext,
+    utils::{desktop_dir, icons_dir, process_dir},
     SoarResult,
 };
 
@@ -57,13 +59,29 @@ impl PackageRemover {
                 }
             }
 
-            if let Some(ref icon_path) = self.package.icon_path {
-                let _ = fs::remove_file(icon_path);
-            }
+            let installed_path = PathBuf::from(&self.package.installed_path);
 
-            if let Some(ref desktop_path) = self.package.desktop_path {
-                let _ = fs::remove_file(desktop_path);
-            }
+            let mut remove_action = |path: &Path| -> SoarResult<()> {
+                if path.extension() == Some(&OsString::from("desktop")) {
+                    if let Ok(real_path) = fs::read_link(&path) {
+                        if real_path.parent() == Some(&installed_path) {
+                            let _ = fs::remove_file(&path);
+                        }
+                    }
+                }
+                Ok(())
+            };
+            process_dir(desktop_dir(), None, &mut remove_action)?;
+
+            let mut remove_action = |path: &Path| -> SoarResult<()> {
+                if let Ok(real_path) = fs::read_link(&path) {
+                    if real_path.parent() == Some(&installed_path) {
+                        let _ = fs::remove_file(&path);
+                    }
+                }
+                Ok(())
+            };
+            process_dir(icons_dir(), None, &mut remove_action)?;
 
             if let Some(ref appstream_path) = self.package.appstream_path {
                 let _ = fs::remove_file(appstream_path);
