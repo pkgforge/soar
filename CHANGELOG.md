@@ -1,4 +1,12 @@
 
+## [0.5.13](https://github.com/pkgforge/soar/compare/v0.5.12...v0.5.13) - 2025-03-08
+
+### ⛰️  Features
+
+- *(install)* Add partial support for excluding files on install - ([f496bf5](https://github.com/pkgforge/soar/commit/f496bf5f67dc9c71fab1c61d53e33f8047cab862))
+- *(package)* Handle multiple desktop/icon integration - ([c5b6e4a](https://github.com/pkgforge/soar/commit/c5b6e4aeb8235372b77281b532dfdee7c3b73e79))
+- *(package)* Handle replaced pkg_id - ([61a47fb](https://github.com/pkgforge/soar/commit/61a47fb0aa52e47719c845e21d94e524fa26466e))
+
 ## [0.5.12](https://github.com/pkgforge/soar/compare/v0.5.11...v0.5.12) - 2025-03-02
 
 ### 🐛 Bug Fixes
