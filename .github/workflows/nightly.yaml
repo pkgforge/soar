@@ -73,12 +73,6 @@ jobs:
             b3sum soar-${{ matrix.build.NAME }}.tar.gz \
               > soar-${{ matrix.build.NAME }}.tar.gz.b3sum
 
-      - name: Remove existing nightly tag
-        run: |
-          gh release delete nightly --cleanup-tag || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Publish to GitHub (nightly)
         uses: svenstaro/upload-release-action@v2
         with:
