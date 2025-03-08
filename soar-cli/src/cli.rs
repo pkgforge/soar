@@ -84,6 +84,12 @@ pub enum Commands {
         /// Don't display notes
         #[arg(required = false, long)]
         no_notes: bool,
+
+        /// Exclude log, build/spec files, and desktop integration files
+        ///
+        /// Note: This won't prevent desktop integration
+        #[arg(required = false, long)]
+        binary_only: bool,
     },
 
     /// Search package

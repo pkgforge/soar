@@ -54,6 +54,7 @@ pub struct InstallContext {
     pub retrying: Arc<AtomicU64>,
     pub failed: Arc<AtomicU64>,
     pub installed_indices: Arc<Mutex<HashSet<usize>>>,
+    pub binary_only: bool,
 }
 
 pub fn create_install_context(
@@ -62,6 +63,7 @@ pub fn create_install_context(
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
+    binary_only: bool,
 ) -> InstallContext {
     let multi_progress = Arc::new(MultiProgress::new());
     let total_progress_bar = multi_progress.add(ProgressBar::new(total_packages as u64));
@@ -82,6 +84,7 @@ pub fn create_install_context(
         retrying: Arc::new(AtomicU64::new(0)),
         failed: Arc::new(AtomicU64::new(0)),
         installed_indices: Arc::new(Mutex::new(HashSet::new())),
+        binary_only,
     }
 }
 
@@ -93,6 +96,7 @@ pub async fn install_packages(
     portable_home: Option<String>,
     portable_config: Option<String>,
     no_notes: bool,
+    binary_only: bool,
 ) -> SoarResult<()> {
     let state = AppState::new();
     let repo_db = state.repo_db().await?;
@@ -106,6 +110,7 @@ pub async fn install_packages(
         portable,
         portable_home,
         portable_config,
+        binary_only,
     );
 
     perform_installation(install_context, install_targets, core_db.clone(), no_notes).await
@@ -440,6 +445,7 @@ pub async fn install_single_package(
         Some(progress_callback),
         core_db,
         target.with_pkg_id,
+        ctx.binary_only,
     )
     .await?;
 

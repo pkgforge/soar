@@ -302,3 +302,10 @@ pub fn parse_duration(input: &str) -> Option<u128> {
 
     Some(multiplier * number)
 }
+
+pub fn default_install_excludes() -> Vec<String> {
+    [".log", "SBUILD", ".json"]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<String>>()
+}

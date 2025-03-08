@@ -1,7 +1,5 @@
 use std::{
-    env,
-    ffi::OsString,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread::sleep,
@@ -22,7 +20,7 @@ use crate::{
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
     error::{ErrorContext, SoarError},
-    utils::{desktop_dir, icons_dir, process_dir},
+    utils::{default_install_excludes, desktop_dir, icons_dir, process_dir},
     SoarResult,
 };
 
@@ -32,6 +30,7 @@ pub struct PackageInstaller {
     progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
     db: Arc<Mutex<Connection>>,
     with_pkg_id: bool,
+    binary_only: bool,
 }
 
 #[derive(Clone)]
@@ -49,6 +48,7 @@ impl PackageInstaller {
         progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
         db: Arc<Mutex<Connection>>,
         with_pkg_id: bool,
+        binary_only: bool,
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
@@ -90,6 +90,7 @@ impl PackageInstaller {
             progress_callback,
             db: db.clone(),
             with_pkg_id,
+            binary_only,
         })
     }
 
@@ -114,6 +115,19 @@ impl PackageInstaller {
 
         if self.package.ghcr_pkg.is_some() {
             let progress_callback = &self.progress_callback.clone();
+            let exclude_keywords = self
+                .binary_only
+                .then_some(
+                    default_install_excludes()
+                        .into_iter()
+                        .chain(
+                            [".png", ".svg", "LICENSE", ".version", "CHECKSUM"]
+                                .iter()
+                                .map(|s| s.to_string()),
+                        )
+                        .collect::<Vec<String>>(),
+                )
+                .unwrap_or_else(|| get_config().install_excludes.clone().unwrap_or_default());
             let options = OciDownloadOptions {
                 url: url.to_string(),
                 output_path: Some(output_path.to_string_lossy().to_string()),
@@ -121,7 +135,7 @@ impl PackageInstaller {
                 api: None,
                 concurrency: Some(get_config().ghcr_concurrency.unwrap_or(8)),
                 regex_patterns: Vec::new(),
-                exclude_keywords: Vec::new(),
+                exclude_keywords,
                 match_keywords: Vec::new(),
                 exact_case: false,
             };
@@ -335,13 +349,11 @@ impl PackageInstaller {
                 let installed_path = PathBuf::from(&package.installed_path);
 
                 let mut remove_action = |path: &Path| -> SoarResult<()> {
-                    if path.extension() == Some(&OsString::from("desktop")) {
-                        if let Ok(real_path) = fs::read_link(&path) {
-                            if real_path.parent() == Some(&installed_path) {
-                                fs::remove_file(&path).with_context(|| {
-                                    format!("removing desktop file {}", path.display())
-                                })?;
-                            }
+                    if let Ok(real_path) = fs::read_link(&path) {
+                        if real_path.parent() == Some(&installed_path) {
+                            fs::remove_file(&path).with_context(|| {
+                                format!("removing desktop file {}", path.display())
+                            })?;
                         }
                     }
                     Ok(())

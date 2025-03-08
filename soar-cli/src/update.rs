@@ -143,6 +143,7 @@ pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarR
         None,
         None,
         None,
+        false,
     );
 
     perform_update(ctx, update_targets, core_db.clone(), keep).await?;

@@ -10,7 +10,10 @@ use tracing::info;
 
 use crate::{
     error::{ConfigError, SoarError},
-    utils::{build_path, get_platform, home_config_path, home_data_path, parse_duration},
+    utils::{
+        build_path, default_install_excludes, get_platform, home_config_path, home_data_path,
+        parse_duration,
+    },
 };
 
 type Result<T> = std::result::Result<T, ConfigError>;
@@ -143,6 +146,10 @@ pub struct Config {
     /// Whether to allow cross-repo updates
     #[serde(skip_serializing)]
     pub cross_repo_updates: Option<bool>,
+
+    /// Install excludes
+    #[serde(skip_serializing)]
+    pub install_excludes: Option<Vec<String>>,
 }
 
 pub fn init() {
@@ -206,6 +213,10 @@ impl Config {
 
         if config.parallel.unwrap_or(true) {
             config.parallel_limit = config.parallel_limit.or(Some(4));
+        }
+
+        if config.install_excludes.is_none() {
+            config.install_excludes = Some(default_install_excludes());
         }
 
         let mut seen = HashSet::new();
@@ -366,6 +377,7 @@ impl Default for Config {
             search_limit: Some(20),
             ghcr_concurrency: Some(8),
             cross_repo_updates: Some(false),
+            install_excludes: Some(default_install_excludes()),
         }
     }
 }

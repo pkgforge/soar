@@ -9,7 +9,6 @@ use std::{
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use regex::Regex;
 use soar_dl::downloader::{DownloadOptions, Downloader};
-use tracing::info;
 
 use crate::{
     config::get_config,
@@ -68,7 +67,6 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> SoarResult<PathBuf> {
     let ext = real_path.extension();
 
     let (w, h) = if ext == Some(OsStr::new("svg")) {
-        info!("CAME HERE??");
         (128, 128)
     } else {
         let image = image::open(real_path)?;
