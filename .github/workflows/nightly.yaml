@@ -10,6 +10,18 @@ permissions:
   contents: write
 
 jobs:
+
+  remove-nightly-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Remove existing nightly tag
+        run: |
+          gh release delete nightly --cleanup-tag || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   publish-nightly:
     name: Publish nightly binaries
     runs-on: ubuntu-latest
@@ -83,4 +95,3 @@ jobs:
           tag: nightly
           release_name: "${{ steps.version.outputs.version }}"
           prerelease: true
-

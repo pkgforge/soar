@@ -8,6 +8,7 @@ use std::{
 use rusqlite::{params, Connection};
 
 use crate::{
+    config::get_config,
     database::{models::InstalledPackage, packages::ProvideStrategy},
     error::ErrorContext,
     utils::{desktop_dir, icons_dir, process_dir},
@@ -31,8 +32,7 @@ impl PackageRemover {
         // to prevent accidentally removing required files by other package,
         // remove only if the installation was successful
         if self.package.is_installed {
-            // if the package is installed, it does have bin_path
-            let bin_path = PathBuf::from(self.package.bin_path.clone().unwrap());
+            let bin_path = get_config().get_bin_path()?;
             let def_bin = bin_path.join(&self.package.pkg_name);
             if def_bin.is_symlink() && def_bin.is_file() {
                 fs::remove_file(&def_bin)
@@ -82,10 +82,6 @@ impl PackageRemover {
                 Ok(())
             };
             process_dir(icons_dir(), None, &mut remove_action)?;
-
-            if let Some(ref appstream_path) = self.package.appstream_path {
-                let _ = fs::remove_file(appstream_path);
-            }
         }
 
         if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {

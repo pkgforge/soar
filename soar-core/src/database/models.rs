@@ -173,8 +173,6 @@ pub struct InstalledPackage {
     pub checksum: Option<String>,
     pub installed_path: String,
     pub installed_date: String,
-    pub bin_path: Option<String>,
-    pub appstream_path: Option<String>,
     pub profile: String,
     pub pinned: bool,
     pub is_installed: bool,
@@ -185,6 +183,7 @@ pub struct InstalledPackage {
     pub portable_path: Option<String>,
     pub portable_home: Option<String>,
     pub portable_config: Option<String>,
+    pub install_excludes: Option<Vec<String>>,
 }
 
 impl FromRow for InstalledPackage {
@@ -194,7 +193,13 @@ impl FromRow for InstalledPackage {
             Ok(value.and_then(|s| serde_json::from_str(&s).ok()))
         };
 
+        let parse_install_excludes = |idx: &str| -> rusqlite::Result<Option<Vec<String>>> {
+            let value: Option<String> = row.get(idx)?;
+            Ok(value.and_then(|s| serde_json::from_str(&s).ok()))
+        };
+
         let provides = parse_provides("provides")?;
+        let install_excludes = parse_install_excludes("install_excludes")?;
 
         Ok(InstalledPackage {
             id: row.get("id")?,
@@ -208,8 +213,6 @@ impl FromRow for InstalledPackage {
             checksum: row.get("checksum")?,
             installed_path: row.get("installed_path")?,
             installed_date: row.get("installed_date")?,
-            bin_path: row.get("bin_path")?,
-            appstream_path: row.get("appstream_path")?,
             profile: row.get("profile")?,
             pinned: row.get("pinned")?,
             is_installed: row.get("is_installed")?,
@@ -220,6 +223,7 @@ impl FromRow for InstalledPackage {
             portable_path: row.get("portable_path")?,
             portable_home: row.get("portable_home")?,
             portable_config: row.get("portable_config")?,
+            install_excludes,
         })
     }
 }

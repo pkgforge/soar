@@ -20,7 +20,7 @@ use crate::{
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
     error::{ErrorContext, SoarError},
-    utils::{default_install_excludes, desktop_dir, icons_dir, process_dir},
+    utils::{desktop_dir, icons_dir, process_dir},
     SoarResult,
 };
 
@@ -30,7 +30,7 @@ pub struct PackageInstaller {
     progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
     db: Arc<Mutex<Connection>>,
     with_pkg_id: bool,
-    binary_only: bool,
+    install_excludes: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -48,7 +48,7 @@ impl PackageInstaller {
         progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
         db: Arc<Mutex<Connection>>,
         with_pkg_id: bool,
-        binary_only: bool,
+        install_excludes: Vec<String>,
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
@@ -69,16 +69,17 @@ impl PackageInstaller {
             } = package;
             let installed_path = install_dir.to_string_lossy();
             let size = ghcr_size.unwrap_or(size.unwrap_or(0));
+            let install_excludes = serde_json::to_string(&install_excludes).unwrap();
             let mut stmt = prepare_and_bind!(
                 conn,
                 "INSERT INTO packages (
                     repo_name, pkg, pkg_id, pkg_name, pkg_type, version, size,
-                    installed_path, installed_date, with_pkg_id, profile
+                    installed_path, installed_date, with_pkg_id, profile, install_excludes
                 )
                 VALUES
                 (
                     $repo_name, $pkg, $pkg_id, $pkg_name, $pkg_type, $version, $size,
-                    $installed_path, datetime(), $with_pkg_id, $profile
+                    $installed_path, datetime(), $with_pkg_id, $profile, $install_excludes
                 )"
             );
             stmt.raw_execute()?;
@@ -90,7 +91,7 @@ impl PackageInstaller {
             progress_callback,
             db: db.clone(),
             with_pkg_id,
-            binary_only,
+            install_excludes,
         })
     }
 
@@ -115,19 +116,6 @@ impl PackageInstaller {
 
         if self.package.ghcr_pkg.is_some() {
             let progress_callback = &self.progress_callback.clone();
-            let exclude_keywords = self
-                .binary_only
-                .then_some(
-                    default_install_excludes()
-                        .into_iter()
-                        .chain(
-                            [".png", ".svg", "LICENSE", ".version", "CHECKSUM"]
-                                .iter()
-                                .map(|s| s.to_string()),
-                        )
-                        .collect::<Vec<String>>(),
-                )
-                .unwrap_or_else(|| get_config().install_excludes.clone().unwrap_or_default());
             let options = OciDownloadOptions {
                 url: url.to_string(),
                 output_path: Some(output_path.to_string_lossy().to_string()),
@@ -135,7 +123,7 @@ impl PackageInstaller {
                 api: None,
                 concurrency: Some(get_config().ghcr_concurrency.unwrap_or(8)),
                 regex_patterns: Vec::new(),
-                exclude_keywords,
+                exclude_keywords: self.install_excludes.clone(),
                 match_keywords: Vec::new(),
                 exact_case: false,
             };
@@ -180,9 +168,8 @@ impl PackageInstaller {
         Ok(())
     }
 
-    pub async fn record<P: AsRef<Path>>(
+    pub async fn record(
         &self,
-        bin_path: P,
         unlinked: bool,
         final_checksum: String,
         portable: Option<&str>,
@@ -191,7 +178,6 @@ impl PackageInstaller {
     ) -> SoarResult<()> {
         let mut conn = self.db.lock()?;
         let package = &self.package;
-        let bin_path = bin_path.as_ref().to_string_lossy();
         let Package {
             repo_name,
             pkg_name,
@@ -214,7 +200,6 @@ impl PackageInstaller {
                 SET
                     version = $version,
                     size = $size,
-                    bin_path = $bin_path,
                     installed_date = datetime(),
                     is_installed = true,
                     provides = $provides,

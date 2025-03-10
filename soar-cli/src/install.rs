@@ -26,7 +26,7 @@ use soar_core::{
         install::{InstallTarget, PackageInstaller},
         query::PackageQuery,
     },
-    utils::calculate_checksum,
+    utils::{calculate_checksum, default_install_excludes},
     SoarResult,
 };
 use soar_dl::downloader::DownloadState;
@@ -382,24 +382,21 @@ pub async fn install_single_package(
     core_db: Arc<Mutex<Connection>>,
 ) -> SoarResult<()> {
     let bin_dir = get_config().get_bin_path()?;
-    let (install_dir, real_bin, def_bin_path, unlinked, portable, portable_home, portable_config) =
+    let def_bin_path = bin_dir.join(&target.package.pkg_name);
+
+    let (install_dir, real_bin, unlinked, portable, portable_home, portable_config, excludes) =
         if let Some(ref existing) = target.existing_install {
             let install_dir = PathBuf::from(&existing.installed_path);
             let real_bin = install_dir.join(&target.package.pkg_name);
-            let def_bin_path = existing
-                .bin_path
-                .as_ref()
-                .map(|p| PathBuf::from(p).join(&target.package.pkg_name))
-                .unwrap_or_else(|| bin_dir.join(&target.package.pkg_name));
 
             (
                 install_dir,
                 real_bin,
-                def_bin_path,
                 existing.unlinked,
                 existing.portable_path.as_deref(),
                 existing.portable_home.as_deref(),
                 existing.portable_config.as_deref(),
+                existing.install_excludes.as_deref(),
             )
         } else {
             let rand_str: String = rand::rng()
@@ -416,16 +413,15 @@ pub async fn install_single_package(
                     target.package.pkg_name, target.package.pkg_id, rand_str
                 ));
             let real_bin = install_dir.join(&target.package.pkg_name);
-            let def_bin_path = bin_dir.join(&target.package.pkg_name);
 
             (
                 install_dir,
                 real_bin,
-                def_bin_path,
                 false,
                 ctx.portable.as_deref(),
                 ctx.portable_home.as_deref(),
                 ctx.portable_config.as_deref(),
+                None,
             )
         };
 
@@ -439,13 +435,27 @@ pub async fn install_single_package(
         }
     }
 
+    let install_excludes = excludes.map(|e| e.to_vec()).unwrap_or_else(|| {
+        if ctx.binary_only {
+            let mut excludes = default_install_excludes();
+            excludes.extend(
+                [".png", ".svg", "LICENSE", ".version", "CHECKSUM"]
+                    .iter()
+                    .map(ToString::to_string),
+            );
+            excludes
+        } else {
+            get_config().install_excludes.clone().unwrap_or_default()
+        }
+    });
+
     let installer = PackageInstaller::new(
         &target,
         &install_dir,
         Some(progress_callback),
         core_db,
         target.with_pkg_id,
-        ctx.binary_only,
+        install_excludes.to_vec(),
     )
     .await?;
 
@@ -615,7 +625,6 @@ pub async fn install_single_package(
 
     installer
         .record(
-            &bin_dir,
             unlinked,
             final_checksum,
             portable,

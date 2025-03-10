@@ -170,12 +170,10 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
     }
 
     {
-        let bin_path = def_bin_path.to_string_lossy();
         let mut stmt = prepare_and_bind!(
             tx,
             "UPDATE packages
             SET
-                bin_path = $bin_path,
                 unlinked = false
             WHERE
                 pkg_name = $pkg_name
