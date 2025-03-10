@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{env, path::Path};
 
 use nu_ansi_term::Color::{Blue, Green, Red};
 use rusqlite::prepare_and_bind;
@@ -8,11 +8,21 @@ use soar_core::{
     utils::{desktop_dir, icons_dir, process_dir},
     SoarResult,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{state::AppState, utils::Colored};
 
 pub async fn display_health() -> SoarResult<()> {
+    let path_env = env::var("PATH")?;
+    let bin_path = get_config().get_bin_path()?;
+    if !path_env.split(':').any(|p| Path::new(p) == bin_path) {
+        warn!(
+            "{} is not in {1}. Please add it to {1} to use installed binaries.\n",
+            Colored(Blue, bin_path.display()),
+            Colored(Green, "PATH")
+        );
+    }
+
     list_broken_packages().await?;
     println!("");
     list_broken_symlinks()?;
