@@ -1,4 +1,10 @@
 
+## [0.5.14](https://github.com/pkgforge/soar/compare/v0.5.13...v0.5.14) - 2025-03-11
+
+### 🐛 Bug Fixes
+
+- *(clippy)* Apply clippy suggestions - ([0be9c71](https://github.com/pkgforge/soar/commit/0be9c71c4e3c9917ea35c92bc02a2a1b4a98cf33))
+
 ## [0.5.13](https://github.com/pkgforge/soar/compare/v0.5.12...v0.5.13) - 2025-03-10
 
 ### ⛰️  Features
