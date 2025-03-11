@@ -54,7 +54,7 @@ pub async fn run_package(
             0 => return Err(SoarError::PackageNotFound(package_name.clone())),
             1 => packages.into_iter().next(),
             _ if yes => packages.into_iter().next(),
-            _ => select_package_interactively(packages, &package_name)?,
+            _ => select_package_interactively(packages, package_name)?,
         }
         .unwrap();
 

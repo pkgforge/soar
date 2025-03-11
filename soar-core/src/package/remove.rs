@@ -42,13 +42,12 @@ impl PackageRemover {
             if let Some(provides) = &self.package.provides {
                 for provide in provides {
                     if let Some(ref target) = provide.target {
-                        let is_symlink = match provide.strategy {
-                            Some(ProvideStrategy::KeepTargetOnly)
-                            | Some(ProvideStrategy::KeepBoth) => true,
-                            _ => false,
-                        };
+                        let is_symlink = matches!(
+                            provide.strategy,
+                            Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
+                        );
                         if is_symlink {
-                            let target_name = bin_path.join(&target);
+                            let target_name = bin_path.join(target);
                             if target_name.exists() {
                                 std::fs::remove_file(&target_name).with_context(|| {
                                     format!("removing provide {}", target_name.display())
@@ -63,9 +62,9 @@ impl PackageRemover {
 
             let mut remove_action = |path: &Path| -> SoarResult<()> {
                 if path.extension() == Some(&OsString::from("desktop")) {
-                    if let Ok(real_path) = fs::read_link(&path) {
+                    if let Ok(real_path) = fs::read_link(path) {
                         if real_path.parent() == Some(&installed_path) {
-                            let _ = fs::remove_file(&path);
+                            let _ = fs::remove_file(path);
                         }
                     }
                 }
@@ -74,9 +73,9 @@ impl PackageRemover {
             process_dir(desktop_dir(), None, &mut remove_action)?;
 
             let mut remove_action = |path: &Path| -> SoarResult<()> {
-                if let Ok(real_path) = fs::read_link(&path) {
+                if let Ok(real_path) = fs::read_link(path) {
                     if real_path.parent() == Some(&installed_path) {
-                        let _ = fs::remove_file(&path);
+                        let _ = fs::remove_file(path);
                     }
                 }
                 Ok(())

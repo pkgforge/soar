@@ -67,7 +67,7 @@ impl AppState {
                 .map_err(|err| SoarError::Custom(format!("Join handle error: {}", err)))?
             {
                 Ok(Some(etag)) => {
-                    self.validate_packages(&repo, &etag).await?;
+                    self.validate_packages(repo, &etag).await?;
                     info!("[{}] Repository synced", Colored(Magenta, &repo.name));
                 }
                 Err(err) => {

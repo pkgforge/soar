@@ -282,7 +282,7 @@ where
         _ => (project.trim_end_matches('@'), None),
     };
 
-    let options = create_platform_options(&ctx, tag.map(String::from));
+    let options = create_platform_options(ctx, tag.map(String::from));
     let releases = handler.fetch_releases::<R>(project, tag).await?;
     let assets = handler.filter_releases(&releases, &options).await?;
 

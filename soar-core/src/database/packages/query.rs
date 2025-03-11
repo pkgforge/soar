@@ -492,9 +492,7 @@ impl PackageQueryBuilder {
                     FilterCondition::IsNotNull => {
                         format!("{} IS NOT NULL", filter.field)
                     }
-                    FilterCondition::None => {
-                        format!("{}", filter.field)
-                    }
+                    FilterCondition::None => filter.field.to_string(),
                 };
 
                 if idx > 0 {

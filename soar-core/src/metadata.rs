@@ -29,7 +29,7 @@ fn handle_json_metadata<P: AsRef<Path>>(
             .with_context(|| format!("removing metadata file {}", metadata_db.display()))?;
     }
 
-    let conn = Connection::open(&metadata_db)?;
+    let conn = Connection::open(metadata_db)?;
     let mut manager = MigrationManager::new(conn)?;
     manager.migrate_from_dir(METADATA_MIGRATIONS)?;
 
@@ -89,7 +89,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
             .metadata()
             .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
         if let Ok(created) = file_info.created() {
-            if repo.sync_interval() >= created.elapsed()?.as_millis() as u128 {
+            if repo.sync_interval() >= created.elapsed()?.as_millis() {
                 return Ok(None);
             }
         }
@@ -99,7 +99,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
     let client = reqwest::Client::new();
 
     if let Some(ref pubkey_url) = repo.pubkey {
-        fetch_public_key(&client, &repo_path, &pubkey_url).await?;
+        fetch_public_key(&client, &repo_path, pubkey_url).await?;
     }
 
     let mut header_map = HeaderMap::new();
@@ -144,7 +144,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
             .with_context(|| format!("creating temporary file {}", tmp_path))?;
 
         let mut decoder = zstd::Decoder::new(content.as_slice())
-            .with_context(|| format!("creating zstd decoder"))?;
+            .with_context(|| "creating zstd decoder".to_string())?;
         io::copy(&mut decoder, &mut tmp_file)
             .with_context(|| format!("decoding zstd from {}", tmp_path))?;
 

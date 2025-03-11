@@ -334,9 +334,9 @@ impl PackageInstaller {
                 let installed_path = PathBuf::from(&package.installed_path);
 
                 let mut remove_action = |path: &Path| -> SoarResult<()> {
-                    if let Ok(real_path) = fs::read_link(&path) {
+                    if let Ok(real_path) = fs::read_link(path) {
                         if real_path.parent() == Some(&installed_path) {
-                            fs::remove_file(&path).with_context(|| {
+                            fs::remove_file(path).with_context(|| {
                                 format!("removing desktop file {}", path.display())
                             })?;
                         }
@@ -346,9 +346,9 @@ impl PackageInstaller {
                 process_dir(desktop_dir(), None, &mut remove_action)?;
 
                 let mut remove_action = |path: &Path| -> SoarResult<()> {
-                    if let Ok(real_path) = fs::read_link(&path) {
+                    if let Ok(real_path) = fs::read_link(path) {
                         if real_path.parent() == Some(&installed_path) {
-                            fs::remove_file(&path).with_context(|| {
+                            fs::remove_file(path).with_context(|| {
                                 format!("removing icon file {}", path.display())
                             })?;
                         }
@@ -360,13 +360,13 @@ impl PackageInstaller {
                 if let Some(provides) = package.provides {
                     for provide in provides {
                         if let Some(ref target) = provide.target {
-                            let is_symlink = match provide.strategy {
+                            let is_symlink = matches!(
+                                provide.strategy,
                                 Some(ProvideStrategy::KeepTargetOnly)
-                                | Some(ProvideStrategy::KeepBoth) => true,
-                                _ => false,
-                            };
+                                    | Some(ProvideStrategy::KeepBoth)
+                            );
                             if is_symlink {
-                                let target_name = get_config().get_bin_path()?.join(&target);
+                                let target_name = get_config().get_bin_path()?.join(target);
                                 if target_name.is_symlink() || target_name.is_file() {
                                     std::fs::remove_file(&target_name).with_context(|| {
                                         format!("removing provide {}", target_name.display())

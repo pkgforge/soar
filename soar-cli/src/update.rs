@@ -32,7 +32,7 @@ fn is_already_installed(package: &Package, core_db: Arc<Mutex<Connection>>) -> S
         .load_installed()?
         .items;
 
-    return Ok(existing.len() > 0);
+    Ok(!existing.is_empty())
 }
 
 pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarResult<()> {
@@ -70,7 +70,7 @@ pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarR
                     .limit(1);
                 let new_pkg: Vec<Package> = builder.load()?.items;
 
-                if new_pkg.len() > 0 {
+                if !new_pkg.is_empty() {
                     let with_pkg_id = pkg.with_pkg_id;
                     let package = new_pkg.first().unwrap().clone();
 
@@ -114,7 +114,7 @@ pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarR
                 .load()?
                 .items;
 
-            if new_pkg.len() > 0 {
+            if !new_pkg.is_empty() {
                 let with_pkg_id = pkg.with_pkg_id;
                 let package = new_pkg.first().unwrap().clone();
 
@@ -244,7 +244,7 @@ async fn spawn_update_task(
             match err {
                 SoarError::Warning(err) => {
                     let mut warnings = ctx.warnings.lock().unwrap();
-                    warnings.push(format!("{err}"));
+                    warnings.push(err);
 
                     if !keep {
                         let _ = remove_old_package(&target.package, core_db.clone());
@@ -252,7 +252,7 @@ async fn spawn_update_task(
                 }
                 _ => {
                     let mut errors = ctx.errors.lock().unwrap();
-                    errors.push(format!("{err}"));
+                    errors.push(err.to_string());
                 }
             }
         } else {
@@ -300,7 +300,7 @@ fn remove_old_package(package: &Package, core_db: Arc<Mutex<Connection>>) -> Soa
 
     let paths: Vec<String> = stmt
         .query_map(
-            &[pkg_id, pkg_name, repo_name, pkg_id, pkg_name, repo_name],
+            [pkg_id, pkg_name, repo_name, pkg_id, pkg_name, repo_name],
             |row| row.get(0),
         )?
         .filter_map(Result::ok)
@@ -309,7 +309,7 @@ fn remove_old_package(package: &Package, core_db: Arc<Mutex<Connection>>) -> Soa
     for path in paths {
         let path = Path::new(&path);
         if path.exists() {
-            fs::remove_dir_all(&path)
+            fs::remove_dir_all(path)
                 .with_context(|| format!("removing directory {}", path.display()))?;
         }
     }

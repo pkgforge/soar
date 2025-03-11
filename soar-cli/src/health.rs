@@ -24,7 +24,7 @@ pub async fn display_health() -> SoarResult<()> {
     }
 
     list_broken_packages().await?;
-    println!("");
+    println!();
     list_broken_symlinks()?;
     Ok(())
 }
@@ -75,8 +75,8 @@ pub fn list_broken_symlinks() -> SoarResult<()> {
     };
 
     process_dir(&get_config().get_bin_path()?, None, &mut collect_action)?;
-    process_dir(&desktop_dir(), Some("-soar"), &mut collect_action)?;
-    process_dir(&icons_dir(), Some("-soar"), &mut collect_action)?;
+    process_dir(desktop_dir(), Some("-soar"), &mut collect_action)?;
+    process_dir(icons_dir(), Some("-soar"), &mut collect_action)?;
 
     if broken_symlinks.is_empty() {
         info!("No broken symlinks found.");

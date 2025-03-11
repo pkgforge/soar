@@ -50,7 +50,7 @@ impl Database {
         {
             let statements = DbStatements::new(&tx)?;
             let mut repo = PackageRepository::new(&tx, statements, repo_name);
-            repo.import_packages(&metadata)?;
+            repo.import_packages(metadata)?;
         }
         tx.commit()?;
         Ok(())

@@ -56,5 +56,5 @@ where
         return Ok(PackageFormat::ELF);
     }
 
-    return Ok(PackageFormat::Unknown);
+    Ok(PackageFormat::Unknown)
 }

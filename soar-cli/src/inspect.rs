@@ -51,7 +51,7 @@ fn get_installed_path(
         .load_installed()?
         .items;
 
-    if installed_pkgs.len() > 0 {
+    if !installed_pkgs.is_empty() {
         let pkg = installed_pkgs.first().unwrap();
         if pkg.is_installed {
             return Ok(Some(PathBuf::from(pkg.installed_path.clone())));
@@ -84,7 +84,7 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
             packages.items.first().unwrap()
         };
 
-        if let Some(installed_path) = get_installed_path(core_db, &selected_pkg)? {
+        if let Some(installed_path) = get_installed_path(core_db, selected_pkg)? {
             let file = if matches!(inspect_type, InspectType::BuildLog) {
                 installed_path.join(format!("{}.log", selected_pkg.pkg_name))
             } else {

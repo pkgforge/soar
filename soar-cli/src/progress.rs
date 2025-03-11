@@ -121,9 +121,9 @@ pub fn handle_install_progress(
                 let count = ctx.retrying.fetch_sub(1, Ordering::Relaxed);
                 if count > 1 {
                     ctx.total_progress_bar.set_message(format!(
-                        "(Retrying: {}){}",
+                        "(Retrying: {}) (Failed: {})",
                         Colored(Red, count - 1),
-                        format!(" (Failed: {})", Colored(Red, failed_count + 1))
+                        Colored(Red, failed_count + 1)
                     ));
                 } else {
                     ctx.total_progress_bar.set_message("");

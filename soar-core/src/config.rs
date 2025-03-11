@@ -93,14 +93,8 @@ impl Repository {
             Some(value) => match value.as_str() {
                 "always" => 0,
                 "never" => u128::MAX,
-                "auto" => 3 * 3600 * 1000,
-                _ => {
-                    if let Some(ms) = parse_duration(value) {
-                        ms
-                    } else {
-                        3600 * 1000
-                    }
-                }
+                "auto" => 3 * 3_600_000,
+                _ => parse_duration(value).unwrap_or(3_600_000),
             },
             None => 3 * 3600 * 1000,
         }
@@ -279,9 +273,7 @@ impl Config {
     }
 
     pub fn get_root_path(&self) -> std::result::Result<PathBuf, SoarError> {
-        Ok(build_path(
-            &self.get_profile(&get_current_profile())?.root_path,
-        )?)
+        build_path(&self.get_profile(&get_current_profile())?.root_path)
     }
 
     pub fn get_bin_path(&self) -> std::result::Result<PathBuf, SoarError> {
@@ -301,7 +293,7 @@ impl Config {
     }
 
     pub fn get_packages_path(&self, profile_name: Option<String>) -> Result<PathBuf> {
-        let profile_name = profile_name.unwrap_or_else(|| get_current_profile());
+        let profile_name = profile_name.unwrap_or_else(get_current_profile);
         Ok(self.get_profile(&profile_name)?.get_packages_path())
     }
 

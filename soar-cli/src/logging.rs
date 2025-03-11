@@ -51,7 +51,7 @@ where
         if let Some(message) = visitor.message {
             writeln!(writer, "{}", message)
         } else {
-            writeln!(writer, "")
+            writeln!(writer)
         }
     }
 }

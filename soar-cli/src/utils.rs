@@ -19,12 +19,12 @@ pub fn interactive_ask(ques: &str) -> SoarResult<String> {
 
     std::io::stdout()
         .flush()
-        .with_context(|| format!("flushing stdout stream"))?;
+        .with_context(|| "flushing stdout stream".to_string())?;
 
     let mut response = String::new();
     std::io::stdin()
         .read_line(&mut response)
-        .with_context(|| format!("reading input from stdin"))?;
+        .with_context(|| "reading input from stdin".to_string())?;
 
     Ok(response.trim().to_owned())
 }
@@ -80,9 +80,7 @@ pub fn select_package_interactively<T: PackageExt>(
 
 pub fn has_no_desktop_integration(repo_name: &str, notes: Option<&[String]>) -> bool {
     !get_config().has_desktop_integration(repo_name)
-        || notes.map_or(false, |all| {
-            all.iter().any(|note| note == "NO_DESKTOP_INTEGRATION")
-        })
+        || notes.is_some_and(|all| all.iter().any(|note| note == "NO_DESKTOP_INTEGRATION"))
 }
 
 pub fn pretty_package_size(ghcr_size: Option<u64>, size: Option<u64>) -> String {

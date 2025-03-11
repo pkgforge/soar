@@ -235,12 +235,11 @@ fn select_package(
     existing_install: &Option<InstalledPackage>,
 ) -> SoarResult<Option<Package>> {
     let builder = if let Some(existing) = existing_install {
-        let builder = builder
+        builder
             .clear_filters()
             .where_and("r.name", FilterCondition::Eq(existing.repo_name.clone()))
             .where_and("pkg_name", FilterCondition::Eq(existing.pkg_name.clone()))
-            .where_and("pkg_id", FilterCondition::Eq(existing.pkg_id.clone()));
-        builder
+            .where_and("pkg_id", FilterCondition::Eq(existing.pkg_id.clone()))
     } else {
         builder
     };
@@ -342,7 +341,7 @@ async fn spawn_installation_task(
         Arc::new(move |state| {
             let mut pb_lock = progress_bar.lock().unwrap();
 
-            handle_install_progress(state, &mut *pb_lock, &ctx, &package, idx, fixed_width);
+            handle_install_progress(state, &mut pb_lock, &ctx, &package, idx, fixed_width);
         })
     };
 
@@ -358,11 +357,11 @@ async fn spawn_installation_task(
             match err {
                 SoarError::Warning(err) => {
                     let mut warnings = ctx.warnings.lock().unwrap();
-                    warnings.push(format!("{err}"));
+                    warnings.push(err);
                 }
                 _ => {
                     let mut errors = ctx.errors.lock().unwrap();
-                    errors.push(format!("{err}"));
+                    errors.push(err.to_string());
                 }
             }
         } else {
@@ -450,7 +449,7 @@ pub async fn install_single_package(
     });
 
     let installer = PackageInstaller::new(
-        &target,
+        target,
         &install_dir,
         Some(progress_callback),
         core_db,
@@ -467,7 +466,7 @@ pub async fn install_single_package(
             let pubkey_file = repository_path.join("minisign.pub");
             if pubkey_file.exists() {
                 let pubkey = PublicKey::from_base64(
-                    &fs::read_to_string(&pubkey_file)
+                    fs::read_to_string(&pubkey_file)
                         .with_context(|| {
                             format!("reading minisign key from {}", pubkey_file.display())
                         })?
@@ -587,12 +586,12 @@ pub async fn install_single_package(
         for provide in provides {
             if let Some(ref target) = provide.target {
                 let real_path = install_dir.join(provide.name.clone());
-                let is_symlink = match provide.strategy {
-                    Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth) => true,
-                    _ => false,
-                };
+                let is_symlink = matches!(
+                    provide.strategy,
+                    Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
+                );
                 if is_symlink {
-                    let target_name = bin_dir.join(&target);
+                    let target_name = bin_dir.join(target);
                     if target_name.is_symlink() || target_name.is_file() {
                         std::fs::remove_file(&target_name).with_context(|| {
                             format!("removing provide {}", target_name.display())

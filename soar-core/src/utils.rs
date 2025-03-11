@@ -143,7 +143,7 @@ pub fn setup_required_paths() -> Result<()> {
             .with_context(|| format!("creating database directory {}", db_path.display()))?;
     }
 
-    for (_, profile) in &config.profile {
+    for profile in config.profile.values() {
         let packages_path = profile.get_packages_path();
         if !packages_path.exists() {
             fs::create_dir_all(&packages_path).with_context(|| {
@@ -171,7 +171,7 @@ pub fn create_symlink<P: AsRef<Path>>(from: P, to: P) -> SoarResult<()> {
     let to = to.as_ref();
 
     if let Some(parent) = to.parent() {
-        fs::create_dir_all(&parent)
+        fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory {}", parent.display()))?;
     }
 
@@ -233,7 +233,7 @@ where
 pub fn remove_broken_symlinks() -> Result<()> {
     let mut remove_action = |path: &Path| -> Result<()> {
         if !path.exists() {
-            fs::remove_file(&path)
+            fs::remove_file(path)
                 .with_context(|| format!("removing broken symlink {}", path.display()))?;
             info!("Removed broken symlink: {}", path.display());
         }
@@ -241,8 +241,8 @@ pub fn remove_broken_symlinks() -> Result<()> {
     };
 
     process_dir(&get_config().get_bin_path()?, None, &mut remove_action)?;
-    process_dir(&desktop_dir(), Some("-soar"), &mut remove_action)?;
-    process_dir(&icons_dir(), Some("-soar"), &mut remove_action)?;
+    process_dir(desktop_dir(), Some("-soar"), &mut remove_action)?;
+    process_dir(icons_dir(), Some("-soar"), &mut remove_action)?;
 
     Ok(())
 }

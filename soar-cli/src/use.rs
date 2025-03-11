@@ -37,7 +37,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
 
     for (idx, package) in packages.iter().enumerate() {
         info!(
-            active = package.unlinked == false,
+            active = !package.unlinked,
             pkg_name = package.pkg_name,
             pkg_id = package.pkg_id,
             repo_name = package.repo_name,
@@ -58,7 +58,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
             Colored(Magenta, HumanBytes(package.size)),
             package
                 .unlinked
-                .then(|| String::new())
+                .then(String::new)
                 .unwrap_or_else(|| format!(" {}", Colored(Red, "*")))
         );
     }
@@ -97,9 +97,9 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
     }
 
     let bin_dir = get_config().get_bin_path()?;
-    let def_bin_path = bin_dir.join(&pkg_name);
+    let def_bin_path = bin_dir.join(pkg_name);
     let install_dir = PathBuf::from(&selected_package.installed_path);
-    let real_bin = install_dir.join(&pkg_name);
+    let real_bin = install_dir.join(pkg_name);
 
     if selected_package.should_create_original_symlink() {
         if def_bin_path.is_symlink() || def_bin_path.is_file() {
@@ -123,12 +123,12 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         for provide in provides {
             if let Some(ref target) = provide.target {
                 let real_path = install_dir.join(provide.name.clone());
-                let is_symlink = match provide.strategy {
-                    Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth) => true,
-                    _ => false,
-                };
+                let is_symlink = matches!(
+                    provide.strategy,
+                    Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
+                );
                 if is_symlink {
-                    let target_name = bin_dir.join(&target);
+                    let target_name = bin_dir.join(target);
                     if target_name.is_symlink() || target_name.is_file() {
                         std::fs::remove_file(&target_name).with_context(|| {
                             format!("removing provide from {}", target_name.display())
