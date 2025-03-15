@@ -306,6 +306,39 @@ pub async fn perform_installation(
                 pkg.pkg_id,
                 if notes.is_empty() { "" } else { &notes }
             );
+            
+            // Display symlinks information
+            let bin_dir = get_config().get_bin_path().unwrap_or_default();
+            let def_bin_path = bin_dir.join(&pkg.pkg_name);
+            
+            // Add a blank line before symlink information
+            if pkg.should_create_original_symlink() || pkg.provides.is_some() {
+                info!("");
+            }
+            
+            if pkg.should_create_original_symlink() {
+                info!("→ {} ==> {}", pkg.pkg_name, def_bin_path.display());
+            }
+            
+            if let Some(provides) = &pkg.provides {
+                for provide in provides {
+                    if let Some(ref target) = provide.target {
+                        let is_symlink = matches!(
+                            provide.strategy,
+                            Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
+                        );
+                        if is_symlink {
+                            let target_name = bin_dir.join(target);
+                            info!("→ {} ==> {}", target, target_name.display());
+                        }
+                    }
+                }
+            }
+            
+            // Add a blank line after symlink information
+            if pkg.should_create_original_symlink() || pkg.provides.is_some() {
+                info!("");
+            }
         }
     }
 
