@@ -75,13 +75,13 @@ For more questions, check our [FAQ](https://docs.pkgforge.dev/repositories/soarp
 ## 🔧 Installation
 
 Soar comes as a single-file, statically-linked executable with no dependencies that you can simply [download](https://github.com/pkgforge/soar/releases/latest) & run.
-- Docs: https://soar.qaidvoid.dev/installation.html
+- Docs: https://soar.qaidvoid.dev/installation
 - Extra Guide & Information: https://docs.pkgforge.dev
 
 ## ⚙️ Configuration
 
-Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration.html) & [official repositories](https://docs.pkgforge.dev/repositories/) preconfigured<br>
-For additional configuration guide, see [here](https://soar.qaidvoid.dev/configuration.html)
+Soar comes with [sane defaults](https://soar.qaidvoid.dev/configuration) & [official repositories](https://docs.pkgforge.dev/repositories/) preconfigured<br>
+For additional configuration guide, see [here](https://soar.qaidvoid.dev/configuration)
 
 ## 🎯 Usage
 
