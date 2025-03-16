@@ -1,10 +1,10 @@
 use std::{cell::RefCell, env, path::Path, rc::Rc};
 
 use nu_ansi_term::Color::{Blue, Green, Red};
-use rusqlite::prepare_and_bind;
 use soar_core::{
     config::get_config,
     database::packages::{FilterCondition, PackageQueryBuilder},
+    package::remove::PackageRemover,
     utils::{desktop_dir, icons_dir, process_dir},
     SoarResult,
 };
@@ -111,14 +111,26 @@ pub fn list_broken_symlinks() -> SoarResult<()> {
     Ok(())
 }
 
-pub fn remove_broken_packages() -> SoarResult<()> {
+pub async fn remove_broken_packages() -> SoarResult<()> {
     let state = AppState::new();
     let core_db = state.core_db()?;
 
-    let conn = core_db.lock()?;
+    let broken_packages = PackageQueryBuilder::new(core_db.clone())
+        .where_and("is_installed", FilterCondition::Eq("0".to_string()))
+        .load_installed()?
+        .items;
 
-    let mut stmt = prepare_and_bind!(conn, "DELETE FROM packages WHERE is_installed = false ");
-    stmt.raw_execute()?;
+    if broken_packages.is_empty() {
+        info!("No broken packages found.");
+        return Ok(());
+    }
+
+    for package in broken_packages {
+        let remover = PackageRemover::new(package.clone(), core_db.clone()).await;
+        remover.remove().await?;
+
+        info!("Removed {}#{}", package.pkg_name, package.pkg_id);
+    }
 
     info!("Removed all broken packages");
 

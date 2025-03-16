@@ -229,7 +229,7 @@ async fn handle_cli() -> SoarResult<()> {
                 remove_broken_symlinks()?;
             }
             if unspecified || broken {
-                remove_broken_packages()?;
+                remove_broken_packages().await?;
             }
         }
         cli::Commands::Config { edit } => {
