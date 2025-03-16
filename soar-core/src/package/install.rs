@@ -343,7 +343,7 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                process_dir(desktop_dir(), None, &mut remove_action)?;
+                process_dir(desktop_dir(), &mut remove_action)?;
 
                 let mut remove_action = |path: &Path| -> SoarResult<()> {
                     if let Ok(real_path) = fs::read_link(path) {
@@ -355,7 +355,7 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                process_dir(icons_dir(), None, &mut remove_action)?;
+                process_dir(icons_dir(), &mut remove_action)?;
 
                 if let Some(provides) = package.provides {
                     for provide in provides {

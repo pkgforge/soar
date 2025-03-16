@@ -288,11 +288,14 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     let mut has_desktop = false;
     let mut has_icon = false;
     let mut symlink_action = |path: &Path| -> SoarResult<()> {
-        has_desktop = true;
-        symlink_desktop(path, package)?;
+        let ext = path.extension();
+        if ext == Some(OsStr::new("desktop")) {
+            has_desktop = true;
+            symlink_desktop(path, package)?;
+        }
         Ok(())
     };
-    process_dir(install_dir, Some(".desktop"), &mut symlink_action)?;
+    process_dir(install_dir, &mut symlink_action)?;
 
     let mut symlink_action = |path: &Path| -> SoarResult<()> {
         let ext = path.extension();
@@ -302,7 +305,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         }
         Ok(())
     };
-    process_dir(install_dir, None, &mut symlink_action)?;
+    process_dir(install_dir, &mut symlink_action)?;
 
     let mut reader = BufReader::new(
         File::open(&bin_path).with_context(|| format!("opening {}", bin_path.display()))?,

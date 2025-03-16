@@ -1,4 +1,4 @@
-use std::{env, path::Path};
+use std::{cell::RefCell, env, path::Path, rc::Rc};
 
 use nu_ansi_term::Color::{Blue, Green, Red};
 use rusqlite::prepare_and_bind;
@@ -65,18 +65,32 @@ pub async fn list_broken_packages() -> SoarResult<()> {
 }
 
 pub fn list_broken_symlinks() -> SoarResult<()> {
-    let mut broken_symlinks = Vec::new();
+    let broken_symlinks = Rc::new(RefCell::new(Vec::new()));
 
+    let broken_symlinks_clone = Rc::clone(&broken_symlinks);
     let mut collect_action = |path: &Path| -> SoarResult<()> {
         if !path.exists() {
-            broken_symlinks.push(path.to_path_buf());
+            broken_symlinks_clone.borrow_mut().push(path.to_path_buf());
         }
         Ok(())
     };
 
-    process_dir(&get_config().get_bin_path()?, None, &mut collect_action)?;
-    process_dir(desktop_dir(), Some("-soar"), &mut collect_action)?;
-    process_dir(icons_dir(), Some("-soar"), &mut collect_action)?;
+    let mut soar_files_action = |path: &Path| -> SoarResult<()> {
+        if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
+            if filename.ends_with("-soar") && !path.exists() {
+                broken_symlinks_clone.borrow_mut().push(path.to_path_buf());
+            }
+        }
+        Ok(())
+    };
+
+    process_dir(&get_config().get_bin_path()?, &mut collect_action)?;
+    process_dir(desktop_dir(), &mut soar_files_action)?;
+    process_dir(icons_dir(), &mut soar_files_action)?;
+
+    let broken_symlinks = Rc::try_unwrap(broken_symlinks)
+        .unwrap_or_else(|rc| rc.borrow().clone().into())
+        .into_inner();
 
     if broken_symlinks.is_empty() {
         info!("No broken symlinks found.");

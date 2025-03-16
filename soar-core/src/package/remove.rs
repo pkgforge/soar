@@ -70,7 +70,7 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            process_dir(desktop_dir(), None, &mut remove_action)?;
+            process_dir(desktop_dir(), &mut remove_action)?;
 
             let mut remove_action = |path: &Path| -> SoarResult<()> {
                 if let Ok(real_path) = fs::read_link(path) {
@@ -80,7 +80,7 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            process_dir(icons_dir(), None, &mut remove_action)?;
+            process_dir(icons_dir(), &mut remove_action)?;
         }
 
         if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {

@@ -196,7 +196,7 @@ pub fn cleanup_cache() -> Result<()> {
     Ok(())
 }
 
-pub fn process_dir<P: AsRef<Path>, F>(dir: P, filter: Option<&str>, action: &mut F) -> Result<()>
+pub fn process_dir<P: AsRef<Path>, F>(dir: P, action: &mut F) -> Result<()>
 where
     F: FnMut(&Path) -> Result<()>,
 {
@@ -213,36 +213,38 @@ where
             .path();
 
         if path.is_dir() {
-            process_dir(&path, filter, action)?;
+            process_dir(&path, action)?;
             continue;
         }
 
-        let should_check = match filter {
-            Some(f) => path.to_string_lossy().contains(f),
-            None => true,
-        };
-
-        if should_check {
-            action(&path)?;
-        }
+        action(&path)?;
     }
 
     Ok(())
 }
 
+fn remove_action(path: &Path) -> Result<()> {
+    if !path.exists() {
+        fs::remove_file(path)
+            .with_context(|| format!("removing broken symlink {}", path.display()))?;
+        info!("Removed broken symlink: {}", path.display());
+    }
+    Ok(())
+}
+
 pub fn remove_broken_symlinks() -> Result<()> {
-    let mut remove_action = |path: &Path| -> Result<()> {
-        if !path.exists() {
-            fs::remove_file(path)
-                .with_context(|| format!("removing broken symlink {}", path.display()))?;
-            info!("Removed broken symlink: {}", path.display());
+    let mut soar_files_action = |path: &Path| -> SoarResult<()> {
+        if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
+            if filename.ends_with("-soar") {
+                return remove_action(path);
+            }
         }
         Ok(())
     };
 
-    process_dir(&get_config().get_bin_path()?, None, &mut remove_action)?;
-    process_dir(desktop_dir(), Some("-soar"), &mut remove_action)?;
-    process_dir(icons_dir(), Some("-soar"), &mut remove_action)?;
+    process_dir(&get_config().get_bin_path()?, &mut remove_action)?;
+    process_dir(desktop_dir(), &mut soar_files_action)?;
+    process_dir(icons_dir(), &mut soar_files_action)?;
 
     Ok(())
 }
