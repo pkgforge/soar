@@ -80,7 +80,10 @@ pub fn select_package_interactively<T: PackageExt>(
 
 pub fn has_no_desktop_integration(repo_name: &str, notes: Option<&[String]>) -> bool {
     !get_config().has_desktop_integration(repo_name)
-        || notes.is_some_and(|all| all.iter().any(|note| note == "NO_DESKTOP_INTEGRATION"))
+        || notes.is_some_and(|all| {
+            all.iter()
+                .any(|note| note.contains("NO_DESKTOP_INTEGRATION"))
+        })
 }
 
 pub fn pretty_package_size(ghcr_size: Option<u64>, size: Option<u64>) -> String {
