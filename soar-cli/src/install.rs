@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     fs::{self, File},
     io::{BufReader, Read},
     os::unix,
@@ -12,6 +12,7 @@ use std::{
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use minisign_verify::{PublicKey, Signature};
+use nu_ansi_term::Color::{Blue, Green};
 use rand::{distr::Alphanumeric, Rng};
 use rusqlite::Connection;
 use soar_core::{
@@ -36,7 +37,7 @@ use tracing::{error, info, warn};
 use crate::{
     progress::handle_install_progress,
     state::AppState,
-    utils::{has_no_desktop_integration, select_package_interactively},
+    utils::{has_no_desktop_integration, select_package_interactively, Colored},
 };
 
 #[derive(Clone)]
@@ -53,7 +54,7 @@ pub struct InstallContext {
     pub errors: Arc<Mutex<Vec<String>>>,
     pub retrying: Arc<AtomicU64>,
     pub failed: Arc<AtomicU64>,
-    pub installed_indices: Arc<Mutex<HashSet<usize>>>,
+    pub installed_indices: Arc<Mutex<HashMap<usize, (PathBuf, Vec<(PathBuf, PathBuf)>)>>>,
     pub binary_only: bool,
 }
 
@@ -83,7 +84,7 @@ pub fn create_install_context(
         errors: Arc::new(Mutex::new(Vec::new())),
         retrying: Arc::new(AtomicU64::new(0)),
         failed: Arc::new(AtomicU64::new(0)),
-        installed_indices: Arc::new(Mutex::new(HashSet::new())),
+        installed_indices: Arc::new(Mutex::new(HashMap::new())),
         binary_only,
     }
 }
@@ -292,20 +293,36 @@ pub async fn perform_installation(
         error!("{error}");
     }
 
-    if !no_notes {
-        let installed_indices = ctx.installed_indices.lock().unwrap();
-        for (idx, target) in targets.into_iter().enumerate() {
-            let pkg = target.package;
-            if !installed_indices.contains(&idx) || pkg.notes.is_none() {
-                continue;
+    let installed_indices = ctx.installed_indices.lock().unwrap();
+    for (idx, target) in targets.into_iter().enumerate() {
+        let pkg = target.package;
+        let Some((install_dir, symlinks)) = installed_indices.get(&idx) else {
+            continue;
+        };
+
+        info!(
+            "\n* {}#{} [Installed to: {}]",
+            pkg.pkg_name,
+            pkg.pkg_id,
+            Colored(Blue, install_dir.display())
+        );
+
+        if !symlinks.is_empty() {
+            info!("  Binaries:");
+            for (target, link) in symlinks {
+                info!(
+                    "    {} -> {}",
+                    Colored(Green, link.display()),
+                    Colored(Blue, target.display())
+                );
             }
-            let notes = pkg.notes.unwrap_or_default().join("\n  ");
-            info!(
-                "\n* {}#{}\n  {}\n",
-                pkg.pkg_name,
-                pkg.pkg_id,
-                if notes.is_empty() { "" } else { &notes }
-            );
+        }
+
+        if !no_notes {
+            if let Some(notes) = pkg.notes {
+                info!("  Notes:\n  {}", notes.join("\n  "));
+            }
+            info!("\n");
         }
     }
 
@@ -353,8 +370,16 @@ async fn spawn_installation_task(
     tokio::spawn(async move {
         let result = install_single_package(&ctx, &target, progress_callback, core_db).await;
 
-        if let Err(err) = result {
-            match err {
+        match result {
+            Ok((install_dir, symlinks)) => {
+                installed_indices
+                    .lock()
+                    .unwrap()
+                    .insert(idx, (install_dir, symlinks));
+                installed_count.fetch_add(1, Ordering::Relaxed);
+                total_pb.inc(1);
+            }
+            Err(err) => match err {
                 SoarError::Warning(err) => {
                     let mut warnings = ctx.warnings.lock().unwrap();
                     warnings.push(err);
@@ -363,11 +388,7 @@ async fn spawn_installation_task(
                     let mut errors = ctx.errors.lock().unwrap();
                     errors.push(err.to_string());
                 }
-            }
-        } else {
-            installed_count.fetch_add(1, Ordering::Relaxed);
-            installed_indices.lock().unwrap().insert(idx);
-            total_pb.inc(1);
+            },
         }
 
         drop(permit);
@@ -379,7 +400,7 @@ pub async fn install_single_package(
     target: &InstallTarget,
     progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
     core_db: Arc<Mutex<Connection>>,
-) -> SoarResult<()> {
+) -> SoarResult<(PathBuf, Vec<(PathBuf, PathBuf)>)> {
     let bin_dir = get_config().get_bin_path()?;
     let def_bin_path = bin_dir.join(&target.package.pkg_name);
 
@@ -564,6 +585,7 @@ pub async fn install_single_package(
         ));
     }
 
+    let mut symlinks = Vec::new();
     if target.package.should_create_original_symlink() {
         if def_bin_path.is_symlink() || def_bin_path.is_file() {
             if let Err(err) = std::fs::remove_file(&def_bin_path) {
@@ -580,6 +602,8 @@ pub async fn install_single_package(
                 def_bin_path.display()
             )
         })?;
+
+        symlinks.push((real_bin, def_bin_path));
     }
 
     if let Some(provides) = &target.package.provides {
@@ -604,6 +628,8 @@ pub async fn install_single_package(
                             target_name.display()
                         )
                     })?;
+
+                    symlinks.push((real_path, target_name));
                 }
             }
         }
@@ -632,5 +658,5 @@ pub async fn install_single_package(
         )
         .await?;
 
-    Ok(())
+    Ok((install_dir, symlinks))
 }
