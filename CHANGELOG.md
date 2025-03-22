@@ -1,4 +1,17 @@
 
+## [0.5.14](https://github.com/pkgforge/soar/compare/v0.5.13...v0.5.14) - 2025-03-22
+
+### ⛰️  Features
+
+- *(install)* Show installed path and symlinks - ([ab22401](https://github.com/pkgforge/soar/commit/ab22401832b9855ca8edbfb3b1df38636d2bb380))
+
+### 🐛 Bug Fixes
+
+- *(clean)* Remove package entirely on clean broken package - ([03d67be](https://github.com/pkgforge/soar/commit/03d67be974c9bade1bad6ec3a5f124d31473eb7f))
+- *(clippy)* Apply clippy suggestions - ([0be9c71](https://github.com/pkgforge/soar/commit/0be9c71c4e3c9917ea35c92bc02a2a1b4a98cf33))
+- *(fs)* Remove filtering from process_dir, delegate to caller - ([e60139b](https://github.com/pkgforge/soar/commit/e60139bc5dafbcfd485df102d1feda57faae4393))
+- *(integration)* Fix check for no desktop integration note - ([1344248](https://github.com/pkgforge/soar/commit/1344248942d87dae379fcac84de631978d29f95b))
+
 ## [0.5.13](https://github.com/pkgforge/soar/compare/v0.5.12...v0.5.13) - 2025-03-10
 
 ### ⛰️  Features

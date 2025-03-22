@@ -1,4 +1,11 @@
 
+## [0.3.0](https://github.com/pkgforge/soar/compare/soar-core-v0.2.0...soar-core-v0.3.0) - 2025-03-22
+
+### 🐛 Bug Fixes
+
+- *(clippy)* Apply clippy suggestions - ([0be9c71](https://github.com/pkgforge/soar/commit/0be9c71c4e3c9917ea35c92bc02a2a1b4a98cf33))
+- *(fs)* Remove filtering from process_dir, delegate to caller - ([e60139b](https://github.com/pkgforge/soar/commit/e60139bc5dafbcfd485df102d1feda57faae4393))
+
 ## [0.2.0](https://github.com/pkgforge/soar/compare/soar-core-v0.1.10...soar-core-v0.2.0) - 2025-03-10
 
 ### ⛰️  Features
