@@ -5,7 +5,7 @@ use std::{
 };
 
 use indicatif::HumanBytes;
-use nu_ansi_term::Color::{self, Magenta};
+use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta};
 use serde::Serialize;
 use soar_core::{
     config::get_config, database::models::PackageExt, error::ErrorContext, SoarResult,
@@ -65,12 +65,12 @@ pub fn select_package_interactively<T: PackageExt>(
     info!("Multiple packages found for {package_name}");
     for (idx, pkg) in pkgs.iter().enumerate() {
         info!(
-            "[{}] {}#{}-{}:{}",
+            "[{}] {}#{}:{} | {}",
             idx + 1,
-            pkg.pkg_name(),
-            pkg.pkg_id(),
-            pkg.version(),
-            pkg.repo_name()
+            Colored(Blue, &pkg.pkg_name()),
+            Colored(Cyan, &pkg.pkg_id()),
+            Colored(Green, pkg.repo_name()),
+            Colored(LightRed, pkg.version())
         );
     }
 

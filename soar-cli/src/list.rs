@@ -4,7 +4,7 @@ use std::{
 };
 
 use indicatif::HumanBytes;
-use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Purple, Red, White, Yellow};
+use nu_ansi_term::Color::{Blue, Cyan, Green, LightRed, Magenta, Purple, Red, White, Yellow};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use soar_core::{
     config::get_config,
@@ -115,22 +115,22 @@ pub async fn search_packages(
             version_upstream = package.version_upstream,
             description = package.description,
             size = package.ghcr_size.or(package.size),
-            "[{}] {}#{}:{} ({}{}{}) - {} ({})",
+            "[{}] {}#{}:{} | {}{} | {} - {} ({})",
             install_state,
             Colored(Blue, &package.pkg_name),
             Colored(Cyan, &package.pkg_id),
-            Colored(Cyan, &package.repo_name),
-            package
-                .pkg_type
-                .as_ref()
-                .map(|pkg_type| format!("{}-", Colored(Magenta, &pkg_type)))
-                .unwrap_or_default(),
-            Colored(Magenta, &package.version),
+            Colored(Green, &package.repo_name),
+            Colored(LightRed, &package.version),
             package
                 .version_upstream
                 .as_ref()
                 .filter(|_| package.version.starts_with("HEAD"))
                 .map(|upstream| format!(":{}", Colored(Yellow, &upstream)))
+                .unwrap_or_default(),
+            package
+                .pkg_type
+                .as_ref()
+                .map(|pkg_type| format!("{}", Colored(Magenta, &pkg_type)))
                 .unwrap_or_default(),
             package.description,
             pretty_package_size(package.ghcr_size, package.size)
@@ -484,23 +484,23 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
                 pkg_type = package.pkg_type,
                 version = package.version,
                 version_upstream = package.version_upstream,
-                "[{}] {}#{}:{} ({}{}{})",
+                "[{}] {}#{}:{} | {}{} | {}",
                 install_state,
                 Colored(Blue, &package.pkg_name),
                 Colored(Cyan, &package.pkg_id),
                 Colored(Cyan, &package.repo_name),
-                package
-                    .pkg_type
-                    .as_ref()
-                    .map(|pkg_type| format!("{}-", Colored(Magenta, &pkg_type)))
-                    .unwrap_or_default(),
-                Colored(Magenta, &package.version),
+                Colored(LightRed, &package.version),
                 package
                     .version_upstream
                     .as_ref()
                     .filter(|_| package.version.starts_with("HEAD"))
                     .map(|upstream| format!(":{}", Colored(Yellow, &upstream)))
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                package
+                    .pkg_type
+                    .as_ref()
+                    .map(|pkg_type| format!("{}", Colored(Magenta, &pkg_type)))
+                    .unwrap_or_default(),
             );
         }
 
