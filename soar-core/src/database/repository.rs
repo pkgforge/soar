@@ -69,17 +69,14 @@ impl<'a> PackageRepository<'a> {
         let replaces = serde_json::to_string(&package.replaces).unwrap();
 
         let provides = package.provides.clone().map(|vec| {
-            vec.iter()
+            vec.into_iter()
                 .filter_map(|p| {
-                    if p.split_once("==").is_some()
-                        || p.split_once("=>").is_some()
-                        || p.split_once(":").is_some()
-                        || *p == package.pkg_name
-                    {
-                        Some(PackageProvide::from_string(p))
-                    } else {
-                        None
-                    }
+                    let matches = p == package.pkg_name
+                        || ["==", "=>", ":"]
+                            .iter()
+                            .find_map(|&delim| p.split_once(delim))
+                            .map_or(false, |(first, _)| first == package.pkg_name);
+                    matches.then(|| PackageProvide::from_string(&p))
                 })
                 .collect::<Vec<PackageProvide>>()
         });
