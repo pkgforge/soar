@@ -88,6 +88,7 @@ pub async fn run_package(
                 url: package.download_url.clone(),
                 output_path: Some(output_path.to_string_lossy().to_string()),
                 progress_callback: Some(progress_callback),
+                extract_archive: false
             };
 
             downloader.download(options).await?;

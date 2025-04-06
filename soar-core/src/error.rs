@@ -63,7 +63,7 @@ pub enum SoarError {
     #[error("Database operation failed: {0}")]
     DatabaseError(String),
 
-    #[error("HTTP request error: {0}")]
+    #[error("HTTP request error: {0:?}")]
     ReqwestError(#[from] reqwest::Error),
 
     #[error("Download failed: {0}")]

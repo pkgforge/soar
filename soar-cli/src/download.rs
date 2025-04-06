@@ -100,6 +100,7 @@ pub async fn handle_direct_downloads(
                     url: link.clone(),
                     output_path: output.clone(),
                     progress_callback: Some(progress_callback.clone()),
+                    extract_archive: false
                 };
                 let _ = downloader
                     .download(options)
@@ -179,6 +180,7 @@ pub async fn handle_direct_downloads(
                         url: package.download_url.clone(),
                         output_path: output.clone(),
                         progress_callback: Some(progress_callback.clone()),
+                        extract_archive: false
                     };
 
                     downloader.download(options).await?;
@@ -265,6 +267,7 @@ fn create_platform_options(ctx: &DownloadContext, tag: Option<String>) -> Platfo
         match_keywords: ctx.match_keywords.clone(),
         exclude_keywords: ctx.exclude_keywords.clone(),
         exact_case: ctx.exact_case,
+        extract_archive: false
     }
 }
 
