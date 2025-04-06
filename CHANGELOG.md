@@ -1,4 +1,14 @@
 
+## [0.5.15](https://github.com/pkgforge/soar/compare/v0.5.14...v0.5.15) - 2025-04-06
+
+### 🐛 Bug Fixes
+
+- *(provides)* Only allow provides with link to pkg_name - ([2be5dee](https://github.com/pkgforge/soar/commit/2be5dee941ef425d33327b9e2170d2a6c84ccf1b))
+
+### 🚜 Refactor
+
+- *(list)* Improve package list output - ([1118025](https://github.com/pkgforge/soar/commit/111802552c9bc7608d2cd1bf126954163fdfac03))
+
 ## [0.5.14](https://github.com/pkgforge/soar/compare/v0.5.13...v0.5.14) - 2025-03-22
 
 ### ⛰️  Features

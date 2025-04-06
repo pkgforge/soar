@@ -1,6 +1,6 @@
 [package]
 name = "soar-cli"
-version = "0.5.14"
+version = "0.5.15"
 description = "A modern package manager for Linux"
 default-run = "soar"
 authors.workspace = true
@@ -30,7 +30,7 @@ rusqlite = { workspace = true }
 semver = "1.0.26"
 serde = { workspace = true }
 serde_json = { workspace = true }
-soar-core = { version = "0.3.0", path = "../soar-core" }
+soar-core = { version = "0.3.1", path = "../soar-core" }
 soar-dl = { workspace = true }
 tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
 toml = "0.8.20"
