@@ -96,6 +96,7 @@ async fn handle_cli() -> SoarResult<()> {
             portable_config,
             no_notes,
             binary_only,
+            ask,
         } => {
             if portable.is_some() && (portable_home.is_some() || portable_config.is_some()) {
                 error!("--portable cannot be used with --portable-home or --portable-config");
@@ -115,6 +116,7 @@ async fn handle_cli() -> SoarResult<()> {
                 portable_config,
                 no_notes,
                 binary_only,
+                ask,
             )
             .await?;
         }
@@ -136,8 +138,12 @@ async fn handle_cli() -> SoarResult<()> {
             state.sync().await?;
             info!("All repositories up to date");
         }
-        cli::Commands::Update { packages, keep } => {
-            update_packages(packages, keep).await?;
+        cli::Commands::Update {
+            packages,
+            keep,
+            ask,
+        } => {
+            update_packages(packages, keep, ask).await?;
         }
         cli::Commands::ListInstalledPackages { repo_name } => {
             list_installed_packages(repo_name).await?;

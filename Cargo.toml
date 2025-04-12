@@ -25,7 +25,7 @@ panic = "abort"
 futures = "0.3.31"
 rayon = "1.10.0"
 regex = { version = "1.11.1", default-features = false, features = ["unicode-case", "unicode-perl", "std"] }
-reqwest = { version = "0.12.15", default-features = false, features = ["rustls-tls", "blocking", "http2", "json", "stream", "gzip", "hickory-dns"] }
+reqwest = { version = "0.12.15", default-features = false, features = ["rustls-tls", "blocking", "http2", "json", "stream", "gzip"] }
 rusqlite = { version = "0.34.0", features = ["bundled", "rusqlite-macros"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", features = ["indexmap"] }

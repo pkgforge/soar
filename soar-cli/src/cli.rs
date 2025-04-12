@@ -90,6 +90,10 @@ pub enum Commands {
         /// Note: This won't prevent desktop integration
         #[arg(required = false, long)]
         binary_only: bool,
+
+        /// Ask for confirmation before installation
+        #[arg(required = false, long, short)]
+        ask: bool,
     },
 
     /// Search package
@@ -141,6 +145,10 @@ pub enum Commands {
         /// Keep old version
         #[arg(required = false, short, long)]
         keep: bool,
+
+        /// Ask for confirmation before update
+        #[arg(required = false, long, short)]
+        ask: bool,
     },
 
     /// Show info about installed packages

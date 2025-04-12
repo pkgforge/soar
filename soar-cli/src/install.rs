@@ -37,7 +37,7 @@ use tracing::{error, info, warn};
 use crate::{
     progress::handle_install_progress,
     state::AppState,
-    utils::{has_no_desktop_integration, select_package_interactively, Colored},
+    utils::{ask_target_action, has_no_desktop_integration, select_package_interactively, Colored},
 };
 
 #[derive(Clone)]
@@ -98,12 +98,22 @@ pub async fn install_packages(
     portable_config: Option<String>,
     no_notes: bool,
     binary_only: bool,
+    ask: bool,
 ) -> SoarResult<()> {
     let state = AppState::new();
     let repo_db = state.repo_db().await?;
     let core_db = state.core_db()?;
 
     let install_targets = resolve_packages(repo_db.clone(), core_db.clone(), packages, yes, force)?;
+
+    if install_targets.is_empty() {
+        info!("No packages to install");
+        return Ok(());
+    }
+
+    if ask {
+        ask_target_action(&install_targets, "install")?;
+    }
 
     let install_context = create_install_context(
         install_targets.len(),
@@ -266,11 +276,6 @@ pub async fn perform_installation(
 ) -> SoarResult<()> {
     let mut handles = Vec::new();
     let fixed_width = 40;
-
-    if targets.is_empty() {
-        info!("No packages to install");
-        return Ok(());
-    }
 
     for (idx, target) in targets.iter().enumerate() {
         let handle =

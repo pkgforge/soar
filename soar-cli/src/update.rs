@@ -20,6 +20,7 @@ use crate::{
     install::{create_install_context, install_single_package, InstallContext},
     progress::{self, create_progress_bar},
     state::AppState,
+    utils::ask_target_action,
 };
 
 fn is_already_installed(package: &Package, core_db: Arc<Mutex<Connection>>) -> SoarResult<bool> {
@@ -35,7 +36,11 @@ fn is_already_installed(package: &Package, core_db: Arc<Mutex<Connection>>) -> S
     Ok(!existing.is_empty())
 }
 
-pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarResult<()> {
+pub async fn update_packages(
+    packages: Option<Vec<String>>,
+    keep: bool,
+    ask: bool,
+) -> SoarResult<()> {
     let state = AppState::new();
     let core_db = state.core_db()?;
     let repo_db = state.repo_db().await?;
@@ -135,6 +140,10 @@ pub async fn update_packages(packages: Option<Vec<String>>, keep: bool) -> SoarR
     if update_targets.is_empty() {
         info!("No packages to update.");
         return Ok(());
+    }
+
+    if ask {
+        ask_target_action(&update_targets, "update")?;
     }
 
     let ctx = create_install_context(

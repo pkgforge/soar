@@ -5,10 +5,11 @@ use std::{
 };
 
 use indicatif::HumanBytes;
-use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta};
+use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta, Red};
 use serde::Serialize;
 use soar_core::{
-    config::get_config, database::models::PackageExt, error::ErrorContext, SoarResult,
+    config::get_config, database::models::PackageExt, error::ErrorContext,
+    package::install::InstallTarget, SoarResult,
 };
 use tracing::{error, info};
 
@@ -91,4 +92,57 @@ pub fn pretty_package_size(ghcr_size: Option<u64>, size: Option<u64>) -> String 
         .map(|size| format!("{}", Colored(Magenta, HumanBytes(size))))
         .or_else(|| size.map(|size| format!("{}", Colored(Magenta, HumanBytes(size)))))
         .unwrap_or_default()
+}
+
+pub fn ask_target_action(targets: &[InstallTarget], action: &str) -> SoarResult<()> {
+    info!(
+        "\n{}\n",
+        Colored(
+            Green,
+            format!(
+                "These are the packages that would be {}:",
+                if action == "install" {
+                    "installed"
+                } else {
+                    "updated"
+                }
+            )
+        )
+    );
+    for target in targets {
+        info!(
+            "{}#{}:{} ({})",
+            Colored(Blue, &target.package.pkg_name),
+            Colored(Cyan, &target.package.pkg_id),
+            Colored(Green, &target.package.repo_name),
+            Colored(LightRed, &target.package.version)
+        )
+    }
+
+    info!(
+        "Total: {} packages. Estimated download size: {}\n",
+        targets.len(),
+        HumanBytes(targets.iter().fold(0, |acc, target| {
+            acc + target
+                .package
+                .ghcr_size
+                .or(target.package.size)
+                .unwrap_or_default()
+        }))
+    );
+    let response = interactive_ask(&format!(
+        "Would you like to {} these packages? [{}/{}] ",
+        action,
+        Colored(Green, "Yes"),
+        Colored(Red, "No")
+    ))?
+    .to_lowercase();
+    let response = response.trim();
+
+    if !response.is_empty() && response != "y" {
+        info!("Quitting");
+        std::process::exit(0);
+    }
+
+    Ok(())
 }
