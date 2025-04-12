@@ -157,6 +157,10 @@ pub enum Commands {
         /// Repository to get installed packages for
         #[arg(required = false, long, short)]
         repo_name: Option<String>,
+
+        /// Only show the unique package install count
+        #[arg(required = false, long)]
+        count: bool,
     },
 
     /// List all available packages

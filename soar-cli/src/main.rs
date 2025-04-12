@@ -145,8 +145,8 @@ async fn handle_cli() -> SoarResult<()> {
         } => {
             update_packages(packages, keep, ask).await?;
         }
-        cli::Commands::ListInstalledPackages { repo_name } => {
-            list_installed_packages(repo_name).await?;
+        cli::Commands::ListInstalledPackages { repo_name, count } => {
+            list_installed_packages(repo_name, count).await?;
         }
         cli::Commands::ListPackages { repo_name } => {
             list_packages(repo_name).await?;
