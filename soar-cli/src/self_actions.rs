@@ -103,6 +103,7 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                     url: asset.download_url().to_string(),
                     output_path: Some(self_bin.to_string_lossy().to_string()),
                     progress_callback: None,
+                    extract_archive: false
                 };
 
                 debug!("Downloading update from: {}", options.url);

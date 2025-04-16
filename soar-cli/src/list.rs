@@ -514,9 +514,29 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
     Ok(())
 }
 
-pub async fn list_installed_packages(repo_name: Option<String>) -> SoarResult<()> {
+pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> SoarResult<()> {
     let state = AppState::new();
     let core_db = state.core_db()?;
+
+    if count {
+        let conn = core_db.lock().unwrap();
+        let mut query = String::from(
+            "SELECT COUNT(DISTINCT pkg_id || pkg_name) FROM packages WHERE is_installed = true",
+        );
+        let mut params: [&dyn rusqlite::ToSql; 1] = [&""];
+
+        let param_slice: &[&dyn rusqlite::ToSql] = if let Some(ref repo_name) = repo_name {
+            query.push_str(" AND repo_name = ?");
+            params[0] = repo_name;
+            &params
+        } else {
+            &[]
+        };
+
+        let count: u32 = conn.query_row(&query, param_slice, |row| row.get(0))?;
+        info!("{}", count);
+        return Ok(());
+    }
 
     let mut builder = PackageQueryBuilder::new(core_db.clone());
     if let Some(repo_name) = repo_name {

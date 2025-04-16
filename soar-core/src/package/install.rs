@@ -161,6 +161,7 @@ impl PackageInstaller {
                 url: url.to_string(),
                 output_path: Some(output_path.to_string_lossy().to_string()),
                 progress_callback: self.progress_callback.clone(),
+                extract_archive: false
             };
             downloader.download(options).await?;
         }
