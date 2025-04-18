@@ -9,6 +9,20 @@
 set -eu
 #shellcheck disable=SC2016,SC2059
 main() {
+
+    # Enable Debug?
+    DEBUG="${DEBUG:-}"
+    if [ -n "$DEBUG" ]; then
+       set -x
+    fi
+
+    # Disable Shell Completion?
+    ENABLE_AUTOCOMPLETE="${ENABLE_AUTOCOMPLETE:-}"
+    if [ -z "$ENABLE_AUTOCOMPLETE" ]; then
+       ENABLE_AUTOCOMPLETE="YES"
+    fi
+
+    # Default
     DEFAULT_VERSION="latest"
     SOAR_VERSION="${SOAR_VERSION:-$DEFAULT_VERSION}"
 
@@ -19,7 +33,65 @@ main() {
     YELLOW="\033[0;33m"
     RESET="\033[0m"
 
-    # Function to check for a downloader, sorted by sanest choice
+    # Refresh command -v
+    if command -v hash >/dev/null 2>&1; then
+        hash -r >/dev/null 2>&1
+    fi
+
+    # Ensure HOME
+    if [ -z "$HOME" ]; then
+        printf "${YELLOW}⚠ Notice: ${BLUE}\$HOME${YELLOW} is not set. (Will try guessing...)${RESET}\n" >&2
+
+        case $(command -v awk getent grep tr whoami >/dev/null 2>&1; echo $?) in
+           0)
+             [ -z "$USER" ] && {
+               printf "${YELLOW}⚠ Notice: ${BLUE}\$USER${YELLOW} is not set. (Will try guessing...)${RESET}\n" >&2
+               USER="$(whoami | tr -d '[:space:]')"
+             }
+             HOME="$(getent passwd "$USER" | awk -F':' 'NF >= 6 {print $6}' | tr -d '[:space:]')"
+             ;;
+        esac
+
+        if [ ! -d "$HOME" ]; then
+           printf "${RED}✗ Error: Could not determine ${BLUE}\$HOME${RESET}\n" >&2
+        else
+           printf "${YELLOW}⚠ Notice: ${BLUE}\$HOME${YELLOW} is set to ${BLUE}$HOME${RESET}\n" >&2
+        fi
+    fi
+
+    # Check XDG/Fallback Vars & Perms
+      for var in X_BIN X_CONFIG X_CACHE X_DATA; do
+        dir_var=""
+        dir_path=""
+        
+        case $var in
+          X_BIN)     dir_var="BIN_DIR";    xdg_var="XDG_BIN_HOME";    fallback="$HOME/.local/bin" ;;
+          X_CONFIG) dir_var="CONFIG_DIR";   xdg_var="XDG_CONFIG_HOME"; fallback="$HOME/.config" ;;
+          X_CACHE)   dir_var="CACHE_DIR";  xdg_var="XDG_CACHE_HOME";  fallback="$HOME/.cache" ;;
+          X_DATA)    dir_var="DATA_DIR";    xdg_var="XDG_DATA_HOME";   fallback="$HOME/.local/share" ;;
+        esac
+
+        xdg_value=""
+        eval "xdg_value=\"\${$xdg_var:-}\""
+
+        if [ -n "$xdg_value" ]; then
+          xdg_path="$xdg_value"
+          mkdir -p "$xdg_path" >/dev/null 2>&1
+          if [ -d "$xdg_path" ] && [ -w "$xdg_path" ]; then
+            eval "$dir_var=\"$xdg_path\""
+            continue
+          fi
+        fi
+
+        if [ -n "$HOME" ]; then
+            mkdir -p "$fallback" >/dev/null 2>&1
+            if [ -d "$fallback" ] && [ -w "$fallback" ]; then
+              eval "$dir_var=\"$fallback\""
+            fi
+        fi
+      done
+
+    # Check for a downloader, sorted by sanest choice
     check_download_tool() {
         if command -v curl >/dev/null 2>&1; then
             printf "curl -fSL -o"
@@ -69,7 +141,7 @@ main() {
         fi
     }
 
-    # Function to determine installation directory
+    # Determine installation directory
     get_install_dir() {
         # Check environment variables first
         if [ -n "${SOAR_INSTALL_DIR-}" ]; then
@@ -91,11 +163,12 @@ main() {
             fi
         fi
 
-        # Check ~/.local/bin
-        local_bin="$HOME/.local/bin"
-        if [ -d "$local_bin" ] && [ -w "$local_bin" ]; then
-            printf "%s" "$local_bin"
+        # Check Writable BIN Dir
+        if [ -n "$BIN_DIR" ]; then
+          if [ -d "$BIN_DIR" ] && [ -w "$BIN_DIR" ]; then
+            printf "%s" "$BIN_DIR"
             return
+          fi
         fi
 
         # Fallback to /usr/local/bin if running as root
@@ -219,6 +292,7 @@ main() {
            printf "[+] Using $DOWNLOAD_TOOL\n"
            $DOWNLOAD_TOOL "$INSTALL_PATH/soar" "$RELEASE_URL"
         fi
+        # Check
         if [ ! -f "$INSTALL_PATH/soar" ]; then
              if [ "$DOWNLOAD_TOOL" = "BASH_DEV_TCP" ]; then
                 printf "${RED}Error: Download failed.${YELLOW} Install ${BLUE}curl/wget${YELLOW} & try again${RESET}\n"
@@ -238,20 +312,132 @@ main() {
                exit 1
             fi
          fi
-        # Finalize 
+        # Check & Print Docs
          "$INSTALL_PATH/soar" --version || printf "${RED}Error: Failed to properly download soar${RESET}"
-         printf "${GREEN}✓ Soar has been installed to: ${BLUE}$INSTALL_PATH/soar${RESET}\n"
-         printf "${YELLOW}ⓘ Make sure ${BLUE}$INSTALL_PATH${YELLOW} is in your ${BLUE}PATH.${RESET}\n"
+         printf "\n${GREEN}✓ Soar has been installed to: ${BLUE}$INSTALL_PATH/soar${RESET}\n"
          printf "${YELLOW}ⓘ Documentation: ${BLUE}https://soar.qaidvoid.dev${RESET}\n"
          printf "${YELLOW}ⓘ Discord: ${BLUE}https://docs.pkgforge.dev/contact/chat${RESET}\n"
+        # Check if in PATH 
+         if command -v expr >/dev/null 2>&1; then
+           if expr ":$PATH:" : ".*:$BIN_DIR:" >/dev/null ||\
+              expr ":$PATH:" : ".*:$(expr "$BIN_DIR" : '\(.*\)/$'):" >/dev/null; then
+              :
+           else
+              printf "\n${YELLOW}⚠ ${BLUE}$INSTALL_PATH${RED} is NOT in your ${BLUE}PATH${RESET}\n"
+              printf "${YELLOW}ⓘ Put this in your ${BLUE}SHELL/Profile${YELLOW}:${RESET}\n"
+              printf "\n${GREEN} export PATH=\"\$PATH:$INSTALL_PATH\"${RESET}\n\n"
+           fi
+         else
+            printf "${YELLOW}ⓘ Make sure ${BLUE}$INSTALL_PATH${YELLOW} is in your ${BLUE}PATH.${RESET}\n"
+         fi
+        # Enable External Repos 
          printf "${YELLOW}ⓘ External Repositories are ${RED}NOT Enabled${YELLOW} by default${RESET}\n"
          printf "${YELLOW}ⓘ Learn More: ${BLUE}https://docs.pkgforge.dev/repositories/external${RESET}\n"
          printf "${YELLOW}ⓘ To enable external repos, Run: ${GREEN}soar defconfig --external${RESET}\n"
-         printf "${YELLOW}ⓘ Finally, To synchronize all repos, Run: ${GREEN}soar sync${RESET}\n\n"
+        # Enable Shell Completion
+         if [ "$ENABLE_AUTOCOMPLETE" != "NO" ]; then
+           if command -v bash >/dev/null 2>&1 || command -v fish >/dev/null 2>&1 || command -v zsh >/dev/null 2>&1; then
+             if [ -d "$DATA_DIR" ] && [ -w "$DATA_DIR" ]; then
+               COMP_DIR="$DATA_DIR/bash-completion/completions"
+               mkdir -p "$COMP_DIR" 2>/dev/null
+               if [ -d "$COMP_DIR" ]; then
+                  "$INSTALL_PATH/soar" --quiet dl "https://raw.githubusercontent.com/pkgforge/soar/refs/heads/main/completions/soar.bash" --output "$COMP_DIR/soar" >/dev/null 2>&1
+                  if [ -f "$COMP_DIR/soar" ]; then
+                     printf "${GREEN}✓ ${YELLOW}Shell completion has been installed to: ${BLUE}$COMP_DIR/soar${RESET}\n" 
+                     if ! command -v fzf >/dev/null 2>&1; then
+                       printf "\n${YELLOW}⚠ WARNING: ${BLUE}fzf${YELLOW} (Shell Completion) not found, install: ${GREEN}soar add 'fzf#github.com.junegunn.fzf:bincache' --binary-only ${RESET}\n\n"
+                     fi
+                     if ! command -v jq >/dev/null 2>&1; then
+                       printf "\n${YELLOW}⚠ WARNING: ${BLUE}jq${YELLOW} (Shell Completion) not found, install: ${GREEN}soar add 'jq#github.com.jqlang.jq.source:bincache' --binary-only ${RESET}\n\n"
+                     fi
+                    #bash (mosty works without fzf)
+                     if command -v bash >/dev/null 2>&1; then
+                        SHELL_COMP_MSG="${YELLOW}ⓘ To enable shell (${BLUE}BASH${YELLOW}) completion (${RED}If not already${YELLOW}), Run:\n\n"
+                        if [ -f "$HOME/profile" ] && [ -w "$HOME/profile" ]; then
+                            printf "${SHELL_COMP_MSG}"
+                            printf "${GREEN} echo '[[ -f \"$COMP_DIR/soar\" ]] && source \"$COMP_DIR/soar\"' >> \"$HOME/profile\"\n"
+                            printf "${GREEN} source \"$HOME/profile\"${RESET}\n\n"
+                        elif [ -f "$HOME/.bash_profile" ] && [ -w "$HOME/.bash_profile" ]; then
+                            printf "${SHELL_COMP_MSG}"
+                            printf "${GREEN} echo '[[ -f \"$COMP_DIR/soar\" ]] && source \"$COMP_DIR/soar\"' >> \"$HOME/.bash_profile\"\n"
+                            printf "${GREEN} source \"$HOME/.bash_profile\"${RESET}\n\n"
+                        elif [ -f "$HOME/.bashrc" ] && [ -w "$HOME/.bashrc" ]; then
+                            printf "${SHELL_COMP_MSG}"
+                            printf "${GREEN} echo '[[ -f \"$COMP_DIR/soar\" ]] && source \"$COMP_DIR/soar\"' >> \"$HOME/.bashrc\"\n"
+                            printf "${GREEN} source \"$HOME/.bashrc\"${RESET}\n\n"
+                        else
+                            printf "${YELLOW}⚠ WARNING: ${BLUE}~/.bashrc${YELLOW} not found or unwritable${RESET}\n"
+                        fi
+                     fi
+                    ##fish
+                    # if command -v fish >/dev/null 2>&1; then
+                    #    SHELL_COMP_MSG="${YELLOW}ⓘ To enable shell (${BLUE}FISH${YELLOW}) completion (${RED}If not already${YELLOW}), Run:\n\n"
+                    #    if [ ! -d "$CONFIG_DIR/fish/completions" ]; then
+                    #       COMP_DIR="$CONFIG_DIR/fish/completions"
+                    #       mkdir -p "$COMP_DIR" 2>/dev/null
+                    #       if [ -d "$COMP_DIR" ] && [ -w "$COMP_DIR" ]; then
+                    #          if [ ! -f "$CONFIG_DIR/fish/completions/soar.fish" ]; then
+                    #             #todo
+                    #              :
+                    #          fi
+                    #       fi
+                    #    fi
+                    # fi
+                    #zsh (doesn't at all work without fzf)
+                     if command -v zsh >/dev/null 2>&1; then
+                       if command -v fzf >/dev/null 2>&1; then
+                          SHELL_COMP_MSG="${YELLOW}ⓘ To enable shell (${BLUE}ZSH${YELLOW}) completion (${RED}If not already${YELLOW}), Run:\n\n"
+                          if [ -f "$HOME/.zshrc" ] && [ -w "$HOME/.zshrc" ]; then
+                              printf "${SHELL_COMP_MSG}"
+		                      printf "${GREEN}cat <<-EOF >> \"\${ZDOTDIR:-$HOME}/.zshrc\"\n"
+		                      printf "autoload bashcompinit\n"
+		                      printf "bashcompinit\n"
+		                      printf "[[ -f \"$COMP_DIR/soar\" ]] && source \"$COMP_DIR/soar\"\n"
+		                      printf "EOF\n"
+                              printf " source \"$HOME/.zshrc\"${RESET}\n\n"
+                          else
+                              printf "${YELLOW}⚠ WARNING: ${BLUE}~/.zshrc${YELLOW} not found or unwritable${RESET}\n" >&2
+                          fi
+                       fi
+                     fi
+                  fi
+               fi
+             fi
+           fi
+         fi
+        # Sync
+         printf "${YELLOW}ⓘ Finally, To synchronize all repos, Run: ${GREEN}soar sync${RESET}\n"
+        # Check Current Config
+         SOAR_ENV_OUT="$($INSTALL_PATH/soar env 2>/dev/null)"
+         if [ -n "$SOAR_ENV_OUT" ]; then
+            if command -v awk >/dev/null 2>&1 && command -v expr >/dev/null 2>&1; then
+               SOAR_BIN_PATH="$(printf "$SOAR_ENV_OUT" | awk -F= '/^SOAR_BIN=/{print $2}')"
+              if [ -n "$SOAR_BIN_PATH" ]; then
+                 if expr ":$PATH:" : ".*:$SOAR_BIN_PATH:" >/dev/null ||\
+                    expr ":$PATH:" : ".*:$(expr "$SOAR_BIN_PATH" : '\(.*\)/$'):" >/dev/null; then
+                    :
+                 else
+                    printf "\n${YELLOW}⚠ ${BLUE}$SOAR_BIN_PATH${RED} is NOT in your ${BLUE}\$PATH${RESET}\n"
+                    printf "${YELLOW}ⓘ Put this in your ${BLUE}SHELL/Profile${YELLOW}:${RESET}\n"
+                    printf "\n${GREEN} export PATH=\"\$PATH:$INSTALL_PATH:$SOAR_BIN_PATH\"${RESET}\n\n"
+                 fi
+              fi
+            fi
+         fi
+        # Print Current config
+         printf "\n${YELLOW}ⓘ Current Soar Configuration:${RESET}\n\n"
+         "$INSTALL_PATH/soar" env ; printf "\n"
     }
 
-    # Execute installation
+    # Run Installation
     install_soar
+
+    # Disable Debug?
+    if [ -z "$DEBUG" ]; then
+       :
+    elif [ -n "$DEBUG" ]; then
+       set +x
+    fi
 }
 
 # Call main function
