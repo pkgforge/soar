@@ -323,9 +323,9 @@ main() {
               expr ":$PATH:" : ".*:$(expr "$BIN_DIR" : '\(.*\)/$'):" >/dev/null; then
               :
            else
-              printf "\n${YELLOW}ⓘ ${BLUE}$INSTALL_PATH${RED} is NOT in your ${BLUE}PATH${RESET}\n"
+              printf "\n${YELLOW}⚠ ${BLUE}$INSTALL_PATH${RED} is NOT in your ${BLUE}PATH${RESET}\n"
               printf "${YELLOW}ⓘ Put this in your ${BLUE}SHELL/Profile${YELLOW}:${RESET}\n"
-              printf "\n${GREEN} export PATH=\"$INSTALL_PATH:\$PATH\"${RESET}\n\n"
+              printf "\n${GREEN} export PATH=\"\$PATH:$INSTALL_PATH\"${RESET}\n\n"
            fi
          else
             printf "${YELLOW}ⓘ Make sure ${BLUE}$INSTALL_PATH${YELLOW} is in your ${BLUE}PATH.${RESET}\n"
@@ -406,10 +406,30 @@ main() {
            fi
          fi
         # Sync
-         printf "${YELLOW}ⓘ Finally, To synchronize all repos, Run: ${GREEN}soar sync${RESET}\n\n"
+         printf "${YELLOW}ⓘ Finally, To synchronize all repos, Run: ${GREEN}soar sync${RESET}\n"
+        # Check Current Config
+         SOAR_ENV_OUT="$($INSTALL_PATH/soar env 2>/dev/null)"
+         if [ -n "$SOAR_ENV_OUT" ]; then
+            if command -v awk >/dev/null 2>&1 && command -v expr >/dev/null 2>&1; then
+               SOAR_BIN_PATH="$(printf "$SOAR_ENV_OUT" | awk -F= '/^SOAR_BIN=/{print $2}')"
+              if [ -n "$SOAR_BIN_PATH" ]; then
+                 if expr ":$PATH:" : ".*:$SOAR_BIN_PATH:" >/dev/null ||\
+                    expr ":$PATH:" : ".*:$(expr "$SOAR_BIN_PATH" : '\(.*\)/$'):" >/dev/null; then
+                    :
+                 else
+                    printf "\n${YELLOW}⚠ ${BLUE}$SOAR_BIN_PATH${RED} is NOT in your ${BLUE}\$PATH${RESET}\n"
+                    printf "${YELLOW}ⓘ Put this in your ${BLUE}SHELL/Profile${YELLOW}:${RESET}\n"
+                    printf "\n${GREEN} export PATH=\"\$PATH:$INSTALL_PATH:$SOAR_BIN_PATH\"${RESET}\n\n"
+                 fi
+              fi
+            fi
+         fi
+        # Print Current config
+         printf "\n${YELLOW}ⓘ Current Soar Configuration:${RESET}\n\n"
+         "$INSTALL_PATH/soar" env ; printf "\n"
     }
 
-    # Execute installation
+    # Run Installation
     install_soar
 
     # Disable Debug?
