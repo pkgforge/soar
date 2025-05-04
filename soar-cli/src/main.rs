@@ -12,7 +12,9 @@ use remove::remove_packages;
 use run::run_package;
 use self_actions::process_self_action;
 use soar_core::{
-    config::{generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH},
+    config::{
+        generate_default_config, get_config, set_current_profile, Config, CONFIG, CONFIG_PATH,
+    },
     error::{ErrorContext, SoarError},
     utils::{build_path, cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
@@ -69,22 +71,30 @@ async fn handle_cli() -> SoarResult<()> {
         *color = false;
     }
 
+    if let Some(ref c) = args.config {
+        {
+            let mut config_path = CONFIG_PATH.write().unwrap();
+            let path = build_path(c)?;
+            let path = if path.is_absolute() {
+                path
+            } else {
+                env::current_dir()
+                    .with_context(|| "retrieving current directory".into())?
+                    .join(path)
+            };
+            *config_path = path;
+        }
+
+        let new_config = Config::new()?;
+        let mut config = CONFIG.write().unwrap();
+        *config = new_config;
+    }
+
     if let Some(ref profile) = args.profile {
         set_current_profile(profile)?;
     }
 
-    if let Some(ref c) = args.config {
-        let mut config_path = CONFIG_PATH.write().unwrap();
-        let path = build_path(c)?;
-        let path = if path.is_absolute() {
-            path
-        } else {
-            env::current_dir()
-                .with_context(|| "retrieving current directory".into())?
-                .join(path)
-        };
-        *config_path = path;
-    }
+    setup_required_paths().unwrap();
 
     match args.command {
         cli::Commands::Install {
@@ -279,8 +289,6 @@ async fn handle_cli() -> SoarResult<()> {
 
 #[tokio::main]
 async fn main() {
-    setup_required_paths().unwrap();
-
     if let Err(err) = handle_cli().await {
         error!("{}", err);
     };
