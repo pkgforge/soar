@@ -10,7 +10,7 @@
 [issues-url]: https://github.com/pkgforge/soar/issues
 [license-shield]: https://img.shields.io/github/license/pkgforge/soar.svg
 [license-url]: https://github.com/pkgforge/soar/blob/main/LICENSE
-[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/TOTAL_INSTALLABLE.json&query=$[5].total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
+[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/TOTAL_INSTALLABLE.json&query=$[6].total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
 [packages-url]: https://pkgs.pkgforge.dev
 [stars-shield]: https://img.shields.io/github/stars/pkgforge/soar.svg
 [stars-url]: https://github.com/pkgforge/soar/stargazers
@@ -117,3 +117,7 @@ Please feel free to:
 
 This project is licensed under [MIT](https://spdx.org/licenses/MIT.html) - see the [LICENSE](LICENSE) file for details.<br>
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fpkgforge%2Fsoar.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fpkgforge%2Fsoar?ref=badge_large)
+
+## Minimum Supported Rust Version (MSRV)
+
+v1.82.0
