@@ -66,7 +66,7 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 ## 🌟 Key Features
 
 > [!TIP]
-> - The comparision page @ https://docs.pkgforge.dev/soar/readme goes into more detail.
+> - The comparison page @ https://docs.pkgforge.dev/soar/readme goes into more detail.
 
 | Feature | Description |
 |:--:|:--|
@@ -103,7 +103,7 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 |:--:|:--|
 | **Not Reinvent things** | Soar isn't a package manager in the traditional sense, neither is it a [new standard](https://xkcd.com/927/). Think of soar as an amalgamation & the natural progression of tools like [AM](https://github.com/ivan-hc/AM), [bin](https://github.com/marcosnils/bin), [eget](https://github.com/zyedidia/eget), [hysp](https://github.com/pwnwriter/hysp), [nami](https://github.com/txthinking/nami) & [zap](https://github.com/srevinsaju/zap). |
 | **Not a System Package Manager** | Soar intentionally complements rather than replaces your distro's package manager. Unlike [Homebrew](https://github.com/Homebrew/brew), we don't handle core system tools/libraries — we let distro package managers excel at that job. Soar provides additional packages or newer versions while avoiding conflicts by operating entirely in userspace and following XDG specifications. |
-| **Not a Devtool Package Manager** | Soar doesn't handle development toolchains by design. We do have completely static/relocatable toolchains in our repo, but it will always be better to just use dedicated tools like [asdf](https://github.com/asdf-vm/asdf), [aqua](https://github.com/aquaproj/aqua), [chsrc](https://github.com/RubyMetric/chsrc), [mise](https://github.com/jdx/mise), [vfox](https://github.com/version-fox/vfox) etc. |
+| **Not a Devtools Manager** | Soar doesn't handle development toolchains by design. We do have completely static/relocatable toolchains in our repo, but it will always be better to just use dedicated tools like [asdf](https://github.com/asdf-vm/asdf), [aqua](https://github.com/aquaproj/aqua), [chsrc](https://github.com/RubyMetric/chsrc), [mise](https://github.com/jdx/mise), [vfox](https://github.com/version-fox/vfox) etc. |
 
 ## 🐞 Bug Reports & Feature Requests
 
@@ -113,7 +113,7 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 Soar is a FOSS project primarily maintained by [@QaidVoid](https://github.com/QaidVoid) & a few other [core contributors](https://github.com/pkgforge/soar/graphs/contributors), who are all volunteers and do it as a hobby.<br>
 To save our time triaging & to ensure your issue/feature-request gets addressed quickly, make sure to:
 - Search the [Issues](https://github.com/pkgforge/soar/issues) & [Discussion](https://github.com/pkgforge/soar/discussions?discussions_q=) tab (Both Closed/Opened) for same/similar issue in case it was already addressed.
-- [Open a Discussion](https://github.com/pkgforge/soar/discussions/new/choose) instead of an Issue if you have a question, Issues should be only created for bug reports and feature requests.<br>
+- [Open a Discussion](https://github.com/pkgforge/soar/discussions/new/choose) instead of an issue if you have a question. Issues should be only created for bug reports and feature requests.<br>
 - Use our [Issue Templates](https://github.com/pkgforge/soar/issues/new/choose) rather than a blank issue.<br>
 
 > [!NOTE]
