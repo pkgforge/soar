@@ -85,8 +85,8 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> SoarResult<PathBuf> {
     let final_path = PathBuf::from(format!(
         "{}/icons/hicolor/{w}x{h}/apps/{}-soar.{}",
         home_data_path(),
-        icon_name.display(),
-        ext.unwrap_or_default().display()
+        icon_name.to_string_lossy(),
+        ext.unwrap_or_default().to_string_lossy()
     ));
 
     create_symlink(real_path, &final_path)?;
@@ -107,7 +107,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
 
         re.replace_all(&content, |caps: &regex::Captures| match &caps[1] {
-            "Icon" => format!("Icon={}-soar", file_name.display()),
+            "Icon" => format!("Icon={}-soar", file_name.to_string_lossy()),
             "Exec" | "TryExec" => {
                 let value = &caps[0];
                 let bin_path = get_config().get_bin_path().unwrap();
@@ -135,7 +135,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     let final_path = PathBuf::from(format!(
         "{}/applications/{}-soar.desktop",
         home_data_path(),
-        file_name.display()
+        file_name.to_string_lossy()
     ));
 
     create_symlink(real_path, &final_path)?;

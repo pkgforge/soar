@@ -1,4 +1,14 @@
 
+## [0.3.1](https://github.com/pkgforge/soar/compare/soar-core-v0.3.0...soar-core-v0.3.1) - 2025-05-04
+
+### 🐛 Bug Fixes
+
+- *(provides)* Only allow provides with link to pkg_name - ([2be5dee](https://github.com/pkgforge/soar/commit/2be5dee941ef425d33327b9e2170d2a6c84ccf1b))
+
+### 🚜 Refactor
+
+- *(stable)* Remove use of unstable features - ([4084db5](https://github.com/pkgforge/soar/commit/4084db5041d788c1c6cf319b4a77cd5ede256699))
+
 ## [0.3.0](https://github.com/pkgforge/soar/compare/soar-core-v0.2.0...soar-core-v0.3.0) - 2025-03-22
 
 ### 🐛 Bug Fixes

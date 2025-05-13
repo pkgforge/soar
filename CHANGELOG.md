@@ -1,4 +1,21 @@
 
+## [0.5.15](https://github.com/pkgforge/soar/compare/v0.5.14...v0.5.15) - 2025-05-04
+
+### ⛰️  Features
+
+- *(ask)* Support ask flag for install/update - ([228cb76](https://github.com/pkgforge/soar/commit/228cb7630553a5e5340d937ba7960127c39f0a92))
+- *(info)* Add count flag to show unique installed package count only - ([e4fcf89](https://github.com/pkgforge/soar/commit/e4fcf895d5797045224276a34bc1caa3b7a08522))
+
+### 🐛 Bug Fixes
+
+- *(config)* Reload config after setting custom config path - ([18128ba](https://github.com/pkgforge/soar/commit/18128bab86214b151aa5057363a0c27c4b39b726))
+- *(provides)* Only allow provides with link to pkg_name - ([2be5dee](https://github.com/pkgforge/soar/commit/2be5dee941ef425d33327b9e2170d2a6c84ccf1b))
+
+### 🚜 Refactor
+
+- *(list)* Improve package list output - ([1118025](https://github.com/pkgforge/soar/commit/111802552c9bc7608d2cd1bf126954163fdfac03))
+- *(stable)* Remove use of unstable features - ([4084db5](https://github.com/pkgforge/soar/commit/4084db5041d788c1c6cf319b4a77cd5ede256699))
+
 ## [0.5.14](https://github.com/pkgforge/soar/compare/v0.5.13...v0.5.14) - 2025-03-22
 
 ### ⛰️  Features
