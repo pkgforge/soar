@@ -27,7 +27,7 @@
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif?version=v0.5.14" alt="soar-list" width="750">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.5.15" alt="soar-list" width="750">
     </a><br>
 </p>
 
@@ -148,7 +148,3 @@ Please feel free to:
 
 This project is licensed under [MIT](https://spdx.org/licenses/MIT.html) - see the [LICENSE](LICENSE) file for details.<br><br>
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fpkgforge%2Fsoar.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fpkgforge%2Fsoar?ref=badge_large)
-
-## Minimum Supported Rust Version (MSRV)
-
-v1.82.0
