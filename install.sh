@@ -16,12 +16,6 @@ main() {
        set -x
     fi
 
-    # Disable Shell Completion?
-    ENABLE_AUTOCOMPLETE="${ENABLE_AUTOCOMPLETE:-}"
-    if [ -z "$ENABLE_AUTOCOMPLETE" ]; then
-       ENABLE_AUTOCOMPLETE="YES"
-    fi
-
     # Default
     DEFAULT_VERSION="latest"
     SOAR_VERSION="${SOAR_VERSION:-$DEFAULT_VERSION}"
@@ -334,77 +328,6 @@ main() {
          printf "${YELLOW}ⓘ External Repositories are ${RED}NOT Enabled${YELLOW} by default${RESET}\n"
          printf "${YELLOW}ⓘ Learn More: ${BLUE}https://docs.pkgforge.dev/repositories/external${RESET}\n"
          printf "${YELLOW}ⓘ To enable external repos, Run: ${GREEN}soar defconfig --external${RESET}\n"
-        # Enable Shell Completion
-         if [ "$ENABLE_AUTOCOMPLETE" != "NO" ]; then
-           if command -v bash >/dev/null 2>&1 || command -v fish >/dev/null 2>&1 || command -v zsh >/dev/null 2>&1; then
-             if [ -d "$DATA_DIR" ] && [ -w "$DATA_DIR" ]; then
-               COMP_DIR="$DATA_DIR/bash-completion/completions"
-               mkdir -p "$COMP_DIR" 2>/dev/null
-               if [ -d "$COMP_DIR" ]; then
-                  "$INSTALL_PATH/soar" --quiet dl "https://raw.githubusercontent.com/pkgforge/soar/refs/heads/main/completions/soar.bash" --output "$COMP_DIR/soar" >/dev/null 2>&1
-                  if [ -f "$COMP_DIR/soar" ]; then
-                     printf "${GREEN}✓ ${YELLOW}Shell completion has been installed to: ${BLUE}$COMP_DIR/soar${RESET}\n" 
-                     if ! command -v fzf >/dev/null 2>&1; then
-                       printf "\n${YELLOW}⚠ WARNING: ${BLUE}fzf${YELLOW} (Shell Completion) not found, install: ${GREEN}soar add 'fzf#github.com.junegunn.fzf:bincache' --binary-only ${RESET}\n\n"
-                     fi
-                     if ! command -v jq >/dev/null 2>&1; then
-                       printf "\n${YELLOW}⚠ WARNING: ${BLUE}jq${YELLOW} (Shell Completion) not found, install: ${GREEN}soar add 'jq#github.com.jqlang.jq.source:bincache' --binary-only ${RESET}\n\n"
-                     fi
-                    #bash (mosty works without fzf)
-                     if command -v bash >/dev/null 2>&1; then
-                        SHELL_COMP_MSG="${YELLOW}ⓘ To enable shell (${BLUE}BASH${YELLOW}) completion (${RED}If not already${YELLOW}), Run:\n\n"
-                        if [ -f "$HOME/profile" ] && [ -w "$HOME/profile" ]; then
-                            printf "${SHELL_COMP_MSG}"
-                            printf "${GREEN} echo '[[ -f \"$COMP_DIR/soar\" ]] && source \"$COMP_DIR/soar\"' >> \"$HOME/profile\"\n"
-                            printf "${GREEN} source \"$HOME/profile\"${RESET}\n\n"
-                        elif [ -f "$HOME/.bash_profile" ] && [ -w "$HOME/.bash_profile" ]; then
-                            printf "${SHELL_COMP_MSG}"
-                            printf "${GREEN} echo '[[ -f \"$COMP_DIR/soar\" ]] && source \"$COMP_DIR/soar\"' >> \"$HOME/.bash_profile\"\n"
-                            printf "${GREEN} source \"$HOME/.bash_profile\"${RESET}\n\n"
-                        elif [ -f "$HOME/.bashrc" ] && [ -w "$HOME/.bashrc" ]; then
-                            printf "${SHELL_COMP_MSG}"
-                            printf "${GREEN} echo '[[ -f \"$COMP_DIR/soar\" ]] && source \"$COMP_DIR/soar\"' >> \"$HOME/.bashrc\"\n"
-                            printf "${GREEN} source \"$HOME/.bashrc\"${RESET}\n\n"
-                        else
-                            printf "${YELLOW}⚠ WARNING: ${BLUE}~/.bashrc${YELLOW} not found or unwritable${RESET}\n"
-                        fi
-                     fi
-                    ##fish
-                    # if command -v fish >/dev/null 2>&1; then
-                    #    SHELL_COMP_MSG="${YELLOW}ⓘ To enable shell (${BLUE}FISH${YELLOW}) completion (${RED}If not already${YELLOW}), Run:\n\n"
-                    #    if [ ! -d "$CONFIG_DIR/fish/completions" ]; then
-                    #       COMP_DIR="$CONFIG_DIR/fish/completions"
-                    #       mkdir -p "$COMP_DIR" 2>/dev/null
-                    #       if [ -d "$COMP_DIR" ] && [ -w "$COMP_DIR" ]; then
-                    #          if [ ! -f "$CONFIG_DIR/fish/completions/soar.fish" ]; then
-                    #             #todo
-                    #              :
-                    #          fi
-                    #       fi
-                    #    fi
-                    # fi
-                    #zsh (doesn't at all work without fzf)
-                     if command -v zsh >/dev/null 2>&1; then
-                       if command -v fzf >/dev/null 2>&1; then
-                          SHELL_COMP_MSG="${YELLOW}ⓘ To enable shell (${BLUE}ZSH${YELLOW}) completion (${RED}If not already${YELLOW}), Run:\n\n"
-                          if [ -f "$HOME/.zshrc" ] && [ -w "$HOME/.zshrc" ]; then
-                              printf "${SHELL_COMP_MSG}"
-		                      printf "${GREEN}cat <<-EOF >> \"\${ZDOTDIR:-$HOME}/.zshrc\"\n"
-		                      printf "autoload bashcompinit\n"
-		                      printf "bashcompinit\n"
-		                      printf "[[ -f \"$COMP_DIR/soar\" ]] && source \"$COMP_DIR/soar\"\n"
-		                      printf "EOF\n"
-                              printf " source \"$HOME/.zshrc\"${RESET}\n\n"
-                          else
-                              printf "${YELLOW}⚠ WARNING: ${BLUE}~/.zshrc${YELLOW} not found or unwritable${RESET}\n" >&2
-                          fi
-                       fi
-                     fi
-                  fi
-               fi
-             fi
-           fi
-         fi
         # Sync
          printf "${YELLOW}ⓘ Finally, To synchronize all repos, Run: ${GREEN}soar sync${RESET}\n"
         # Check Current Config
