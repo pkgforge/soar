@@ -11,6 +11,7 @@ use soar_core::{
     config::get_config, database::models::PackageExt, error::ErrorContext,
     package::install::InstallTarget, SoarResult,
 };
+use soar_dl::utils::FileMode;
 use tracing::{error, info};
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
@@ -145,4 +146,14 @@ pub fn ask_target_action(targets: &[InstallTarget], action: &str) -> SoarResult<
     }
 
     Ok(())
+}
+
+pub fn get_file_mode(skip_existing: bool, force_overwrite: bool) -> FileMode {
+    if force_overwrite {
+        FileMode::ForceOverwrite
+    } else if skip_existing {
+        FileMode::SkipExisting
+    } else {
+        FileMode::PromptOverwrite
+    }
 }

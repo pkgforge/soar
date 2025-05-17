@@ -11,7 +11,7 @@ use tracing::info;
 use crate::{
     error::{ConfigError, SoarError},
     utils::{
-        build_path, default_install_excludes, get_platform, home_config_path, home_data_path,
+        build_path, default_install_patterns, get_platform, home_config_path, home_data_path,
         parse_duration,
     },
 };
@@ -143,7 +143,7 @@ pub struct Config {
 
     /// Install excludes
     #[serde(skip_serializing)]
-    pub install_excludes: Option<Vec<String>>,
+    pub install_patterns: Option<Vec<String>>,
 }
 
 pub fn init() {
@@ -209,8 +209,8 @@ impl Config {
             config.parallel_limit = config.parallel_limit.or(Some(4));
         }
 
-        if config.install_excludes.is_none() {
-            config.install_excludes = Some(default_install_excludes());
+        if config.install_patterns.is_none() {
+            config.install_patterns = Some(default_install_patterns());
         }
 
         let mut seen = HashSet::new();
@@ -369,7 +369,7 @@ impl Default for Config {
             search_limit: Some(20),
             ghcr_concurrency: Some(8),
             cross_repo_updates: Some(false),
-            install_excludes: Some(default_install_excludes()),
+            install_patterns: Some(default_install_patterns()),
         }
     }
 }

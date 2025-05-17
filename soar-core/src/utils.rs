@@ -305,9 +305,14 @@ pub fn parse_duration(input: &str) -> Option<u128> {
     Some(multiplier * number)
 }
 
-pub fn default_install_excludes() -> Vec<String> {
-    [".log", "SBUILD", ".json"]
+pub fn default_install_patterns() -> Vec<String> {
+    ["!*.log", "!SBUILD", "!*.json"]
         .into_iter()
         .map(String::from)
         .collect::<Vec<String>>()
+}
+
+pub fn get_extract_dir<P: AsRef<Path>>(base_dir: P) -> PathBuf {
+    let base_dir = base_dir.as_ref();
+    base_dir.join("SOAR_AUTOEXTRACT")
 }

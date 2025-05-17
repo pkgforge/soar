@@ -1,4 +1,4 @@
-use std::{fs, process::Command, sync::Arc};
+use std::{fs, path::PathBuf, process::Command, sync::Arc};
 
 use soar_core::{
     database::{
@@ -6,10 +6,13 @@ use soar_core::{
         packages::{FilterCondition, PackageQueryBuilder},
     },
     error::{ErrorContext, SoarError},
-    utils::calculate_checksum,
+    utils::{calculate_checksum, get_extract_dir},
     SoarResult,
 };
-use soar_dl::downloader::{DownloadOptions, Downloader, OciDownloadOptions, OciDownloader};
+use soar_dl::{
+    downloader::{DownloadOptions, Downloader, OciDownloadOptions, OciDownloader},
+    utils::FileMode,
+};
 
 use crate::{
     progress::{self, create_progress_bar},
@@ -73,10 +76,12 @@ pub async fn run_package(
                 progress_callback: Some(progress_callback.clone()),
                 api: None,
                 concurrency: Some(1),
-                regex_patterns: Vec::new(),
+                regexes: Vec::new(),
+                globs: Vec::new(),
                 exclude_keywords: Vec::new(),
                 match_keywords: Vec::new(),
                 exact_case: false,
+                file_mode: FileMode::ForceOverwrite,
             };
 
             let mut downloader = OciDownloader::new(options);
@@ -84,14 +89,37 @@ pub async fn run_package(
             downloader.download_oci().await?;
         } else {
             let downloader = Downloader::default();
+            let extract_dir = get_extract_dir(&cache_bin);
             let options = DownloadOptions {
                 url: package.download_url.clone(),
                 output_path: Some(output_path.to_string_lossy().to_string()),
                 progress_callback: Some(progress_callback),
-                extract_archive: false
+                extract_archive: true,
+                extract_dir: Some(extract_dir.to_string_lossy().to_string()),
+                file_mode: FileMode::ForceOverwrite,
+                prompt: None,
             };
 
-            downloader.download(options).await?;
+            let file_name = downloader.download(options).await?;
+            let extract_path = PathBuf::from(&extract_dir);
+            if extract_path.exists() {
+                fs::remove_file(file_name).ok();
+
+                for entry in fs::read_dir(&extract_path)
+                    .with_context(|| format!("reading {} directory", extract_path.display()))?
+                {
+                    let entry = entry.with_context(|| {
+                        format!("reading entry from directory {}", extract_path.display())
+                    })?;
+                    let from = entry.path();
+                    let to = cache_bin.join(entry.file_name());
+                    fs::rename(&from, &to).with_context(|| {
+                        format!("renaming {} to {}", from.display(), to.display())
+                    })?;
+                }
+
+                fs::remove_dir_all(&extract_path).ok();
+            }
         }
 
         let checksum = calculate_checksum(&output_path)?;

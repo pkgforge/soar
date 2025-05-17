@@ -9,6 +9,7 @@ use soar_dl::{
     downloader::{DownloadOptions, Downloader},
     github::{Github, GithubRelease},
     platform::{Release, ReleaseAsset, ReleaseHandler},
+    utils::FileMode,
 };
 use tracing::{debug, error, info};
 
@@ -103,7 +104,10 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                     url: asset.download_url().to_string(),
                     output_path: Some(self_bin.to_string_lossy().to_string()),
                     progress_callback: None,
-                    extract_archive: false
+                    extract_archive: false,
+                    extract_dir: None,
+                    file_mode: FileMode::ForceOverwrite,
+                    prompt: None,
                 };
 
                 debug!("Downloading update from: {}", options.url);

@@ -237,7 +237,11 @@ pub enum Commands {
 
         /// Regex to select the asset. Only works for github downloads
         #[arg(required = false, short = 'r', long = "regex")]
-        regex_patterns: Option<Vec<String>>,
+        regexes: Option<Vec<String>>,
+
+        /// Glob to select the asset.
+        #[arg(required = false, short = 'g', long = "glob")]
+        globs: Option<Vec<String>>,
 
         /// Check if the asset contains given string
         #[arg(required = false, short, long = "match")]
@@ -262,6 +266,34 @@ pub enum Commands {
         /// Whether to use exact case matching for keywords
         #[arg(required = false, long)]
         exact_case: bool,
+
+        /// Extract supported archive automatically
+        #[arg(required = false, long)]
+        extract: bool,
+
+        /// Directory where to extract the archive
+        #[arg(required = false, long)]
+        extract_dir: Option<String>,
+
+        /// Set proxy
+        #[arg(required = false, long)]
+        proxy: Option<String>,
+
+        /// Set request headers
+        #[arg(required = false, long, short = 'H')]
+        header: Option<Vec<String>>,
+
+        /// Set user agent
+        #[arg(required = false, long, short = 'A')]
+        user_agent: Option<String>,
+
+        /// Skip existing download with same file
+        #[arg(required = false, long)]
+        skip_existing: bool,
+
+        /// Overwrite existing download with same file
+        #[arg(required = false, long)]
+        force_overwrite: bool,
     },
 
     /// Health check

@@ -9,6 +9,7 @@ use std::{
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use regex::Regex;
 use soar_dl::downloader::{DownloadOptions, Downloader};
+use soar_dl::utils::FileMode;
 
 use crate::{
     config::get_config,
@@ -160,7 +161,10 @@ pub async fn integrate_remote<P: AsRef<Path>>(
             url: icon_url.clone(),
             output_path: Some(icon_output_path.to_string_lossy().to_string()),
             progress_callback: None,
-            extract_archive: false
+            extract_archive: false,
+            extract_dir: None,
+            file_mode: FileMode::SkipExisting,
+            prompt: None,
         };
         downloader.download(options).await?;
 
@@ -177,7 +181,10 @@ pub async fn integrate_remote<P: AsRef<Path>>(
             url: desktop_url.clone(),
             output_path: Some(desktop_output_path.to_string_lossy().to_string()),
             progress_callback: None,
-            extract_archive: false
+            extract_archive: false,
+            extract_dir: None,
+            file_mode: FileMode::SkipExisting,
+            prompt: None,
         };
         downloader.download(options).await?;
     } else {

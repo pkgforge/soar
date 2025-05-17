@@ -19,54 +19,42 @@ use soar_dl::{
         PlatformDownloadOptions, PlatformUrl, Release, ReleaseAsset, ReleaseHandler,
         ReleasePlatform,
     },
+    utils::FileMode,
 };
 use tracing::{error, info};
 
 use crate::{
-    progress::{self, create_progress_bar},
     state::AppState,
-    utils::{interactive_ask, select_package_interactively},
+    utils::{get_file_mode, interactive_ask, select_package_interactively},
 };
 
 pub struct DownloadContext {
-    regex_patterns: Vec<Regex>,
-    match_keywords: Vec<String>,
-    exclude_keywords: Vec<String>,
-    output: Option<String>,
-    yes: bool,
-    progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
-    exact_case: bool,
+    pub regexes: Vec<Regex>,
+    pub globs: Vec<String>,
+    pub match_keywords: Vec<String>,
+    pub exclude_keywords: Vec<String>,
+    pub output: Option<String>,
+    pub yes: bool,
+    pub progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
+    pub exact_case: bool,
+    pub extract: bool,
+    pub extract_dir: Option<String>,
+    pub proxy: Option<String>,
+    pub header: Option<Vec<String>>,
+    pub user_agent: Option<String>,
+    pub skip_existing: bool,
+    pub force_overwrite: bool,
 }
 
 pub async fn download(
+    ctx: DownloadContext,
     links: Vec<String>,
     github: Vec<String>,
     gitlab: Vec<String>,
     ghcr: Vec<String>,
-    regex_patterns: Option<Vec<String>>,
-    match_keywords: Option<Vec<String>>,
-    exclude_keywords: Option<Vec<String>>,
-    output: Option<String>,
-    yes: bool,
-    exact_case: bool,
+    progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
 ) -> SoarResult<()> {
-    let progress_bar = create_progress_bar();
-    let progress_callback = Arc::new(move |state| progress::handle_progress(state, &progress_bar));
-    let regex_patterns = create_regex_patterns(regex_patterns);
-    let match_keywords = match_keywords.unwrap_or_default();
-    let exclude_keywords = exclude_keywords.unwrap_or_default();
-
-    let ctx = DownloadContext {
-        regex_patterns,
-        match_keywords,
-        exclude_keywords,
-        output: output.clone(),
-        yes,
-        progress_callback: progress_callback.clone(),
-        exact_case,
-    };
-
-    handle_direct_downloads(&ctx, links, output.clone(), progress_callback.clone()).await?;
+    handle_direct_downloads(&ctx, links, ctx.output.clone(), progress_callback.clone()).await?;
 
     if !github.is_empty() {
         handle_github_downloads(&ctx, github).await?;
@@ -100,7 +88,10 @@ pub async fn handle_direct_downloads(
                     url: link.clone(),
                     output_path: output.clone(),
                     progress_callback: Some(progress_callback.clone()),
-                    extract_archive: false
+                    extract_archive: ctx.extract,
+                    extract_dir: ctx.extract_dir.clone(),
+                    file_mode: get_file_mode(ctx.skip_existing, ctx.force_overwrite),
+                    prompt: None,
                 };
                 let _ = downloader
                     .download(options)
@@ -165,10 +156,12 @@ pub async fn handle_direct_downloads(
                         progress_callback: Some(progress_callback.clone()),
                         api: None,
                         concurrency: Some(1),
-                        regex_patterns: Vec::new(),
+                        regexes: Vec::new(),
+                        globs: Vec::new(),
                         exclude_keywords: Vec::new(),
                         match_keywords: Vec::new(),
                         exact_case: false,
+                        file_mode: FileMode::ForceOverwrite,
                     };
 
                     let mut downloader = OciDownloader::new(options);
@@ -180,7 +173,10 @@ pub async fn handle_direct_downloads(
                         url: package.download_url.clone(),
                         output_path: output.clone(),
                         progress_callback: Some(progress_callback.clone()),
-                        extract_archive: false
+                        extract_archive: false,
+                        extract_dir: Some("SOAR_AUTO_EXTRACT".into()),
+                        file_mode: FileMode::ForceOverwrite,
+                        prompt: None,
                     };
 
                     downloader.download(options).await?;
@@ -200,11 +196,13 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
         output_path: ctx.output.clone(),
         progress_callback: Some(ctx.progress_callback.clone()),
         api: None,
-        regex_patterns: ctx.regex_patterns.clone(),
+        regexes: ctx.regexes.clone(),
         concurrency: get_config().ghcr_concurrency,
         match_keywords: ctx.match_keywords.clone(),
         exclude_keywords: ctx.exclude_keywords.clone(),
         exact_case: ctx.exact_case,
+        globs: ctx.globs.clone(),
+        file_mode: get_file_mode(ctx.skip_existing, ctx.force_overwrite),
     };
 
     let mut downloader = OciDownloader::new(options);
@@ -244,7 +242,7 @@ pub async fn handle_oci_downloads(
     Ok(())
 }
 
-fn create_regex_patterns(regex_patterns: Option<Vec<String>>) -> Vec<Regex> {
+pub fn create_regex_patterns(regex_patterns: Option<Vec<String>>) -> Vec<Regex> {
     regex_patterns
         .clone()
         .map(|patterns| {
@@ -263,17 +261,21 @@ fn create_platform_options(ctx: &DownloadContext, tag: Option<String>) -> Platfo
         output_path: ctx.output.clone(),
         progress_callback: Some(ctx.progress_callback.clone()),
         tag,
-        regex_patterns: ctx.regex_patterns.clone(),
+        regexes: ctx.regexes.clone(),
+        globs: ctx.globs.clone(),
         match_keywords: ctx.match_keywords.clone(),
         exclude_keywords: ctx.exclude_keywords.clone(),
         exact_case: ctx.exact_case,
-        extract_archive: false
+        extract_archive: ctx.extract,
+        extract_dir: ctx.extract_dir.clone(),
+        file_mode: get_file_mode(ctx.skip_existing, ctx.force_overwrite),
+        prompt: None,
     }
 }
 
 async fn handle_platform_download<P: ReleasePlatform, R, A>(
     ctx: &DownloadContext,
-    handler: &ReleaseHandler<P>,
+    handler: &ReleaseHandler<'_, P>,
     project: &str,
 ) -> SoarResult<()>
 where

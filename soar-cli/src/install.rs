@@ -27,7 +27,7 @@ use soar_core::{
         install::{InstallTarget, PackageInstaller},
         query::PackageQuery,
     },
-    utils::{calculate_checksum, default_install_excludes},
+    utils::{calculate_checksum, default_install_patterns},
     SoarResult,
 };
 use soar_dl::downloader::DownloadState;
@@ -462,15 +462,15 @@ pub async fn install_single_package(
 
     let install_excludes = excludes.map(|e| e.to_vec()).unwrap_or_else(|| {
         if ctx.binary_only {
-            let mut excludes = default_install_excludes();
-            excludes.extend(
-                [".png", ".svg", "LICENSE", ".version", "CHECKSUM"]
+            let mut patterns = default_install_patterns();
+            patterns.extend(
+                ["!*.png", "!*.svg", "!LICENSE", "!*.version", "!CHECKSUM"]
                     .iter()
                     .map(ToString::to_string),
             );
-            excludes
+            patterns
         } else {
-            get_config().install_excludes.clone().unwrap_or_default()
+            get_config().install_patterns.clone().unwrap_or_default()
         }
     });
 

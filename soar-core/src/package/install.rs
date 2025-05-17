@@ -11,6 +11,7 @@ use rusqlite::{params, prepare_and_bind, Connection};
 use soar_dl::{
     downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions, OciDownloader},
     error::DownloadError,
+    utils::FileMode,
 };
 
 use crate::{
@@ -20,7 +21,7 @@ use crate::{
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
     error::{ErrorContext, SoarError},
-    utils::{desktop_dir, icons_dir, process_dir},
+    utils::{desktop_dir, get_extract_dir, icons_dir, process_dir},
     SoarResult,
 };
 
@@ -30,7 +31,7 @@ pub struct PackageInstaller {
     progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
     db: Arc<Mutex<Connection>>,
     with_pkg_id: bool,
-    install_excludes: Vec<String>,
+    globs: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -48,7 +49,7 @@ impl PackageInstaller {
         progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
         db: Arc<Mutex<Connection>>,
         with_pkg_id: bool,
-        install_excludes: Vec<String>,
+        globs: Vec<String>,
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
@@ -69,7 +70,7 @@ impl PackageInstaller {
             } = package;
             let installed_path = install_dir.to_string_lossy();
             let size = ghcr_size.unwrap_or(size.unwrap_or(0));
-            let install_excludes = serde_json::to_string(&install_excludes).unwrap();
+            let install_patterns = serde_json::to_string(&globs).unwrap();
             let mut stmt = prepare_and_bind!(
                 conn,
                 "INSERT INTO packages (
@@ -79,7 +80,7 @@ impl PackageInstaller {
                 VALUES
                 (
                     $repo_name, $pkg, $pkg_id, $pkg_name, $pkg_type, $version, $size,
-                    $installed_path, datetime(), $with_pkg_id, $profile, $install_excludes
+                    $installed_path, datetime(), $with_pkg_id, $profile, $install_patterns
                 )"
             );
             stmt.raw_execute()?;
@@ -91,7 +92,7 @@ impl PackageInstaller {
             progress_callback,
             db: db.clone(),
             with_pkg_id,
-            install_excludes,
+            globs,
         })
     }
 
@@ -122,10 +123,12 @@ impl PackageInstaller {
                 progress_callback: self.progress_callback.clone(),
                 api: None,
                 concurrency: Some(get_config().ghcr_concurrency.unwrap_or(8)),
-                regex_patterns: Vec::new(),
-                exclude_keywords: self.install_excludes.clone(),
-                match_keywords: Vec::new(),
-                exact_case: false,
+                regexes: vec![],
+                exclude_keywords: vec![],
+                match_keywords: vec![],
+                exact_case: true,
+                globs: self.globs.clone(),
+                file_mode: FileMode::ForceOverwrite,
             };
             let mut downloader = OciDownloader::new(options);
             let mut retries = 0;
@@ -157,13 +160,37 @@ impl PackageInstaller {
             }
         } else {
             let downloader = Downloader::default();
+            let extract_dir = get_extract_dir(&self.install_dir);
             let options = DownloadOptions {
                 url: url.to_string(),
                 output_path: Some(output_path.to_string_lossy().to_string()),
                 progress_callback: self.progress_callback.clone(),
-                extract_archive: false
+                extract_archive: true,
+                file_mode: FileMode::ForceOverwrite,
+                extract_dir: Some(extract_dir.to_string_lossy().to_string()),
+                prompt: None,
             };
-            downloader.download(options).await?;
+
+            let file_name = downloader.download(options).await?;
+            let extract_path = PathBuf::from(&extract_dir);
+            if extract_path.exists() {
+                fs::remove_file(file_name).ok();
+
+                for entry in fs::read_dir(&extract_path)
+                    .with_context(|| format!("reading {} directory", extract_path.display()))?
+                {
+                    let entry = entry.with_context(|| {
+                        format!("reading entry from directory {}", extract_path.display())
+                    })?;
+                    let from = entry.path();
+                    let to = self.install_dir.join(entry.file_name());
+                    fs::rename(&from, &to).with_context(|| {
+                        format!("renaming {} to {}", from.display(), to.display())
+                    })?;
+                }
+
+                fs::remove_dir_all(&extract_path).ok();
+            }
         }
 
         Ok(())

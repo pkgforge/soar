@@ -1,13 +1,14 @@
-use std::{env, fs, io::Read, process::Command};
+use std::{env, fs, io::Read, process::Command, sync::Arc};
 
 use clap::Parser;
 use cli::Args;
-use download::download;
+use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};
 use inspect::{inspect_log, InspectType};
 use install::install_packages;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
 use logging::setup_logging;
+use progress::create_progress_bar;
 use remove::remove_packages;
 use run::run_package;
 use self_actions::process_self_action;
@@ -186,27 +187,49 @@ async fn handle_cli() -> SoarResult<()> {
             links,
             yes,
             output,
-            regex_patterns,
+            regexes,
+            globs,
             match_keywords,
             exclude_keywords,
             github,
             gitlab,
             ghcr,
             exact_case,
+            extract,
+            extract_dir,
+            proxy,
+            header,
+            user_agent,
+            skip_existing,
+            force_overwrite,
         } => {
-            download(
-                links,
-                github,
-                gitlab,
-                ghcr,
-                regex_patterns,
+            let progress_bar = create_progress_bar();
+            let progress_callback =
+                Arc::new(move |state| progress::handle_progress(state, &progress_bar));
+            let regexes = create_regex_patterns(regexes);
+            let globs = globs.unwrap_or_default();
+            let match_keywords = match_keywords.unwrap_or_default();
+            let exclude_keywords = exclude_keywords.unwrap_or_default();
+
+            let context = DownloadContext {
+                regexes,
+                globs,
                 match_keywords,
                 exclude_keywords,
-                output,
+                output: output.clone(),
                 yes,
+                progress_callback: progress_callback.clone(),
                 exact_case,
-            )
-            .await?;
+                extract,
+                extract_dir,
+                proxy,
+                header,
+                user_agent,
+                skip_existing,
+                force_overwrite,
+            };
+
+            download(context, links, github, gitlab, ghcr, progress_callback).await?;
         }
         cli::Commands::Health => display_health().await?,
         cli::Commands::DefConfig { external } => generate_default_config(external)?,
