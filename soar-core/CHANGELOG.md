@@ -1,4 +1,14 @@
 
+## [0.3.2](https://github.com/pkgforge/soar/compare/soar-core-v0.3.1...soar-core-v0.3.2) - 2025-05-17
+
+### ⛰️  Features
+
+- *(package)* Add support for extracting archives - ([cc139cb](https://github.com/pkgforge/soar/commit/cc139cb64b35fe74f624c4b2bbf7faf99f8ed71d))
+
+### 📚 Documentation
+
+- *(readme)* Refactor readme & install script ([#49](https://github.com/pkgforge/soar/pull/49)) - ([63594c3](https://github.com/pkgforge/soar/commit/63594c37f93fa402e4ab899178c5c1fd34d88352))
+
 ## [0.3.1](https://github.com/pkgforge/soar/compare/soar-core-v0.3.0...soar-core-v0.3.1) - 2025-05-04
 
 ### 🐛 Bug Fixes
