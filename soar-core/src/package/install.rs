@@ -199,7 +199,7 @@ impl PackageInstaller {
     pub async fn record(
         &self,
         unlinked: bool,
-        final_checksum: String,
+        final_checksum: Option<&str>,
         portable: Option<&str>,
         portable_home: Option<&str>,
         portable_config: Option<&str>,

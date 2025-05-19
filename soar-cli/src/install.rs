@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::{BufReader, Read},
-    os::unix,
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -18,8 +17,8 @@ use rusqlite::Connection;
 use soar_core::{
     config::get_config,
     database::{
-        models::{InstalledPackage, Package, PackageExt},
-        packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse, ProvideStrategy},
+        models::{InstalledPackage, Package},
+        packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse},
     },
     error::{ErrorContext, SoarError},
     package::{
@@ -37,7 +36,10 @@ use tracing::{error, info, warn};
 use crate::{
     progress::handle_install_progress,
     state::AppState,
-    utils::{ask_target_action, has_no_desktop_integration, select_package_interactively, Colored},
+    utils::{
+        ask_target_action, has_no_desktop_integration, mangle_package_symlinks,
+        select_package_interactively, Colored,
+    },
 };
 
 #[derive(Clone)]
@@ -407,7 +409,6 @@ pub async fn install_single_package(
     core_db: Arc<Mutex<Connection>>,
 ) -> SoarResult<(PathBuf, Vec<(PathBuf, PathBuf)>)> {
     let bin_dir = get_config().get_bin_path()?;
-    let def_bin_path = bin_dir.join(&target.package.pkg_name);
 
     let (install_dir, real_bin, unlinked, portable, portable_home, portable_config, excludes) =
         if let Some(ref existing) = target.existing_install {
@@ -464,9 +465,16 @@ pub async fn install_single_package(
         if ctx.binary_only {
             let mut patterns = default_install_patterns();
             patterns.extend(
-                ["!*.png", "!*.svg", "!LICENSE", "!*.version", "!CHECKSUM"]
-                    .iter()
-                    .map(ToString::to_string),
+                [
+                    "!*.png",
+                    "!*.svg",
+                    "!*.desktop",
+                    "!LICENSE",
+                    "!*.version",
+                    "!CHECKSUM",
+                ]
+                .iter()
+                .map(ToString::to_string),
             );
             patterns
         } else {
@@ -575,70 +583,28 @@ pub async fn install_single_package(
         }
     }
 
-    let final_checksum = calculate_checksum(&real_bin)?;
-    if let Some(ref checksum) = target.package.bsum {
-        if final_checksum != *checksum {
-            return Err(SoarError::Custom(format!(
-                "{}#{} - Invalid checksum, skipped installation.",
-                target.package.pkg_name, target.package.pkg_id
-            )));
-        }
-    } else {
-        ctx.warnings.lock().unwrap().push(format!(
-            "{}#{} - Blake3 checksum not found. Skipped checksum validation.",
-            target.package.pkg_name, target.package.pkg_id
-        ));
-    }
-
-    let mut symlinks = Vec::new();
-    if target.package.should_create_original_symlink() {
-        if def_bin_path.is_symlink() || def_bin_path.is_file() {
-            if let Err(err) = std::fs::remove_file(&def_bin_path) {
+    let final_checksum = if real_bin.exists() {
+        let final_checksum = calculate_checksum(&real_bin)?;
+        if let Some(ref checksum) = target.package.bsum {
+            if final_checksum != *checksum {
                 return Err(SoarError::Custom(format!(
-                    "Failed to remove existing symlink: {}",
-                    err
+                    "{}#{} - Invalid checksum, skipped installation.",
+                    target.package.pkg_name, target.package.pkg_id
                 )));
             }
+        } else {
+            ctx.warnings.lock().unwrap().push(format!(
+                "{}#{} - Blake3 checksum not found. Skipped checksum validation.",
+                target.package.pkg_name, target.package.pkg_id
+            ));
         }
-        unix::fs::symlink(&real_bin, &def_bin_path).with_context(|| {
-            format!(
-                "creating binary symlink {} -> {}",
-                real_bin.display(),
-                def_bin_path.display()
-            )
-        })?;
+        Some(final_checksum)
+    } else {
+        None
+    };
 
-        symlinks.push((real_bin, def_bin_path));
-    }
-
-    if let Some(provides) = &target.package.provides {
-        for provide in provides {
-            if let Some(ref target) = provide.target {
-                let real_path = install_dir.join(provide.name.clone());
-                let is_symlink = matches!(
-                    provide.strategy,
-                    Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
-                );
-                if is_symlink {
-                    let target_name = bin_dir.join(target);
-                    if target_name.is_symlink() || target_name.is_file() {
-                        std::fs::remove_file(&target_name).with_context(|| {
-                            format!("removing provide {}", target_name.display())
-                        })?;
-                    }
-                    unix::fs::symlink(&real_path, &target_name).with_context(|| {
-                        format!(
-                            "creating symlink {} -> {}",
-                            real_path.display(),
-                            target_name.display()
-                        )
-                    })?;
-
-                    symlinks.push((real_path, target_name));
-                }
-            }
-        }
-    }
+    let symlinks =
+        mangle_package_symlinks(&install_dir, &bin_dir, target.package.provides.as_deref()).await?;
 
     if !(unlinked
         || has_no_desktop_integration(&target.package.repo_name, target.package.notes.as_deref()))
@@ -656,7 +622,7 @@ pub async fn install_single_package(
     installer
         .record(
             unlinked,
-            final_checksum,
+            final_checksum.as_deref(),
             portable,
             portable_home,
             portable_config,

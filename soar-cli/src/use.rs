@@ -1,4 +1,4 @@
-use std::{fs, os, path::PathBuf};
+use std::path::PathBuf;
 
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Magenta, Red};
@@ -6,10 +6,9 @@ use rusqlite::prepare_and_bind;
 use soar_core::{
     config::get_config,
     database::{
-        models::{InstalledPackage, Package, PackageExt},
-        packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy, SortDirection},
+        models::{InstalledPackage, Package},
+        packages::{FilterCondition, PackageQueryBuilder, SortDirection},
     },
-    error::{ErrorContext, SoarError},
     package::formats::common::integrate_package,
     SoarResult,
 };
@@ -17,7 +16,7 @@ use tracing::info;
 
 use crate::{
     state::AppState,
-    utils::{get_valid_selection, has_no_desktop_integration, Colored},
+    utils::{get_valid_selection, has_no_desktop_integration, mangle_package_symlinks, Colored},
 };
 
 pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
@@ -97,54 +96,10 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
     }
 
     let bin_dir = get_config().get_bin_path()?;
-    let def_bin_path = bin_dir.join(pkg_name);
     let install_dir = PathBuf::from(&selected_package.installed_path);
-    let real_bin = install_dir.join(pkg_name);
 
-    if selected_package.should_create_original_symlink() {
-        if def_bin_path.is_symlink() || def_bin_path.is_file() {
-            if let Err(err) = fs::remove_file(&def_bin_path) {
-                return Err(SoarError::Custom(format!(
-                    "Failed to remove existing symlink: {}",
-                    err
-                )));
-            }
-        }
-        os::unix::fs::symlink(&real_bin, &def_bin_path).with_context(|| {
-            format!(
-                "creating symlink {} -> {}",
-                real_bin.display(),
-                def_bin_path.display()
-            )
-        })?;
-    }
-
-    if let Some(provides) = &selected_package.provides {
-        for provide in provides {
-            if let Some(ref target) = provide.target {
-                let real_path = install_dir.join(provide.name.clone());
-                let is_symlink = matches!(
-                    provide.strategy,
-                    Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
-                );
-                if is_symlink {
-                    let target_name = bin_dir.join(target);
-                    if target_name.is_symlink() || target_name.is_file() {
-                        std::fs::remove_file(&target_name).with_context(|| {
-                            format!("removing provide from {}", target_name.display())
-                        })?;
-                    }
-                    os::unix::fs::symlink(&real_path, &target_name).with_context(|| {
-                        format!(
-                            "creating symlink {} -> {}",
-                            real_path.display(),
-                            target_name.display()
-                        )
-                    })?;
-                }
-            }
-        }
-    }
+    let _ = mangle_package_symlinks(&install_dir, &bin_dir, selected_package.provides.as_deref())
+        .await?;
 
     // TODO: handle portable_dirs
     let repo_db = state.repo_db().await?;

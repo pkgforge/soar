@@ -46,8 +46,6 @@ pub async fn update_packages(
     let repo_db = state.repo_db().await?;
     let config = state.config();
 
-    println!("HELO");
-
     let mut update_targets = Vec::new();
 
     if let Some(packages) = packages {
@@ -101,7 +99,6 @@ pub async fn update_packages(
             .items;
 
         for pkg in installed_packages {
-            dbg!(&pkg);
             let new_pkg: Vec<Package> = PackageQueryBuilder::new(repo_db.clone())
                 .where_and("repo_name", FilterCondition::Eq(pkg.repo_name.clone()))
                 .where_and("pkg_name", FilterCondition::Eq(pkg.pkg_name.clone()))

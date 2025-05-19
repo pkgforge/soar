@@ -1,6 +1,9 @@
 use std::{
     fmt::Display,
+    fs,
     io::Write,
+    os::unix,
+    path::{Path, PathBuf},
     sync::{LazyLock, RwLock},
 };
 
@@ -8,10 +11,16 @@ use indicatif::HumanBytes;
 use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta, Red};
 use serde::Serialize;
 use soar_core::{
-    config::get_config, database::models::PackageExt, error::ErrorContext,
-    package::install::InstallTarget, SoarResult,
+    config::get_config,
+    database::{
+        models::PackageExt,
+        packages::{PackageProvide, ProvideStrategy},
+    },
+    error::ErrorContext,
+    package::install::InstallTarget,
+    SoarResult,
 };
-use soar_dl::utils::FileMode;
+use soar_dl::utils::{is_elf, FileMode};
 use tracing::{error, info};
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
@@ -156,4 +165,81 @@ pub fn get_file_mode(skip_existing: bool, force_overwrite: bool) -> FileMode {
     } else {
         FileMode::PromptOverwrite
     }
+}
+
+pub async fn mangle_package_symlinks(
+    install_dir: &Path,
+    bin_dir: &Path,
+    provides: Option<&[PackageProvide]>,
+) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
+    let mut symlinks = Vec::new();
+
+    let provides = provides.unwrap_or_default();
+    for provide in provides {
+        if let Some(ref target) = provide.target {
+            let real_path = install_dir.join(provide.name.clone());
+            let is_symlink = matches!(
+                provide.strategy,
+                Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
+            );
+            if is_symlink {
+                let target_name = bin_dir.join(target);
+                if target_name.is_symlink() || target_name.is_file() {
+                    std::fs::remove_file(&target_name)
+                        .with_context(|| format!("removing provide {}", target_name.display()))?;
+                }
+                unix::fs::symlink(&real_path, &target_name).with_context(|| {
+                    format!(
+                        "creating symlink {} -> {}",
+                        real_path.display(),
+                        target_name.display()
+                    )
+                })?;
+
+                symlinks.push((real_path, target_name));
+            }
+        }
+    }
+
+    if provides.is_empty() {
+        for entry in fs::read_dir(&install_dir).with_context(|| {
+            format!(
+                "reading install directory {} for ELF detection",
+                install_dir.display()
+            )
+        })? {
+            let path = entry
+                .with_context(|| {
+                    format!(
+                        "reading entry in directory {} for ELF detection",
+                        install_dir.display()
+                    )
+                })?
+                .path();
+            if path.is_file() {
+                if is_elf(&path).await {
+                    if let Some(file_name) = path.file_name() {
+                        let symlink_target_path = bin_dir.join(file_name);
+                        if symlink_target_path.is_symlink() || symlink_target_path.is_file() {
+                            std::fs::remove_file(&symlink_target_path).with_context(|| {
+                                format!(
+                                    "removing existing file/symlink at {}",
+                                    symlink_target_path.display()
+                                )
+                            })?;
+                        }
+                        unix::fs::symlink(&path, &symlink_target_path).with_context(|| {
+                            format!(
+                                "creating ELF symlink {} -> {}",
+                                path.display(),
+                                symlink_target_path.display()
+                            )
+                        })?;
+                        symlinks.push((path.clone(), symlink_target_path.clone()));
+                    }
+                }
+            }
+        }
+    }
+    Ok(symlinks)
 }

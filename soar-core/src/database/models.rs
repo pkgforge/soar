@@ -3,7 +3,7 @@ use std::fmt::Display;
 use rusqlite::types::Value;
 use serde::{de, Deserialize, Deserializer, Serialize};
 
-use super::packages::{PackageProvide, ProvideStrategy};
+use super::packages::PackageProvide;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Maintainer {
@@ -22,7 +22,6 @@ pub trait PackageExt {
     fn pkg_id(&self) -> &str;
     fn version(&self) -> &str;
     fn repo_name(&self) -> &str;
-    fn should_create_original_symlink(&self) -> bool;
 }
 
 pub trait FromRow: Sized {
@@ -385,21 +384,7 @@ pub struct RemotePackage {
     pub replaces: Option<Vec<String>>,
 }
 
-fn should_create_original_symlink_impl(provides: Option<&Vec<PackageProvide>>) -> bool {
-    provides
-        .map(|links| {
-            !links
-                .iter()
-                .any(|link| matches!(link.strategy, Some(ProvideStrategy::KeepTargetOnly)))
-        })
-        .unwrap_or(true)
-}
-
 impl PackageExt for Package {
-    fn should_create_original_symlink(&self) -> bool {
-        should_create_original_symlink_impl(self.provides.as_ref())
-    }
-
     fn pkg_name(&self) -> &str {
         &self.pkg_name
     }
@@ -418,10 +403,6 @@ impl PackageExt for Package {
 }
 
 impl PackageExt for InstalledPackage {
-    fn should_create_original_symlink(&self) -> bool {
-        should_create_original_symlink_impl(self.provides.as_ref())
-    }
-
     fn pkg_name(&self) -> &str {
         &self.pkg_name
     }
