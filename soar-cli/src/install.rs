@@ -26,7 +26,7 @@ use soar_core::{
         install::{InstallTarget, PackageInstaller},
         query::PackageQuery,
     },
-    utils::{calculate_checksum, default_install_patterns},
+    utils::{apply_sig_variants, calculate_checksum, default_install_patterns},
     SoarResult,
 };
 use soar_dl::downloader::DownloadState;
@@ -461,7 +461,7 @@ pub async fn install_single_package(
         }
     }
 
-    let install_excludes = excludes.map(|e| e.to_vec()).unwrap_or_else(|| {
+    let install_patterns = excludes.map(|e| e.to_vec()).unwrap_or_else(|| {
         if ctx.binary_only {
             let mut patterns = default_install_patterns();
             patterns.extend(
@@ -481,6 +481,7 @@ pub async fn install_single_package(
             get_config().install_patterns.clone().unwrap_or_default()
         }
     });
+    let install_patterns = apply_sig_variants(install_patterns);
 
     let installer = PackageInstaller::new(
         target,
@@ -488,7 +489,7 @@ pub async fn install_single_package(
         Some(progress_callback),
         core_db,
         target.with_pkg_id,
-        install_excludes.to_vec(),
+        install_patterns.to_vec(),
     )
     .await?;
 

@@ -316,3 +316,25 @@ pub fn get_extract_dir<P: AsRef<Path>>(base_dir: P) -> PathBuf {
     let base_dir = base_dir.as_ref();
     base_dir.join("SOAR_AUTOEXTRACT")
 }
+
+pub fn apply_sig_variants(patterns: Vec<String>) -> Vec<String> {
+    patterns
+        .into_iter()
+        .map(|pat| {
+            let (negate, inner) = if let Some(rest) = pat.strip_prefix('!') {
+                (true, rest)
+            } else {
+                (false, pat.as_str())
+            };
+
+            let sig_variant = format!("{}.sig", inner);
+            let brace_pattern = format!("{{{},{}}}", inner, sig_variant);
+
+            if negate {
+                format!("!{}", brace_pattern)
+            } else {
+                brace_pattern
+            }
+        })
+        .collect()
+}
