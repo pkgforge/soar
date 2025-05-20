@@ -75,7 +75,7 @@ impl<'a> PackageRepository<'a> {
                         || ["==", "=>", ":"]
                             .iter()
                             .find_map(|&delim| p.split_once(delim))
-                            .map_or(false, |(first, _)| first == package.pkg_name);
+                            .is_some_and(|(first, _)| first == package.pkg_name);
                     matches.then(|| PackageProvide::from_string(&p))
                 })
                 .collect::<Vec<PackageProvide>>()

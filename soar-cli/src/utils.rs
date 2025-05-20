@@ -176,33 +176,37 @@ pub async fn mangle_package_symlinks(
 
     let provides = provides.unwrap_or_default();
     for provide in provides {
-        if let Some(ref target) = provide.target {
-            let real_path = install_dir.join(provide.name.clone());
+        let real_path = install_dir.join(provide.name.clone());
+        let target_name = if let Some(ref target) = provide.target {
             let is_symlink = matches!(
                 provide.strategy,
                 Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
             );
             if is_symlink {
-                let target_name = bin_dir.join(target);
-                if target_name.is_symlink() || target_name.is_file() {
-                    std::fs::remove_file(&target_name)
-                        .with_context(|| format!("removing provide {}", target_name.display()))?;
-                }
-                unix::fs::symlink(&real_path, &target_name).with_context(|| {
-                    format!(
-                        "creating symlink {} -> {}",
-                        real_path.display(),
-                        target_name.display()
-                    )
-                })?;
-
-                symlinks.push((real_path, target_name));
+                bin_dir.join(target)
+            } else {
+                continue;
             }
+        } else {
+            bin_dir.join(provide.name.clone())
+        };
+
+        if target_name.is_symlink() || target_name.is_file() {
+            std::fs::remove_file(&target_name)
+                .with_context(|| format!("removing provide {}", target_name.display()))?;
         }
+        unix::fs::symlink(&real_path, &target_name).with_context(|| {
+            format!(
+                "creating symlink {} -> {}",
+                real_path.display(),
+                target_name.display()
+            )
+        })?;
+        symlinks.push((real_path, target_name));
     }
 
     if provides.is_empty() {
-        for entry in fs::read_dir(&install_dir).with_context(|| {
+        for entry in fs::read_dir(install_dir).with_context(|| {
             format!(
                 "reading install directory {} for ELF detection",
                 install_dir.display()
@@ -216,27 +220,25 @@ pub async fn mangle_package_symlinks(
                     )
                 })?
                 .path();
-            if path.is_file() {
-                if is_elf(&path).await {
-                    if let Some(file_name) = path.file_name() {
-                        let symlink_target_path = bin_dir.join(file_name);
-                        if symlink_target_path.is_symlink() || symlink_target_path.is_file() {
-                            std::fs::remove_file(&symlink_target_path).with_context(|| {
-                                format!(
-                                    "removing existing file/symlink at {}",
-                                    symlink_target_path.display()
-                                )
-                            })?;
-                        }
-                        unix::fs::symlink(&path, &symlink_target_path).with_context(|| {
+            if path.is_file() && is_elf(&path).await {
+                if let Some(file_name) = path.file_name() {
+                    let symlink_target_path = bin_dir.join(file_name);
+                    if symlink_target_path.is_symlink() || symlink_target_path.is_file() {
+                        std::fs::remove_file(&symlink_target_path).with_context(|| {
                             format!(
-                                "creating ELF symlink {} -> {}",
-                                path.display(),
+                                "removing existing file/symlink at {}",
                                 symlink_target_path.display()
                             )
                         })?;
-                        symlinks.push((path.clone(), symlink_target_path.clone()));
                     }
+                    unix::fs::symlink(&path, &symlink_target_path).with_context(|| {
+                        format!(
+                            "creating ELF symlink {} -> {}",
+                            path.display(),
+                            symlink_target_path.display()
+                        )
+                    })?;
+                    symlinks.push((path.clone(), symlink_target_path.clone()));
                 }
             }
         }
