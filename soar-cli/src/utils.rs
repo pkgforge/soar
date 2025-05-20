@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fmt::Display,
     fs,
     io::Write,
@@ -174,35 +175,52 @@ pub async fn mangle_package_symlinks(
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
     let mut symlinks = Vec::new();
 
+    let mut processed_paths = HashSet::new();
     let provides = provides.unwrap_or_default();
     for provide in provides {
         let real_path = install_dir.join(provide.name.clone());
-        let target_name = if let Some(ref target) = provide.target {
+        let mut symlink_targets = Vec::new();
+
+        if let Some(ref target) = provide.target {
             let is_symlink = matches!(
                 provide.strategy,
                 Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
             );
             if is_symlink {
-                bin_dir.join(target)
-            } else {
-                continue;
+                let target_path = bin_dir.join(target);
+                if processed_paths.insert(target_path.clone()) {
+                    symlink_targets.push(target_path);
+                }
             }
-        } else {
-            bin_dir.join(provide.name.clone())
         };
 
-        if target_name.is_symlink() || target_name.is_file() {
-            std::fs::remove_file(&target_name)
-                .with_context(|| format!("removing provide {}", target_name.display()))?;
+        let needs_original_symlink = match (provide.target.as_ref(), provide.strategy.clone()) {
+            (Some(_), Some(ProvideStrategy::KeepBoth)) => true,
+            (None, _) => true,
+            _ => false,
+        };
+
+        if needs_original_symlink {
+            let original_path = bin_dir.join(&provide.name);
+            if processed_paths.insert(original_path.clone()) {
+                symlink_targets.push(original_path);
+            }
         }
-        unix::fs::symlink(&real_path, &target_name).with_context(|| {
-            format!(
-                "creating symlink {} -> {}",
-                real_path.display(),
-                target_name.display()
-            )
-        })?;
-        symlinks.push((real_path, target_name));
+
+        for target_path in symlink_targets {
+            if target_path.is_symlink() || target_path.is_file() {
+                std::fs::remove_file(&target_path)
+                    .with_context(|| format!("removing provide {}", target_path.display()))?;
+            }
+            unix::fs::symlink(&real_path, &target_path).with_context(|| {
+                format!(
+                    "creating symlink {} -> {}",
+                    real_path.display(),
+                    target_path.display()
+                )
+            })?;
+            symlinks.push((real_path.clone(), target_path));
+        }
     }
 
     if provides.is_empty() {
