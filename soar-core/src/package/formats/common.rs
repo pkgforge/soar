@@ -336,20 +336,19 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     let file_type = get_file_type(&mut reader)?;
 
     match file_type {
-        PackageFormat::AppImage => {
-            if integrate_appimage(install_dir, &bin_path, package, has_desktop, has_icon)
-                .await
-                .is_ok()
-            {
-                setup_portable_dir(
-                    bin_path,
-                    package,
-                    portable,
-                    portable_home,
-                    portable_config,
-                    portable_share,
-                )?;
+        PackageFormat::AppImage | PackageFormat::RunImage => {
+            if matches!(file_type, PackageFormat::AppImage) {
+                let _ = integrate_appimage(install_dir, &bin_path, package, has_icon, has_desktop)
+                    .await;
             }
+            setup_portable_dir(
+                bin_path,
+                package,
+                portable,
+                portable_home,
+                portable_config,
+                portable_share,
+            )?;
         }
         PackageFormat::FlatImage => {
             setup_portable_dir(

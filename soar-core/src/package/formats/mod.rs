@@ -1,7 +1,10 @@
 use std::io::{BufReader, Read, Seek, SeekFrom};
 
 use crate::{
-    constants::{APPIMAGE_MAGIC_BYTES, ELF_MAGIC_BYTES, FLATIMAGE_MAGIC_BYTES, WRAPPE_MAGIC_BYTES},
+    constants::{
+        APPIMAGE_MAGIC_BYTES, ELF_MAGIC_BYTES, FLATIMAGE_MAGIC_BYTES, RUNIMAGE_MAGIC_BYTES,
+        WRAPPE_MAGIC_BYTES,
+    },
     error::SoarError,
     SoarResult,
 };
@@ -14,6 +17,7 @@ pub mod wrappe;
 pub enum PackageFormat {
     AppImage,
     FlatImage,
+    RunImage,
     Wrappe,
     ELF,
     Unknown,
@@ -32,6 +36,9 @@ where
     }
     if magic_bytes[8..] == FLATIMAGE_MAGIC_BYTES {
         return Ok(PackageFormat::FlatImage);
+    }
+    if magic_bytes[8..] == RUNIMAGE_MAGIC_BYTES {
+        return Ok(PackageFormat::RunImage);
     }
 
     let start = file
