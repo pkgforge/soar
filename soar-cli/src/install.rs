@@ -540,7 +540,8 @@ pub async fn install_single_package(
                         .path();
                     let is_signature_file =
                         path.extension().map_or_else(|| false, |ext| ext == "sig");
-                    if is_signature_file && path.is_file() {
+                    let original_file = path.with_extension("");
+                    if is_signature_file && path.is_file() && original_file.is_file() {
                         let signature = Signature::from_file(&path).map_err(|err| {
                             SoarError::Custom(format!(
                                 "Failed to load signature file from {}: {}",
@@ -556,7 +557,6 @@ pub async fn install_single_package(
                                 ))
                             })?;
 
-                        let original_file = path.with_extension("");
                         let file = File::open(&original_file).with_context(|| {
                             format!(
                                 "opening file {} for signature verification",
