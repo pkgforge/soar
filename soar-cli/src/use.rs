@@ -121,7 +121,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         .iter()
         .any(|p| has_no_desktop_integration(&p.repo_name, p.notes.as_deref()))
     {
-        integrate_package(&install_dir, &selected_package, None, None, None).await?;
+        integrate_package(&install_dir, &selected_package, None, None, None, None).await?;
     }
 
     {

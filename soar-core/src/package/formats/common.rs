@@ -228,17 +228,19 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     portable: Option<&str>,
     portable_home: Option<&str>,
     portable_config: Option<&str>,
+    portable_share: Option<&str>,
 ) -> SoarResult<()> {
     let bin_path = bin_path.as_ref();
 
     let pkg_name = package.pkg_name();
     let pkg_config = bin_path.with_extension("config");
     let pkg_home = bin_path.with_extension("home");
+    let pkg_share = bin_path.with_extension("share");
 
-    let (portable_home, portable_config) = if let Some(portable) = portable {
-        (Some(portable), Some(portable))
+    let (portable_home, portable_config, portable_share) = if let Some(portable) = portable {
+        (Some(portable), Some(portable), Some(portable))
     } else {
-        (portable_home, portable_config)
+        (portable_home, portable_config, portable_share)
     };
 
     if let Some(portable_home) = portable_home {
@@ -266,6 +268,17 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
         }
     }
 
+    if let Some(portable_share) = portable_share {
+        if portable_share.is_empty() {
+            fs::create_dir(&pkg_share).with_context(|| {
+                format!("creating portable share directory {}", pkg_share.display())
+            })?;
+        } else {
+            let portable_share = PathBuf::from(portable_share);
+            create_portable_link(&portable_share, &pkg_share, pkg_name, "config")?;
+        }
+    }
+
     Ok(())
 }
 
@@ -289,6 +302,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     portable: Option<&str>,
     portable_home: Option<&str>,
     portable_config: Option<&str>,
+    portable_share: Option<&str>,
 ) -> SoarResult<()> {
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
@@ -327,7 +341,14 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                 .await
                 .is_ok()
             {
-                setup_portable_dir(bin_path, package, portable, portable_home, portable_config)?;
+                setup_portable_dir(
+                    bin_path,
+                    package,
+                    portable,
+                    portable_home,
+                    portable_config,
+                    portable_share,
+                )?;
             }
         }
         PackageFormat::FlatImage => {
@@ -337,6 +358,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                 None,
                 None,
                 portable_config,
+                None,
             )?;
         }
         PackageFormat::Wrappe => {

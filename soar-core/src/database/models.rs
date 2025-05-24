@@ -182,7 +182,8 @@ pub struct InstalledPackage {
     pub portable_path: Option<String>,
     pub portable_home: Option<String>,
     pub portable_config: Option<String>,
-    pub install_excludes: Option<Vec<String>>,
+    pub portable_share: Option<String>,
+    pub install_patterns: Option<Vec<String>>,
 }
 
 impl FromRow for InstalledPackage {
@@ -192,13 +193,13 @@ impl FromRow for InstalledPackage {
             Ok(value.and_then(|s| serde_json::from_str(&s).ok()))
         };
 
-        let parse_install_excludes = |idx: &str| -> rusqlite::Result<Option<Vec<String>>> {
+        let parse_install_patterns = |idx: &str| -> rusqlite::Result<Option<Vec<String>>> {
             let value: Option<String> = row.get(idx)?;
             Ok(value.and_then(|s| serde_json::from_str(&s).ok()))
         };
 
         let provides = parse_provides("provides")?;
-        let install_excludes = parse_install_excludes("install_excludes")?;
+        let install_patterns = parse_install_patterns("install_patterns")?;
 
         Ok(InstalledPackage {
             id: row.get("id")?,
@@ -222,7 +223,8 @@ impl FromRow for InstalledPackage {
             portable_path: row.get("portable_path")?,
             portable_home: row.get("portable_home")?,
             portable_config: row.get("portable_config")?,
-            install_excludes,
+            portable_share: row.get("portable_share")?,
+            install_patterns,
         })
     }
 }

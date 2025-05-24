@@ -52,6 +52,7 @@ pub struct InstallContext {
     pub portable: Option<String>,
     pub portable_home: Option<String>,
     pub portable_config: Option<String>,
+    pub portable_share: Option<String>,
     pub warnings: Arc<Mutex<Vec<String>>>,
     pub errors: Arc<Mutex<Vec<String>>>,
     pub retrying: Arc<AtomicU64>,
@@ -66,6 +67,7 @@ pub fn create_install_context(
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
+    portable_share: Option<String>,
     binary_only: bool,
 ) -> InstallContext {
     let multi_progress = Arc::new(MultiProgress::new());
@@ -82,6 +84,7 @@ pub fn create_install_context(
         portable,
         portable_home,
         portable_config,
+        portable_share,
         warnings: Arc::new(Mutex::new(Vec::new())),
         errors: Arc::new(Mutex::new(Vec::new())),
         retrying: Arc::new(AtomicU64::new(0)),
@@ -98,6 +101,7 @@ pub async fn install_packages(
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
+    portable_share: Option<String>,
     no_notes: bool,
     binary_only: bool,
     ask: bool,
@@ -123,6 +127,7 @@ pub async fn install_packages(
         portable,
         portable_home,
         portable_config,
+        portable_share,
         binary_only,
     );
 
@@ -410,46 +415,56 @@ pub async fn install_single_package(
 ) -> SoarResult<(PathBuf, Vec<(PathBuf, PathBuf)>)> {
     let bin_dir = get_config().get_bin_path()?;
 
-    let (install_dir, real_bin, unlinked, portable, portable_home, portable_config, excludes) =
-        if let Some(ref existing) = target.existing_install {
-            let install_dir = PathBuf::from(&existing.installed_path);
-            let real_bin = install_dir.join(&target.package.pkg_name);
+    let (
+        install_dir,
+        real_bin,
+        unlinked,
+        portable,
+        portable_home,
+        portable_config,
+        portable_share,
+        excludes,
+    ) = if let Some(ref existing) = target.existing_install {
+        let install_dir = PathBuf::from(&existing.installed_path);
+        let real_bin = install_dir.join(&target.package.pkg_name);
 
-            (
-                install_dir,
-                real_bin,
-                existing.unlinked,
-                existing.portable_path.as_deref(),
-                existing.portable_home.as_deref(),
-                existing.portable_config.as_deref(),
-                existing.install_excludes.as_deref(),
-            )
-        } else {
-            let rand_str: String = rand::rng()
-                .sample_iter(&Alphanumeric)
-                .take(12)
-                .map(char::from)
-                .collect();
+        (
+            install_dir,
+            real_bin,
+            existing.unlinked,
+            existing.portable_path.as_deref(),
+            existing.portable_home.as_deref(),
+            existing.portable_config.as_deref(),
+            existing.portable_share.as_deref(),
+            existing.install_patterns.as_deref(),
+        )
+    } else {
+        let rand_str: String = rand::rng()
+            .sample_iter(&Alphanumeric)
+            .take(12)
+            .map(char::from)
+            .collect();
 
-            let install_dir = get_config()
-                .get_packages_path(target.profile.clone())
-                .unwrap()
-                .join(format!(
-                    "{}-{}-{}",
-                    target.package.pkg_name, target.package.pkg_id, rand_str
-                ));
-            let real_bin = install_dir.join(&target.package.pkg_name);
+        let install_dir = get_config()
+            .get_packages_path(target.profile.clone())
+            .unwrap()
+            .join(format!(
+                "{}-{}-{}",
+                target.package.pkg_name, target.package.pkg_id, rand_str
+            ));
+        let real_bin = install_dir.join(&target.package.pkg_name);
 
-            (
-                install_dir,
-                real_bin,
-                false,
-                ctx.portable.as_deref(),
-                ctx.portable_home.as_deref(),
-                ctx.portable_config.as_deref(),
-                None,
-            )
-        };
+        (
+            install_dir,
+            real_bin,
+            false,
+            ctx.portable.as_deref(),
+            ctx.portable_home.as_deref(),
+            ctx.portable_config.as_deref(),
+            ctx.portable_share.as_deref(),
+            None,
+        )
+    };
 
     if install_dir.exists() {
         if let Err(err) = std::fs::remove_dir_all(&install_dir) {
@@ -616,6 +631,7 @@ pub async fn install_single_package(
             portable,
             portable_home,
             portable_config,
+            portable_share,
         )
         .await?;
     }
@@ -627,6 +643,7 @@ pub async fn install_single_package(
             portable,
             portable_home,
             portable_config,
+            portable_share,
         )
         .await?;
 

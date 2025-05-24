@@ -75,7 +75,7 @@ impl PackageInstaller {
                 conn,
                 "INSERT INTO packages (
                     repo_name, pkg, pkg_id, pkg_name, pkg_type, version, size,
-                    installed_path, installed_date, with_pkg_id, profile, install_excludes
+                    installed_path, installed_date, with_pkg_id, profile, install_patterns
                 )
                 VALUES
                 (
@@ -203,6 +203,7 @@ impl PackageInstaller {
         portable: Option<&str>,
         portable_home: Option<&str>,
         portable_config: Option<&str>,
+        portable_share: Option<&str>,
     ) -> SoarResult<()> {
         let mut conn = self.db.lock()?;
         let package = &self.package;
@@ -294,6 +295,17 @@ impl PackageInstaller {
                 })
                 .map(|p| p.to_string_lossy().into_owned());
 
+            let portable_share = portable_share
+                .map(|p| {
+                    let path = PathBuf::from(&p);
+                    if path.is_absolute() {
+                        path
+                    } else {
+                        base_dir.join(path)
+                    }
+                })
+                .map(|p| p.to_string_lossy().into_owned());
+
             // try to update existing record first
             let mut stmt = prepare_and_bind!(
                 tx,
@@ -301,7 +313,8 @@ impl PackageInstaller {
                 SET
                     portable_path = $portable,
                     portable_home = $portable_home,
-                    portable_config = $portable_config
+                    portable_config = $portable_config,
+                    portable_share = $portable_share
                 WHERE
                     package_id = $record_id
                 "
@@ -314,11 +327,13 @@ impl PackageInstaller {
                     tx,
                     "INSERT INTO portable_package
                 (
-                    package_id, portable_path, portable_home, portable_config
+                    package_id, portable_path, portable_home, portable_config,
+                    portable_share
                 )
                 VALUES
                 (
-                     $record_id, $portable, $portable_home, $portable_config
+                     $record_id, $portable, $portable_home, $portable_config,
+                     $portable_share
                 )
                 "
                 );

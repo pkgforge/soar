@@ -81,6 +81,10 @@ pub enum Commands {
         #[arg(required = false, long, num_args = 0..=1, value_hint = ValueHint::AnyPath)]
         portable_config: Option<Option<String>>,
 
+        /// Set portable share
+        #[arg(required = false, long, num_args = 0..=1, value_hint = ValueHint::AnyPath)]
+        portable_share: Option<Option<String>>,
+
         /// Don't display notes
         #[arg(required = false, long)]
         no_notes: bool,
