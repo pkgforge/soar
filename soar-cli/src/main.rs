@@ -24,7 +24,7 @@ use state::AppState;
 use tracing::{error, info, warn};
 use update::update_packages;
 use use_package::use_alternate_package;
-use utils::{Colored, COLOR};
+use utils::COLOR;
 
 mod cli;
 mod download;
@@ -243,17 +243,14 @@ async fn handle_cli() -> SoarResult<()> {
         cli::Commands::Env => {
             let config = get_config();
 
-            info!(
-                "[{}]: These values are not configurable via environment \
-                variables. They are derived from the config file or defaults.",
-                Colored(nu_ansi_term::Color::Yellow, "NOTE")
-            );
-
             info!("SOAR_CONFIG={}", CONFIG_PATH.read()?.display());
             info!("SOAR_BIN={}", config.get_bin_path()?.display());
             info!("SOAR_DB={}", config.get_db_path()?.display());
             info!("SOAR_CACHE={}", config.get_cache_path()?.display());
-            info!("SOAR_PACKAGE={}", config.get_packages_path(None)?.display());
+            info!(
+                "SOAR_PACKAGES={}",
+                config.get_packages_path(None)?.display()
+            );
             info!(
                 "SOAR_REPOSITORIES={}",
                 config.get_repositories_path()?.display()
@@ -297,7 +294,7 @@ async fn handle_cli() -> SoarResult<()> {
                         Ok(v) => v,
                         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                             warn!("Config file {} not found", config_path.display());
-                            let def_config = Config::default();
+                            let def_config = Config::generate_default_config(false);
                             toml::to_string_pretty(&def_config)?
                         }
                         Err(err) => {

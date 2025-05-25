@@ -32,6 +32,9 @@ pub enum ConfigError {
 
     #[error("Profile '{0}' does not exist")]
     MissingProfile(String),
+
+    #[error("{0}")]
+    Custom(String),
 }
 
 #[derive(Error, Debug)]

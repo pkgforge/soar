@@ -13,6 +13,7 @@ categories.workspace = true
 [dependencies]
 blake3 = { version = "1.8.1", features = ["mmap"] }
 chrono = { version = "0.4.40", default-features = false, features = ["now"] }
+documented = "0.9.1"
 futures = { workspace = true }
 image = { version = "0.25.6", default-features = false, features = ["png"] }
 include_dir = "0.7.4"
@@ -28,5 +29,6 @@ soar-dl = { workspace = true }
 squishy = { version = "0.3.2", features = ["appimage"] }
 thiserror = "2.0.12"
 toml = "0.8.20"
+toml_edit = "0.22.26"
 tracing = { workspace = true }
 zstd = "0.13.3"
