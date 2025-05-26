@@ -148,7 +148,7 @@ pub async fn update_packages(
 
     let ctx = create_install_context(
         update_targets.len(),
-        config.parallel_limit.unwrap_or(4) as usize,
+        config.parallel_limit.unwrap_or(4),
         None,
         None,
         None,

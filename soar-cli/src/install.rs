@@ -63,7 +63,7 @@ pub struct InstallContext {
 
 pub fn create_install_context(
     total_packages: usize,
-    parallel_limit: usize,
+    parallel_limit: u32,
     portable: Option<String>,
     portable_home: Option<String>,
     portable_config: Option<String>,
@@ -78,7 +78,7 @@ pub fn create_install_context(
     InstallContext {
         multi_progress,
         total_progress_bar,
-        semaphore: Arc::new(Semaphore::new(parallel_limit)),
+        semaphore: Arc::new(Semaphore::new(parallel_limit as usize)),
         installed_count: Arc::new(AtomicU64::new(0)),
         total_packages,
         portable,
@@ -123,7 +123,7 @@ pub async fn install_packages(
 
     let install_context = create_install_context(
         install_targets.len(),
-        state.config().parallel_limit.unwrap_or(1) as usize,
+        state.config().parallel_limit.unwrap_or(4),
         portable,
         portable_home,
         portable_config,

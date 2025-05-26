@@ -103,6 +103,9 @@ impl Repository {
     }
 
     pub fn signature_verification(&self) -> bool {
+        if let Some(global_override) = get_config().signature_verification {
+            return global_override;
+        }
         if self.pubkey.is_none() {
             return false;
         };
@@ -110,14 +113,17 @@ impl Repository {
     }
 
     pub fn sync_interval(&self) -> u128 {
-        match &self.sync_interval {
-            Some(value) => match value.as_str() {
-                "always" => 0,
-                "never" => u128::MAX,
-                "auto" => 3 * 3_600_000,
-                _ => parse_duration(value).unwrap_or(3_600_000),
-            },
-            None => 3 * 3_600_000,
+        match get_config()
+            .sync_interval
+            .clone()
+            .or(self.sync_interval.clone())
+            .as_deref()
+            .unwrap_or("3h")
+        {
+            "always" => 0,
+            "never" => u128::MAX,
+            "auto" => 3 * 3_600_000,
+            value => parse_duration(value).unwrap_or(3_600_000),
         }
     }
 }
@@ -173,6 +179,15 @@ pub struct Config {
     /// Glob patterns for package files that should be included during install.
     /// Default: ["!*.log", "!SBUILD", "!*.json", "!*.version"]
     pub install_patterns: Option<Vec<String>>,
+
+    /// Global override for signature verification
+    pub signature_verification: Option<bool>,
+
+    /// Global override for desktop integration
+    pub desktop_integration: Option<bool>,
+
+    /// Global override for sync interval
+    pub sync_interval: Option<String>,
 }
 
 pub fn init() {
@@ -294,6 +309,10 @@ impl Config {
             ghcr_concurrency: Some(8),
             cross_repo_updates: Some(false),
             install_patterns: Some(default_install_patterns()),
+
+            signature_verification: None,
+            desktop_integration: None,
+            sync_interval: None,
         }
     }
 
@@ -372,14 +391,6 @@ impl Config {
                     _ => {}
                 }
             }
-
-            if repo.pubkey.is_none() {
-                repo.signature_verification = Some(false);
-            } else {
-                repo.signature_verification.get_or_insert(true);
-            }
-
-            repo.sync_interval.get_or_insert_with(|| "3h".to_string());
         }
 
         Ok(())
@@ -456,6 +467,9 @@ impl Config {
     }
 
     pub fn has_desktop_integration(&self, repo_name: &str) -> bool {
+        if let Some(global_override) = self.desktop_integration {
+            return global_override;
+        }
         self.get_repository(repo_name)
             .map_or(false, |repo| repo.desktop_integration.unwrap_or(false))
     }
