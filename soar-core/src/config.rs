@@ -37,30 +37,35 @@ pub struct Profile {
 }
 
 impl Profile {
-    fn get_bin_path(&self) -> PathBuf {
-        build_path(&self.root_path).unwrap().join("bin")
+    fn get_bin_path(&self) -> SoarResult<PathBuf> {
+        Ok(self.get_root_path()?.join("bin"))
     }
 
-    fn get_db_path(&self) -> PathBuf {
-        build_path(&self.root_path).unwrap().join("db")
+    fn get_db_path(&self) -> SoarResult<PathBuf> {
+        Ok(self.get_root_path()?.join("db"))
     }
 
-    pub fn get_packages_path(&self) -> PathBuf {
-        build_path(
-            &self
-                .packages_path
-                .clone()
-                .unwrap_or_else(|| format!("{}/packages", self.root_path)),
-        )
-        .unwrap()
+    pub fn get_packages_path(&self) -> SoarResult<PathBuf> {
+        if let Some(ref packages_path) = self.packages_path {
+            build_path(packages_path)
+        } else {
+            Ok(self.get_root_path()?.join("packages"))
+        }
     }
 
-    pub fn get_cache_path(&self) -> PathBuf {
-        build_path(&self.root_path).unwrap().join("cache")
+    pub fn get_cache_path(&self) -> SoarResult<PathBuf> {
+        Ok(self.get_root_path()?.join("cache"))
     }
 
-    fn get_repositories_path(&self) -> PathBuf {
-        build_path(&self.root_path).unwrap().join("repos")
+    fn get_repositories_path(&self) -> SoarResult<PathBuf> {
+        Ok(self.get_root_path()?.join("repos"))
+    }
+
+    pub fn get_root_path(&self) -> SoarResult<PathBuf> {
+        if let Ok(env_path) = std::env::var("SOAR_ROOT") {
+            return build_path(&env_path);
+        }
+        build_path(&self.root_path)
     }
 }
 
@@ -229,7 +234,8 @@ pub fn set_current_profile(name: &str) -> Result<()> {
 
 impl Config {
     pub fn generate_default_config(external: bool) -> Self {
-        let soar_root = format!("{}/soar", home_data_path());
+        let soar_root =
+            std::env::var("SOAR_ROOT").unwrap_or_else(|_| format!("{}/soar", home_data_path()));
 
         let default_profile = Profile {
             root_path: soar_root.clone(),
@@ -319,6 +325,10 @@ impl Config {
     /// Creates a new configuration by loading it from the configuration file.
     /// If the configuration file is not found, it uses the default configuration.
     pub fn new() -> Result<Self> {
+        if std::env::var("SOAR_STEALTH").is_ok() {
+            return Ok(Self::generate_default_config(false));
+        }
+
         let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
 
         let mut config = match fs::read_to_string(&config_path) {
@@ -408,10 +418,6 @@ impl Config {
             .ok_or(ConfigError::MissingProfile(name.to_string()))
     }
 
-    pub fn get_root_path(&self) -> SoarResult<PathBuf> {
-        build_path(&self.get_profile(&get_current_profile())?.root_path)
-    }
-
     pub fn get_bin_path(&self) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_BIN") {
             return build_path(&env_path);
@@ -419,7 +425,7 @@ impl Config {
         if let Some(bin_path) = &self.bin_path {
             return build_path(bin_path);
         }
-        Ok(self.default_profile()?.get_bin_path())
+        self.default_profile()?.get_bin_path()
     }
 
     pub fn get_db_path(&self) -> SoarResult<PathBuf> {
@@ -429,15 +435,15 @@ impl Config {
         if let Some(soar_db) = &self.db_path {
             return build_path(soar_db);
         }
-        Ok(self.default_profile()?.get_db_path())
+        self.default_profile()?.get_db_path()
     }
 
-    pub fn get_packages_path(
-        &self,
-        profile_name: Option<String>,
-    ) -> std::result::Result<PathBuf, SoarError> {
+    pub fn get_packages_path(&self, profile_name: Option<String>) -> SoarResult<PathBuf> {
+        if let Ok(env_path) = std::env::var("SOAR_PACKAGES") {
+            return build_path(&env_path);
+        }
         let profile_name = profile_name.unwrap_or_else(get_current_profile);
-        Ok(self.get_profile(&profile_name)?.get_packages_path())
+        self.get_profile(&profile_name)?.get_packages_path()
     }
 
     pub fn get_cache_path(&self) -> SoarResult<PathBuf> {
@@ -447,7 +453,7 @@ impl Config {
         if let Some(soar_cache) = &self.cache_path {
             return build_path(soar_cache);
         }
-        Ok(self.get_profile(&get_current_profile())?.get_cache_path())
+        self.get_profile(&get_current_profile())?.get_cache_path()
     }
 
     pub fn get_repositories_path(&self) -> SoarResult<PathBuf> {
@@ -457,7 +463,7 @@ impl Config {
         if let Some(repositories_path) = &self.repositories_path {
             return build_path(repositories_path);
         }
-        Ok(self.default_profile()?.get_repositories_path())
+        self.default_profile()?.get_repositories_path()
     }
 
     pub fn get_repository(&self, repo_name: &str) -> Option<&Repository> {

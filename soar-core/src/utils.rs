@@ -144,7 +144,7 @@ pub fn setup_required_paths() -> Result<()> {
     }
 
     for profile in config.profile.values() {
-        let packages_path = profile.get_packages_path();
+        let packages_path = profile.get_packages_path()?;
         if !packages_path.exists() {
             fs::create_dir_all(&packages_path).with_context(|| {
                 format!("creating packages directory {}", packages_path.display())
