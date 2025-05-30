@@ -1,5 +1,7 @@
 use clap::{ArgAction, Parser, Subcommand, ValueHint};
 
+use crate::utils::parse_default_repos_arg;
+
 #[derive(Parser)]
 #[command(
     author,
@@ -310,6 +312,17 @@ pub enum Commands {
         /// Enable external repositories
         #[arg(required = false, short, long)]
         external: bool,
+
+        /// Enable only selected repositories
+        #[arg(
+            required = false,
+            short,
+            long,
+            num_args = 0..,
+            value_delimiter = ',',
+            value_parser = parse_default_repos_arg
+        )]
+        repositories: Vec<String>,
     },
 
     /// View env

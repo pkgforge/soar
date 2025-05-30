@@ -17,7 +17,7 @@ use soar_core::{
         models::PackageExt,
         packages::{PackageProvide, ProvideStrategy},
     },
-    error::ErrorContext,
+    error::{ErrorContext, SoarError},
     package::install::InstallTarget,
     SoarResult,
 };
@@ -262,4 +262,17 @@ pub async fn mangle_package_symlinks(
         }
     }
     Ok(symlinks)
+}
+
+pub fn parse_default_repos_arg(arg: &str) -> SoarResult<String> {
+    let repo = arg.trim().to_lowercase();
+    let valid_repos = ["bincache", "pkgcache", "ivan-hc-am", "appimage-github-io"];
+    if valid_repos.contains(&&*repo) {
+        Ok(repo)
+    } else {
+        Err(SoarError::Custom(format!(
+            "Valid options are: {}",
+            valid_repos.join(", ")
+        )))
+    }
 }

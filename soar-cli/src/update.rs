@@ -170,11 +170,6 @@ async fn perform_update(
     let mut handles = Vec::new();
     let fixed_width = 40;
 
-    if targets.is_empty() {
-        info!("No packages to install");
-        return Ok(());
-    }
-
     for (idx, target) in targets.iter().enumerate() {
         let handle = spawn_update_task(
             &ctx,

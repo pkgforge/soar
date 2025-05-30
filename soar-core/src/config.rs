@@ -8,7 +8,7 @@ use std::{
 use documented::{Documented, DocumentedFields};
 use serde::{de::Error, Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     error::{ConfigError, SoarError},
@@ -195,13 +195,10 @@ pub struct Config {
     pub sync_interval: Option<String>,
 }
 
-pub fn init() {
-    let _ = &*CONFIG;
-}
-
 pub static CONFIG: LazyLock<RwLock<Config>> =
-    LazyLock::new(|| RwLock::new(Config::new().expect("Failed to initialize config")));
+    LazyLock::new(|| RwLock::new(Config::default_config::<&str>(false, &[])));
 pub static CURRENT_PROFILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
+
 pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
     RwLock::new(match std::env::var("SOAR_CONFIG") {
         Ok(path_str) => PathBuf::from(path_str),
@@ -210,6 +207,13 @@ pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
             .join("config.toml"),
     })
 });
+
+pub fn init() -> Result<()> {
+    let config = Config::new()?;
+    let mut global_config = CONFIG.write().unwrap();
+    *global_config = config;
+    Ok(())
+}
 
 pub fn get_config() -> RwLockReadGuard<'static, Config> {
     CONFIG.read().unwrap()
@@ -233,7 +237,7 @@ pub fn set_current_profile(name: &str) -> Result<()> {
 }
 
 impl Config {
-    pub fn generate_default_config(external: bool) -> Self {
+    pub fn default_config<T: AsRef<str>>(external: bool, selected_repos: &[T]) -> Self {
         let soar_root =
             std::env::var("SOAR_ROOT").unwrap_or_else(|_| format!("{}/soar", home_data_path()));
 
@@ -270,7 +274,7 @@ impl Config {
             },
         ];
 
-        if external {
+        if external || !selected_repos.is_empty() {
             repositories.extend([
                 Repository {
                     name: "ivan-hc-am".to_string(),
@@ -297,6 +301,20 @@ impl Config {
                     enabled: None,
                 },
             ]);
+        }
+
+        let repositories = if selected_repos.is_empty() {
+            repositories
+        } else {
+            let selected_set: HashSet<&str> = selected_repos.iter().map(|s| s.as_ref()).collect();
+            repositories
+                .into_iter()
+                .filter(|repo| selected_set.contains(repo.name.as_str()))
+                .collect()
+        };
+
+        if repositories.is_empty() {
+            warn!("No repositories enabled.");
         }
 
         Self {
@@ -326,7 +344,7 @@ impl Config {
     /// If the configuration file is not found, it uses the default configuration.
     pub fn new() -> Result<Self> {
         if std::env::var("SOAR_STEALTH").is_ok() {
-            return Ok(Self::generate_default_config(false));
+            return Ok(Self::default_config::<&str>(false, &[]));
         }
 
         let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
@@ -337,7 +355,7 @@ impl Config {
                 Err(err) => Err(ConfigError::TomlDeError(err)),
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Ok(Self::generate_default_config(false))
+                Ok(Self::default_config::<&str>(false, &[]))
             }
             Err(err) => Err(ConfigError::IoError(err)),
         }?;
@@ -519,7 +537,7 @@ impl Config {
     }
 }
 
-pub fn generate_default_config(external: bool) -> Result<()> {
+pub fn generate_default_config<T: AsRef<str>>(external: bool, repos: &[T]) -> Result<()> {
     let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
 
     if config_path.exists() {
@@ -528,7 +546,7 @@ pub fn generate_default_config(external: bool) -> Result<()> {
 
     fs::create_dir_all(config_path.parent().unwrap())?;
 
-    let def_config = Config::generate_default_config(external);
+    let def_config = Config::default_config(external, repos);
     let annotated_doc = def_config.to_annotated_document()?;
 
     if let Some(parent) = config_path.parent() {
