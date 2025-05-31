@@ -6,6 +6,7 @@ use soar_core::{
         packages::{FilterCondition, PackageQueryBuilder},
     },
     error::{ErrorContext, SoarError},
+    package::query::PackageQuery,
     utils::{calculate_checksum, get_extract_dir},
     SoarResult,
 };
@@ -30,6 +31,13 @@ pub async fn run_package(
     let cache_bin = state.config().get_cache_path()?.join("bin");
 
     let package_name = &command[0];
+
+    let query = PackageQuery::try_from(package_name.as_str())?;
+    let package_name = &query.name.unwrap_or_else(|| package_name.to_string());
+    let repo_name = query.repo_name.as_deref().or_else(|| repo_name);
+    let pkg_id = query.pkg_id.as_deref().or_else(|| pkg_id);
+    let version = query.version.as_deref();
+
     let args = if command.len() > 1 {
         &command[1..]
     } else {
@@ -49,6 +57,10 @@ pub async fn run_package(
 
         if let Some(pkg_id) = pkg_id {
             builder = builder.where_and("pkg_id", FilterCondition::Eq(pkg_id.to_string()));
+        }
+
+        if let Some(version) = version {
+            builder = builder.where_and("version", FilterCondition::Eq(version.to_string()));
         }
 
         let packages: Vec<Package> = builder.load()?.items;

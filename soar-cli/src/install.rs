@@ -480,16 +480,9 @@ pub async fn install_single_package(
         if ctx.binary_only {
             let mut patterns = default_install_patterns();
             patterns.extend(
-                [
-                    "!*.png",
-                    "!*.svg",
-                    "!*.desktop",
-                    "!LICENSE",
-                    "!*.version",
-                    "!CHECKSUM",
-                ]
-                .iter()
-                .map(ToString::to_string),
+                ["!*.png", "!*.svg", "!*.desktop", "!LICENSE", "!CHECKSUM"]
+                    .iter()
+                    .map(ToString::to_string),
             );
             patterns
         } else {
