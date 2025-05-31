@@ -128,7 +128,7 @@ impl PackageInstaller {
                 match_keywords: vec![],
                 exact_case: true,
                 globs: self.globs.clone(),
-                file_mode: FileMode::ForceOverwrite,
+                file_mode: FileMode::SkipExisting,
             };
             let mut downloader = OciDownloader::new(options);
             let mut retries = 0;
@@ -166,7 +166,7 @@ impl PackageInstaller {
                 output_path: Some(output_path.to_string_lossy().to_string()),
                 progress_callback: self.progress_callback.clone(),
                 extract_archive: true,
-                file_mode: FileMode::ForceOverwrite,
+                file_mode: FileMode::SkipExisting,
                 extract_dir: Some(extract_dir.to_string_lossy().to_string()),
                 prompt: None,
             };

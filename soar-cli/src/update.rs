@@ -7,7 +7,7 @@ use std::{
 use rusqlite::{prepare_and_bind, Connection};
 use soar_core::{
     database::{
-        models::Package,
+        models::{InstalledPackage, Package},
         packages::{FilterCondition, PackageQueryBuilder},
     },
     error::{ErrorContext, SoarError},
@@ -23,7 +23,10 @@ use crate::{
     utils::ask_target_action,
 };
 
-fn is_already_installed(package: &Package, core_db: Arc<Mutex<Connection>>) -> SoarResult<bool> {
+fn get_existing(
+    package: &Package,
+    core_db: Arc<Mutex<Connection>>,
+) -> SoarResult<Option<InstalledPackage>> {
     let existing = PackageQueryBuilder::new(core_db)
         .where_and("repo_name", FilterCondition::Eq(package.repo_name.clone()))
         .where_and("pkg_name", FilterCondition::Eq(package.pkg_name.clone()))
@@ -33,7 +36,11 @@ fn is_already_installed(package: &Package, core_db: Arc<Mutex<Connection>>) -> S
         .load_installed()?
         .items;
 
-    Ok(!existing.is_empty())
+    if existing.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(existing[0].clone()))
+    }
 }
 
 pub async fn update_packages(
@@ -52,7 +59,10 @@ pub async fn update_packages(
         for package in packages {
             let query = PackageQuery::try_from(package.as_str())?;
             let builder = PackageQueryBuilder::new(core_db.clone());
-            let mut builder = query.apply_filters(builder.clone()).limit(1);
+            let mut builder = query
+                .apply_filters(builder.clone())
+                .where_and("is_installed", FilterCondition::Eq("1".to_string()))
+                .limit(1);
             let installed_pkgs = builder.load_installed()?.items;
 
             for pkg in installed_pkgs {
@@ -79,13 +89,16 @@ pub async fn update_packages(
                     let with_pkg_id = pkg.with_pkg_id;
                     let package = new_pkg.first().unwrap().clone();
 
-                    if is_already_installed(&package, core_db.clone())? {
-                        continue;
+                    let existing_install = get_existing(&package, core_db.clone())?;
+                    if let Some(ref existing_install) = existing_install {
+                        if existing_install.is_installed {
+                            continue;
+                        }
                     }
 
                     update_targets.push(InstallTarget {
                         package,
-                        existing_install: None,
+                        existing_install,
                         with_pkg_id,
                         profile: Some(pkg.profile),
                     })
@@ -94,6 +107,7 @@ pub async fn update_packages(
         }
     } else {
         let installed_packages = PackageQueryBuilder::new(core_db.clone())
+            .where_and("is_installed", FilterCondition::Eq("1".to_string()))
             .where_and("pinned", FilterCondition::Eq(String::from("0")))
             .load_installed()?
             .items;
@@ -123,13 +137,16 @@ pub async fn update_packages(
                 let with_pkg_id = pkg.with_pkg_id;
                 let package = new_pkg.first().unwrap().clone();
 
-                if is_already_installed(&package, core_db.clone())? {
-                    continue;
+                let existing_install = get_existing(&package, core_db.clone())?;
+                if let Some(ref existing_install) = existing_install {
+                    if existing_install.is_installed {
+                        continue;
+                    }
                 }
 
                 update_targets.push(InstallTarget {
                     package,
-                    existing_install: None,
+                    existing_install,
                     with_pkg_id,
                     profile: Some(pkg.profile),
                 })
