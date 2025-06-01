@@ -244,6 +244,17 @@ impl PackageQueryBuilder {
                         "download_count",
                         "download_count_week",
                         "download_count_month",
+                        "bundle",
+                        "bundle_type",
+                        "soar_syms",
+                        "deprecated",
+                        "desktop_integration",
+                        "external",
+                        "installable",
+                        "portable",
+                        "trusted",
+                        "version_latest",
+                        "version_outdated",
                     ]
                     .join(",")
                 } else {
