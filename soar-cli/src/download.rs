@@ -39,9 +39,6 @@ pub struct DownloadContext {
     pub exact_case: bool,
     pub extract: bool,
     pub extract_dir: Option<String>,
-    pub proxy: Option<String>,
-    pub header: Option<Vec<String>>,
-    pub user_agent: Option<String>,
     pub skip_existing: bool,
     pub force_overwrite: bool,
 }

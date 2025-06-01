@@ -15,23 +15,41 @@ use crate::utils::parse_default_repos_arg;
     arg_required_else_help = true
 )]
 pub struct Args {
+    /// Set output verbosity
     #[arg(short = 'v', long, action = ArgAction::Count, global = true)]
     pub verbose: u8,
 
+    /// Suppress outputs
     #[arg(short, long, global = true)]
     pub quiet: bool,
 
+    /// Output as json
     #[arg(short, long, global = true)]
     pub json: bool,
 
+    /// Disable colors in output
     #[arg(long, global = true)]
     pub no_color: bool,
 
+    /// Set current profile
     #[arg(short, long, global = true)]
     pub profile: Option<String>,
 
+    /// Provide custom config file
     #[arg(short, long, global = true)]
     pub config: Option<String>,
+
+    /// Set proxy
+    #[arg(required = false, long, short = 'P', global = true)]
+    pub proxy: Option<String>,
+
+    /// Set request headers
+    #[arg(required = false, long, short = 'H', global = true)]
+    pub header: Option<Vec<String>>,
+
+    /// Set user agent
+    #[arg(required = false, long, short = 'A', global = true)]
+    pub user_agent: Option<String>,
 
     #[clap(subcommand)]
     pub command: Commands,
@@ -280,18 +298,6 @@ pub enum Commands {
         /// Directory where to extract the archive
         #[arg(required = false, long)]
         extract_dir: Option<String>,
-
-        /// Set proxy
-        #[arg(required = false, long)]
-        proxy: Option<String>,
-
-        /// Set request headers
-        #[arg(required = false, long, short = 'H')]
-        header: Option<Vec<String>>,
-
-        /// Set user agent
-        #[arg(required = false, long, short = 'A')]
-        user_agent: Option<String>,
 
         /// Skip existing download with same file
         #[arg(required = false, long)]

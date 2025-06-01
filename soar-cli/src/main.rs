@@ -1,4 +1,4 @@
-use std::{env, fs, io::Read, process::Command, sync::Arc};
+use std::{env, error::Error, fs, io::Read, process::Command, sync::Arc};
 
 use clap::Parser;
 use cli::Args;
@@ -18,6 +18,7 @@ use soar_core::{
     utils::{build_path, cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
 };
+use soar_dl::http_client::{configure_http_client, create_http_header_map};
 use state::AppState;
 use tracing::{error, info, warn};
 use update::update_packages;
@@ -84,6 +85,28 @@ async fn handle_cli() -> SoarResult<()> {
             *config_path = path;
         }
     }
+
+    let proxy = args.proxy.clone();
+    let user_agent = args.user_agent.clone();
+    let header = args.header.clone();
+
+    if let Err(err) = configure_http_client(|config| {
+        config.proxy = proxy;
+
+        if let Some(user_agent) = user_agent {
+            config.user_agent = Some(user_agent);
+        }
+
+        if let Some(headers) = header {
+            config.headers = Some(create_http_header_map(headers));
+        }
+    }) {
+        error!("Error configuring HTTP client: {}", err);
+        if let Some(source) = err.source() {
+            error!("  Caused by: {}", source);
+        }
+        std::process::exit(1);
+    };
 
     config::init()?;
 
@@ -200,9 +223,6 @@ async fn handle_cli() -> SoarResult<()> {
             exact_case,
             extract,
             extract_dir,
-            proxy,
-            header,
-            user_agent,
             skip_existing,
             force_overwrite,
         } => {
@@ -225,9 +245,6 @@ async fn handle_cli() -> SoarResult<()> {
                 exact_case,
                 extract,
                 extract_dir,
-                proxy,
-                header,
-                user_agent,
                 skip_existing,
                 force_overwrite,
             };
