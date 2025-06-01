@@ -1,4 +1,36 @@
 
+## [0.6.0](https://github.com/pkgforge/soar/compare/v0.5.15...v0.6.0) - 2025-06-01
+
+### ⛰️  Features
+
+- *(config)* Allow selectively enabling repos for default config - ([6acab85](https://github.com/pkgforge/soar/commit/6acab852eb04f7c37584f80f475bf773d2241d74))
+- *(config)* Add global overrides for repo config - ([9f15193](https://github.com/pkgforge/soar/commit/9f151931da874b8edd6e6c1eb2df1af2849e5f25))
+- *(config)* Allow env vars, add comments on default config - ([6799a70](https://github.com/pkgforge/soar/commit/6799a70ef7f83c3b7434776089716ecd8bda7183))
+- *(config)* Allow stealth mode (skip reading config file) - ([6ee0954](https://github.com/pkgforge/soar/commit/6ee0954a2dc8a62fd6121323e3a8a52f387560c6))
+- *(package)* Support portable share dir - ([57bd08d](https://github.com/pkgforge/soar/commit/57bd08d7b0cd8e1878f76853a4d29eda6209e269))
+- *(package)* Symlink all binaries in install dir if no provides - ([8defec2](https://github.com/pkgforge/soar/commit/8defec279d33e78fb8b2a772a94b14b500e0a4e5))
+- *(package)* Add support for extracting archives - ([cc139cb](https://github.com/pkgforge/soar/commit/cc139cb64b35fe74f624c4b2bbf7faf99f8ed71d))
+- *(request)* Add ability to set custom proxy, header and user-agent - ([4d403b8](https://github.com/pkgforge/soar/commit/4d403b8b9db2582a8c43690d31deaa248a6e3355))
+- *(runimage)* Support portable dir for runimages - ([a084b19](https://github.com/pkgforge/soar/commit/a084b1931dac8fd5fe0ba86ff3af97c70d653a20))
+
+### 🐛 Bug Fixes
+
+- *(package)* Handle provides condition to keep both - ([f46e90e](https://github.com/pkgforge/soar/commit/f46e90e0604b48fccf5d26c1a2ff1ce7800a662c))
+- *(package)* Handle provide without target - ([6ff23b7](https://github.com/pkgforge/soar/commit/6ff23b76c36ef40091d0be5b7a46d19834ddf662))
+- *(package)* Apply sig variant patterns automatically - ([25ee70e](https://github.com/pkgforge/soar/commit/25ee70e93bc497e4e2a4b665969af963f79515a9))
+- *(query)* Include all columns in default database query - ([be82784](https://github.com/pkgforge/soar/commit/be82784e473831820a044c7bbc0fd68a229f3862))
+- *(run)* Support full package syntax - ([f2a9b19](https://github.com/pkgforge/soar/commit/f2a9b19d7ac23d8a8e43688f90ed024afe72d08f))
+- *(signature)* Skip signature verification if original file doesn't exist - ([cf0da95](https://github.com/pkgforge/soar/commit/cf0da95961dbd5ab263ba66d0a2b2334ea3f1abf))
+- *(update)* Prevent updating partially installed packages - ([b4b718d](https://github.com/pkgforge/soar/commit/b4b718d30acd1b29a2d8c962eaaf7a3d73bfb7bf))
+
+### 🚜 Refactor
+
+- *(metadata)* Update metadata database fields - ([0d8dc7f](https://github.com/pkgforge/soar/commit/0d8dc7f3b703ba815290e5228e0c2403f3f483b1))
+
+### 📚 Documentation
+
+- *(readme)* Refactor readme & install script ([#49](https://github.com/pkgforge/soar/pull/49)) - ([63594c3](https://github.com/pkgforge/soar/commit/63594c37f93fa402e4ab899178c5c1fd34d88352))
+
 ## [0.5.15](https://github.com/pkgforge/soar/compare/v0.5.14...v0.5.15) - 2025-05-04
 
 ### ⛰️  Features
