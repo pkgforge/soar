@@ -62,5 +62,17 @@ CREATE TABLE packages (
   download_count INTEGER,
   download_count_week INTEGER,
   download_count_month INTEGER,
+  bundle BOOLEAN NOT NULL DEFAULT false,
+  bundle_type TEXT,
+  soar_syms BOOLEAN NOT NULL DEFAULT false,
+  deprecated BOOLEAN NOT NULL DEFAULT false,
+  desktop_integration BOOLEAN,
+  external BOOLEAN,
+  installable BOOLEAN,
+  portable BOOLEAN,
+  recurse_provides BOOLEAN,
+  trusted BOOLEAN,
+  version_latest TEXT,
+  version_outdated BOOLEAN,
   UNIQUE (pkg_id, pkg_name, version)
 );

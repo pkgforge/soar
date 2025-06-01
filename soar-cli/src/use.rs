@@ -16,7 +16,7 @@ use tracing::info;
 
 use crate::{
     state::AppState,
-    utils::{get_valid_selection, has_no_desktop_integration, mangle_package_symlinks, Colored},
+    utils::{get_valid_selection, has_desktop_integration, mangle_package_symlinks, Colored},
 };
 
 pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
@@ -117,10 +117,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         .load()?
         .items;
 
-    if !pkg
-        .iter()
-        .any(|p| has_no_desktop_integration(&p.repo_name, p.notes.as_deref()))
-    {
+    if pkg.iter().all(|p| has_desktop_integration(&p)) {
         integrate_package(&install_dir, &selected_package, None, None, None, None).await?;
     }
 

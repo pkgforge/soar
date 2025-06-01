@@ -14,7 +14,7 @@ use serde::Serialize;
 use soar_core::{
     config::get_config,
     database::{
-        models::PackageExt,
+        models::{Package, PackageExt},
         packages::{PackageProvide, ProvideStrategy},
     },
     error::{ErrorContext, SoarError},
@@ -90,12 +90,11 @@ pub fn select_package_interactively<T: PackageExt>(
     Ok(pkgs.into_iter().nth(selection))
 }
 
-pub fn has_no_desktop_integration(repo_name: &str, notes: Option<&[String]>) -> bool {
-    !get_config().has_desktop_integration(repo_name)
-        || notes.is_some_and(|all| {
-            all.iter()
-                .any(|note| note.contains("NO_DESKTOP_INTEGRATION"))
-        })
+pub fn has_desktop_integration(package: &Package) -> bool {
+    match package.desktop_integration {
+        Some(false) => false,
+        _ => get_config().has_desktop_integration(&package.repo_name),
+    }
 }
 
 pub fn pretty_package_size(ghcr_size: Option<u64>, size: Option<u64>) -> String {

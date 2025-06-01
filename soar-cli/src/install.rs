@@ -37,7 +37,7 @@ use crate::{
     progress::handle_install_progress,
     state::AppState,
     utils::{
-        ask_target_action, has_no_desktop_integration, mangle_package_symlinks,
+        ask_target_action, has_desktop_integration, mangle_package_symlinks,
         select_package_interactively, Colored,
     },
 };
@@ -615,9 +615,7 @@ pub async fn install_single_package(
     let symlinks =
         mangle_package_symlinks(&install_dir, &bin_dir, target.package.provides.as_deref()).await?;
 
-    if !(unlinked
-        || has_no_desktop_integration(&target.package.repo_name, target.package.notes.as_deref()))
-    {
+    if !unlinked || has_desktop_integration(&target.package) {
         integrate_package(
             &install_dir,
             &target.package,
