@@ -1,4 +1,10 @@
 
+## [0.3.3](https://github.com/pkgforge/soar/compare/soar-core-v0.3.2...soar-core-v0.3.3) - 2025-06-02
+
+### 🐛 Bug Fixes
+
+- *(database)* Update package insert statement - ([7c3ab9d](https://github.com/pkgforge/soar/commit/7c3ab9dec424dd69ba419809adb5cdc49831c464))
+
 ## [0.3.2](https://github.com/pkgforge/soar/compare/soar-core-v0.3.1...soar-core-v0.3.2) - 2025-06-01
 
 ### ⛰️  Features
