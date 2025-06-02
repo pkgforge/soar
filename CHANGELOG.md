@@ -1,4 +1,10 @@
 
+## [0.6.1](https://github.com/pkgforge/soar/compare/v0.6.0...v0.6.1) - 2025-06-02
+
+### 🐛 Bug Fixes
+
+- *(database)* Update package insert statement - ([7c3ab9d](https://github.com/pkgforge/soar/commit/7c3ab9dec424dd69ba419809adb5cdc49831c464))
+
 ## [0.6.0](https://github.com/pkgforge/soar/compare/v0.5.15...v0.6.0) - 2025-06-01
 
 ### ⛰️  Features
