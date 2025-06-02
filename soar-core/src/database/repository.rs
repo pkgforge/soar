@@ -124,7 +124,19 @@ impl<'a> PackageRepository<'a> {
             replaces,
             package.download_count,
             package.download_count_week,
-            package.download_count_month
+            package.download_count_month,
+            package.bundle.unwrap_or(false),
+            package.bundle_type,
+            package.soar_syms.unwrap_or(false),
+            package.deprecated.unwrap_or(false),
+            package.desktop_integration,
+            package.external,
+            package.installable,
+            package.portable,
+            package.recurse_provides,
+            package.trusted,
+            package.version_latest,
+            package.version_outdated
         ])?;
         if inserted == 0 {
             return Ok(());
