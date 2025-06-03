@@ -53,7 +53,7 @@ jobs:
           target: ${{ matrix.build.TARGET }}
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.build.TARGET }}
+        run: RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked --target ${{ matrix.build.TARGET }}
 
       - name: Prepare release assets
         shell: bash

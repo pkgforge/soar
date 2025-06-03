@@ -69,7 +69,7 @@ jobs:
           target: ${{ matrix.build.TARGET }}
 
       - name: Build
-        run: SOAR_NIGHTLY=1 cargo build --release --locked --target ${{ matrix.build.TARGET }}
+        run: SOAR_NIGHTLY=1 RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked --target ${{ matrix.build.TARGET }}
 
       - name: Prepare release assets
         shell: bash
