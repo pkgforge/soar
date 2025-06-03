@@ -592,7 +592,7 @@ pub async fn install_single_package(
         }
     }
 
-    let final_checksum = if real_bin.exists() {
+    if real_bin.exists() {
         let final_checksum = calculate_checksum(&real_bin)?;
         if let Some(ref checksum) = target.package.bsum {
             if final_checksum != *checksum {
@@ -630,7 +630,6 @@ pub async fn install_single_package(
     installer
         .record(
             unlinked,
-            final_checksum.as_deref(),
             portable,
             portable_home,
             portable_config,

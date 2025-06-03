@@ -199,7 +199,6 @@ impl PackageInstaller {
     pub async fn record(
         &self,
         unlinked: bool,
-        final_checksum: Option<&str>,
         portable: Option<&str>,
         portable_home: Option<&str>,
         portable_config: Option<&str>,
@@ -214,6 +213,7 @@ impl PackageInstaller {
             version,
             ghcr_size,
             size,
+            bsum,
             ..
         } = package;
         let provides = serde_json::to_string(&package.provides).unwrap();
@@ -233,7 +233,7 @@ impl PackageInstaller {
                     is_installed = true,
                     provides = $provides,
                     with_pkg_id = $with_pkg_id,
-                    checksum = $final_checksum
+                    checksum = $bsum
                 WHERE
                     repo_name = $repo_name
                     AND pkg_name = $pkg_name
