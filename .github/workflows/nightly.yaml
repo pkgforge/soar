@@ -3,7 +3,7 @@ name: soar nightly
 on:
   push:
     tags:
-      - nightly
+      - dev
   workflow_dispatch:
 
 permissions:
@@ -36,6 +36,10 @@ jobs:
           - {
               NAME: aarch64-linux,
               TARGET: aarch64-unknown-linux-musl,
+            }
+          - {
+              NAME: riscv64-linux,
+              TARGET: riscv64gc-unknown-linux-musl
             }
     steps:
       - name: Checkout
@@ -92,6 +96,6 @@ jobs:
           file: soar-${{ matrix.build.NAME }}*
           file_glob: true
           overwrite: true
-          tag: nightly
+          tag: dev
           release_name: "${{ steps.version.outputs.version }}"
           prerelease: true
