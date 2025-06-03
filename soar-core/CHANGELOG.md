@@ -1,4 +1,10 @@
 
+## [0.4.0](https://github.com/pkgforge/soar/compare/soar-core-v0.3.3...soar-core-v0.4.0) - 2025-06-03
+
+### 🚜 Refactor
+
+- *(checksum)* Save checksum from metadata as is for installed package - ([55b1f34](https://github.com/pkgforge/soar/commit/55b1f34911543743f52d92fd5618d1e47134896c))
+
 ## [0.3.3](https://github.com/pkgforge/soar/compare/soar-core-v0.3.2...soar-core-v0.3.3) - 2025-06-02
 
 ### 🐛 Bug Fixes
