@@ -27,7 +27,7 @@
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif?version=v0.5.15+1" alt="soar-list" width="750">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.6.2" alt="soar-list" width="750">
     </a><br>
 </p>
 
@@ -121,7 +121,6 @@ To save our time triaging & to ensure your issue/feature-request gets addressed 
 > - Based on the assigned [priority level (`p0-p3`)](https://github.com/pkgforge/soar/labels) & our free time, we will do our best to respond/address it.
 > - However, this is not a guarantee or an [SLA](https://en.wikipedia.org/wiki/Service-level_agreement). Please have patience & wait before tagging us again for a response. We thank you for your understanding.
 
-
 ## 💬 Community
 
 We have a growing community on discord to discuss not only Soar/Pkgforge but also other cool projects, feel free to join & hangout anytime.
@@ -138,11 +137,19 @@ Please feel free to:
 2. Create your feature branch
 3. Submit a pull request
 
+---
+
 ## 📊 Repo Stats
 
 ![Alt](https://repobeats.axiom.co/api/embed/7c089611431897ab74236ac506187c2f563c2886.svg "Repobeats analytics image")
 [![Stargazers](https://reporoster.com/stars/dark/pkgforge/soar)](https://github.com/pkgforge/soar/stargazers)
 [![Stargazers over time](https://starchart.cc/pkgforge/soar.svg?variant=dark)](https://starchart.cc/pkgforge/soar)
+
+## 🎀 Sponsors
+
+- CICD run on free [Github Runners](https://docs.github.com/actions/using-github-hosted-runners/about-github-hosted-runners), Container Registry & [Package Storage](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) on [ghcr.io](https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-container-registry). These & much more are all generously provided by [GitHub](https://github.com/) [<img src="https://github.com/github.png?size=64" width="30" height="30">](https://github.com/)
+
+- [`riscv64`](https://riscv.org/) [<img src="https://github.com/user-attachments/assets/cf5b988d-657a-47eb-889d-a1bdb014857a" width="30" height="30">](https://riscv.org/) CICD test machines are provided by [10x Engineer's](https://10xengineers.ai/) [<img src="https://github.com/user-attachments/assets/a2cceb62-9045-43b9-b5b2-384565f27ca5" width="30" height="30">](https://cloud-v.co/) [Cloud-V](https://cloud-v.co/) [<img src="https://github.com/user-attachments/assets/74d0fd73-4439-45d4-a756-b1c0c74d1816" width="30" height="30">](https://cloud-v.co/)
 
 ## 📝 License
 
