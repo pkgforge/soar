@@ -1,4 +1,10 @@
 
+## [0.6.3](https://github.com/pkgforge/soar/compare/v0.6.2...v0.6.3) - 2025-06-06
+
+### ⛰️  Features
+
+- *(repository)* Handle recurse provides - ([10878a7](https://github.com/pkgforge/soar/commit/10878a786a22897864dafdfcab82e4f46732e7f7))
+
 ## [0.6.2](https://github.com/pkgforge/soar/compare/v0.6.1...v0.6.2) - 2025-06-03
 
 ### 🚜 Refactor
