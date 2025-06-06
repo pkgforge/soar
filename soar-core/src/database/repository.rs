@@ -68,18 +68,22 @@ impl<'a> PackageRepository<'a> {
         let repology = serde_json::to_string(&package.repology).unwrap();
         let replaces = serde_json::to_string(&package.replaces).unwrap();
 
-        let provides = package.provides.clone().map(|vec| {
-            vec.into_iter()
+        const PROVIDES_DELIMITERS: &[&str] = &["==", "=>", ":"];
+
+        let provides = package.provides.as_ref().map(|vec| {
+            vec.iter()
                 .filter_map(|p| {
-                    let matches = p == package.pkg_name
-                        || ["==", "=>", ":"]
-                            .iter()
-                            .find_map(|&delim| p.split_once(delim))
-                            .is_some_and(|(first, _)| first == package.pkg_name);
-                    matches.then(|| PackageProvide::from_string(&p))
+                    let include = *p == package.pkg_name
+                        || matches!(package.recurse_provides, Some(true))
+                        || p.strip_prefix(&package.pkg_name).is_some_and(|rest| {
+                            PROVIDES_DELIMITERS.iter().any(|d| rest.starts_with(d))
+                        });
+
+                    include.then(|| PackageProvide::from_string(p))
                 })
-                .collect::<Vec<PackageProvide>>()
+                .collect::<Vec<_>>()
         });
+
         let provides = serde_json::to_string(&provides).unwrap();
         let inserted = self.statements.package_insert.execute(params![
             package.disabled,
