@@ -223,7 +223,13 @@ pub async fn mangle_package_symlinks(
     }
 
     if provides.is_empty() {
-        for entry in fs::read_dir(install_dir).with_context(|| {
+        let soar_syms = Path::new("SOAR_SYMS");
+        let binaries_dir = if soar_syms.is_dir() {
+            soar_syms
+        } else {
+            install_dir
+        };
+        for entry in fs::read_dir(binaries_dir).with_context(|| {
             format!(
                 "reading install directory {} for ELF detection",
                 install_dir.display()

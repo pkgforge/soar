@@ -592,7 +592,13 @@ pub async fn install_single_package(
         }
     }
 
-    if real_bin.exists() {
+    // NOTE: skip checksum validation if the binary with same name as package
+    // doesn't exist, as we don't have a way to identify what file the
+    // `checksum` field in metadata actually refers to.
+    //
+    // Instead, we should rely on `CHECKSUM` file and only fallback to this
+    // in case there's no `CHECKSUM` file in the package.
+    if real_bin.exists() && target.package.provides.is_some() {
         let final_checksum = calculate_checksum(&real_bin)?;
         if let Some(ref checksum) = target.package.bsum {
             if final_checksum != *checksum {
