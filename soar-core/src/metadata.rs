@@ -75,26 +75,29 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
     if !metadata_db.exists() {
         fs::create_dir_all(&repo_path)
             .with_context(|| format!("creating directory {}", repo_path.display()))?;
-        File::create(&metadata_db)
-            .with_context(|| format!("creating metadata database {}", metadata_db.display()))?;
     }
 
-    let conn = Connection::open(&metadata_db)?;
-    let etag: String = conn
-        .query_row("SELECT etag FROM repository", [], |row| row.get(0))
-        .unwrap_or_default();
+    let etag = if metadata_db.exists() {
+        let conn = Connection::open(&metadata_db)?;
+        let etag: String = conn
+            .query_row("SELECT etag FROM repository", [], |row| row.get(0))
+            .unwrap_or_default();
 
-    if !force && !etag.is_empty() {
-        let file_info = metadata_db
-            .metadata()
-            .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
-        if let Ok(created) = file_info.created() {
-            if repo.sync_interval() >= created.elapsed()?.as_millis() {
-                return Ok(None);
+        if !force && !etag.is_empty() {
+            let file_info = metadata_db
+                .metadata()
+                .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
+            if let Ok(created) = file_info.created() {
+                if repo.sync_interval() >= created.elapsed()?.as_millis() {
+                    return Ok(None);
+                }
             }
         }
-    }
-    drop(conn);
+        drop(conn);
+        etag
+    } else {
+        String::new()
+    };
 
     let client = reqwest::Client::new();
 

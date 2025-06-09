@@ -164,7 +164,12 @@ impl AppState {
             .config
             .repositories
             .iter()
-            .map(|r| r.get_path().unwrap().join("metadata.db"))
+            .filter_map(|r| {
+                r.get_path()
+                    .ok()
+                    .map(|path| path.join("metadata.db"))
+                    .filter(|db_path| db_path.is_file())
+            })
             .collect();
 
         Database::new_multi(repo_paths.as_ref())
