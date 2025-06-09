@@ -224,10 +224,10 @@ pub async fn mangle_package_symlinks(
 
     if provides.is_empty() {
         let soar_syms = Path::new("SOAR_SYMS");
-        let binaries_dir = if soar_syms.is_dir() {
-            soar_syms
+        let (is_syms, binaries_dir) = if soar_syms.is_dir() {
+            (true, soar_syms)
         } else {
-            install_dir
+            (false, install_dir)
         };
         for entry in fs::read_dir(binaries_dir).with_context(|| {
             format!(
@@ -243,7 +243,7 @@ pub async fn mangle_package_symlinks(
                     )
                 })?
                 .path();
-            if path.is_file() && is_elf(&path).await {
+            if path.is_file() && (is_syms || is_elf(&path).await) {
                 if let Some(file_name) = path.file_name() {
                     let symlink_target_path = bin_dir.join(file_name);
                     if symlink_target_path.is_symlink() || symlink_target_path.is_file() {
