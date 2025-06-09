@@ -27,7 +27,7 @@
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif?version=v0.6.2" alt="soar-list" width="750">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.6.2+2" alt="soar-list" width="750">
     </a><br>
 </p>
 
@@ -93,6 +93,7 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 | **Community Contributions** | The [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) format in [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs) allows community members to submit package definitions, similar to AUR. |
 | **Cross-Distro Compatibility** | Some packages are repackaged from other distro repositories, allowing you to run applications from e.g., Arch repositories on Debian-based systems without containers. |
 | **Decentralized** | The portable nature of packages means they can be downloaded and used independently of Soar if needed. |
+| **Re-Distribution** | All FOSS projects are granted free access to our complete package catalogue for [re-distribution](https://docs.pkgforge.dev/repositories/soarpkgs/re-distribution). |
 
 ## ☢️ Caveats
 
