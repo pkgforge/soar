@@ -1,4 +1,17 @@
 
+## [0.6.3](https://github.com/pkgforge/soar/compare/v0.6.2...v0.6.3) - 2025-06-12
+
+### ⛰️  Features
+
+- *(install)* Support soar_syms directory - ([cb71c1d](https://github.com/pkgforge/soar/commit/cb71c1d55c3be9cf44d38176aa4ef75f203aced6))
+- *(repository)* Handle recurse provides - ([10878a7](https://github.com/pkgforge/soar/commit/10878a786a22897864dafdfcab82e4f46732e7f7))
+
+### 🐛 Bug Fixes
+
+- *(install)* Handle alias provide strategy - ([319940c](https://github.com/pkgforge/soar/commit/319940c251b6c00d9de6b6e0f50b94f6de7f08f9))
+- *(install)* Don't check if the file inside SOAR_SYMS dir is ELF - ([cf020c8](https://github.com/pkgforge/soar/commit/cf020c83da17e4a227d1eff446d4dfde92421da2))
+- *(metadata)* Filter non-existing repos and prevent empty db creation - ([3353ab5](https://github.com/pkgforge/soar/commit/3353ab55699251aea8f8541a690ce417087c8e3e))
+
 ## [0.6.2](https://github.com/pkgforge/soar/compare/v0.6.1...v0.6.2) - 2025-06-03
 
 ### 🚜 Refactor
