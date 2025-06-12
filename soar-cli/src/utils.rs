@@ -181,11 +181,7 @@ pub async fn mangle_package_symlinks(
         let mut symlink_targets = Vec::new();
 
         if let Some(ref target) = provide.target {
-            let is_symlink = matches!(
-                provide.strategy,
-                Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
-            );
-            if is_symlink {
+            if provide.strategy.is_some() {
                 let target_path = bin_dir.join(target);
                 if processed_paths.insert(target_path.clone()) {
                     symlink_targets.push(target_path);
