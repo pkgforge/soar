@@ -97,7 +97,7 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 
 > [!TIP]
 > - You can [self host](https://soar.qaidvoid.dev/configuration#custom-repository-support) your own repos if you need soar to run on other [supported hosts](https://docs.pkgforge.dev/sbuild/specification/20.x_exec#host).
-> - Or you can also [sponsor us](https://github.com/pkgforge-dev/soar#-sponsors) with Build Servers for CICD & Testing. 
+> - Or you can also [sponsor us](https://github.com/pkgforge/soar#-sponsors) with Build Servers for CICD & Testing. 
 
 ### 🏆 Tier 1 Hosts
 
