@@ -100,18 +100,19 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 > - Or you can also [sponsor us](https://github.com/pkgforge/soar#-sponsors) with Build Servers for CICD & Testing. 
 
 ### 🏆 Tier 1 Hosts
+_✅ --> Enabled by Default_
 
 | 🤖 Host | 📦 Repos | ℹ️ Comment |
 |------|----------|---------|
-| **`aarch64-Linux`** | [bincache](https://docs.pkgforge.dev/repositories/bincache), [pkgcache](https://docs.pkgforge.dev/repositories/pkgcache), [pkgforge-cargo](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [cargo-bins](https://docs.pkgforge.dev/repositories/external/cargo-bins), [appimage-github-io](https://docs.pkgforge.dev/repositories/external/appimage-github-io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) | Almost as many packages as `x86_64-Linux`, fully supported |
-| **`x86_64-Linux`** | [bincache](https://docs.pkgforge.dev/repositories/bincache), [pkgcache](https://docs.pkgforge.dev/repositories/pkgcache), [pkgforge-cargo](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [cargo-bins](https://docs.pkgforge.dev/repositories/external/cargo-bins), [ivan-hc-am](https://docs.pkgforge.dev/repositories/external/ivan-hc-am), [appimage-github-io](https://docs.pkgforge.dev/repositories/external/appimage-github-io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) | Primary target & most supported |
+| **`aarch64-Linux`** | [**bincache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [**pkgcache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache), [**pkgforge-cargo**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [**pkgforge-go**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go), [cargo-bins](https://docs.pkgforge.dev/repositories/external/cargo-bins), [appimage-github-io](https://docs.pkgforge.dev/repositories/external/appimage-github-io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) | Almost as many packages as `x86_64-Linux`, fully supported |
+| **`x86_64-Linux`** | [**bincache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [**pkgcache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache), [**pkgforge-cargo**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [**pkgforge-go**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go), [cargo-bins](https://docs.pkgforge.dev/repositories/external/cargo-bins), [ivan-hc-am](https://docs.pkgforge.dev/repositories/external/ivan-hc-am), [appimage-github-io](https://docs.pkgforge.dev/repositories/external/appimage-github-io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) | Primary target & most supported |
 
 ### 🥈 Tier 2 Hosts
 
 | 🤖 Host | 📦 Repos | ℹ️ Comment |
 |------|----------|---------|
-| **`loongarch64-Linux`** | [pkgforge-cargo](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo) | Experimental & Least supported |
-| **`riscv64-Linux`** | [bincache](https://docs.pkgforge.dev/repositories/bincache), [pkgforge-cargo](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo)  | Experimental, with [gradual progress](https://github.com/pkgforge/soarpkgs/issues/198)  |
+| **`loongarch64-Linux`** | [**pkgforge-cargo**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [**pkgforge-go**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go) | Experimental & Least supported |
+| **`riscv64-Linux`** | [**bincache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [**pkgforge-cargo**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [**pkgforge-go**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go) | Experimental, with [gradual progress](https://github.com/pkgforge/soarpkgs/issues/198) |
 
 
 ## ☢️ Caveats
