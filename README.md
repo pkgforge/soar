@@ -27,7 +27,7 @@
 
 <p align="center">
     <a href="https://soar.qaidvoid.dev/installation">
-        <img src="https://soar.pkgforge.dev/gif?version=v0.5.15+1" alt="soar-list" width="750">
+        <img src="https://soar.pkgforge.dev/gif?version=v0.6.3" alt="soar-list" width="750">
     </a><br>
 </p>
 
@@ -93,6 +93,27 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 | **Community Contributions** | The [`.SBUILD`](https://docs.pkgforge.dev/sbuild/introduction) format in [pkgforge/soarpkgs](https://github.com/pkgforge/soarpkgs) allows community members to submit package definitions, similar to AUR. |
 | **Cross-Distro Compatibility** | Some packages are repackaged from other distro repositories, allowing you to run applications from e.g., Arch repositories on Debian-based systems without containers. |
 | **Decentralized** | The portable nature of packages means they can be downloaded and used independently of Soar if needed. |
+| **Re-Distribution** | All FOSS projects are granted free access to our complete package catalogue for [re-distribution](https://docs.pkgforge.dev/repositories/soarpkgs/re-distribution). |
+
+> [!TIP]
+> - You can [self host](https://soar.qaidvoid.dev/configuration#custom-repository-support) your own repos if you need soar to run on other [supported hosts](https://docs.pkgforge.dev/sbuild/specification/20.x_exec#host).
+> - Or you can also [sponsor us](https://github.com/pkgforge/soar#-sponsors) with Build Servers for CICD & Testing. 
+
+### 🏆 Tier 1 Hosts
+_✅ --> Enabled by Default_
+
+| 🤖 Host | 📦 Repos | ℹ️ Comment |
+|------|----------|---------|
+| **`aarch64-Linux`** | [**bincache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [**pkgcache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache), [**pkgforge-cargo**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [**pkgforge-go**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go), [cargo-bins](https://docs.pkgforge.dev/repositories/external/cargo-bins), [appimage-github-io](https://docs.pkgforge.dev/repositories/external/appimage-github-io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) | Almost as many packages as `x86_64-Linux`, fully supported |
+| **`x86_64-Linux`** | [**bincache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [**pkgcache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache), [**pkgforge-cargo**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [**pkgforge-go**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go), [cargo-bins](https://docs.pkgforge.dev/repositories/external/cargo-bins), [ivan-hc-am](https://docs.pkgforge.dev/repositories/external/ivan-hc-am), [appimage-github-io](https://docs.pkgforge.dev/repositories/external/appimage-github-io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) | Primary target & most supported |
+
+### 🥈 Tier 2 Hosts
+
+| 🤖 Host | 📦 Repos | ℹ️ Comment |
+|------|----------|---------|
+| **`loongarch64-Linux`** | [**pkgforge-cargo**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [**pkgforge-go**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go) | Experimental & Least supported |
+| **`riscv64-Linux`** | [**bincache**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [**pkgforge-cargo**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [**pkgforge-go**<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go) | Experimental, with [gradual progress](https://github.com/pkgforge/soarpkgs/issues/198) |
+
 
 ## ☢️ Caveats
 
@@ -103,7 +124,7 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 |:--:|:--|
 | **Not Reinvent things** | Soar isn't a package manager in the traditional sense, neither is it a [new standard](https://xkcd.com/927/). Think of soar as an amalgamation & the natural progression of tools like [AM](https://github.com/ivan-hc/AM), [bin](https://github.com/marcosnils/bin), [eget](https://github.com/zyedidia/eget), [hysp](https://github.com/pwnwriter/hysp), [nami](https://github.com/txthinking/nami) & [zap](https://github.com/srevinsaju/zap). |
 | **Not a System Package Manager** | Soar intentionally complements rather than replaces your distro's package manager. Unlike [Homebrew](https://github.com/Homebrew/brew), we don't handle core system tools/libraries — we let distro package managers excel at that job. Soar provides additional packages or newer versions while avoiding conflicts by operating entirely in userspace and following XDG specifications. |
-| **Not a Devtools Manager** | Soar doesn't handle development toolchains by design. We do have completely static/relocatable toolchains in our repo, but it will always be better to just use dedicated tools like [asdf](https://github.com/asdf-vm/asdf), [aqua](https://github.com/aquaproj/aqua), [chsrc](https://github.com/RubyMetric/chsrc), [mise](https://github.com/jdx/mise), [vfox](https://github.com/version-fox/vfox) etc. |
+| **Not a Devtools Manager** | Soar doesn't handle development toolchains by design. We do have completely static/relocatable toolchains in our repo, but it will always be better to just use dedicated tools like [asdf](https://github.com/asdf-vm/asdf), [aqua](https://github.com/aquaproj/aqua), [chsrc](https://github.com/RubyMetric/chsrc), [mise](https://github.com/jdx/mise), [vfox](https://github.com/version-fox/vfox), [x-cmd](https://github.com/x-cmd/x-cmd) etc. |
 
 ## 🐞 Bug Reports & Feature Requests
 
@@ -121,7 +142,6 @@ To save our time triaging & to ensure your issue/feature-request gets addressed 
 > - Based on the assigned [priority level (`p0-p3`)](https://github.com/pkgforge/soar/labels) & our free time, we will do our best to respond/address it.
 > - However, this is not a guarantee or an [SLA](https://en.wikipedia.org/wiki/Service-level_agreement). Please have patience & wait before tagging us again for a response. We thank you for your understanding.
 
-
 ## 💬 Community
 
 We have a growing community on discord to discuss not only Soar/Pkgforge but also other cool projects, feel free to join & hangout anytime.
@@ -138,11 +158,19 @@ Please feel free to:
 2. Create your feature branch
 3. Submit a pull request
 
+---
+
 ## 📊 Repo Stats
 
 ![Alt](https://repobeats.axiom.co/api/embed/7c089611431897ab74236ac506187c2f563c2886.svg "Repobeats analytics image")
 [![Stargazers](https://reporoster.com/stars/dark/pkgforge/soar)](https://github.com/pkgforge/soar/stargazers)
 [![Stargazers over time](https://starchart.cc/pkgforge/soar.svg?variant=dark)](https://starchart.cc/pkgforge/soar)
+
+## 🎀 Sponsors
+
+- CICD run on free [Github Runners](https://docs.github.com/actions/using-github-hosted-runners/about-github-hosted-runners), Container Registry & [Package Storage](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) on [ghcr.io](https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-container-registry). These & much more are all generously provided by [GitHub](https://github.com/) [<img src="https://github.com/github.png?size=64" width="30" height="30">](https://github.com/)
+
+- [`riscv64`](https://riscv.org/) [<img src="https://github.com/user-attachments/assets/cf5b988d-657a-47eb-889d-a1bdb014857a" width="30" height="30">](https://riscv.org/) CICD test machines are provided by [10x Engineer's](https://10xengineers.ai/) [<img src="https://github.com/user-attachments/assets/a2cceb62-9045-43b9-b5b2-384565f27ca5" width="30" height="30">](https://cloud-v.co/) [Cloud-V](https://cloud-v.co/) [<img src="https://github.com/user-attachments/assets/74d0fd73-4439-45d4-a756-b1c0c74d1816" width="30" height="30">](https://cloud-v.co/)
 
 ## 📝 License
 
