@@ -3,10 +3,13 @@ name: soar release
 on:
   release:
     types: [published]
-
+  workflow_dispatch:
+  
 permissions:
+  attestations: write
   contents: write
-
+  id-token: write
+  
 jobs:
   publish-binaries:
     name: Publish binaries
@@ -16,16 +19,20 @@ jobs:
       matrix:
         build:
           - {
-              NAME: x86_64-linux,
-              TARGET: x86_64-unknown-linux-musl,
-            }
-          - {
               NAME: aarch64-linux,
               TARGET: aarch64-unknown-linux-musl,
             }
           - {
+              NAME: loongarch64-linux,
+              TARGET: loongarch64-unknown-linux-musl
+            }
+          - {
               NAME: riscv64-linux,
               TARGET: riscv64gc-unknown-linux-musl
+            }
+          - {
+              NAME: x86_64-linux,
+              TARGET: x86_64-unknown-linux-musl,
             }
     steps:
       - name: Checkout
@@ -38,40 +45,51 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            --allow-unauthenticated musl-tools b3sum
+          sudo apt update -y
+          sudo apt install b3sum findutils file -y
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.build.TARGET }}
 
-      - name: Install cross-compilation tools
-        uses: taiki-e/setup-cross-toolchain-action@v1
-        with:
-          target: ${{ matrix.build.TARGET }}
+      - name: Install Cross
+        shell: bash
+        run: |
+          cargo install cross --git "https://github.com/cross-rs/cross" --jobs="$(($(nproc)+1))"
+          hash -r &>/dev/null
+          command -v cross &>/dev/null || { echo "cross command not found" >&2; exit 1; }
 
       - name: Build
-        run: RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked --target ${{ matrix.build.TARGET }}
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static \
+                      -C default-linker-libraries=yes \
+                      -C link-self-contained=yes \
+                      -C opt-level=3 \
+                      -C debuginfo=none \
+                      -C strip=symbols \
+                      -C link-arg=-Wl,-S \
+                      -C link-arg=-Wl,--build-id=none \
+                      -C link-arg=-Wl,--discard-all \
+                      -C link-arg=-Wl,--strip-all"
+        run: cross +nightly build --release --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
 
       - name: Prepare release assets
+        env:
+          ARTIFACT: "release/soar-${{ matrix.build.NAME }}"
+          ARCHIVE: "soar-${{ matrix.build.NAME }}.tar.gz"
         shell: bash
         run: |
           mkdir -p release
-          cp {LICENSE,README.md,CHANGELOG.md} release/
-          cp "target/${{ matrix.build.TARGET }}/release/soar" release/
-
-      - name: Create release artifacts
-        shell: bash
-        run: |
-            cp release/soar soar-${{ matrix.build.NAME }}
-            b3sum soar-${{ matrix.build.NAME }} \
-              > soar-${{ matrix.build.NAME }}.b3sum
-            tar -czvf soar-${{ matrix.build.NAME }}.tar.gz \
-              release/
-            b3sum soar-${{ matrix.build.NAME }}.tar.gz \
-              > soar-${{ matrix.build.NAME }}.tar.gz.b3sum
+          cp {LICENSE,README.md} release/
+          cp "target/${{ matrix.build.TARGET }}/release/soar" "${ARTIFACT}"
+          b3sum "${ARTIFACT}" > "${ARTIFACT}.b3sum"
+          cp "${ARTIFACT}" .
+          cp "${ARTIFACT}.b3sum" .
+          tar -czvf "${ARCHIVE}" release/
+          b3sum "${ARCHIVE}" > "${ARCHIVE}.b3sum"
+          bash -c 'realpath "${ARTIFACT}" ; realpath "${ARCHIVE}"' | xargs -I "{}" bash -c \
+           'printf "\nFile: $(basename {})\n  Type: $(file -b {})\n  B3sum: $(b3sum {} | cut -d" " -f1)\n  SHA256sum: $(sha256sum {} | cut -d" " -f1)\n  Size: $(du -bh {} | cut -f1)\n"'
 
       - name: Publish to GitHub
         if: ${{ !contains(github.ref, '-') }}
@@ -96,3 +114,11 @@ jobs:
           tag: ${{ github.ref }}
           release_name: "Pre-release v${{ env.RELEASE_VERSION }}"
           prerelease: true
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v2.4.0
+        with:
+          subject-name: "soar-v${{ env.RELEASE_VERSION }}-${{ matrix.build.NAME }}"
+          subject-path: |
+            soar-${{ matrix.build.NAME }}*
+          show-summary: true
