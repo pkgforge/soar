@@ -124,7 +124,7 @@ jobs:
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v2.4.0
         with:
-          subject-name: "nightly-soar-${{ matrix.build.NAME }}"
+          subject-name: "soar-nightly-${{ matrix.build.NAME }}"
           subject-path: |
             soar-${{ matrix.build.NAME }}*
           show-summary: true
