@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
-    sync::{LazyLock, RwLock, RwLockReadGuard},
+    sync::{LazyLock, RwLock},
 };
 
 use documented::{Documented, DocumentedFields};
@@ -14,8 +14,8 @@ use crate::{
     error::{ConfigError, SoarError},
     toml::{annotate_toml_array_of_tables, annotate_toml_table},
     utils::{
-        build_path, default_install_patterns, get_platform, home_config_path, home_data_path,
-        parse_duration,
+        build_path, default_install_patterns, get_platform, get_platform_repositories,
+        home_config_path, home_data_path, parse_duration,
     },
     SoarResult,
 };
@@ -23,7 +23,7 @@ use crate::{
 type Result<T> = std::result::Result<T, ConfigError>;
 
 /// A profile defines a local package store and its configuration.
-#[derive(Deserialize, Serialize, Documented, DocumentedFields)]
+#[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
 pub struct Profile {
     /// Root directory for this profile’s data and packages.
     ///
@@ -134,7 +134,7 @@ impl Repository {
 }
 
 /// Application's configuration
-#[derive(Deserialize, Serialize, Documented, DocumentedFields)]
+#[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
 pub struct Config {
     /// The name of the default profile to use.
     pub default_profile: String,
@@ -146,19 +146,19 @@ pub struct Config {
     pub repositories: Vec<Repository>,
 
     /// Path to the local cache directory.
-    /// Default: $XDG_DATA_HOME/soar/cache
+    /// Default: $SOAR_ROOT/cache
     pub cache_path: Option<String>,
 
     /// Path where the Soar package database is stored.
-    /// Default: $XDG_DATA_HOME/soar/db
+    /// Default: $SOAR_ROOT/db
     pub db_path: Option<String>,
 
     /// Directory where binary symlinks are placed.
-    /// Default: $XDG_DATA_HOME/soar/bin
+    /// Default: $SOAR_ROOT/bin
     pub bin_path: Option<String>,
 
     /// Path to the local clone of all repositories.
-    /// Default: $XDG_DATA_HOME/soar/packages
+    /// Default: $SOAR_ROOT/packages
     pub repositories_path: Option<String>,
 
     /// If true, enables parallel downloading of packages.
@@ -195,8 +195,7 @@ pub struct Config {
     pub sync_interval: Option<String>,
 }
 
-pub static CONFIG: LazyLock<RwLock<Config>> =
-    LazyLock::new(|| RwLock::new(Config::default_config::<&str>(false, &[])));
+pub static CONFIG: LazyLock<RwLock<Option<Config>>> = LazyLock::new(|| RwLock::new(None));
 pub static CURRENT_PROFILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
 
 pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
@@ -211,12 +210,30 @@ pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
 pub fn init() -> Result<()> {
     let config = Config::new()?;
     let mut global_config = CONFIG.write().unwrap();
-    *global_config = config;
+    *global_config = Some(config);
+    info!("HELLO");
     Ok(())
 }
 
-pub fn get_config() -> RwLockReadGuard<'static, Config> {
-    CONFIG.read().unwrap()
+fn ensure_config_initialized() {
+    let mut config_guard = CONFIG.write().unwrap();
+    if config_guard.is_none() {
+        *config_guard = Some(Config::default_config::<&str>(false, &[]));
+    }
+}
+
+pub fn get_config() -> Config {
+    {
+        let config_guard = CONFIG.read().unwrap();
+        if config_guard.is_some() {
+            drop(config_guard);
+            return CONFIG.read().unwrap().as_ref().unwrap().clone();
+        }
+    }
+
+    ensure_config_initialized();
+
+    CONFIG.read().unwrap().as_ref().unwrap().clone()
 }
 
 pub fn get_current_profile() -> String {
@@ -247,62 +264,56 @@ impl Config {
         };
         let default_profile_name = "default".to_string();
 
-        let mut repositories = vec![
-            Repository {
-                name: "bincache".to_owned(),
-                url: format!(
-                    "https://meta.pkgforge.dev/bincache/{}.sdb.zstd",
-                    get_platform()
-                ),
-                pubkey: Some("https://meta.pkgforge.dev/bincache/minisign.pub".to_string()),
-                desktop_integration: Some(false),
-                signature_verification: Some(true),
-                sync_interval: Some("3h".to_string()),
-                enabled: Some(true),
-            },
-            Repository {
-                name: "pkgcache".to_owned(),
-                url: format!(
-                    "https://meta.pkgforge.dev/pkgcache/{}.sdb.zstd",
-                    get_platform()
-                ),
-                pubkey: Some("https://meta.pkgforge.dev/pkgcache/minisign.pub".to_string()),
-                desktop_integration: Some(true),
-                signature_verification: None,
-                sync_interval: None,
-                enabled: None,
-            },
-        ];
+        let current_platform = get_platform();
+        let mut repositories = Vec::new();
 
-        if external || !selected_repos.is_empty() {
-            repositories.extend([
-                Repository {
-                    name: "ivan-hc-am".to_string(),
+        // Add core repositories if they support current platform
+        for (repo_name, platforms) in get_platform_repositories().iter().take(2) {
+            if platforms.contains(&current_platform.as_str()) {
+                repositories.push(Repository {
+                    name: (*repo_name).to_string(),
                     url: format!(
-                        "https://meta.pkgforge.dev/external/am/{}.json.zstd",
-                        get_platform()
+                        "https://meta.pkgforge.dev/{}/{}.sdb.zstd",
+                        repo_name, current_platform
                     ),
-                    pubkey: None,
-                    desktop_integration: Some(true),
-                    signature_verification: Some(false),
+                    pubkey: Some(format!(
+                        "https://meta.pkgforge.dev/{}/minisign.pub",
+                        repo_name
+                    )),
+                    desktop_integration: Some(*repo_name != "bincache"),
+                    signature_verification: Some(true),
                     sync_interval: Some("3h".to_string()),
-                    enabled: None,
-                },
-                Repository {
-                    name: "appimage-github-io".to_string(),
-                    url: format!(
-                        "https://meta.pkgforge.dev/external/appimage.github.io/{}.json.zstd",
-                        get_platform()
-                    ),
-                    pubkey: None,
-                    desktop_integration: Some(true),
-                    signature_verification: Some(false),
-                    sync_interval: Some("3h".to_string()),
-                    enabled: None,
-                },
-            ]);
+                    enabled: Some(true),
+                });
+            }
         }
 
+        // Add external repositories if requested and they support current platform
+        if external || !selected_repos.is_empty() {
+            for (repo_name, platforms) in get_platform_repositories().iter().skip(2) {
+                if platforms.contains(&current_platform.as_str()) {
+                    repositories.push(Repository {
+                        name: (*repo_name).to_string(),
+                        url: format!(
+                            "https://meta.pkgforge.dev/external/{}/{}.json.zstd",
+                            match *repo_name {
+                                "ivan-hc-am" => "am",
+                                "appimage-github-io" => "appimage.github.io",
+                                _ => unreachable!(),
+                            },
+                            current_platform
+                        ),
+                        pubkey: None,
+                        desktop_integration: Some(true),
+                        signature_verification: Some(false),
+                        sync_interval: Some("3h".to_string()),
+                        enabled: None,
+                    });
+                }
+            }
+        }
+
+        // Filter by selected repositories if specified
         let repositories = if selected_repos.is_empty() {
             repositories
         } else {
@@ -313,8 +324,16 @@ impl Config {
                 .collect()
         };
 
+        // Show warning if no repositories are available for this platform
         if repositories.is_empty() {
-            warn!("No repositories enabled.");
+            if selected_repos.is_empty() {
+                warn!(
+                    "No official repositories available for {}. You can add custom repositories in your config file.",
+                    current_platform
+                );
+            } else {
+                warn!("No repositories enabled.");
+            }
         }
 
         Self {
@@ -521,7 +540,7 @@ impl Config {
             if let Some(profiles_map_table) = profiles_map_table_item.as_table_mut() {
                 for (_profile_name, profile_item) in profiles_map_table.iter_mut() {
                     if let Item::Table(profile_table) = profile_item {
-                        annotate_toml_table::<crate::config::Profile>(profile_table, false)?;
+                        annotate_toml_table::<Profile>(profile_table, false)?;
                     }
                 }
             }
@@ -529,7 +548,7 @@ impl Config {
 
         if let Some(repositories_item) = doc.get_mut("repositories") {
             if let Some(repositories_array) = repositories_item.as_array_of_tables_mut() {
-                annotate_toml_array_of_tables::<crate::config::Repository>(repositories_array)?;
+                annotate_toml_array_of_tables::<Repository>(repositories_array)?;
             }
         }
 

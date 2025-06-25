@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     path::PathBuf,
-    sync::{Arc, Mutex, RwLockReadGuard},
+    sync::{Arc, Mutex},
 };
 
 use nu_ansi_term::Color::{Blue, Green, Magenta, Red};
@@ -30,7 +30,7 @@ pub struct AppState {
 }
 
 struct AppStateInner {
-    config: RwLockReadGuard<'static, Config>,
+    config: Config,
     repo_db: OnceCell<Database>,
     core_db: OnceCell<Database>,
 }

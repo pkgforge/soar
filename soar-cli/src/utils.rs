@@ -19,6 +19,7 @@ use soar_core::{
     },
     error::{ErrorContext, SoarError},
     package::install::InstallTarget,
+    utils::{get_platform, get_platform_repositories},
     SoarResult,
 };
 use soar_dl::utils::{is_elf, FileMode};
@@ -267,13 +268,22 @@ pub async fn mangle_package_symlinks(
 
 pub fn parse_default_repos_arg(arg: &str) -> SoarResult<String> {
     let repo = arg.trim().to_lowercase();
-    let valid_repos = ["bincache", "pkgcache", "ivan-hc-am", "appimage-github-io"];
-    if valid_repos.contains(&&*repo) {
+    let platform = get_platform();
+
+    let supported_repos: Vec<&str> = get_platform_repositories()
+        .into_iter()
+        .filter(|(_, platforms)| platforms.contains(&platform.as_str()))
+        .map(|(name, _)| name)
+        .collect();
+
+    if supported_repos.contains(&repo.as_str()) {
         Ok(repo)
     } else {
         Err(SoarError::Custom(format!(
-            "Valid options are: {}",
-            valid_repos.join(", ")
+            "Invalid repository '{}'. Valid options for this platform ({}) are: {}",
+            repo,
+            platform,
+            supported_repos.join(", ")
         )))
     }
 }

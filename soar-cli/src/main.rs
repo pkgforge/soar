@@ -108,222 +108,233 @@ async fn handle_cli() -> SoarResult<()> {
         std::process::exit(1);
     };
 
-    config::init()?;
-
-    if let Some(ref profile) = args.profile {
-        set_current_profile(profile)?;
-    }
-
-    setup_required_paths().unwrap();
-
     match args.command {
-        cli::Commands::Install {
-            packages,
-            force,
-            yes,
-            portable,
-            portable_home,
-            portable_config,
-            portable_share,
-            no_notes,
-            binary_only,
-            ask,
-        } => {
-            if portable.is_some()
-                && (portable_home.is_some()
-                    || portable_config.is_some()
-                    || portable_share.is_some())
-            {
-                error!("--portable cannot be used with --portable-home, --portable-config or --portable-share");
-                std::process::exit(1);
-            }
-
-            let portable = portable.map(|p| p.unwrap_or_default());
-            let portable_home = portable_home.map(|p| p.unwrap_or_default());
-            let portable_config = portable_config.map(|p| p.unwrap_or_default());
-            let portable_share = portable_share.map(|p| p.unwrap_or_default());
-
-            install_packages(
-                &packages,
-                force,
-                yes,
-                portable,
-                portable_home,
-                portable_config,
-                portable_share,
-                no_notes,
-                binary_only,
-                ask,
-            )
-            .await?;
-        }
-        cli::Commands::Search {
-            query,
-            case_sensitive,
-            limit,
-        } => {
-            search_packages(query, case_sensitive, limit).await?;
-        }
-        cli::Commands::Query { query } => {
-            query_package(query).await?;
-        }
-        cli::Commands::Remove { packages } => {
-            remove_packages(&packages).await?;
-        }
-        cli::Commands::Sync => {
-            let state = AppState::new();
-            state.sync().await?;
-            info!("All repositories up to date");
-        }
-        cli::Commands::Update {
-            packages,
-            keep,
-            ask,
-        } => {
-            update_packages(packages, keep, ask).await?;
-        }
-        cli::Commands::ListInstalledPackages { repo_name, count } => {
-            list_installed_packages(repo_name, count).await?;
-        }
-        cli::Commands::ListPackages { repo_name } => {
-            list_packages(repo_name).await?;
-        }
-        cli::Commands::Log { package } => inspect_log(&package, InspectType::BuildLog).await?,
-        cli::Commands::Inspect { package } => {
-            inspect_log(&package, InspectType::BuildScript).await?
-        }
-        cli::Commands::Run {
-            yes,
-            command,
-            pkg_id,
-            repo_name,
-        } => {
-            run_package(
-                command.as_ref(),
-                yes,
-                repo_name.as_deref(),
-                pkg_id.as_deref(),
-            )
-            .await?;
-        }
-        cli::Commands::Use { package_name } => {
-            use_alternate_package(&package_name).await?;
-        }
-        cli::Commands::Download {
-            links,
-            yes,
-            output,
-            regexes,
-            globs,
-            match_keywords,
-            exclude_keywords,
-            github,
-            gitlab,
-            ghcr,
-            exact_case,
-            extract,
-            extract_dir,
-            skip_existing,
-            force_overwrite,
-        } => {
-            let progress_bar = create_progress_bar();
-            let progress_callback =
-                Arc::new(move |state| progress::handle_progress(state, &progress_bar));
-            let regexes = create_regex_patterns(regexes);
-            let globs = globs.unwrap_or_default();
-            let match_keywords = match_keywords.unwrap_or_default();
-            let exclude_keywords = exclude_keywords.unwrap_or_default();
-
-            let context = DownloadContext {
-                regexes,
-                globs,
-                match_keywords,
-                exclude_keywords,
-                output: output.clone(),
-                yes,
-                progress_callback: progress_callback.clone(),
-                exact_case,
-                extract,
-                extract_dir,
-                skip_existing,
-                force_overwrite,
-            };
-
-            download(context, links, github, gitlab, ghcr, progress_callback).await?;
-        }
-        cli::Commands::Health => display_health().await?,
         cli::Commands::DefConfig {
             external,
             repositories,
         } => generate_default_config(external, repositories.as_slice())?,
-        cli::Commands::Env => {
-            let config = get_config();
+        command => {
+            config::init()?;
 
-            info!("SOAR_CONFIG={}", CONFIG_PATH.read()?.display());
-            info!("SOAR_BIN={}", config.get_bin_path()?.display());
-            info!("SOAR_DB={}", config.get_db_path()?.display());
-            info!("SOAR_CACHE={}", config.get_cache_path()?.display());
-            info!(
-                "SOAR_PACKAGES={}",
-                config.get_packages_path(None)?.display()
-            );
-            info!(
-                "SOAR_REPOSITORIES={}",
-                config.get_repositories_path()?.display()
-            );
-        }
-        cli::Commands::SelfCmd { action } => {
-            process_self_action(&action).await?;
-        }
-        cli::Commands::Clean {
-            cache,
-            broken_symlinks,
-            broken,
-        } => {
-            let unspecified = !cache && !broken_symlinks && !broken;
-            if unspecified || cache {
-                cleanup_cache()?;
+            if let Some(ref profile) = args.profile {
+                set_current_profile(profile)?;
             }
-            if unspecified || broken_symlinks {
-                remove_broken_symlinks()?;
-            }
-            if unspecified || broken {
-                remove_broken_packages().await?;
-            }
-        }
-        cli::Commands::Config { edit } => {
-            let config_path = CONFIG_PATH.read().unwrap();
-            match edit {
-                Some(editor) => {
-                    let editor = editor
-                        .or_else(|| env::var("EDITOR").ok())
-                        .unwrap_or_else(|| "vi".to_string());
-                    Command::new(&editor)
-                        .arg(&*config_path)
-                        .status()
-                        .with_context(|| {
-                            format!("executing command {} {}", editor, config_path.display())
-                        })?;
+
+            setup_required_paths().unwrap();
+
+            match command {
+                cli::Commands::Install {
+                    packages,
+                    force,
+                    yes,
+                    portable,
+                    portable_home,
+                    portable_config,
+                    portable_share,
+                    no_notes,
+                    binary_only,
+                    ask,
+                } => {
+                    if portable.is_some()
+                        && (portable_home.is_some()
+                            || portable_config.is_some()
+                            || portable_share.is_some())
+                    {
+                        error!("--portable cannot be used with --portable-home, --portable-config or --portable-share");
+                        std::process::exit(1);
+                    }
+
+                    let portable = portable.map(|p| p.unwrap_or_default());
+                    let portable_home = portable_home.map(|p| p.unwrap_or_default());
+                    let portable_config = portable_config.map(|p| p.unwrap_or_default());
+                    let portable_share = portable_share.map(|p| p.unwrap_or_default());
+
+                    install_packages(
+                        &packages,
+                        force,
+                        yes,
+                        portable,
+                        portable_home,
+                        portable_config,
+                        portable_share,
+                        no_notes,
+                        binary_only,
+                        ask,
+                    )
+                    .await?;
                 }
-                None => {
-                    let content = match fs::read_to_string(&*config_path) {
-                        Ok(v) => v,
-                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                            warn!("Config file {} not found", config_path.display());
-                            let def_config = Config::default_config::<&str>(false, &[]);
-                            toml::to_string_pretty(&def_config)?
+                cli::Commands::Search {
+                    query,
+                    case_sensitive,
+                    limit,
+                } => {
+                    search_packages(query, case_sensitive, limit).await?;
+                }
+                cli::Commands::Query { query } => {
+                    query_package(query).await?;
+                }
+                cli::Commands::Remove { packages } => {
+                    remove_packages(&packages).await?;
+                }
+                cli::Commands::Sync => {
+                    let state = AppState::new();
+                    state.sync().await?;
+                    info!("All repositories up to date");
+                }
+                cli::Commands::Update {
+                    packages,
+                    keep,
+                    ask,
+                } => {
+                    update_packages(packages, keep, ask).await?;
+                }
+                cli::Commands::ListInstalledPackages { repo_name, count } => {
+                    list_installed_packages(repo_name, count).await?;
+                }
+                cli::Commands::ListPackages { repo_name } => {
+                    list_packages(repo_name).await?;
+                }
+                cli::Commands::Log { package } => {
+                    inspect_log(&package, InspectType::BuildLog).await?
+                }
+                cli::Commands::Inspect { package } => {
+                    inspect_log(&package, InspectType::BuildScript).await?
+                }
+                cli::Commands::Run {
+                    yes,
+                    command,
+                    pkg_id,
+                    repo_name,
+                } => {
+                    run_package(
+                        command.as_ref(),
+                        yes,
+                        repo_name.as_deref(),
+                        pkg_id.as_deref(),
+                    )
+                    .await?;
+                }
+                cli::Commands::Use { package_name } => {
+                    use_alternate_package(&package_name).await?;
+                }
+                cli::Commands::Download {
+                    links,
+                    yes,
+                    output,
+                    regexes,
+                    globs,
+                    match_keywords,
+                    exclude_keywords,
+                    github,
+                    gitlab,
+                    ghcr,
+                    exact_case,
+                    extract,
+                    extract_dir,
+                    skip_existing,
+                    force_overwrite,
+                } => {
+                    let progress_bar = create_progress_bar();
+                    let progress_callback =
+                        Arc::new(move |state| progress::handle_progress(state, &progress_bar));
+                    let regexes = create_regex_patterns(regexes);
+                    let globs = globs.unwrap_or_default();
+                    let match_keywords = match_keywords.unwrap_or_default();
+                    let exclude_keywords = exclude_keywords.unwrap_or_default();
+
+                    let context = DownloadContext {
+                        regexes,
+                        globs,
+                        match_keywords,
+                        exclude_keywords,
+                        output: output.clone(),
+                        yes,
+                        progress_callback: progress_callback.clone(),
+                        exact_case,
+                        extract,
+                        extract_dir,
+                        skip_existing,
+                        force_overwrite,
+                    };
+
+                    download(context, links, github, gitlab, ghcr, progress_callback).await?;
+                }
+                cli::Commands::Health => display_health().await?,
+                cli::Commands::Env => {
+                    let config = get_config();
+
+                    info!("SOAR_CONFIG={}", CONFIG_PATH.read()?.display());
+                    info!("SOAR_BIN={}", config.get_bin_path()?.display());
+                    info!("SOAR_DB={}", config.get_db_path()?.display());
+                    info!("SOAR_CACHE={}", config.get_cache_path()?.display());
+                    info!(
+                        "SOAR_PACKAGES={}",
+                        config.get_packages_path(None)?.display()
+                    );
+                    info!(
+                        "SOAR_REPOSITORIES={}",
+                        config.get_repositories_path()?.display()
+                    );
+                }
+                cli::Commands::SelfCmd { action } => {
+                    process_self_action(&action).await?;
+                }
+                cli::Commands::Clean {
+                    cache,
+                    broken_symlinks,
+                    broken,
+                } => {
+                    let unspecified = !cache && !broken_symlinks && !broken;
+                    if unspecified || cache {
+                        cleanup_cache()?;
+                    }
+                    if unspecified || broken_symlinks {
+                        remove_broken_symlinks()?;
+                    }
+                    if unspecified || broken {
+                        remove_broken_packages().await?;
+                    }
+                }
+                cli::Commands::Config { edit } => {
+                    let config_path = CONFIG_PATH.read().unwrap();
+                    match edit {
+                        Some(editor) => {
+                            let editor = editor
+                                .or_else(|| env::var("EDITOR").ok())
+                                .unwrap_or_else(|| "vi".to_string());
+                            Command::new(&editor)
+                                .arg(&*config_path)
+                                .status()
+                                .with_context(|| {
+                                    format!(
+                                        "executing command {} {}",
+                                        editor,
+                                        config_path.display()
+                                    )
+                                })?;
                         }
-                        Err(err) => {
-                            return Err(SoarError::IoError {
-                                action: "reading config".to_string(),
-                                source: err,
-                            })
+                        None => {
+                            let content = match fs::read_to_string(&*config_path) {
+                                Ok(v) => v,
+                                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                                    warn!("Config file {} not found", config_path.display());
+                                    let def_config = Config::default_config::<&str>(false, &[]);
+                                    toml::to_string_pretty(&def_config)?
+                                }
+                                Err(err) => {
+                                    return Err(SoarError::IoError {
+                                        action: "reading config".to_string(),
+                                        source: err,
+                                    })
+                                }
+                            };
+                            info!("{}", content);
+                            return Ok(());
                         }
                     };
-                    info!("{}", content);
-                    return Ok(());
                 }
-            };
+                _ => unreachable!(),
+            }
         }
     }
 
