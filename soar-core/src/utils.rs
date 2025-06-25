@@ -345,7 +345,28 @@ pub fn get_platform_repositories() -> Vec<(&'static str, Vec<&'static str>)> {
             "bincache",
             vec!["aarch64-Linux", "riscv64-Linux", "x86_64-Linux"],
         ),
-        ("pkgcache", vec!["aarch64-Linux", "x86_64-Linux"]),
+        (
+            "pkgcache",
+            vec!["aarch64-Linux", "riscv64-Linux", "x86_64-Linux"],
+        ),
+        (
+            "pkgforge-cargo",
+            vec![
+                "aarch64-Linux",
+                "loongarch64-Linux",
+                "riscv64-Linux",
+                "x86_64-Linux",
+            ],
+        ),
+        (
+            "pkgforge-go",
+            vec![
+                "aarch64-Linux",
+                "loongarch64-Linux",
+                "riscv64-Linux",
+                "x86_64-Linux",
+            ],
+        ),
         ("ivan-hc-am", vec!["x86_64-Linux"]),
         ("appimage-github-io", vec!["x86_64-Linux"]),
     ]

@@ -211,7 +211,6 @@ pub fn init() -> Result<()> {
     let config = Config::new()?;
     let mut global_config = CONFIG.write().unwrap();
     *global_config = Some(config);
-    info!("HELLO");
     Ok(())
 }
 
@@ -268,20 +267,34 @@ impl Config {
         let mut repositories = Vec::new();
 
         // Add core repositories if they support current platform
-        for (repo_name, platforms) in get_platform_repositories().iter().take(2) {
+        for (repo_name, platforms) in get_platform_repositories().iter().take(4) {
             if platforms.contains(&current_platform.as_str()) {
                 repositories.push(Repository {
                     name: (*repo_name).to_string(),
                     url: format!(
-                        "https://meta.pkgforge.dev/{}/{}.sdb.zstd",
-                        repo_name, current_platform
+                        "https://meta.pkgforge.dev/{}/{}.{}.zstd",
+                        if repo_name.starts_with("pkgforge") {
+                            format!("external/{}", repo_name)
+                        } else {
+                            repo_name.to_string()
+                        },
+                        current_platform,
+                        if repo_name.starts_with("pkgforge") {
+                            "json"
+                        } else {
+                            "sdb"
+                        }
                     ),
-                    pubkey: Some(format!(
-                        "https://meta.pkgforge.dev/{}/minisign.pub",
-                        repo_name
-                    )),
-                    desktop_integration: Some(*repo_name != "bincache"),
-                    signature_verification: Some(true),
+                    pubkey: if repo_name.starts_with("pkgforge") {
+                        None
+                    } else {
+                        Some(format!(
+                            "https://meta.pkgforge.dev/{}/minisign.pub",
+                            repo_name
+                        ))
+                    },
+                    desktop_integration: Some(*repo_name == "pkgcache"),
+                    signature_verification: Some(!repo_name.starts_with("pkgforge")),
                     sync_interval: Some("3h".to_string()),
                     enabled: Some(true),
                 });
@@ -290,7 +303,7 @@ impl Config {
 
         // Add external repositories if requested and they support current platform
         if external || !selected_repos.is_empty() {
-            for (repo_name, platforms) in get_platform_repositories().iter().skip(2) {
+            for (repo_name, platforms) in get_platform_repositories().iter().skip(4) {
                 if platforms.contains(&current_platform.as_str()) {
                     repositories.push(Repository {
                         name: (*repo_name).to_string(),
