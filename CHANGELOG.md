@@ -1,4 +1,23 @@
 
+## [0.6.4](https://github.com/pkgforge/soar/compare/v0.6.3...v0.6.4) - 2025-06-26
+
+### ⛰️  Features
+
+- *(repositories)* Enable repositories based on platform - ([b865447](https://github.com/pkgforge/soar/commit/b865447667f7ed536a7a6b39f05ba5233a9f08f0))
+- *(repositories)* Add new repositories - ([a6e0a7d](https://github.com/pkgforge/soar/commit/a6e0a7d59b06be31202ff185101e4da91b9a7739))
+
+### 🚜 Refactor
+
+- *(repositories)* Make repositories list maintainable and flexible - ([a3752ec](https://github.com/pkgforge/soar/commit/a3752ece95933eca7d7f95945f5c7127613dc992))
+
+### 📚 Documentation
+
+- *(readme)* Add refs on hosts, redistribution & sponsors ([#67](https://github.com/pkgforge/soar/pull/67)) - ([50b2011](https://github.com/pkgforge/soar/commit/50b2011c0b58f18fd82f966132d829800127ce71))
+
+### ⚙️ Miscellaneous Tasks
+
+- Add CI attestations, cross-rs, and improve install script ([#75](https://github.com/pkgforge/soar/pull/75)) - ([8fae192](https://github.com/pkgforge/soar/commit/8fae19287124b9f1c25c8971919aa7d2ea9d7132))
+
 ## [0.6.3](https://github.com/pkgforge/soar/compare/v0.6.2...v0.6.3) - 2025-06-12
 
 ### ⛰️  Features
