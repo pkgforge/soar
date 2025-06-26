@@ -209,14 +209,33 @@ main() {
     # Detect architecture
     ARCH=$(uname -m)
     case "$ARCH" in
-    x86_64)
-      ARCH="x86_64"
-      ;;
     aarch64)
       ARCH="aarch64"
       ;;
+    loongarch64)
+      ARCH="loongarch64"
+      ;;
+    riscv64)
+      ARCH="riscv64"
+      ;;
+    x86_64)
+      ARCH="x86_64"
+      ;;
     *)
       printf "${RED}Error: Unsupported architecture: ${YELLOW}$ARCH${RESET}\n" >&2
+      exit 1
+      ;;
+    esac
+
+    # Detect OS
+    OS=$(uname -s)
+    case "$OS" in
+    Linux)
+      OS="linux"
+      ;;
+    *)
+      printf "${RED}Error: Unsupported operating system: ${YELLOW}$OS${RESET}\n" >&2
+      printf "${RED}Only Linux is currently supported${RESET}\n" >&2
       exit 1
       ;;
     esac
@@ -225,13 +244,13 @@ main() {
     printf "Downloading Soar..."
     case "$SOAR_VERSION" in
     *nightly*)
-      RELEASE_URL="https://github.com/pkgforge/soar/releases/download/nightly/soar-$ARCH-linux"
+      RELEASE_URL="https://github.com/pkgforge/soar/releases/download/nightly/soar-$ARCH-$OS"
       ;;
     *latest*)
-      RELEASE_URL="https://github.com/pkgforge/soar/releases/latest/download/soar-$ARCH-linux"
+      RELEASE_URL="https://github.com/pkgforge/soar/releases/latest/download/soar-$ARCH-$OS"
       ;;
     *)
-      RELEASE_URL="https://github.com/pkgforge/soar/releases/download/v$SOAR_VERSION/soar-$ARCH-linux"
+      RELEASE_URL="https://github.com/pkgforge/soar/releases/download/v$SOAR_VERSION/soar-$ARCH-$OS"
       ;;
     esac
     printf " <== $RELEASE_URL\n"
