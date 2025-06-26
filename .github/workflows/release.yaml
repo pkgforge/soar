@@ -66,15 +66,8 @@ jobs:
       - name: Build
         env:
           RUSTFLAGS: "-C target-feature=+crt-static \
-                      -C default-linker-libraries=yes \
                       -C link-self-contained=yes \
-                      -C opt-level=3 \
-                      -C debuginfo=none \
-                      -C strip=symbols \
-                      -C link-arg=-Wl,-S \
-                      -C link-arg=-Wl,--build-id=none \
-                      -C link-arg=-Wl,--discard-all \
-                      -C link-arg=-Wl,--strip-all"
+                      -C link-arg=-Wl,--build-id=none"
         run: cross +nightly build --release --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
 
       - name: Prepare release assets
