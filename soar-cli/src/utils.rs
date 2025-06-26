@@ -19,7 +19,8 @@ use soar_core::{
     },
     error::{ErrorContext, SoarError},
     package::install::InstallTarget,
-    utils::{get_platform, get_platform_repositories},
+    repositories::get_platform_repositories,
+    utils::get_platform,
     SoarResult,
 };
 use soar_dl::utils::{is_elf, FileMode};
@@ -272,8 +273,8 @@ pub fn parse_default_repos_arg(arg: &str) -> SoarResult<String> {
 
     let supported_repos: Vec<&str> = get_platform_repositories()
         .into_iter()
-        .filter(|(_, platforms)| platforms.contains(&platform.as_str()))
-        .map(|(name, _)| name)
+        .filter(|repo| repo.platforms.contains(&platform.as_str()))
+        .map(|repo| repo.name)
         .collect();
 
     if supported_repos.contains(&repo.as_str()) {

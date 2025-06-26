@@ -6,6 +6,7 @@ pub mod database;
 pub mod error;
 pub mod metadata;
 pub mod package;
+pub mod repositories;
 pub mod toml;
 pub mod utils;
 

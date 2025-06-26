@@ -12,10 +12,11 @@ use tracing::{info, warn};
 
 use crate::{
     error::{ConfigError, SoarError},
+    repositories::get_platform_repositories,
     toml::{annotate_toml_array_of_tables, annotate_toml_table},
     utils::{
-        build_path, default_install_patterns, get_platform, get_platform_repositories,
-        home_config_path, home_data_path, parse_duration,
+        build_path, default_install_patterns, get_platform, home_config_path, home_data_path,
+        parse_duration,
     },
     SoarResult,
 };
@@ -265,64 +266,27 @@ impl Config {
 
         let current_platform = get_platform();
         let mut repositories = Vec::new();
+        let selected_set: HashSet<&str> = selected_repos.iter().map(|s| s.as_ref()).collect();
 
-        // Add core repositories if they support current platform
-        for (repo_name, platforms) in get_platform_repositories().iter().take(4) {
-            if platforms.contains(&current_platform.as_str()) {
-                repositories.push(Repository {
-                    name: (*repo_name).to_string(),
-                    url: format!(
-                        "https://meta.pkgforge.dev/{}/{}.{}.zstd",
-                        if repo_name.starts_with("pkgforge") {
-                            format!("external/{}", repo_name)
-                        } else {
-                            repo_name.to_string()
-                        },
-                        current_platform,
-                        if repo_name.starts_with("pkgforge") {
-                            "json"
-                        } else {
-                            "sdb"
-                        }
-                    ),
-                    pubkey: if repo_name.starts_with("pkgforge") {
-                        None
-                    } else {
-                        Some(format!(
-                            "https://meta.pkgforge.dev/{}/minisign.pub",
-                            repo_name
-                        ))
-                    },
-                    desktop_integration: Some(*repo_name == "pkgcache"),
-                    signature_verification: Some(!repo_name.starts_with("pkgforge")),
-                    sync_interval: Some("3h".to_string()),
-                    enabled: Some(true),
-                });
+        for repo_info in get_platform_repositories().into_iter() {
+            // Check if repository supports the current platform
+            if !repo_info.platforms.contains(&current_platform.as_str()) {
+                continue;
             }
-        }
 
-        // Add external repositories if requested and they support current platform
-        if external || !selected_repos.is_empty() {
-            for (repo_name, platforms) in get_platform_repositories().iter().skip(4) {
-                if platforms.contains(&current_platform.as_str()) {
-                    repositories.push(Repository {
-                        name: (*repo_name).to_string(),
-                        url: format!(
-                            "https://meta.pkgforge.dev/external/{}/{}.json.zstd",
-                            match *repo_name {
-                                "ivan-hc-am" => "am",
-                                "appimage-github-io" => "appimage.github.io",
-                                _ => unreachable!(),
-                            },
-                            current_platform
-                        ),
-                        pubkey: None,
-                        desktop_integration: Some(true),
-                        signature_verification: Some(false),
-                        sync_interval: Some("3h".to_string()),
-                        enabled: None,
-                    });
-                }
+            if repo_info.is_core || external || selected_set.contains(repo_info.name) {
+                repositories.push(Repository {
+                    name: repo_info.name.to_string(),
+                    url: format!(
+                        "{}",
+                        repo_info.url_template.replace("{}", &current_platform)
+                    ),
+                    pubkey: repo_info.pubkey.map(String::from),
+                    desktop_integration: repo_info.desktop_integration,
+                    enabled: repo_info.enabled,
+                    signature_verification: repo_info.signature_verification,
+                    sync_interval: repo_info.sync_interval.map(String::from),
+                });
             }
         }
 
@@ -330,7 +294,6 @@ impl Config {
         let repositories = if selected_repos.is_empty() {
             repositories
         } else {
-            let selected_set: HashSet<&str> = selected_repos.iter().map(|s| s.as_ref()).collect();
             repositories
                 .into_iter()
                 .filter(|repo| selected_set.contains(repo.name.as_str()))
