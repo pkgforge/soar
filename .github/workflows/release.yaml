@@ -72,7 +72,7 @@ jobs:
 
       - name: Prepare release assets
         env:
-          ARTIFACT: "release/soar-${{ matrix.build.NAME }}"
+          ARTIFACT: "release/soar"
           ARCHIVE: "soar-${{ matrix.build.NAME }}.tar.gz"
         shell: bash
         run: |
