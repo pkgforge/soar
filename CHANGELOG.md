@@ -1,4 +1,10 @@
 
+## [0.6.5](https://github.com/pkgforge/soar/compare/v0.6.4...v0.6.5) - 2025-06-29
+
+### 🐛 Bug Fixes
+
+- *(checksum)* Handle checksum verification for direct downloads - ([db48108](https://github.com/pkgforge/soar/commit/db481080c7ac1d8f8542b4c2ca5a3559f97203c0))
+
 ## [0.6.4](https://github.com/pkgforge/soar/compare/v0.6.3...v0.6.4) - 2025-06-26
 
 ### ⛰️  Features
