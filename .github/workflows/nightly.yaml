@@ -103,7 +103,7 @@ jobs:
 
           tar -czvf "${ARTIFACT}.tar.gz" release/
           b3sum "${ARTIFACT}.tar.gz" > "${ARTIFACT}.tar.gz.b3sum"
-          bash -c 'realpath "${ARTIFACT}" ; realpath "${ARCHIVE}"' | xargs -I "{}" bash -c \
+          bash -c 'realpath "${ARTIFACT}" ; realpath "${ARTIFACT}.tar.gz"' | xargs -I "{}" bash -c \
            'printf "\nFile: $(basename {})\n  Type: $(file -b {})\n  B3sum: $(b3sum {} | cut -d" " -f1)\n  SHA256sum: $(sha256sum {} | cut -d" " -f1)\n  Size: $(du -bh {} | cut -f1)\n"'
 
       - name: Publish to GitHub (nightly)
