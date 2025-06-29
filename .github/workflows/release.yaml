@@ -52,7 +52,7 @@ jobs:
           sudo apt install b3sum findutils file -y
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.build.TARGET }}
 
@@ -68,23 +68,26 @@ jobs:
           RUSTFLAGS: "-C target-feature=+crt-static \
                       -C link-self-contained=yes \
                       -C link-arg=-Wl,--build-id=none"
-        run: cross +nightly build --release --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
+        run: cross build --release --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
 
       - name: Prepare release assets
-        env:
-          ARTIFACT: "release/soar-${{ matrix.build.NAME }}"
-          ARCHIVE: "soar-${{ matrix.build.NAME }}.tar.gz"
         shell: bash
         run: |
           mkdir -p release
           cp {LICENSE,README.md} release/
-          cp "target/${{ matrix.build.TARGET }}/release/soar" "${ARTIFACT}"
+          cp "target/${{ matrix.build.TARGET }}/release/soar" release/
+
+      - name: Create release artifacts
+        env:
+          ARTIFACT: "soar-${{ matrix.build.NAME }}"
+        shell: bash
+        run: |
+          cp release/soar "${ARTIFACT}"
           b3sum "${ARTIFACT}" > "${ARTIFACT}.b3sum"
-          cp "${ARTIFACT}" .
-          cp "${ARTIFACT}.b3sum" .
-          tar -czvf "${ARCHIVE}" release/
-          b3sum "${ARCHIVE}" > "${ARCHIVE}.b3sum"
-          bash -c 'realpath "${ARTIFACT}" ; realpath "${ARCHIVE}"' | xargs -I "{}" bash -c \
+
+          tar -czvf "${ARTIFACT}.tar.gz" release/
+          b3sum "${ARTIFACT}.tar.gz" > "${ARTIFACT}.tar.gz.b3sum"
+          bash -c 'realpath "${ARTIFACT}" ; realpath "${ARTIFACT}.tar.gz"' | xargs -I "{}" bash -c \
            'printf "\nFile: $(basename {})\n  Type: $(file -b {})\n  B3sum: $(b3sum {} | cut -d" " -f1)\n  SHA256sum: $(sha256sum {} | cut -d" " -f1)\n  Size: $(du -bh {} | cut -f1)\n"'
 
       - name: Publish to GitHub
