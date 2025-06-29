@@ -67,7 +67,7 @@ jobs:
           sudo apt install b3sum findutils file -y
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.build.TARGET }}
 
@@ -84,7 +84,7 @@ jobs:
                       -C link-self-contained=yes \
                       -C link-arg=-Wl,--build-id=none"
           SOAR_NIGHTLY: "1"
-        run: cross +nightly build --release --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
+        run: cross build --release --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
 
       - name: Prepare release assets
         env:
