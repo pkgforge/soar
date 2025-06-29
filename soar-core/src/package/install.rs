@@ -21,7 +21,7 @@ use crate::{
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
     error::{ErrorContext, SoarError},
-    utils::{desktop_dir, get_extract_dir, icons_dir, process_dir},
+    utils::{calculate_checksum, desktop_dir, get_extract_dir, icons_dir, process_dir},
     SoarResult,
 };
 
@@ -96,17 +96,9 @@ impl PackageInstaller {
         })
     }
 
-    pub async fn install(&self) -> SoarResult<()> {
+    pub async fn download_package(&self) -> SoarResult<Option<String>> {
         let package = &self.package;
         let output_path = self.install_dir.join(&package.pkg_name);
-
-        self.download_package(&output_path).await?;
-
-        Ok(())
-    }
-
-    async fn download_package<P: AsRef<Path>>(&self, output_path: P) -> SoarResult<()> {
-        let output_path = output_path.as_ref();
 
         // fallback to download_url for repositories without ghcr
         let (url, output_path) = if let Some(ref ghcr_pkg) = self.package.ghcr_pkg {
@@ -158,6 +150,8 @@ impl PackageInstaller {
                     callback(DownloadState::Error);
                 }
             }
+
+            Ok(None)
         } else {
             let downloader = Downloader::default();
             let extract_dir = get_extract_dir(&self.install_dir);
@@ -172,6 +166,13 @@ impl PackageInstaller {
             };
 
             let file_name = downloader.download(options).await?;
+
+            let checksum = if PathBuf::from(&file_name).exists() {
+                Some(calculate_checksum(&file_name)?)
+            } else {
+                None
+            };
+
             let extract_path = PathBuf::from(&extract_dir);
             if extract_path.exists() {
                 fs::remove_file(file_name).ok();
@@ -191,9 +192,9 @@ impl PackageInstaller {
 
                 fs::remove_dir_all(&extract_path).ok();
             }
-        }
 
-        Ok(())
+            Ok(checksum)
+        }
     }
 
     pub async fn record(

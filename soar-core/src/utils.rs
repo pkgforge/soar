@@ -121,7 +121,8 @@ pub fn parse_size(size_str: &str) -> Option<u64> {
     None
 }
 
-pub fn calculate_checksum(file_path: &Path) -> Result<String> {
+pub fn calculate_checksum<P: AsRef<Path>>(file_path: P) -> Result<String> {
+    let file_path = file_path.as_ref();
     let mut hasher = blake3::Hasher::new();
     hasher
         .update_mmap(file_path)

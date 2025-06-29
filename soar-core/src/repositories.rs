@@ -17,7 +17,7 @@ pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
         DefaultRepositoryInfo {
             name: "bincache",
             url_template: "https://meta.pkgforge.dev/bincache/{}.sdb.zstd",
-            pubkey: Some("https://meta.pkgforge.dev/pkgcache/minisign.pub"),
+            pubkey: Some("https://meta.pkgforge.dev/bincache/minisign.pub"),
             desktop_integration: Some(false),
             enabled: Some(true),
             signature_verification: Some(true),

@@ -501,7 +501,7 @@ pub async fn install_single_package(
     )
     .await?;
 
-    installer.install().await?;
+    let downloaded_checksum = installer.download_package().await?;
 
     if let Some(repository) = get_config().get_repository(&target.package.repo_name) {
         if repository.signature_verification() {
@@ -592,31 +592,33 @@ pub async fn install_single_package(
         }
     }
 
-    // NOTE: skip checksum validation if the binary with same name as package
-    // doesn't exist, as we don't have a way to identify what file the
-    // `checksum` field in metadata actually refers to.
-    //
-    // Instead, we should rely on `CHECKSUM` file and only fallback to this
-    // in case there's no `CHECKSUM` file in the package.
-    if real_bin.exists() && target.package.provides.is_some() {
-        let final_checksum = calculate_checksum(&real_bin)?;
-        if let Some(ref checksum) = target.package.bsum {
-            if final_checksum != *checksum {
-                return Err(SoarError::Custom(format!(
-                    "{}#{} - Invalid checksum, skipped installation.",
-                    target.package.pkg_name, target.package.pkg_id
-                )));
+    if target.package.provides.is_some() {
+        let final_checksum = if target.package.ghcr_pkg.is_some() {
+            if real_bin.exists() {
+                Some(calculate_checksum(&real_bin)?)
+            } else {
+                None
             }
         } else {
-            ctx.warnings.lock().unwrap().push(format!(
-                "{}#{} - Blake3 checksum not found. Skipped checksum validation.",
-                target.package.pkg_name, target.package.pkg_id
-            ));
+            downloaded_checksum
+        };
+
+        if let Some(calculated_checksum) = final_checksum {
+            if let Some(ref expected_checksum) = target.package.bsum {
+                if calculated_checksum != *expected_checksum {
+                    return Err(SoarError::Custom(format!(
+                        "{}#{} - Invalid checksum, skipped installation.",
+                        target.package.pkg_name, target.package.pkg_id
+                    )));
+                }
+            } else {
+                ctx.warnings.lock().unwrap().push(format!(
+                    "{}#{} - Blake3 checksum not found. Skipped checksum validation.",
+                    target.package.pkg_name, target.package.pkg_id
+                ));
+            }
         }
-        Some(final_checksum)
-    } else {
-        None
-    };
+    }
 
     let symlinks =
         mangle_package_symlinks(&install_dir, &bin_dir, target.package.provides.as_deref()).await?;
