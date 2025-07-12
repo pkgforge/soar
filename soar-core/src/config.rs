@@ -260,7 +260,7 @@ impl Config {
 
         let default_profile = Profile {
             root_path: soar_root.clone(),
-            packages_path: Some(format!("{}/packages", soar_root)),
+            packages_path: Some(format!("{soar_root}/packages")),
         };
         let default_profile_name = "default".to_string();
 
@@ -277,10 +277,7 @@ impl Config {
             if repo_info.is_core || external || selected_set.contains(repo_info.name) {
                 repositories.push(Repository {
                     name: repo_info.name.to_string(),
-                    url: format!(
-                        "{}",
-                        repo_info.url_template.replace("{}", &current_platform)
-                    ),
+                    url: repo_info.url_template.replace("{}", &current_platform),
                     pubkey: repo_info.pubkey.map(String::from),
                     desktop_integration: repo_info.desktop_integration,
                     enabled: repo_info.enabled,
@@ -316,10 +313,10 @@ impl Config {
             profile: HashMap::from([(default_profile_name.clone(), default_profile)]),
             default_profile: default_profile_name,
 
-            bin_path: Some(format!("{}/bin", soar_root)),
-            cache_path: Some(format!("{}/cache", soar_root)),
-            db_path: Some(format!("{}/db", soar_root)),
-            repositories_path: Some(format!("{}/repos", soar_root)),
+            bin_path: Some(format!("{soar_root}/bin")),
+            cache_path: Some(format!("{soar_root}/cache")),
+            db_path: Some(format!("{soar_root}/db")),
+            repositories_path: Some(format!("{soar_root}/repos")),
 
             repositories,
             parallel: Some(true),
@@ -490,7 +487,7 @@ impl Config {
             return global_override;
         }
         self.get_repository(repo_name)
-            .map_or(false, |repo| repo.desktop_integration.unwrap_or(false))
+            .is_some_and(|repo| repo.desktop_integration.unwrap_or(false))
     }
 
     pub fn save(&self) -> Result<()> {

@@ -286,11 +286,10 @@ fn create_default_desktop_entry(name: &str, categories: &str) -> Vec<u8> {
     format!(
         "[Desktop Entry]\n\
         Type=Application\n\
-        Name={0}\n\
-        Icon={0}\n\
-        Exec={0}\n\
-        Categories={1};\n",
-        name, categories
+        Name={name}\n\
+        Icon={name}\n\
+        Exec={name}\n\
+        Categories={categories};\n",
     )
     .as_bytes()
     .to_vec()

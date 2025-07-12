@@ -63,7 +63,7 @@ impl Display for ProvideStrategy {
             ProvideStrategy::KeepBoth => "==",
             ProvideStrategy::Alias => ":",
         };
-        write!(f, "{}", msg)
+        write!(f, "{msg}")
     }
 }
 

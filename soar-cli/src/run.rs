@@ -34,8 +34,8 @@ pub async fn run_package(
 
     let query = PackageQuery::try_from(package_name.as_str())?;
     let package_name = &query.name.unwrap_or_else(|| package_name.to_string());
-    let repo_name = query.repo_name.as_deref().or_else(|| repo_name);
-    let pkg_id = query.pkg_id.as_deref().or_else(|| pkg_id);
+    let repo_name = query.repo_name.as_deref().or(repo_name);
+    let pkg_id = query.pkg_id.as_deref().or(pkg_id);
     let version = query.version.as_deref();
 
     let args = if command.len() > 1 {

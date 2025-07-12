@@ -39,7 +39,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
                 };
                 let final_path = format!("{}/{}.{ext}", install_dir.display(), pkg_name);
                 fs::rename(&dest, &final_path)
-                    .with_context(|| format!("renaming from {} to {}", dest, final_path))?;
+                    .with_context(|| format!("renaming from {dest} to {final_path}"))?;
 
                 symlink_icon(final_path)?;
             }

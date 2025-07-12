@@ -11,7 +11,7 @@ pub fn setup_wrappe_portable_dir<P: AsRef<Path>>(
 ) -> SoarResult<()> {
     let bin_path = bin_path.as_ref();
     let package_path = &bin_path.parent().unwrap();
-    let real_path = package_path.join(format!(".{}.wrappe", pkg_name));
+    let real_path = package_path.join(format!(".{pkg_name}.wrappe"));
 
     if let Some(portable) = portable {
         if !portable.is_empty() {

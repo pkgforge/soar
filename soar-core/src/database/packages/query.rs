@@ -69,11 +69,11 @@ impl PackageQueryBuilder {
         json_field: &str,
         condition: FilterCondition,
     ) -> Self {
-        let select_clause = format!("SELECT 1 FROM json_each({})", field);
-        let extract_value = format!("json_extract(value, '$.{}')", json_field);
+        let select_clause = format!("SELECT 1 FROM json_each({field})");
+        let extract_value = format!("json_extract(value, '$.{json_field}')");
         let where_clause = self.build_subquery_where_clause(&extract_value, condition);
 
-        let query = format!("EXISTS ({} WHERE {})", select_clause, where_clause);
+        let query = format!("EXISTS ({select_clause} WHERE {where_clause})");
 
         self.filters.push(QueryFilter {
             field: query,
@@ -89,11 +89,11 @@ impl PackageQueryBuilder {
         json_field: &str,
         condition: FilterCondition,
     ) -> Self {
-        let select_clause = format!("SELECT 1 FROM json_each({})", field);
-        let extract_value = format!("json_extract(value, '$.{}')", json_field);
+        let select_clause = format!("SELECT 1 FROM json_each({field})");
+        let extract_value = format!("json_extract(value, '$.{json_field}')");
         let where_clause = self.build_subquery_where_clause(&extract_value, condition);
 
-        let query = format!("EXISTS ({} WHERE {})", select_clause, where_clause);
+        let query = format!("EXISTS ({select_clause} WHERE {where_clause})");
 
         self.filters.push(QueryFilter {
             field: query,
@@ -270,24 +270,23 @@ impl PackageQueryBuilder {
                             )
                         ) FILTER (WHERE m.id IS NOT NULL) as maintainers
                      FROM
-                         {0}.packages p
-                         JOIN {0}.repository r
-                         LEFT JOIN {0}.package_maintainers pm ON p.id = pm.package_id
-                         LEFT JOIN {0}.maintainers m ON m.id = pm.maintainer_id
+                         {shard}.packages p
+                         JOIN {shard}.repository r
+                         LEFT JOIN {shard}.package_maintainers pm ON p.id = pm.package_id
+                         LEFT JOIN {shard}.maintainers m ON m.id = pm.maintainer_id
                     ",
-                    shard
                 );
 
                 let where_clause = self.build_where_clause(&mut params);
 
-                let mut query = format!("{} {}", select_clause, where_clause);
+                let mut query = format!("{select_clause} {where_clause}");
                 query.push_str(" GROUP BY p.id, repo_name");
                 query
             })
             .collect();
 
         let combined_query = shard_queries.join("\nUNION ALL\n");
-        let mut final_query = format!("WITH results AS ({}) SELECT * FROM results", combined_query);
+        let mut final_query = format!("WITH results AS ({combined_query}) SELECT * FROM results");
 
         if !self.sort_fields.is_empty() {
             let sort_clauses: Vec<String> = self
@@ -329,12 +328,11 @@ impl PackageQueryBuilder {
             .iter()
             .map(|shard| {
                 let select_clause = format!(
-                    "SELECT COUNT(1) as cnt, r.name as repo_name FROM {0}.packages p JOIN {0}.repository r",
-                    shard
+                    "SELECT COUNT(1) as cnt, r.name as repo_name FROM {shard}.packages p JOIN {shard}.repository r",
                 );
 
                 let where_clause = self.build_where_clause(&mut params);
-                format!("{} {}", select_clause, where_clause)
+                format!("{select_clause} {where_clause}")
             })
             .collect();
 
@@ -370,7 +368,7 @@ impl PackageQueryBuilder {
             let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
             let select_clause = "SELECT COUNT(1) FROM packages p";
             let where_clause = self.build_where_clause(&mut params);
-            let query = format!("{} {}", select_clause, where_clause);
+            let query = format!("{select_clause} {where_clause}");
             (query, params)
         };
         let mut count_stmt = conn.prepare(&count_query)?;
@@ -400,7 +398,7 @@ impl PackageQueryBuilder {
             LEFT JOIN portable_package pp
             ON pp.package_id = p.id";
         let where_clause = self.build_where_clause(&mut params);
-        let mut query = format!("{} {}", select_clause, where_clause);
+        let mut query = format!("{select_clause} {where_clause}");
 
         if !self.sort_fields.is_empty() {
             let sort_clauses: Vec<String> = self
@@ -471,11 +469,11 @@ impl PackageQueryBuilder {
                         format!("{} <= ?", filter.field)
                     }
                     FilterCondition::Like(val) => {
-                        params.push(Box::new(format!("%{}%", val)));
+                        params.push(Box::new(format!("%{val}%")));
                         format!("{} LIKE ?", filter.field)
                     }
                     FilterCondition::ILike(val) => {
-                        params.push(Box::new(format!("%{}%", val)));
+                        params.push(Box::new(format!("%{val}%")));
                         format!("LOWER({}) LIKE LOWER(?)", filter.field)
                     }
                     FilterCondition::In(vals) => {
@@ -508,8 +506,8 @@ impl PackageQueryBuilder {
 
                 if idx > 0 {
                     match filter.logical_op {
-                        Some(LogicalOp::And) => format!("AND {}", condition),
-                        Some(LogicalOp::Or) => format!("OR {}", condition),
+                        Some(LogicalOp::And) => format!("AND {condition}"),
+                        Some(LogicalOp::Or) => format!("OR {condition}"),
                         None => condition,
                     }
                 } else {
@@ -523,35 +521,35 @@ impl PackageQueryBuilder {
     fn build_subquery_where_clause(&self, value: &str, condition: FilterCondition) -> String {
         match condition {
             FilterCondition::Eq(val) => {
-                format!("{} = '{}'", value, val)
+                format!("{value} = '{val}'")
             }
             FilterCondition::Ne(val) => {
-                format!("{} != '{}'", value, val)
+                format!("{value} != '{val}'")
             }
             FilterCondition::Gt(val) => {
-                format!("{} > '{}'", value, val)
+                format!("{value} > '{val}'")
             }
             FilterCondition::Gte(val) => {
-                format!("{} >= '{}'", value, val)
+                format!("{value} >= '{val}'")
             }
             FilterCondition::Lt(val) => {
-                format!("{} < '{}'", value, val)
+                format!("{value} < '{val}'")
             }
             FilterCondition::Lte(val) => {
-                format!("{} <= '{}'", value, val)
+                format!("{value} <= '{val}'")
             }
             FilterCondition::Like(val) => {
-                format!("{} LIKE '%{}%'", value, val)
+                format!("{value} LIKE '%{val}%'")
             }
             FilterCondition::ILike(val) => {
-                format!("LOWER({}) LIKE LOWER('%{}%')", value, val)
+                format!("LOWER({value}) LIKE LOWER('%{val}%')")
             }
             FilterCondition::In(vals) => {
                 format!(
                     "{} IN ({})",
                     value,
                     vals.iter()
-                        .map(|v| format!("'{}'", v))
+                        .map(|v| format!("'{v}'"))
                         .collect::<Vec<String>>()
                         .join(",")
                 )
@@ -561,19 +559,19 @@ impl PackageQueryBuilder {
                     "{} NOT IN ({})",
                     value,
                     vals.iter()
-                        .map(|v| format!("'{}'", v))
+                        .map(|v| format!("'{v}'"))
                         .collect::<Vec<String>>()
                         .join(",")
                 )
             }
             FilterCondition::Between(start, end) => {
-                format!("{} BETWEEN '{}' AND '{}'", value, start, end)
+                format!("{value} BETWEEN '{start}' AND '{end}'")
             }
             FilterCondition::IsNull => {
-                format!("{} IS NULL", value)
+                format!("{value} IS NULL")
             }
             FilterCondition::IsNotNull => {
-                format!("{} IS NOT NULL", value)
+                format!("{value} IS NOT NULL")
             }
             FilterCondition::None => String::new(),
         }

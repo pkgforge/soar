@@ -29,7 +29,7 @@ use tracing::{error, info};
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
 
 pub fn interactive_ask(ques: &str) -> SoarResult<String> {
-    print!("{}", ques);
+    print!("{ques}");
 
     std::io::stdout()
         .flush()
@@ -191,11 +191,10 @@ pub async fn mangle_package_symlinks(
             }
         };
 
-        let needs_original_symlink = match (provide.target.as_ref(), provide.strategy.clone()) {
-            (Some(_), Some(ProvideStrategy::KeepBoth)) => true,
-            (None, _) => true,
-            _ => false,
-        };
+        let needs_original_symlink = matches!(
+            (provide.target.as_ref(), provide.strategy.clone()),
+            (Some(_), Some(ProvideStrategy::KeepBoth)) | (None, _)
+        );
 
         if needs_original_symlink {
             let original_path = bin_dir.join(&provide.name);

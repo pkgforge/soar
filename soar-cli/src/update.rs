@@ -203,7 +203,7 @@ async fn perform_update(
     for handle in handles {
         handle
             .await
-            .map_err(|err| SoarError::Custom(format!("Join handle error: {}", err)))?;
+            .map_err(|err| SoarError::Custom(format!("Join handle error: {err}")))?;
     }
 
     ctx.total_progress_bar.finish_and_clear();
@@ -244,9 +244,9 @@ async fn spawn_update_task(
         target.package.pkg_id
     );
     let message = if message.len() > fixed_width {
-        format!("{:.width$}", message, width = fixed_width)
+        format!("{message:.fixed_width$}")
     } else {
-        format!("{:<width$}", message, width = fixed_width)
+        format!("{message:<fixed_width$}")
     };
     progress_bar.set_prefix(message);
 

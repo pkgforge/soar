@@ -63,9 +63,9 @@ pub fn handle_install_progress(
             package.pkg_id
         );
         let prefix = if prefix.len() > fixed_width {
-            format!("{:.width$}", prefix, width = fixed_width)
+            format!("{prefix:.fixed_width$}")
         } else {
-            format!("{:<width$}", prefix, width = fixed_width)
+            format!("{prefix:<fixed_width$}")
         };
         pb.set_prefix(prefix);
 

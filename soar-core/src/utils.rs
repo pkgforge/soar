@@ -33,7 +33,7 @@ pub fn home_path() -> String {
             .or_else(|_| env::var("LOGNAME"))
             .or_else(|_| get_username().map_err(|_| ()))
             .unwrap_or_else(|_| panic!("Couldn't determine username. Please fix the system."));
-        format!("/home/{}", username)
+        format!("/home/{username}")
     })
 }
 
@@ -92,7 +92,7 @@ pub fn format_bytes(bytes: u64) -> String {
         b if b >= gb => format!("{:.2} GiB", b as f64 / gb as f64),
         b if b >= mb => format!("{:.2} MiB", b as f64 / mb as f64),
         b if b >= kb => format!("{:.2} KiB", b as f64 / kb as f64),
-        _ => format!("{} B", bytes),
+        _ => format!("{bytes} B"),
     }
 }
 
@@ -328,11 +328,11 @@ pub fn apply_sig_variants(patterns: Vec<String>) -> Vec<String> {
                 (false, pat.as_str())
             };
 
-            let sig_variant = format!("{}.sig", inner);
-            let brace_pattern = format!("{{{},{}}}", inner, sig_variant);
+            let sig_variant = format!("{inner}.sig");
+            let brace_pattern = format!("{{{inner},{sig_variant}}}");
 
             if negate {
-                format!("!{}", brace_pattern)
+                format!("!{brace_pattern}")
             } else {
                 brace_pattern
             }

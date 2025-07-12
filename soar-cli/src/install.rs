@@ -42,6 +42,11 @@ use crate::{
     },
 };
 
+// Represents an installed directory and its contents:
+// - The first element is the root installation path.
+// - The second element is a list of (file path, symlink target) pairs.
+type InstalledPath = (PathBuf, Vec<(PathBuf, PathBuf)>);
+
 #[derive(Clone)]
 pub struct InstallContext {
     pub multi_progress: Arc<MultiProgress>,
@@ -57,7 +62,7 @@ pub struct InstallContext {
     pub errors: Arc<Mutex<Vec<String>>>,
     pub retrying: Arc<AtomicU64>,
     pub failed: Arc<AtomicU64>,
-    pub installed_indices: Arc<Mutex<HashMap<usize, (PathBuf, Vec<(PathBuf, PathBuf)>)>>>,
+    pub installed_indices: Arc<Mutex<HashMap<usize, InstalledPath>>>,
     pub binary_only: bool,
 }
 
@@ -94,6 +99,7 @@ pub fn create_install_context(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn install_packages(
     packages: &[String],
     force: bool,
@@ -293,7 +299,7 @@ pub async fn perform_installation(
     for handle in handles {
         handle
             .await
-            .map_err(|err| SoarError::Custom(format!("Join handle error: {}", err)))?;
+            .map_err(|err| SoarError::Custom(format!("Join handle error: {err}")))?;
     }
 
     ctx.total_progress_bar.finish_and_clear();
@@ -544,10 +550,9 @@ pub async fn install_single_package(
                         })?;
                         let mut stream_verifier =
                             pubkey.verify_stream(&signature).map_err(|err| {
-                                SoarError::Custom(format!(
-                                    "Failed to setup stream verifier: {}",
-                                    err
-                                ))
+                                SoarError::Custom(
+                                    format!("Failed to setup stream verifier: {err}",),
+                                )
                             })?;
 
                         let file = File::open(&original_file).with_context(|| {

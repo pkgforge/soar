@@ -19,7 +19,7 @@ struct MessageVisitor {
 impl tracing::field::Visit for MessageVisitor {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         if field.name() == "message" {
-            self.message = Some(format!("{:?}", value));
+            self.message = Some(format!("{value:?}"));
         }
     }
 }
@@ -49,7 +49,7 @@ where
         }?;
 
         if let Some(message) = visitor.message {
-            writeln!(writer, "{}", message)
+            writeln!(writer, "{message}")
         } else {
             writeln!(writer)
         }
@@ -98,7 +98,7 @@ pub fn setup_logging(args: &Args) {
     };
 
     let builder = fmt::Subscriber::builder()
-        .with_env_filter(format!("soar={}", filter_level))
+        .with_env_filter(format!("soar={filter_level}"))
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)

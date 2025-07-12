@@ -33,10 +33,7 @@ impl Database {
                 &format!("ATTACH DATABASE '{}' AS shard{}", path.display(), idx),
                 [],
             )?;
-            conn.execute(
-                &format!("PRAGMA shard{}.case_sensitive_like = ON;", idx),
-                [],
-            )?;
+            conn.execute(&format!("PRAGMA shard{idx}.case_sensitive_like = ON;"), [])?;
         }
         let conn = Arc::new(Mutex::new(conn));
         Ok(Database { conn })

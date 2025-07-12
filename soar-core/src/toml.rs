@@ -66,8 +66,7 @@ where
             Ok(docs) => match value_item {
                 Item::None => {
                     return Err(ConfigError::Custom(format!(
-                        "Encountered TomlEditItem::None for key '{}' unexpectedly",
-                        key_str
+                        "Encountered TomlEditItem::None for key '{key_str}' unexpectedly",
                     )))
                 }
                 Item::Value(_) => append_docs_as_toml_comments(key_mut.leaf_decor_mut(), docs),
@@ -108,7 +107,7 @@ where
 {
     if let Some(first_table) = array.iter_mut().next() {
         annotate_toml_table::<T>(first_table, false).map_err(|err| {
-            ConfigError::Custom(format!("Failed to annotate first table in array: {}", err))
+            ConfigError::Custom(format!("Failed to annotate first table in array: {err}"))
         })?;
     }
     Ok(())

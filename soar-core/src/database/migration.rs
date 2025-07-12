@@ -57,7 +57,7 @@ impl MigrationManager {
                 }
 
                 let version = parts[0].parse::<i32>().map_err(|_| {
-                    SoarError::Custom(format!("Invalid version number in filename: {}", filename))
+                    SoarError::Custom(format!("Invalid version number in filename: {filename}"))
                 })?;
 
                 let sql = entry.contents_utf8().unwrap().to_string();

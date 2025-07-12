@@ -16,6 +16,6 @@ fn main() {
             .to_string();
 
         println!("cargo:rerun-if-changed=build.rs");
-        println!("cargo:rustc-env=CARGO_PKG_VERSION=nightly-{}", commit_sha);
+        println!("cargo:rustc-env=CARGO_PKG_VERSION=nightly-{commit_sha}");
     }
 }

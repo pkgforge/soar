@@ -144,12 +144,12 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
     if content[..4] == ZST_MAGIC_BYTES {
         let tmp_path = format!("{}.part", metadata_db.display());
         let mut tmp_file = File::create(&tmp_path)
-            .with_context(|| format!("creating temporary file {}", tmp_path))?;
+            .with_context(|| format!("creating temporary file {tmp_path}"))?;
 
         let mut decoder = zstd::Decoder::new(content.as_slice())
             .with_context(|| "creating zstd decoder".to_string())?;
         io::copy(&mut decoder, &mut tmp_file)
-            .with_context(|| format!("decoding zstd from {}", tmp_path))?;
+            .with_context(|| format!("decoding zstd from {tmp_path}"))?;
 
         let magic_bytes = calc_magic_bytes(&tmp_path, 4)?;
         if magic_bytes == SQLITE_MAGIC_BYTES {
@@ -157,18 +157,17 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
                 .with_context(|| format!("renaming {} to {}", tmp_path, metadata_db.display()))?;
         } else {
             let tmp_file = File::open(&tmp_path)
-                .with_context(|| format!("opening temporary file {}", tmp_path))?;
+                .with_context(|| format!("opening temporary file {tmp_path}"))?;
             let reader = BufReader::new(tmp_file);
             let metadata: Vec<RemotePackage> = serde_json::from_reader(reader).map_err(|err| {
                 SoarError::Custom(format!(
-                    "Failed to parse JSON metadata from {}: {:#?}",
-                    tmp_path, err
+                    "Failed to parse JSON metadata from {tmp_path}: {err:#?}",
                 ))
             })?;
 
             handle_json_metadata(&metadata, metadata_db, &repo)?;
             fs::remove_file(tmp_path.clone())
-                .with_context(|| format!("removing temporary file {}", tmp_path))?;
+                .with_context(|| format!("removing temporary file {tmp_path}"))?;
         }
     } else if content[..4] == SQLITE_MAGIC_BYTES {
         let mut writer = BufWriter::new(

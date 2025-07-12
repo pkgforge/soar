@@ -24,7 +24,6 @@ pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
             sync_interval: Some("3h"),
             platforms: vec!["aarch64-Linux", "riscv64-Linux", "x86_64-Linux"],
             is_core: true,
-            ..DefaultRepositoryInfo::default()
         },
         DefaultRepositoryInfo {
             name: "pkgcache",

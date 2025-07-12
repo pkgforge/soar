@@ -64,7 +64,7 @@ impl AppState {
         for (task, repo) in tasks {
             match task
                 .await
-                .map_err(|err| SoarError::Custom(format!("Join handle error: {}", err)))?
+                .map_err(|err| SoarError::Custom(format!("Join handle error: {err}")))?
             {
                 Ok(Some(etag)) => {
                     self.validate_packages(repo, &etag).await?;

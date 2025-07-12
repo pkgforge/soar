@@ -185,7 +185,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                         Colored(Yellow, &rank),
                         package
                             .download_count_week
-                            .map(|count| format!(" ({} weekly downloads)", count))
+                            .map(|count| format!(" ({count} weekly downloads)"))
                             .unwrap_or_default()
                     )
                 })
@@ -227,7 +227,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                         .map(|homepage| format!("  - {}", Colored(Blue, homepage)))
                         .collect::<Vec<String>>()
                         .join("\n");
-                    format!("{}\n{}", key, values)
+                    format!("{key}\n{values}")
                 })
                 .unwrap_or_default(),
             package
@@ -240,7 +240,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                         .map(|license| format!("  - {}", Colored(Blue, license)))
                         .collect::<Vec<String>>()
                         .join("\n");
-                    format!("{}\n{}", key, values)
+                    format!("{key}\n{values}")
                 })
                 .unwrap_or_default(),
             package
@@ -253,7 +253,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                         .map(|maintainer| format!("  - {}", Colored(Blue, maintainer)))
                         .collect::<Vec<String>>()
                         .join("\n");
-                    format!("{}\n{}", key, values)
+                    format!("{key}\n{values}")
                 })
                 .unwrap_or_default(),
             package
@@ -266,7 +266,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                         .map(|note| format!("  - {}", Colored(Blue, note)))
                         .collect::<Vec<String>>()
                         .join("\n");
-                    format!("{}\n{}", key, values)
+                    format!("{key}\n{values}")
                 })
                 .unwrap_or_default(),
             package
@@ -279,7 +279,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                         .map(|snapshot| format!("  - {}", Colored(Blue, snapshot)))
                         .collect::<Vec<String>>()
                         .join("\n");
-                    format!("{}\n{}", key, values)
+                    format!("{key}\n{values}")
                 })
                 .unwrap_or_default(),
             package
@@ -292,7 +292,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                         .map(|source| format!("  - {}", Colored(Blue, source)))
                         .collect::<Vec<String>>()
                         .join("\n");
-                    format!("{}\n{}", key, values)
+                    format!("{key}\n{values}")
                 })
                 .unwrap_or_default(),
             package
@@ -352,7 +352,7 @@ pub async fn query_package(query: String) -> SoarResult<()> {
                 .ghcr_pkg
                 .as_ref()
                 .map(|pkg| {
-                    let url = format!("https://{}", pkg);
+                    let url = format!("https://{pkg}");
                     format!(
                         "{}: {}",
                         Colored(Purple, "GHCR Package"),
@@ -605,7 +605,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
         "Installed: {}{} ({})",
         installed_count,
         if installed_count != unique_count {
-            format!(", {} distinct", unique_count)
+            format!(", {unique_count} distinct")
         } else {
             String::new()
         },
