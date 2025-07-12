@@ -1,4 +1,11 @@
 
+## [0.5.0](https://github.com/pkgforge/soar/compare/soar-core-v0.4.2...soar-core-v0.5.0) - 2025-07-12
+
+### 🐛 Bug Fixes
+
+- *(checksum)* Handle checksum verification for direct downloads - ([db48108](https://github.com/pkgforge/soar/commit/db481080c7ac1d8f8542b4c2ca5a3559f97203c0))
+- *(clippy)* Apply clippy suggestions - ([18e4a51](https://github.com/pkgforge/soar/commit/18e4a51cf50481d674d9480c36a97451007a9215))
+
 ## [0.4.2](https://github.com/pkgforge/soar/compare/soar-core-v0.4.1...soar-core-v0.4.2) - 2025-06-26
 
 ### ⛰️  Features

@@ -1,4 +1,15 @@
 
+## [0.6.5](https://github.com/pkgforge/soar/compare/v0.6.4...v0.6.5) - 2025-07-12
+
+### 🐛 Bug Fixes
+
+- *(checksum)* Handle checksum verification for direct downloads - ([db48108](https://github.com/pkgforge/soar/commit/db481080c7ac1d8f8542b4c2ca5a3559f97203c0))
+- *(clippy)* Apply clippy suggestions - ([18e4a51](https://github.com/pkgforge/soar/commit/18e4a51cf50481d674d9480c36a97451007a9215))
+
+### 🚜 Refactor
+
+- *(search)* Sort search results by name - ([6672d91](https://github.com/pkgforge/soar/commit/6672d914ff982dc59c41a3b33703f2365d361581))
+
 ## [0.6.4](https://github.com/pkgforge/soar/compare/v0.6.3...v0.6.4) - 2025-06-26
 
 ### ⛰️  Features
