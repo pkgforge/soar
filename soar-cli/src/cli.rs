@@ -251,7 +251,8 @@ pub enum Commands {
         #[arg(required = false)]
         links: Vec<String>,
 
-        /// Skip all prompts and use first
+        /// Automatically answer 'yes' to all prompts
+        /// Skips user interaction and uses default or first options
         #[arg(required = false, short, long)]
         yes: bool,
 

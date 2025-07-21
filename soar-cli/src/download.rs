@@ -87,7 +87,7 @@ pub async fn handle_direct_downloads(
                     progress_callback: Some(progress_callback.clone()),
                     extract_archive: ctx.extract,
                     extract_dir: ctx.extract_dir.clone(),
-                    file_mode: get_file_mode(ctx.skip_existing, ctx.force_overwrite),
+                    file_mode: get_file_mode(ctx.skip_existing, ctx.yes || ctx.force_overwrite),
                     prompt: None,
                 };
                 let _ = downloader
@@ -199,7 +199,7 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
         exclude_keywords: ctx.exclude_keywords.clone(),
         exact_case: ctx.exact_case,
         globs: ctx.globs.clone(),
-        file_mode: get_file_mode(ctx.skip_existing, ctx.force_overwrite),
+        file_mode: get_file_mode(ctx.skip_existing, ctx.yes || ctx.force_overwrite),
     };
 
     let mut downloader = OciDownloader::new(options);
@@ -265,7 +265,7 @@ fn create_platform_options(ctx: &DownloadContext, tag: Option<String>) -> Platfo
         exact_case: ctx.exact_case,
         extract_archive: ctx.extract,
         extract_dir: ctx.extract_dir.clone(),
-        file_mode: get_file_mode(ctx.skip_existing, ctx.force_overwrite),
+        file_mode: get_file_mode(ctx.skip_existing, ctx.yes || ctx.force_overwrite),
         prompt: None,
     }
 }
