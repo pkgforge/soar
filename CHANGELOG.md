@@ -1,4 +1,14 @@
 
+## [0.6.6](https://github.com/pkgforge/soar/compare/v0.6.5...v0.6.6) - 2025-08-05
+
+### ⛰️  Features
+
+- *(cli)* Make --yes also apply to file overwrites - ([082e37e](https://github.com/pkgforge/soar/commit/082e37e13c9a3a999113200793755d65141e5ac1))
+
+### 🚜 Refactor
+
+- *(self)* Make self feature optional - ([2c2016d](https://github.com/pkgforge/soar/commit/2c2016d000a26be07cdb9715228f4ae052b9e1be))
+
 ## [0.6.5](https://github.com/pkgforge/soar/compare/v0.6.4...v0.6.5) - 2025-07-12
 
 ### 🐛 Bug Fixes
