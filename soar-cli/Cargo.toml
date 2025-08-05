@@ -15,6 +15,9 @@ categories.workspace = true
 name = "soar"
 path = "src/main.rs"
 
+[features]
+self = []
+
 [dependencies]
 clap = { version = "4.5.39", features = ["cargo", "derive"] }
 futures = { workspace = true }

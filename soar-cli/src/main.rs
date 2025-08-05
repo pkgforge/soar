@@ -11,7 +11,7 @@ use logging::setup_logging;
 use progress::create_progress_bar;
 use remove::remove_packages;
 use run::run_package;
-use self_actions::process_self_action;
+
 use soar_core::{
     config::{self, generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH},
     error::{ErrorContext, SoarError},
@@ -35,12 +35,17 @@ mod logging;
 mod progress;
 mod remove;
 mod run;
-mod self_actions;
 mod state;
 mod update;
 #[path = "use.rs"]
 mod use_package;
 mod utils;
+
+#[cfg(feature = "self")]
+mod self_actions;
+
+#[cfg(feature = "self")]
+use self_actions::process_self_action;
 
 async fn handle_cli() -> SoarResult<()> {
     let mut args = env::args().collect::<Vec<_>>();
@@ -276,6 +281,7 @@ async fn handle_cli() -> SoarResult<()> {
                         config.get_repositories_path()?.display()
                     );
                 }
+                #[cfg(feature = "self")]
                 cli::Commands::SelfCmd { action } => {
                     process_self_action(&action).await?;
                 }

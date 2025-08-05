@@ -84,7 +84,7 @@ jobs:
                       -C link-self-contained=yes \
                       -C link-arg=-Wl,--build-id=none"
           SOAR_NIGHTLY: "1"
-        run: cross build --release --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
+        run: cross build --release -F self --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
 
       - name: Prepare release assets
         shell: bash

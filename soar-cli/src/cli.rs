@@ -353,6 +353,7 @@ pub enum Commands {
     },
 
     /// Modify the soar installation
+    #[cfg(feature = "self")]
     #[command(arg_required_else_help = true)]
     #[clap(name = "self")]
     SelfCmd {
