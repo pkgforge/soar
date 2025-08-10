@@ -1,6 +1,7 @@
 use std::{env, error::Error, fs, io::Read, process::Command, sync::Arc};
 
 use clap::Parser;
+
 use cli::Args;
 use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};
@@ -11,7 +12,6 @@ use logging::setup_logging;
 use progress::create_progress_bar;
 use remove::remove_packages;
 use run::run_package;
-
 use soar_core::{
     config::{self, generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH},
     error::{ErrorContext, SoarError},
@@ -139,6 +139,7 @@ async fn handle_cli() -> SoarResult<()> {
                     no_notes,
                     binary_only,
                     ask,
+                    no_verify,
                 } => {
                     if portable.is_some()
                         && (portable_home.is_some()
@@ -165,6 +166,7 @@ async fn handle_cli() -> SoarResult<()> {
                         no_notes,
                         binary_only,
                         ask,
+                        no_verify,
                     )
                     .await?;
                 }
@@ -190,8 +192,9 @@ async fn handle_cli() -> SoarResult<()> {
                     packages,
                     keep,
                     ask,
+                    no_verify,
                 } => {
-                    update_packages(packages, keep, ask).await?;
+                    update_packages(packages, keep, ask, no_verify).await?;
                 }
                 cli::Commands::ListInstalledPackages { repo_name, count } => {
                     list_installed_packages(repo_name, count).await?;

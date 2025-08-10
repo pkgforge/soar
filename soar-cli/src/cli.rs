@@ -118,6 +118,10 @@ pub enum Commands {
         /// Ask for confirmation before installation
         #[arg(required = false, long, short)]
         ask: bool,
+
+        /// Skip checksum verification
+        #[arg(required = false, long)]
+        no_verify: bool,
     },
 
     /// Search package
@@ -173,6 +177,10 @@ pub enum Commands {
         /// Ask for confirmation before update
         #[arg(required = false, long, short)]
         ask: bool,
+
+        /// Skip checksum verification
+        #[arg(required = false, long)]
+        no_verify: bool,
     },
 
     /// Show info about installed packages

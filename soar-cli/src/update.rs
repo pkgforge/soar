@@ -47,6 +47,7 @@ pub async fn update_packages(
     packages: Option<Vec<String>>,
     keep: bool,
     ask: bool,
+    no_verify: bool,
 ) -> SoarResult<()> {
     let state = AppState::new();
     let core_db = state.core_db()?;
@@ -171,6 +172,7 @@ pub async fn update_packages(
         None,
         None,
         false,
+        no_verify,
     );
 
     perform_update(ctx, update_targets, core_db.clone(), keep).await?;

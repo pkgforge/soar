@@ -64,6 +64,7 @@ pub struct InstallContext {
     pub failed: Arc<AtomicU64>,
     pub installed_indices: Arc<Mutex<HashMap<usize, InstalledPath>>>,
     pub binary_only: bool,
+    pub no_verify: bool,
 }
 
 pub fn create_install_context(
@@ -74,6 +75,7 @@ pub fn create_install_context(
     portable_config: Option<String>,
     portable_share: Option<String>,
     binary_only: bool,
+    no_verify: bool,
 ) -> InstallContext {
     let multi_progress = Arc::new(MultiProgress::new());
     let total_progress_bar = multi_progress.add(ProgressBar::new(total_packages as u64));
@@ -96,6 +98,7 @@ pub fn create_install_context(
         failed: Arc::new(AtomicU64::new(0)),
         installed_indices: Arc::new(Mutex::new(HashMap::new())),
         binary_only,
+        no_verify,
     }
 }
 
@@ -111,6 +114,7 @@ pub async fn install_packages(
     no_notes: bool,
     binary_only: bool,
     ask: bool,
+    no_verify: bool,
 ) -> SoarResult<()> {
     let state = AppState::new();
     let repo_db = state.repo_db().await?;
@@ -135,6 +139,7 @@ pub async fn install_packages(
         portable_config,
         portable_share,
         binary_only,
+        no_verify,
     );
 
     perform_installation(install_context, install_targets, core_db.clone(), no_notes).await
@@ -608,19 +613,21 @@ pub async fn install_single_package(
             downloaded_checksum
         };
 
-        if let Some(calculated_checksum) = final_checksum {
-            if let Some(ref expected_checksum) = target.package.bsum {
-                if calculated_checksum != *expected_checksum {
+        if !ctx.no_verify {
+            match (final_checksum, target.package.bsum.as_ref()) {
+                (Some(calculated), Some(expected)) if calculated != *expected => {
                     return Err(SoarError::Custom(format!(
                         "{}#{} - Invalid checksum, skipped installation.",
                         target.package.pkg_name, target.package.pkg_id
                     )));
                 }
-            } else {
-                ctx.warnings.lock().unwrap().push(format!(
-                    "{}#{} - Blake3 checksum not found. Skipped checksum validation.",
-                    target.package.pkg_name, target.package.pkg_id
-                ));
+                (Some(_), None) => {
+                    ctx.warnings.lock().unwrap().push(format!(
+                        "{}#{} - Blake3 checksum not found. Skipped checksum validation.",
+                        target.package.pkg_name, target.package.pkg_id
+                    ));
+                }
+                _ => {}
             }
         }
     }
