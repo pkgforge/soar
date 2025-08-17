@@ -1,4 +1,10 @@
 
+## [0.6.0](https://github.com/pkgforge/soar/compare/soar-core-v0.5.0...soar-core-v0.6.0) - 2025-08-17
+
+### 🐛 Bug Fixes
+
+- *(portable)* Improve portable directory handling - ([dd88b3b](https://github.com/pkgforge/soar/commit/dd88b3bb02c71722297aab550b2f13cd6a41dfdc))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-core-v0.4.2...soar-core-v0.5.0) - 2025-07-12
 
 ### 🐛 Bug Fixes
