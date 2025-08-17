@@ -62,6 +62,10 @@ impl Profile {
         Ok(self.get_root_path()?.join("repos"))
     }
 
+    fn get_portable_dirs(&self) -> SoarResult<PathBuf> {
+        Ok(self.get_root_path()?.join("portable-dirs"))
+    }
+
     pub fn get_root_path(&self) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_ROOT") {
             return build_path(&env_path);
@@ -161,6 +165,10 @@ pub struct Config {
     /// Path to the local clone of all repositories.
     /// Default: $SOAR_ROOT/packages
     pub repositories_path: Option<String>,
+
+    /// Portable dirs path
+    /// Default: $SOAR_ROOT/portable-dirs
+    pub portable_dirs: Option<String>,
 
     /// If true, enables parallel downloading of packages.
     /// Default: true
@@ -317,6 +325,7 @@ impl Config {
             cache_path: Some(format!("{soar_root}/cache")),
             db_path: Some(format!("{soar_root}/db")),
             repositories_path: Some(format!("{soar_root}/repos")),
+            portable_dirs: Some(format!("{soar_root}/portable-dirs")),
 
             repositories,
             parallel: Some(true),
@@ -474,6 +483,17 @@ impl Config {
             return build_path(repositories_path);
         }
         self.default_profile()?.get_repositories_path()
+    }
+
+    pub fn get_portable_dirs(&self) -> SoarResult<PathBuf> {
+        if let Ok(env_path) = std::env::var("SOAR_PORTABLE_DIRS") {
+            return build_path(&env_path);
+        }
+
+        if let Some(portable_dirs) = &self.portable_dirs {
+            return build_path(portable_dirs);
+        }
+        self.default_profile()?.get_portable_dirs()
     }
 
     pub fn get_repository(&self, repo_name: &str) -> Option<&Repository> {

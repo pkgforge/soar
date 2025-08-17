@@ -34,12 +34,16 @@ pub struct PackageInstaller {
     globs: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct InstallTarget {
     pub package: Package,
     pub existing_install: Option<InstalledPackage>,
     pub with_pkg_id: bool,
     pub profile: Option<String>,
+    pub portable: Option<String>,
+    pub portable_home: Option<String>,
+    pub portable_config: Option<String>,
+    pub portable_share: Option<String>,
 }
 
 impl PackageInstaller {
@@ -223,89 +227,66 @@ impl PackageInstaller {
         let with_pkg_id = self.with_pkg_id;
         let tx = conn.transaction()?;
 
-        {
-            let mut stmt = prepare_and_bind!(
-                tx,
-                "UPDATE packages
+        let record_id: u32 = {
+            tx.query_row(
+                r#"
+                UPDATE packages
                 SET
-                    version = $version,
-                    size = $size,
+                    version = ?,
+                    size = ?,
                     installed_date = datetime(),
                     is_installed = true,
-                    provides = $provides,
-                    with_pkg_id = $with_pkg_id,
-                    checksum = $bsum
+                    provides = ?,
+                    with_pkg_id = ?,
+                    checksum = ?
                 WHERE
-                    repo_name = $repo_name
-                    AND pkg_name = $pkg_name
-                    AND pkg_id = $pkg_id
-                    AND (
-                        pinned = false
-                        OR
-                        version = $version
-                    )
-            "
-            );
-            stmt.raw_execute()?;
-        }
+                    repo_name = ?
+                    AND pkg_name = ?
+                    AND pkg_id = ?
+                    AND pinned = false
+                    AND version = ?
+                RETURNING id
+                "#,
+                params![
+                    version,
+                    size,
+                    provides,
+                    with_pkg_id,
+                    bsum,
+                    repo_name,
+                    pkg_name,
+                    pkg_id,
+                    version,
+                ],
+                |row| row.get(0),
+            )
+            .unwrap_or_default()
+        };
 
-        let record_id: u32 = tx.query_row(
-            "SELECT id FROM packages
-            WHERE
-            repo_name = ?
-            AND pkg_name = ?
-            AND pkg_id = ?
-            AND version = ?",
-            params![repo_name, pkg_name, pkg_id, version],
-            |row| row.get(0),
-        )?;
-
-        if portable.is_some() || portable_home.is_some() || portable_config.is_some() {
+        if portable.is_some()
+            || portable_home.is_some()
+            || portable_config.is_some()
+            || portable_share.is_some()
+        {
             let base_dir = env::current_dir()
                 .map_err(|_| SoarError::Custom("Error retrieving current directory".into()))?;
-            let portable = portable
-                .map(|p| {
-                    let path = PathBuf::from(&p);
-                    if path.is_absolute() {
-                        path
-                    } else {
-                        base_dir.join(path)
-                    }
-                })
-                .map(|p| p.to_string_lossy().into_owned());
 
-            let portable_home = portable_home
-                .map(|p| {
-                    let path = PathBuf::from(&p);
-                    if path.is_absolute() {
-                        path
-                    } else {
-                        base_dir.join(path)
-                    }
-                })
-                .map(|p| p.to_string_lossy().into_owned());
-
-            let portable_config = portable_config
-                .map(|p| {
-                    let path = PathBuf::from(&p);
-                    if path.is_absolute() {
-                        path
-                    } else {
-                        base_dir.join(path)
-                    }
-                })
-                .map(|p| p.to_string_lossy().into_owned());
-
-            let portable_share = portable_share
-                .map(|p| {
-                    let path = PathBuf::from(&p);
-                    if path.is_absolute() {
-                        path
-                    } else {
-                        base_dir.join(path)
-                    }
-                })
-                .map(|p| p.to_string_lossy().into_owned());
+            let [portable, portable_home, portable_config, portable_share] =
+                [portable, portable_home, portable_config, portable_share].map(|opt| {
+                    opt.map(|p| {
+                        if p.is_empty() {
+                            String::new()
+                        } else {
+                            let path = PathBuf::from(&p);
+                            let absolute = if path.is_absolute() {
+                                path
+                            } else {
+                                base_dir.join(path)
+                            };
+                            absolute.to_string_lossy().into_owned()
+                        }
+                    })
+                });
 
             // try to update existing record first
             let mut stmt = prepare_and_bind!(

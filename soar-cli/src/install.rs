@@ -219,6 +219,7 @@ fn resolve_packages(
                     existing_install,
                     with_pkg_id: true,
                     profile: None,
+                    ..Default::default()
                 });
             }
         } else {
@@ -249,6 +250,7 @@ fn resolve_packages(
                     existing_install,
                     with_pkg_id: false,
                     profile: None,
+                    ..Default::default()
                 });
             }
         }

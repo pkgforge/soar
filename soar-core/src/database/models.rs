@@ -28,7 +28,7 @@ pub trait FromRow: Sized {
     fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Package {
     pub id: u64,
     pub repo_name: String,

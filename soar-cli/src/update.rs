@@ -102,6 +102,10 @@ pub async fn update_packages(
                         existing_install,
                         with_pkg_id,
                         profile: Some(pkg.profile),
+                        portable: pkg.portable_path,
+                        portable_home: pkg.portable_home,
+                        portable_config: pkg.portable_config,
+                        portable_share: pkg.portable_share,
                     })
                 }
             }
@@ -150,6 +154,10 @@ pub async fn update_packages(
                     existing_install,
                     with_pkg_id,
                     profile: Some(pkg.profile),
+                    portable: pkg.portable_path,
+                    portable_home: pkg.portable_home,
+                    portable_config: pkg.portable_config,
+                    portable_share: pkg.portable_share,
                 })
             }
         }
@@ -258,7 +266,11 @@ async fn spawn_update_task(
 
     let total_pb = ctx.total_progress_bar.clone();
     let installed_count = ctx.installed_count.clone();
-    let ctx = ctx.clone();
+    let mut ctx = ctx.clone();
+    ctx.portable = target.portable.clone();
+    ctx.portable_home = target.portable_home.clone();
+    ctx.portable_config = target.portable_config.clone();
+    ctx.portable_share = target.portable_share.clone();
 
     tokio::spawn(async move {
         let result =

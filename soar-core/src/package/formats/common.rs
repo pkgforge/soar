@@ -230,6 +230,11 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     portable_config: Option<&str>,
     portable_share: Option<&str>,
 ) -> SoarResult<()> {
+    let portable_dir_base = get_config().get_portable_dirs()?.join(format!(
+        "{}-{}",
+        package.pkg_name(),
+        package.pkg_id()
+    ));
     let bin_path = bin_path.as_ref();
 
     let pkg_name = package.pkg_name();
@@ -243,39 +248,18 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
         (portable_home, portable_config, portable_share)
     };
 
-    if let Some(portable_home) = portable_home {
-        if portable_home.is_empty() {
-            fs::create_dir(&pkg_home).with_context(|| {
-                format!("creating portable home directory {}", pkg_home.display())
-            })?;
-        } else {
-            let portable_home = PathBuf::from(portable_home);
-            create_portable_link(&portable_home, &pkg_home, pkg_name, "home")?;
-        }
-    }
-
-    if let Some(portable_config) = portable_config {
-        if portable_config.is_empty() {
-            fs::create_dir(&pkg_config).with_context(|| {
-                format!(
-                    "creating portable config directory {}",
-                    pkg_config.display()
-                )
-            })?;
-        } else {
-            let portable_config = PathBuf::from(portable_config);
-            create_portable_link(&portable_config, &pkg_config, pkg_name, "config")?;
-        }
-    }
-
-    if let Some(portable_share) = portable_share {
-        if portable_share.is_empty() {
-            fs::create_dir(&pkg_share).with_context(|| {
-                format!("creating portable share directory {}", pkg_share.display())
-            })?;
-        } else {
-            let portable_share = PathBuf::from(portable_share);
-            create_portable_link(&portable_share, &pkg_share, pkg_name, "config")?;
+    for (opt, target, kind) in [
+        (portable_home, &pkg_home, "home"),
+        (portable_config, &pkg_config, "config"),
+        (portable_share, &pkg_share, "share"),
+    ] {
+        if let Some(val) = opt {
+            let base = if val.is_empty() {
+                &portable_dir_base
+            } else {
+                Path::new(val)
+            };
+            create_portable_link(base, target, pkg_name, kind)?;
         }
     }
 
