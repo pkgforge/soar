@@ -179,10 +179,7 @@ fn resolve_packages(
             }
         }
 
-        let mut builder = query.apply_filters(builder);
-        if query.pkg_id.is_none() {
-            builder = builder.limit(1);
-        }
+        let builder = query.apply_filters(builder);
 
         let installed_packages = builder
             .clone()
@@ -223,14 +220,18 @@ fn resolve_packages(
                 });
             }
         } else {
-            let existing_install = if installed_packages.is_empty() {
+            let maybe_existing = if installed_packages.is_empty() {
                 None
             } else {
                 Some(installed_packages.first().unwrap().clone())
             };
 
-            if let Some(ref existing) = existing_install {
-                if existing.is_installed {
+            if let Some(db_pkg) =
+                select_package(package, builder.clear_limit(), yes, &maybe_existing)?
+            {
+                let is_installed = installed_packages.iter().any(|ip| ip.is_installed);
+
+                if is_installed {
                     warn!(
                         "{} is already installed - {}",
                         package,
@@ -240,13 +241,14 @@ fn resolve_packages(
                         continue;
                     }
                 }
-            }
 
-            if let Some(package) =
-                select_package(package, builder.clear_limit(), yes, &existing_install)?
-            {
+                let existing_install = installed_packages
+                    .iter()
+                    .find(|ip| ip.version == db_pkg.version)
+                    .cloned();
+
                 install_targets.push(InstallTarget {
-                    package,
+                    package: db_pkg,
                     existing_install,
                     with_pkg_id: false,
                     profile: None,
