@@ -60,15 +60,16 @@ pub async fn update_packages(
         for package in packages {
             let query = PackageQuery::try_from(package.as_str())?;
             let builder = PackageQueryBuilder::new(core_db.clone());
-            let mut builder = query
-                .apply_filters(builder.clone())
+            let mut builder = query.apply_filters(builder.clone()).limit(1);
+            let installed_pkgs = builder
+                .clone()
                 .where_and("is_installed", FilterCondition::Eq("1".to_string()))
-                .limit(1);
-            let installed_pkgs = builder.load_installed()?.items;
+                .load_installed()?
+                .items;
+            builder = builder.database(repo_db.clone());
 
             for pkg in installed_pkgs {
                 builder = builder
-                    .database(repo_db.clone())
                     .where_and("repo_name", FilterCondition::Eq(pkg.repo_name.clone()))
                     .where_and("version", FilterCondition::Gt(pkg.version.clone()))
                     .where_and(
