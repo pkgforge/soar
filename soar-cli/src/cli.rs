@@ -368,4 +368,35 @@ pub enum Commands {
         #[clap(subcommand)]
         action: SelfAction,
     },
+
+    /// Manage nests
+    #[clap(subcommand, name = "nest")]
+    Nest(NestCommands),
+}
+
+#[derive(Subcommand)]
+pub enum NestCommands {
+    /// Add a nest
+    #[command(arg_required_else_help = true)]
+    Add {
+        /// URL of the nest
+        #[arg(required = true)]
+        url: String,
+        /// Name of the nest
+        #[arg(required = true)]
+        name: String,
+    },
+
+    /// Remove a nest
+    #[command(arg_required_else_help = true)]
+    #[clap(name = "remove", visible_alias = "rm", visible_alias = "del")]
+    Remove {
+        /// Name of the nest to remove
+        #[arg(required = true)]
+        name: String,
+    },
+
+    /// List all nests
+    #[clap(name = "list", visible_alias = "ls")]
+    List,
 }

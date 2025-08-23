@@ -12,16 +12,148 @@ use tracing::info;
 use crate::{
     config::Repository,
     constants::{METADATA_MIGRATIONS, SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES},
-    database::{connection::Database, migration::MigrationManager, models::RemotePackage},
+    database::{
+        connection::Database, migration::MigrationManager, models::RemotePackage,
+        nests::models::Nest,
+    },
     error::{ErrorContext, SoarError},
-    utils::calc_magic_bytes,
+    utils::{calc_magic_bytes, get_platform},
     SoarResult,
 };
+
+fn construct_nest_url(url: &str) -> SoarResult<reqwest::Url> {
+    let url = if let Some(repo) = url.strip_prefix("github:") {
+        let platform = get_platform();
+        format!(
+            "https://github.com/{}/releases/download/soar-nest/{}.json",
+            repo, platform
+        )
+    } else {
+        url.to_string()
+    };
+    reqwest::Url::parse(&url).map_err(|err| SoarError::Custom(err.to_string()))
+}
+
+pub async fn fetch_nest_metadata(
+    nest: &Nest,
+    nests_repo_path: &Path,
+) -> SoarResult<Option<String>> {
+    let nest_path = nests_repo_path.join(&nest.name);
+    let metadata_db = nest_path.join("metadata.db");
+
+    if !metadata_db.exists() {
+        fs::create_dir_all(&nest_path)
+            .with_context(|| format!("creating directory {}", nest_path.display()))?;
+    }
+
+    let etag = if metadata_db.exists() {
+        let conn = Connection::open(&metadata_db)?;
+        conn.query_row("SELECT etag FROM repository", [], |row| row.get(0))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let url = construct_nest_url(&nest.url)?;
+
+    let client = reqwest::Client::new();
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
+    headers.insert(header::PRAGMA, "no-cache".parse().unwrap());
+    if !etag.is_empty() {
+        headers.insert(header::IF_NONE_MATCH, etag.parse().unwrap());
+    }
+
+    let resp = client.get(url.clone()).headers(headers).send().await?;
+
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        return Ok(None);
+    }
+
+    if !resp.status().is_success() {
+        let msg = format!("{} [{}]", url, resp.status());
+        return Err(SoarError::FailedToFetchRemote(msg));
+    }
+
+    let etag = resp
+        .headers()
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .ok_or_else(|| SoarError::Custom("etag not found in metadata response".to_string()))?;
+
+    let content = resp.bytes().await?.to_vec();
+
+    let nest_name = format!("nest-{}", nest.name);
+    process_metadata_content(content, &metadata_db, &nest_name, &nest.url)?;
+
+    Ok(Some(etag))
+}
+
+fn process_metadata_content(
+    content: Vec<u8>,
+    metadata_db_path: &Path,
+    repo_name: &str,
+    repo_url: &str,
+) -> SoarResult<()> {
+    if content.len() < 4 {
+        return Err(SoarError::Custom("Metadata content is too short".into()));
+    }
+    if content[..4] == ZST_MAGIC_BYTES {
+        let tmp_path = format!("{}.part", metadata_db_path.display());
+        let mut tmp_file = File::create(&tmp_path)
+            .with_context(|| format!("creating temporary file {tmp_path}"))?;
+
+        let mut decoder = zstd::Decoder::new(content.as_slice())
+            .with_context(|| "creating zstd decoder".to_string())?;
+        io::copy(&mut decoder, &mut tmp_file)
+            .with_context(|| format!("decoding zstd from {tmp_path}"))?;
+
+        let magic_bytes = calc_magic_bytes(&tmp_path, 4)?;
+        if magic_bytes == SQLITE_MAGIC_BYTES {
+            fs::rename(&tmp_path, metadata_db_path).with_context(|| {
+                format!("renaming {} to {}", tmp_path, metadata_db_path.display())
+            })?;
+        } else {
+            let tmp_file = File::open(&tmp_path)
+                .with_context(|| format!("opening temporary file {tmp_path}"))?;
+            let reader = BufReader::new(tmp_file);
+            let metadata: Vec<RemotePackage> = serde_json::from_reader(reader).map_err(|err| {
+                SoarError::Custom(format!(
+                    "Failed to parse JSON metadata from {tmp_path}: {err:#?}",
+                ))
+            })?;
+
+            handle_json_metadata(&metadata, metadata_db_path, repo_name)?;
+            fs::remove_file(tmp_path.clone())
+                .with_context(|| format!("removing temporary file {tmp_path}"))?;
+        }
+    } else if content[..4] == SQLITE_MAGIC_BYTES {
+        let mut writer =
+            BufWriter::new(File::create(metadata_db_path).with_context(|| {
+                format!("creating metadata file {}", metadata_db_path.display())
+            })?);
+        writer
+            .write_all(&content)
+            .with_context(|| format!("writing to metadata file {}", metadata_db_path.display()))?;
+    } else {
+        let remote_metadata: Vec<RemotePackage> =
+            serde_json::from_slice(&content).map_err(|err| {
+                SoarError::Custom(format!(
+                    "Failed to parse JSON metadata response from {}: {:#?}",
+                    repo_url, err
+                ))
+            })?;
+
+        handle_json_metadata(&remote_metadata, metadata_db_path, repo_url)?;
+    }
+    Ok(())
+}
 
 fn handle_json_metadata<P: AsRef<Path>>(
     metadata: &[RemotePackage],
     metadata_db: P,
-    repo: &Repository,
+    repo_name: &str,
 ) -> SoarResult<()> {
     let metadata_db = metadata_db.as_ref();
     if metadata_db.exists() {
@@ -34,7 +166,7 @@ fn handle_json_metadata<P: AsRef<Path>>(
     manager.migrate_from_dir(METADATA_MIGRATIONS)?;
 
     let db = Database::new(metadata_db)?;
-    db.from_remote_metadata(metadata.as_ref(), &repo.name)?;
+    db.from_remote_metadata(metadata.as_ref(), repo_name)?;
 
     Ok(())
 }
@@ -99,38 +231,40 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
         String::new()
     };
 
+    let url = reqwest::Url::parse(&repo.url).map_err(|err| SoarError::Custom(err.to_string()))?;
+
     let client = reqwest::Client::new();
 
     if let Some(ref pubkey_url) = repo.pubkey {
         fetch_public_key(&client, &repo_path, pubkey_url).await?;
     }
 
-    let mut header_map = HeaderMap::new();
-    header_map.insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
-    header_map.insert(header::PRAGMA, "no-cache".parse().unwrap());
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
+    headers.insert(header::PRAGMA, "no-cache".parse().unwrap());
+    if !etag.is_empty() {
+        headers.insert(header::IF_NONE_MATCH, etag.parse().unwrap());
+    }
 
-    let resp = client.get(&repo.url).headers(header_map).send().await?;
+    let resp = client.get(url).headers(headers).send().await?;
+
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        return Ok(None);
+    }
+
     if !resp.status().is_success() {
         let msg = format!("{} [{}]", repo.url, resp.status());
         return Err(SoarError::FailedToFetchRemote(msg));
     }
 
-    let etag = {
-        match resp.headers().get(header::ETAG) {
-            Some(remote_etag) => {
-                let remote_etag = remote_etag.to_str().unwrap();
-                if !force && etag == remote_etag {
-                    return Ok(None);
-                }
-                remote_etag.to_string()
-            }
-            None => {
-                return Err(SoarError::Custom(
-                    "etag is required in metadata response header.".to_string(),
-                ))
-            }
-        }
-    };
+    let etag = resp
+        .headers()
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            SoarError::Custom("etag is required in metadata response header".to_string())
+        })?;
 
     info!("Fetching metadata from {}", repo.url);
 
@@ -141,53 +275,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
         content.extend_from_slice(&chunk);
     }
 
-    if content[..4] == ZST_MAGIC_BYTES {
-        let tmp_path = format!("{}.part", metadata_db.display());
-        let mut tmp_file = File::create(&tmp_path)
-            .with_context(|| format!("creating temporary file {tmp_path}"))?;
-
-        let mut decoder = zstd::Decoder::new(content.as_slice())
-            .with_context(|| "creating zstd decoder".to_string())?;
-        io::copy(&mut decoder, &mut tmp_file)
-            .with_context(|| format!("decoding zstd from {tmp_path}"))?;
-
-        let magic_bytes = calc_magic_bytes(&tmp_path, 4)?;
-        if magic_bytes == SQLITE_MAGIC_BYTES {
-            fs::rename(&tmp_path, &metadata_db)
-                .with_context(|| format!("renaming {} to {}", tmp_path, metadata_db.display()))?;
-        } else {
-            let tmp_file = File::open(&tmp_path)
-                .with_context(|| format!("opening temporary file {tmp_path}"))?;
-            let reader = BufReader::new(tmp_file);
-            let metadata: Vec<RemotePackage> = serde_json::from_reader(reader).map_err(|err| {
-                SoarError::Custom(format!(
-                    "Failed to parse JSON metadata from {tmp_path}: {err:#?}",
-                ))
-            })?;
-
-            handle_json_metadata(&metadata, metadata_db, &repo)?;
-            fs::remove_file(tmp_path.clone())
-                .with_context(|| format!("removing temporary file {tmp_path}"))?;
-        }
-    } else if content[..4] == SQLITE_MAGIC_BYTES {
-        let mut writer = BufWriter::new(
-            File::create(&metadata_db)
-                .with_context(|| format!("creating metadata file {}", metadata_db.display()))?,
-        );
-        writer
-            .write_all(&content)
-            .with_context(|| format!("writing to metadata file {}", metadata_db.display()))?;
-    } else {
-        let remote_metadata: Vec<RemotePackage> =
-            serde_json::from_slice(&content).map_err(|err| {
-                SoarError::Custom(format!(
-                    "Failed to parse JSON metadata response from {}: {:#?}",
-                    repo.url, err
-                ))
-            })?;
-
-        handle_json_metadata(&remote_metadata, metadata_db, &repo)?;
-    }
+    process_metadata_content(content, &metadata_db, &repo.name, &repo.url)?;
 
     Ok(Some(etag))
 }

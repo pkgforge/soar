@@ -1,7 +1,7 @@
 use include_dir::Dir;
 use rusqlite::Connection;
 
-use crate::{error::SoarError, SoarResult};
+use crate::{constants::NESTS_MIGRATIONS_DIR, error::SoarError, SoarResult};
 
 pub struct Migration {
     version: i32,
@@ -97,4 +97,10 @@ impl MigrationManager {
 
         Ok(())
     }
+}
+
+pub fn run_nests(conn: Connection) -> SoarResult<()> {
+    let mut manager = MigrationManager::new(conn)?;
+    manager.migrate_from_dir(NESTS_MIGRATIONS_DIR)?;
+    Ok(())
 }

@@ -9,6 +9,7 @@ use inspect::{inspect_log, InspectType};
 use install::install_packages;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
 use logging::setup_logging;
+use nest::{add_nest, list_nests, remove_nest};
 use progress::create_progress_bar;
 use remove::remove_packages;
 use run::run_package;
@@ -32,6 +33,7 @@ mod inspect;
 mod install;
 mod list;
 mod logging;
+mod nest;
 mod progress;
 mod remove;
 mod run;
@@ -342,6 +344,17 @@ async fn handle_cli() -> SoarResult<()> {
                         }
                     };
                 }
+                cli::Commands::Nest(nest_command) => match nest_command {
+                    cli::NestCommands::Add { name, url } => {
+                        add_nest(&name, &url).await?;
+                    }
+                    cli::NestCommands::Remove { name } => {
+                        remove_nest(&name).await?;
+                    }
+                    cli::NestCommands::List => {
+                        list_nests().await?;
+                    }
+                },
                 _ => unreachable!(),
             }
         }

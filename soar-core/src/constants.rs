@@ -18,3 +18,4 @@ pub const CAP_MKNOD: i32 = 27;
 
 pub const METADATA_MIGRATIONS: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations/metadata");
 pub const CORE_MIGRATIONS: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations/core");
+pub const NESTS_MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations/nests");
