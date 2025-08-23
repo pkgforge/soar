@@ -1,4 +1,11 @@
 
+## [0.7.0](https://github.com/pkgforge/soar/compare/soar-core-v0.6.0...soar-core-v0.7.0) - 2025-08-23
+
+### ⛰️  Features
+
+- *(nest)* Add sync interval for nest, parallelize fetch nest metadata - ([ccffd4c](https://github.com/pkgforge/soar/commit/ccffd4cef92bd8185e0b9d314938f909895bfda7))
+- *(nest)* Implement initial nest support - ([278a20c](https://github.com/pkgforge/soar/commit/278a20c95a7b56a28de809d1ff10cd0e50abf6d3))
+
 ## [0.6.0](https://github.com/pkgforge/soar/compare/soar-core-v0.5.0...soar-core-v0.6.0) - 2025-08-17
 
 ### 🐛 Bug Fixes
