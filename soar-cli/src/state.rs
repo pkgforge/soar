@@ -51,10 +51,10 @@ impl AppState {
 
     pub async fn sync(&self) -> SoarResult<()> {
         self.init_repo_dbs(true).await?;
-        self.sync_nests().await
+        self.sync_nests(true).await
     }
 
-    async fn sync_nests(&self) -> SoarResult<()> {
+    async fn sync_nests(&self, force: bool) -> SoarResult<()> {
         let mut nests_db = self.config().get_nests_db_conn()?;
         let tx = nests_db.transaction()?;
         let nests = nests::repository::list(&tx)?;
@@ -62,8 +62,22 @@ impl AppState {
 
         let nests_repo_path = self.config().get_repositories_path()?.join("nests");
 
+        let mut tasks = Vec::new();
+
         for nest in nests {
-            match fetch_nest_metadata(&nest, &nests_repo_path).await {
+            let nest_clone = nest.clone();
+            let repo_path_clone = nests_repo_path.clone();
+            let task = tokio::task::spawn(async move {
+                fetch_nest_metadata(&nest_clone, force, &repo_path_clone).await
+            });
+            tasks.push((task, nest));
+        }
+
+        for (task, nest) in tasks {
+            match task
+                .await
+                .map_err(|err| SoarError::Custom(format!("Join handle error: {err}")))?
+            {
                 Ok(Some(etag)) => {
                     let nest_path = nests_repo_path.join(&nest.name);
                     let metadata_db_path = nest_path.join("metadata.db");
@@ -234,7 +248,7 @@ impl AppState {
 
     pub async fn repo_db(&self) -> SoarResult<&Arc<Mutex<Connection>>> {
         self.init_repo_dbs(false).await?;
-        self.sync_nests().await?;
+        self.sync_nests(false).await?;
         self.inner
             .repo_db
             .get_or_try_init(|| self.create_repo_db())

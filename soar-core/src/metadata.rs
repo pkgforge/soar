@@ -4,13 +4,12 @@ use std::{
     path::Path,
 };
 
-use futures::TryStreamExt;
 use reqwest::header::{self, HeaderMap};
 use rusqlite::Connection;
 use tracing::info;
 
 use crate::{
-    config::Repository,
+    config::{self, Repository},
     constants::{METADATA_MIGRATIONS, SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES},
     database::{
         connection::Database, migration::MigrationManager, models::RemotePackage,
@@ -36,6 +35,7 @@ fn construct_nest_url(url: &str) -> SoarResult<reqwest::Url> {
 
 pub async fn fetch_nest_metadata(
     nest: &Nest,
+    force: bool,
     nests_repo_path: &Path,
 ) -> SoarResult<Option<String>> {
     let nest_path = nests_repo_path.join(&nest.name);
@@ -48,8 +48,23 @@ pub async fn fetch_nest_metadata(
 
     let etag = if metadata_db.exists() {
         let conn = Connection::open(&metadata_db)?;
-        conn.query_row("SELECT etag FROM repository", [], |row| row.get(0))
-            .unwrap_or_default()
+        let etag: String = conn
+            .query_row("SELECT etag FROM repository", [], |row| row.get(0))
+            .unwrap_or_default();
+
+        if !force && !etag.is_empty() {
+            let file_info = metadata_db
+                .metadata()
+                .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
+            let sync_interval = config::get_config().get_nests_sync_interval();
+            if let Ok(created) = file_info.created() {
+                if sync_interval >= created.elapsed()?.as_millis() {
+                    return Ok(None);
+                }
+            }
+        }
+        drop(conn);
+        etag
     } else {
         String::new()
     };
@@ -81,6 +96,8 @@ pub async fn fetch_nest_metadata(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
         .ok_or_else(|| SoarError::Custom("etag not found in metadata response".to_string()))?;
+
+    info!("Fetching nest from {}", url);
 
     let content = resp.bytes().await?.to_vec();
 
@@ -268,12 +285,7 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
 
     info!("Fetching metadata from {}", repo.url);
 
-    let mut content = Vec::new();
-    let mut stream = resp.bytes_stream();
-
-    while let Ok(Some(chunk)) = stream.try_next().await {
-        content.extend_from_slice(&chunk);
-    }
+    let content = resp.bytes().await?.to_vec();
 
     process_metadata_content(content, &metadata_db, &repo.name, &repo.url)?;
 

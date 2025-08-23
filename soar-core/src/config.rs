@@ -204,6 +204,9 @@ pub struct Config {
 
     /// Global override for sync interval
     pub sync_interval: Option<String>,
+
+    /// Sync interval for nests
+    pub nests_sync_interval: Option<String>,
 }
 
 pub static CONFIG: LazyLock<RwLock<Option<Config>>> = LazyLock::new(|| RwLock::new(None));
@@ -340,6 +343,7 @@ impl Config {
             signature_verification: None,
             desktop_integration: None,
             sync_interval: None,
+            nests_sync_interval: None,
         }
     }
 
@@ -393,9 +397,9 @@ impl Config {
             if repo.name == "local" {
                 return Err(ConfigError::ReservedRepositoryName);
             }
-            if repo.name.starts_with("nest-") {
+            if repo.name.starts_with("nest") {
                 return Err(ConfigError::Custom(
-                    "Repository name cannot start with `nest:`".to_string(),
+                    "Repository name cannot start with `nest`".to_string(),
                 ));
             }
             if !seen_repos.insert(&repo.name) {
@@ -510,6 +514,15 @@ impl Config {
             .map_err(|e| SoarError::Custom(format!("run nests migration: {}", e)))?;
         let conn = Connection::open(&path)?;
         Ok(conn)
+    }
+
+    pub fn get_nests_sync_interval(&self) -> u128 {
+        match get_config().nests_sync_interval.as_deref().unwrap_or("3h") {
+            "always" => 0,
+            "never" => u128::MAX,
+            "auto" => 3 * 3_600_000,
+            value => parse_duration(value).unwrap_or(3_600_000),
+        }
     }
 
     pub fn get_repository(&self, repo_name: &str) -> Option<&Repository> {

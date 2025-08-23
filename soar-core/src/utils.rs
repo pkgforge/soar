@@ -10,6 +10,7 @@ use std::{
 };
 
 use nix::unistd::{geteuid, User};
+use regex::Regex;
 use tracing::info;
 
 use crate::{
@@ -291,19 +292,22 @@ pub fn calculate_dir_size<P: AsRef<Path>>(path: P) -> io::Result<u64> {
 }
 
 pub fn parse_duration(input: &str) -> Option<u128> {
-    let (num_part, unit_part) = input
-        .trim()
-        .split_at(input.find(|c: char| !c.is_numeric()).unwrap_or(input.len()));
-    let number: u128 = num_part.parse().ok()?;
-    let multiplier = match unit_part {
-        "s" => 1000,
-        "m" => 60 * 1000,
-        "h" => 60 * 60 * 1000,
-        "d" => 24 * 60 * 60 * 1000,
-        _ => return None,
-    };
+    let re = Regex::new(r"(\d+)([smhd])").ok()?;
+    let mut total: u128 = 0;
 
-    Some(multiplier * number)
+    for cap in re.captures_iter(input) {
+        let number: u128 = cap[1].parse().ok()?;
+        let multiplier = match &cap[2] {
+            "s" => 1000,
+            "m" => 60 * 1000,
+            "h" => 60 * 60 * 1000,
+            "d" => 24 * 60 * 60 * 1000,
+            _ => return None,
+        };
+        total += number * multiplier;
+    }
+
+    Some(total)
 }
 
 pub fn default_install_patterns() -> Vec<String> {
