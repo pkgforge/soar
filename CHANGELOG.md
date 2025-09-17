@@ -1,4 +1,26 @@
 
+## [0.8.0](https://github.com/pkgforge/soar/compare/v0.7.0...v0.8.0) - 2025-09-17
+
+### ⛰️  Features
+
+- *(portable_cache)* Add support for creating portable cache dir - ([09787c2](https://github.com/pkgforge/soar/commit/09787c24b0a4cd6dedc9647a74d8318b1bb8e7dc))
+
+### 🐛 Bug Fixes
+
+- *(nest)* Show error if no nest is removed - ([e157596](https://github.com/pkgforge/soar/commit/e157596bbebdfa0aa21e391d42ab844055011274))
+
+### 🚜 Refactor
+
+- *(cli)* [**breaking**] Reorder nest add args to <name> <url> - ([8c63b78](https://github.com/pkgforge/soar/commit/8c63b782cb35b6b905d98cde7b7d330fd7b4596f))
+
+### 📚 Documentation
+
+- *(readme)* Simplify readme - ([9b09e1f](https://github.com/pkgforge/soar/commit/9b09e1f92eba35edb4c97cd7f280de755ce78deb))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(migrations)* Merge database migrations - ([53229ea](https://github.com/pkgforge/soar/commit/53229eac6a145b2f8b90c558d871c6412c5b379a))
+
 ## [0.7.0](https://github.com/pkgforge/soar/compare/v0.6.6...v0.7.0) - 2025-08-23
 
 ### ⛰️  Features
