@@ -93,9 +93,8 @@ pub enum Commands {
         #[arg(
             required = false,
             long, num_args = 0..=1,
-            value_hint = ValueHint::AnyPath,
-            conflicts_with_all = &["portable_home", "portable_config", "portable_share"]
-            )]
+            value_hint = ValueHint::AnyPath
+        )]
         portable: Option<Option<String>>,
 
         /// Set portable home
@@ -104,7 +103,7 @@ pub enum Commands {
             long, num_args = 0..=1,
             value_hint = ValueHint::AnyPath,
             conflicts_with = "portable"
-            )]
+        )]
         portable_home: Option<Option<String>>,
 
         /// Set portable config
@@ -113,7 +112,7 @@ pub enum Commands {
             long, num_args = 0..=1,
             value_hint = ValueHint::AnyPath,
             conflicts_with = "portable"
-            )]
+        )]
         portable_config: Option<Option<String>>,
 
         /// Set portable share
@@ -122,7 +121,7 @@ pub enum Commands {
             long, num_args = 0..=1,
             value_hint = ValueHint::AnyPath,
             conflicts_with = "portable"
-            )]
+        )]
         portable_share: Option<Option<String>>,
 
         /// Set portable cache
@@ -131,7 +130,7 @@ pub enum Commands {
             long, num_args = 0..=1,
             value_hint = ValueHint::AnyPath,
             conflicts_with = "portable"
-            )]
+        )]
         portable_cache: Option<Option<String>>,
 
         /// Don't display notes
