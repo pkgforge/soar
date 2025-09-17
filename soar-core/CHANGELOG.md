@@ -1,4 +1,14 @@
 
+## [0.8.0](https://github.com/pkgforge/soar/compare/soar-core-v0.7.0...soar-core-v0.8.0) - 2025-09-17
+
+### ⛰️  Features
+
+- *(portable_cache)* Add support for creating portable cache dir - ([09787c2](https://github.com/pkgforge/soar/commit/09787c24b0a4cd6dedc9647a74d8318b1bb8e7dc))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(migrations)* Merge database migrations - ([53229ea](https://github.com/pkgforge/soar/commit/53229eac6a145b2f8b90c558d871c6412c5b379a))
+
 ## [0.7.0](https://github.com/pkgforge/soar/compare/soar-core-v0.6.0...soar-core-v0.7.0) - 2025-08-23
 
 ### ⛰️  Features
