@@ -205,6 +205,7 @@ pub struct InstalledPackage {
     pub portable_home: Option<String>,
     pub portable_config: Option<String>,
     pub portable_share: Option<String>,
+    pub portable_cache: Option<String>,
     pub install_patterns: Option<Vec<String>>,
 }
 
@@ -246,6 +247,7 @@ impl FromRow for InstalledPackage {
             portable_home: row.get("portable_home")?,
             portable_config: row.get("portable_config")?,
             portable_share: row.get("portable_share")?,
+            portable_cache: row.get("portable_cache")?,
             install_patterns,
         })
     }

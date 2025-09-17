@@ -138,24 +138,17 @@ async fn handle_cli() -> SoarResult<()> {
                     portable_home,
                     portable_config,
                     portable_share,
+                    portable_cache,
                     no_notes,
                     binary_only,
                     ask,
                     no_verify,
                 } => {
-                    if portable.is_some()
-                        && (portable_home.is_some()
-                            || portable_config.is_some()
-                            || portable_share.is_some())
-                    {
-                        error!("--portable cannot be used with --portable-home, --portable-config or --portable-share");
-                        std::process::exit(1);
-                    }
-
                     let portable = portable.map(|p| p.unwrap_or_default());
                     let portable_home = portable_home.map(|p| p.unwrap_or_default());
                     let portable_config = portable_config.map(|p| p.unwrap_or_default());
                     let portable_share = portable_share.map(|p| p.unwrap_or_default());
+                    let portable_cache = portable_cache.map(|p| p.unwrap_or_default());
 
                     install_packages(
                         &packages,
@@ -165,6 +158,7 @@ async fn handle_cli() -> SoarResult<()> {
                         portable_home,
                         portable_config,
                         portable_share,
+                        portable_cache,
                         no_notes,
                         binary_only,
                         ask,

@@ -107,6 +107,7 @@ pub async fn update_packages(
                         portable_home: pkg.portable_home,
                         portable_config: pkg.portable_config,
                         portable_share: pkg.portable_share,
+                        portable_cache: pkg.portable_cache,
                     })
                 }
             }
@@ -159,6 +160,7 @@ pub async fn update_packages(
                     portable_home: pkg.portable_home,
                     portable_config: pkg.portable_config,
                     portable_share: pkg.portable_share,
+                    portable_cache: pkg.portable_cache,
                 })
             }
         }
@@ -176,6 +178,7 @@ pub async fn update_packages(
     let ctx = create_install_context(
         update_targets.len(),
         config.parallel_limit.unwrap_or(4),
+        None,
         None,
         None,
         None,

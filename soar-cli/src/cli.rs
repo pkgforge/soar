@@ -90,20 +90,49 @@ pub enum Commands {
         yes: bool,
 
         /// Set portable dir for home & config
-        #[arg(required = false, long, num_args = 0..=1, value_hint = ValueHint::AnyPath)]
+        #[arg(
+            required = false,
+            long, num_args = 0..=1,
+            value_hint = ValueHint::AnyPath,
+            conflicts_with_all = &["portable_home", "portable_config", "portable_share"]
+            )]
         portable: Option<Option<String>>,
 
         /// Set portable home
-        #[arg(required = false, long, num_args = 0..=1, value_hint = ValueHint::AnyPath)]
+        #[arg(
+            required = false,
+            long, num_args = 0..=1,
+            value_hint = ValueHint::AnyPath,
+            conflicts_with = "portable"
+            )]
         portable_home: Option<Option<String>>,
 
         /// Set portable config
-        #[arg(required = false, long, num_args = 0..=1, value_hint = ValueHint::AnyPath)]
+        #[arg(
+            required = false,
+            long, num_args = 0..=1,
+            value_hint = ValueHint::AnyPath,
+            conflicts_with = "portable"
+            )]
         portable_config: Option<Option<String>>,
 
         /// Set portable share
-        #[arg(required = false, long, num_args = 0..=1, value_hint = ValueHint::AnyPath)]
+        #[arg(
+            required = false,
+            long, num_args = 0..=1,
+            value_hint = ValueHint::AnyPath,
+            conflicts_with = "portable"
+            )]
         portable_share: Option<Option<String>>,
+
+        /// Set portable cache
+        #[arg(
+            required = false,
+            long, num_args = 0..=1,
+            value_hint = ValueHint::AnyPath,
+            conflicts_with = "portable"
+            )]
+        portable_cache: Option<Option<String>>,
 
         /// Don't display notes
         #[arg(required = false, long)]

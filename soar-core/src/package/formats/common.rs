@@ -229,6 +229,7 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     portable_home: Option<&str>,
     portable_config: Option<&str>,
     portable_share: Option<&str>,
+    portable_cache: Option<&str>,
 ) -> SoarResult<()> {
     let portable_dir_base = get_config().get_portable_dirs()?.join(format!(
         "{}-{}",
@@ -241,17 +242,30 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     let pkg_config = bin_path.with_extension("config");
     let pkg_home = bin_path.with_extension("home");
     let pkg_share = bin_path.with_extension("share");
+    let pkg_cache = bin_path.with_extension("cache");
 
-    let (portable_home, portable_config, portable_share) = if let Some(portable) = portable {
-        (Some(portable), Some(portable), Some(portable))
-    } else {
-        (portable_home, portable_config, portable_share)
-    };
+    let (portable_home, portable_config, portable_share, portable_cache) =
+        if let Some(portable) = portable {
+            (
+                Some(portable),
+                Some(portable),
+                Some(portable),
+                Some(portable),
+            )
+        } else {
+            (
+                portable_home,
+                portable_config,
+                portable_share,
+                portable_cache,
+            )
+        };
 
     for (opt, target, kind) in [
         (portable_home, &pkg_home, "home"),
         (portable_config, &pkg_config, "config"),
         (portable_share, &pkg_share, "share"),
+        (portable_cache, &pkg_cache, "cache"),
     ] {
         if let Some(val) = opt {
             let base = if val.is_empty() {
@@ -286,6 +300,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     portable_home: Option<&str>,
     portable_config: Option<&str>,
     portable_share: Option<&str>,
+    portable_cache: Option<&str>,
 ) -> SoarResult<()> {
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
@@ -331,6 +346,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                 portable_home,
                 portable_config,
                 portable_share,
+                portable_cache,
             )?;
         }
         PackageFormat::FlatImage => {
@@ -340,6 +356,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                 None,
                 None,
                 portable_config,
+                None,
                 None,
             )?;
         }

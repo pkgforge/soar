@@ -118,7 +118,16 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         .items;
 
     if pkg.iter().all(has_desktop_integration) {
-        integrate_package(&install_dir, &selected_package, None, None, None, None).await?;
+        integrate_package(
+            &install_dir,
+            &selected_package,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
     }
 
     {

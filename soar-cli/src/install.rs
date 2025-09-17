@@ -58,6 +58,7 @@ pub struct InstallContext {
     pub portable_home: Option<String>,
     pub portable_config: Option<String>,
     pub portable_share: Option<String>,
+    pub portable_cache: Option<String>,
     pub warnings: Arc<Mutex<Vec<String>>>,
     pub errors: Arc<Mutex<Vec<String>>>,
     pub retrying: Arc<AtomicU64>,
@@ -74,6 +75,7 @@ pub fn create_install_context(
     portable_home: Option<String>,
     portable_config: Option<String>,
     portable_share: Option<String>,
+    portable_cache: Option<String>,
     binary_only: bool,
     no_verify: bool,
 ) -> InstallContext {
@@ -92,6 +94,7 @@ pub fn create_install_context(
         portable_home,
         portable_config,
         portable_share,
+        portable_cache,
         warnings: Arc::new(Mutex::new(Vec::new())),
         errors: Arc::new(Mutex::new(Vec::new())),
         retrying: Arc::new(AtomicU64::new(0)),
@@ -111,6 +114,7 @@ pub async fn install_packages(
     portable_home: Option<String>,
     portable_config: Option<String>,
     portable_share: Option<String>,
+    portable_cache: Option<String>,
     no_notes: bool,
     binary_only: bool,
     ask: bool,
@@ -138,6 +142,7 @@ pub async fn install_packages(
         portable_home,
         portable_config,
         portable_share,
+        portable_cache,
         binary_only,
         no_verify,
     );
@@ -438,6 +443,7 @@ pub async fn install_single_package(
         portable_home,
         portable_config,
         portable_share,
+        portable_cache,
         excludes,
     ) = if let Some(ref existing) = target.existing_install {
         let install_dir = PathBuf::from(&existing.installed_path);
@@ -451,6 +457,7 @@ pub async fn install_single_package(
             existing.portable_home.as_deref(),
             existing.portable_config.as_deref(),
             existing.portable_share.as_deref(),
+            existing.portable_cache.as_deref(),
             existing.install_patterns.as_deref(),
         )
     } else {
@@ -477,6 +484,7 @@ pub async fn install_single_package(
             ctx.portable_home.as_deref(),
             ctx.portable_config.as_deref(),
             ctx.portable_share.as_deref(),
+            ctx.portable_cache.as_deref(),
             None,
         )
     };
@@ -647,6 +655,7 @@ pub async fn install_single_package(
             portable_home,
             portable_config,
             portable_share,
+            portable_cache,
         )
         .await?;
     }
@@ -658,6 +667,7 @@ pub async fn install_single_package(
             portable_home,
             portable_config,
             portable_share,
+            portable_cache,
         )
         .await?;
 

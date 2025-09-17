@@ -44,6 +44,7 @@ pub struct InstallTarget {
     pub portable_home: Option<String>,
     pub portable_config: Option<String>,
     pub portable_share: Option<String>,
+    pub portable_cache: Option<String>,
 }
 
 impl PackageInstaller {
@@ -208,6 +209,7 @@ impl PackageInstaller {
         portable_home: Option<&str>,
         portable_config: Option<&str>,
         portable_share: Option<&str>,
+        portable_cache: Option<&str>,
     ) -> SoarResult<()> {
         let mut conn = self.db.lock()?;
         let package = &self.package;
@@ -267,26 +269,33 @@ impl PackageInstaller {
             || portable_home.is_some()
             || portable_config.is_some()
             || portable_share.is_some()
+            || portable_cache.is_some()
         {
             let base_dir = env::current_dir()
                 .map_err(|_| SoarError::Custom("Error retrieving current directory".into()))?;
 
-            let [portable, portable_home, portable_config, portable_share] =
-                [portable, portable_home, portable_config, portable_share].map(|opt| {
-                    opt.map(|p| {
-                        if p.is_empty() {
-                            String::new()
+            let [portable, portable_home, portable_config, portable_share, portable_cache] = [
+                portable,
+                portable_home,
+                portable_config,
+                portable_share,
+                portable_cache,
+            ]
+            .map(|opt| {
+                opt.map(|p| {
+                    if p.is_empty() {
+                        String::new()
+                    } else {
+                        let path = PathBuf::from(&p);
+                        let absolute = if path.is_absolute() {
+                            path
                         } else {
-                            let path = PathBuf::from(&p);
-                            let absolute = if path.is_absolute() {
-                                path
-                            } else {
-                                base_dir.join(path)
-                            };
-                            absolute.to_string_lossy().into_owned()
-                        }
-                    })
-                });
+                            base_dir.join(path)
+                        };
+                        absolute.to_string_lossy().into_owned()
+                    }
+                })
+            });
 
             // try to update existing record first
             let mut stmt = prepare_and_bind!(
@@ -296,7 +305,8 @@ impl PackageInstaller {
                     portable_path = $portable,
                     portable_home = $portable_home,
                     portable_config = $portable_config,
-                    portable_share = $portable_share
+                    portable_share = $portable_share,
+                    portable_cache = $portable_cache
                 WHERE
                     package_id = $record_id
                 "
@@ -310,12 +320,12 @@ impl PackageInstaller {
                     "INSERT INTO portable_package
                 (
                     package_id, portable_path, portable_home, portable_config,
-                    portable_share
+                    portable_share, portable_cache
                 )
                 VALUES
                 (
                      $record_id, $portable, $portable_home, $portable_config,
-                     $portable_share
+                     $portable_share, $portable_cache
                 )
                 "
                 );
