@@ -511,7 +511,7 @@ impl Config {
         let path = self.get_db_path()?.join("nests.db");
         let conn = Connection::open(&path)?;
         migration::run_nests(conn)
-            .map_err(|e| SoarError::Custom(format!("run nests migration: {}", e)))?;
+            .map_err(|e| SoarError::Custom(format!("creating nests migration: {}", e)))?;
         let conn = Connection::open(&path)?;
         Ok(conn)
     }

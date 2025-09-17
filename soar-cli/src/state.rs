@@ -12,7 +12,7 @@ use soar_core::{
     constants::CORE_MIGRATIONS,
     database::{
         connection::Database,
-        migration::MigrationManager,
+        migration::{DbKind, MigrationManager},
         models::FromRow,
         nests,
         packages::{FilterCondition, PackageQueryBuilder},
@@ -237,7 +237,7 @@ impl AppState {
 
         let conn = Connection::open(&core_db_file)?;
         let mut manager = MigrationManager::new(conn)?;
-        manager.migrate_from_dir(CORE_MIGRATIONS)?;
+        manager.migrate_from_dir(CORE_MIGRATIONS, DbKind::Core)?;
         Database::new(&core_db_file)
     }
 

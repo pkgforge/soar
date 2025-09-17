@@ -12,6 +12,13 @@ pub struct MigrationManager {
     conn: Connection,
 }
 
+#[derive(PartialEq)]
+pub enum DbKind {
+    Core,
+    Metadata,
+    Nest,
+}
+
 impl MigrationManager {
     pub fn new(conn: Connection) -> rusqlite::Result<Self> {
         Ok(Self { conn })
@@ -68,23 +75,21 @@ impl MigrationManager {
 
         migrations.sort_by_key(|m| m.version);
 
-        let mut expected_version = 1;
-        for migration in &migrations {
-            if migration.version != expected_version {
-                return Err(SoarError::Custom(format!(
-                    "Invalid migration sequence. Expected version {}, found {}",
-                    expected_version, migration.version
-                )));
-            }
-            expected_version += 1;
-        }
-
         Ok(migrations)
     }
 
-    pub fn migrate_from_dir(&mut self, dir: Dir) -> SoarResult<()> {
+    pub fn migrate_from_dir(&mut self, dir: Dir, db_kind: DbKind) -> SoarResult<()> {
         let migrations = Self::load_migrations_from_dir(dir)?;
         let current_version = self.get_current_version()?;
+
+        if db_kind == DbKind::Core && current_version > 0 && current_version < 5 {
+            return Err(SoarError::Custom(
+                "Database schema v{current_version} is too old for this soar release (requires v5).\n\
+                Please temporarily downgrade to v0.7.0 and run any normal command that invokes database\n\
+                (e.g. `soar ls` or `soar health`) once to let it auto-migrate.\n\
+                After that completes, upgrade back to the latest soar".into(),
+            ));
+        }
 
         let pending: Vec<&Migration> = migrations
             .iter()
@@ -101,6 +106,6 @@ impl MigrationManager {
 
 pub fn run_nests(conn: Connection) -> SoarResult<()> {
     let mut manager = MigrationManager::new(conn)?;
-    manager.migrate_from_dir(NESTS_MIGRATIONS_DIR)?;
+    manager.migrate_from_dir(NESTS_MIGRATIONS_DIR, DbKind::Nest)?;
     Ok(())
 }

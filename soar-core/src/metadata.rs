@@ -12,7 +12,9 @@ use crate::{
     config::{self, Repository},
     constants::{METADATA_MIGRATIONS, SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES},
     database::{
-        connection::Database, migration::MigrationManager, models::RemotePackage,
+        connection::Database,
+        migration::{DbKind, MigrationManager},
+        models::RemotePackage,
         nests::models::Nest,
     },
     error::{ErrorContext, SoarError},
@@ -180,7 +182,7 @@ fn handle_json_metadata<P: AsRef<Path>>(
 
     let conn = Connection::open(metadata_db)?;
     let mut manager = MigrationManager::new(conn)?;
-    manager.migrate_from_dir(METADATA_MIGRATIONS)?;
+    manager.migrate_from_dir(METADATA_MIGRATIONS, DbKind::Metadata)?;
 
     let db = Database::new(metadata_db)?;
     db.from_remote_metadata(metadata.as_ref(), repo_name)?;
