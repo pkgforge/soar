@@ -1,6 +1,6 @@
 use rusqlite::{params, Result};
 
-use crate::database::models::FromRow;
+use crate::{database::models::FromRow, error::SoarError, SoarResult};
 
 use super::models::Nest;
 
@@ -27,7 +27,13 @@ pub fn list(tx: &rusqlite::Transaction) -> Result<Vec<Nest>> {
     Ok(nests)
 }
 
-pub fn remove(tx: &rusqlite::Transaction, name: &str) -> Result<()> {
-    tx.execute("DELETE FROM nests WHERE name = ?1", params![name])?;
+pub fn remove(tx: &rusqlite::Transaction, name: &str) -> SoarResult<()> {
+    let full_name = format!("nest-{name}");
+    let result = tx.execute("DELETE FROM nests WHERE name = ?1", params![full_name])?;
+    if result == 0 {
+        return Err(SoarError::Custom(format!(
+            "No nest found with name `{name}`",
+        )));
+    }
     Ok(())
 }
