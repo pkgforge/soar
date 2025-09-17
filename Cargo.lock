@@ -2098,7 +2098,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "soar-cli"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "clap",
  "futures",
