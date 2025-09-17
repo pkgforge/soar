@@ -19,7 +19,7 @@ path = "src/main.rs"
 self = []
 
 [dependencies]
-clap = { version = "4.5.45", features = ["cargo", "derive"] }
+clap = { version = "4.5.47", features = ["cargo", "derive"] }
 futures = { workspace = true }
 indicatif = "0.18.0"
 minisign-verify = "0.2.4"
@@ -30,12 +30,12 @@ rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
 rusqlite = { workspace = true }
-semver = "1.0.26"
+semver = "1.0.27"
 serde = { workspace = true }
 serde_json = { workspace = true }
 soar-core = { version = "0.7.0", path = "../soar-core" }
 soar-dl = { workspace = true }
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
-toml = "0.9.5"
+toml = "0.9.6"
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3.19", default-features = false, features = ["env-filter", "fmt", "json", "nu-ansi-term"] }
+tracing-subscriber = { version = "0.3.20", default-features = false, features = ["env-filter", "fmt", "json", "nu-ansi-term"] }
