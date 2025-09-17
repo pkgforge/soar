@@ -408,12 +408,13 @@ pub enum NestCommands {
     /// Add a nest
     #[command(arg_required_else_help = true)]
     Add {
-        /// URL of the nest
-        #[arg(required = true)]
-        url: String,
         /// Name of the nest
         #[arg(required = true)]
         name: String,
+
+        /// URL of the nest
+        #[arg(required = true)]
+        url: String,
     },
 
     /// Remove a nest
