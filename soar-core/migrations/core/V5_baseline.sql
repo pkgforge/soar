@@ -25,6 +25,6 @@ CREATE TABLE packages (
   with_pkg_id BOOLEAN NOT NULL DEFAULT false,
   detached BOOLEAN NOT NULL DEFAULT false,
   unlinked BOOLEAN NOT NULL DEFAULT false,
-  provides JSONB
+  provides JSONB,
   install_patterns JSONB
 );
