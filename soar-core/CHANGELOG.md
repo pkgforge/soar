@@ -1,4 +1,10 @@
 
+## [0.8.1](https://github.com/pkgforge/soar/compare/soar-core-v0.8.0...soar-core-v0.8.1) - 2025-09-19
+
+### 🐛 Bug Fixes
+
+- *(sql)* Fix sql syntax - ([58b3a05](https://github.com/pkgforge/soar/commit/58b3a05460fa6ee29873736c278f6be2abd0dac8))
+
 ## [0.8.0](https://github.com/pkgforge/soar/compare/soar-core-v0.7.0...soar-core-v0.8.0) - 2025-09-17
 
 ### ⛰️  Features
