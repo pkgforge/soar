@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/soar-utils",
   "soar-cli",
   "soar-core"
 ]
