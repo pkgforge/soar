@@ -2,7 +2,7 @@ name: soar nightly
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
-  
+
 on:
   push:
     tags:
@@ -15,7 +15,6 @@ permissions:
   id-token: write
 
 jobs:
-
   remove-nightly-tag:
     runs-on: ubuntu-latest
     steps:
