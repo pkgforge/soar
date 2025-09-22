@@ -293,225 +293,197 @@ pub fn xdg_cache_home() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{env, sync::Mutex};
-
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
-
-    fn with_env_test<F>(f: F)
-    where
-        F: FnOnce(),
-    {
-        let _guard = ENV_MUTEX.lock().unwrap();
-        f()
-    }
-
-    fn setup_test_env(vars: &[(&str, &str)]) {
-        for (var, value) in vars {
-            env::set_var(*var, *value);
-        }
-    }
-
-    fn cleanup_test_env(vars: &[&str]) {
-        for key in vars {
-            env::remove_var(key);
-        }
-    }
+    use std::env;
 
     #[test]
     fn test_expand_variables_simple() {
-        with_env_test(|| {
-            setup_test_env(&[("TEST_VAR", "test_value")]);
-            let resolver = SystemPathResolver;
-            let result = resolver.expand_variables("$TEST_VAR/path").unwrap();
-            assert_eq!(result, "test_value/path");
-        });
+        let resolver = SystemPathResolver;
+        env::set_var("TEST_VAR", "test_value");
+
+        let result = resolver.expand_variables("$TEST_VAR/path").unwrap();
+        assert_eq!(result, "test_value/path");
+
+        env::remove_var("TEST_VAR");
     }
 
     #[test]
     fn test_expand_variables_braces() {
-        with_env_test(|| {
-            setup_test_env(&[("TEST_VAR", "test_value")]);
-            let resolver = SystemPathResolver;
-            let result = resolver.expand_variables("${TEST_VAR}/path").unwrap();
-            assert_eq!(result, "test_value/path");
-        });
+        let resolver = SystemPathResolver;
+        env::set_var("TEST_VAR_BRACES", "test_value");
+
+        let result = resolver
+            .expand_variables("${TEST_VAR_BRACES}/path")
+            .unwrap();
+        assert_eq!(result, "test_value/path");
+
+        env::remove_var("TEST_VAR_BRACES");
     }
 
     #[test]
     fn test_expand_variables_missing_braces() {
-        with_env_test(|| {
-            setup_test_env(&[("TEST_VAR", "test_value")]);
-            let resolver = SystemPathResolver;
-            let result = resolver.expand_variables("${TEST_VAR");
-            assert!(result.is_err());
-        });
+        let resolver = SystemPathResolver;
+        env::set_var("TEST_VAR_MISSING_BRACES", "test_value");
+
+        let result = resolver.expand_variables("${TEST_VAR_MISSING_BRACES");
+        assert!(result.is_err());
+
+        env::remove_var("TEST_VAR_MISSING_BRACES");
     }
 
     #[test]
     fn test_expand_variables_missing_var() {
-        with_env_test(|| {
-            let resolver = SystemPathResolver;
-            let result = resolver.expand_variables("$THIS_VAR_DOESNT_EXIST");
-            assert!(result.is_err());
-        });
+        let resolver = SystemPathResolver;
+        let result = resolver.expand_variables("$THIS_VAR_DOESNT_EXIST");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_consume_var_name() {
-        with_env_test(|| {
-            let resolver = SystemPathResolver;
-            let mut chars = "VAR_NAME_123/extra".chars().peekable();
-            let var_name = resolver.consume_var_name(&mut chars);
-            assert_eq!(var_name, "VAR_NAME_123");
-        });
+        let resolver = SystemPathResolver;
+        let mut chars = "VAR_NAME_123/extra".chars().peekable();
+        let var_name = resolver.consume_var_name(&mut chars);
+        assert_eq!(var_name, "VAR_NAME_123");
     }
 
     #[test]
     fn test_xdg_directories() {
-        with_env_test(|| {
-            setup_test_env(&[("HOME", "/tmp/home")]);
+        let resolver = SystemPathResolver;
+        // We need to set HOME to have a predictable home directory for the test
+        env::set_var("HOME", "/tmp/home");
+        let home = resolver.home_dir();
+        assert_eq!(home, PathBuf::from("/tmp/home"));
 
-            let resolver = SystemPathResolver;
-            let home = resolver.home_dir();
-            assert_eq!(home, PathBuf::from("/tmp/home"));
+        // Test without XDG variables set
+        env::remove_var("XDG_CONFIG_HOME");
+        env::remove_var("XDG_DATA_HOME");
+        env::remove_var("XDG_CACHE_HOME");
 
-            // Test without XDG variables set
-            cleanup_test_env(&["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"]);
+        let config = resolver.xdg_config_home();
+        let data = resolver.xdg_data_home();
+        let cache = resolver.xdg_cache_home();
 
-            let config = resolver.xdg_config_home();
-            let data = resolver.xdg_data_home();
-            let cache = resolver.xdg_cache_home();
+        assert_eq!(config, home.join(".config"));
+        assert_eq!(data, home.join(".local/share"));
+        assert_eq!(cache, home.join(".cache"));
+        assert!(config.is_absolute());
+        assert!(data.is_absolute());
+        assert!(cache.is_absolute());
 
-            assert_eq!(config, home.join(".config"));
-            assert_eq!(data, home.join(".local/share"));
-            assert_eq!(cache, home.join(".cache"));
-            assert!(config.is_absolute());
-            assert!(data.is_absolute());
-            assert!(cache.is_absolute());
+        // Test with XDG variables set
+        env::set_var("XDG_CONFIG_HOME", "/tmp/config");
+        env::set_var("XDG_DATA_HOME", "/tmp/data");
+        env::set_var("XDG_CACHE_HOME", "/tmp/cache");
 
-            // Test with XDG variables set
-            setup_test_env(&[
-                ("XDG_CONFIG_HOME", "/tmp/config"),
-                ("XDG_DATA_HOME", "/tmp/data"),
-                ("XDG_CACHE_HOME", "/tmp/cache"),
-            ]);
+        assert_eq!(resolver.xdg_config_home(), PathBuf::from("/tmp/config"));
+        assert_eq!(resolver.xdg_data_home(), PathBuf::from("/tmp/data"));
+        assert_eq!(resolver.xdg_cache_home(), PathBuf::from("/tmp/cache"));
 
-            assert_eq!(resolver.xdg_config_home(), PathBuf::from("/tmp/config"));
-            assert_eq!(resolver.xdg_data_home(), PathBuf::from("/tmp/data"));
-            assert_eq!(resolver.xdg_cache_home(), PathBuf::from("/tmp/cache"));
-
-            cleanup_test_env(&["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "HOME"]);
-        });
+        env::remove_var("XDG_CONFIG_HOME");
+        env::remove_var("XDG_DATA_HOME");
+        env::remove_var("XDG_CACHE_HOME");
+        env::remove_var("HOME");
     }
 
     #[test]
     fn test_resolve_path() {
-        with_env_test(|| {
-            setup_test_env(&[("HOME", "/tmp/home")]);
-            let resolver = SystemPathResolver;
+        let resolver = SystemPathResolver;
+        env::set_var("HOME", "/tmp/home");
 
-            assert!(resolver.resolve_path("").is_err());
+        assert!(resolver.resolve_path("").is_err());
 
-            // Absolute path
-            assert_eq!(
-                resolver.resolve_path("/absolute/path").unwrap(),
-                PathBuf::from("/absolute/path")
-            );
+        // Absolute path
+        assert_eq!(
+            resolver.resolve_path("/absolute/path").unwrap(),
+            PathBuf::from("/absolute/path")
+        );
 
-            // Relative path
-            let expected_relative = env::current_dir().unwrap().join("relative/path");
-            assert_eq!(
-                resolver.resolve_path("relative/path").unwrap(),
-                expected_relative
-            );
+        // Relative path
+        let expected_relative = env::current_dir().unwrap().join("relative/path");
+        assert_eq!(
+            resolver.resolve_path("relative/path").unwrap(),
+            expected_relative
+        );
 
-            // Tilde path
-            let home = resolver.home_dir();
-            assert_eq!(resolver.resolve_path("~/path").unwrap(), home.join("path"));
-            assert_eq!(resolver.resolve_path("~").unwrap(), home);
+        // Tilde path
+        let home = resolver.home_dir();
+        assert_eq!(resolver.resolve_path("~/path").unwrap(), home.join("path"));
+        assert_eq!(resolver.resolve_path("~").unwrap(), home);
 
-            // Tilde not at start
-            let expected_tilde_middle = env::current_dir().unwrap().join("not/at/~/start");
-            assert_eq!(
-                resolver.resolve_path("not/at/~/start").unwrap(),
-                expected_tilde_middle
-            );
+        // Tilde not at start
+        let expected_tilde_middle = env::current_dir().unwrap().join("not/at/~/start");
+        assert_eq!(
+            resolver.resolve_path("not/at/~/start").unwrap(),
+            expected_tilde_middle
+        );
+        env::remove_var("HOME");
 
-            // Unclosed variable
-            let result = resolver.resolve_path("${VAR");
-            assert!(result.is_err());
+        // Unclosed variable
+        let result = resolver.resolve_path("${VAR");
+        assert!(result.is_err());
 
-            // Missing variable
-            let result = resolver.resolve_path("${VAR}");
-            assert!(result.is_err());
-
-            cleanup_test_env(&["HOME"]);
-        });
+        // Missing variable
+        let result = resolver.resolve_path("${VAR}");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_home_dir() {
-        with_env_test(|| {
-            // Test with HOME set
-            setup_test_env(&[("HOME", "/tmp/home")]);
-            let resolver = SystemPathResolver;
-            assert_eq!(resolver.home_dir(), PathBuf::from("/tmp/home"));
+        let resolver = SystemPathResolver;
 
-            // Test with HOME unset
-            cleanup_test_env(&["HOME"]);
-            let expected = PathBuf::from(format!("/home/{}", get_username()));
-            assert_eq!(resolver.home_dir(), expected);
-        });
+        // Test with HOME set
+        env::set_var("HOME", "/custom/home");
+        assert_eq!(resolver.home_dir(), PathBuf::from("/custom/home"));
+
+        // Test with HOME unset
+        env::remove_var("HOME");
+        let expected = PathBuf::from(format!("/home/{}", get_username()));
+        assert_eq!(resolver.home_dir(), expected);
     }
 
     #[test]
     fn test_expand_variables_edge_cases() {
-        with_env_test(|| {
-            setup_test_env(&[("HOME", "/tmp/home")]);
-            let resolver = SystemPathResolver;
+        let resolver = SystemPathResolver;
+        env::set_var("HOME", "/tmp/home");
 
-            // Dollar at the end
-            assert_eq!(resolver.expand_variables("path/$").unwrap(), "path/$");
+        // Dollar at the end
+        assert_eq!(resolver.expand_variables("path/$").unwrap(), "path/$");
 
-            // Dollar with invalid char
-            assert_eq!(
-                resolver.expand_variables("path/$!invalid").unwrap(),
-                "path/$!invalid"
-            );
+        // Dollar with invalid char
+        assert_eq!(
+            resolver.expand_variables("path/$!invalid").unwrap(),
+            "path/$!invalid"
+        );
 
-            // Multiple variables
-            setup_test_env(&[("VAR1", "val1"), ("VAR2", "val2")]);
-            assert_eq!(
-                resolver.expand_variables("$VAR1/${VAR2}").unwrap(),
-                "val1/val2"
-            );
-            cleanup_test_env(&["VAR1", "VAR2"]);
+        // Multiple variables
+        env::set_var("VAR1", "val1");
+        env::set_var("VAR2", "val2");
+        assert_eq!(
+            resolver.expand_variables("$VAR1/${VAR2}").unwrap(),
+            "val1/val2"
+        );
+        env::remove_var("VAR1");
+        env::remove_var("VAR2");
 
-            // Tilde expansion
-            let home_str = resolver.home_dir().to_string_lossy().to_string();
-            assert_eq!(
-                resolver.expand_variables("~/path").unwrap(),
-                format!("{}/path", home_str)
-            );
-            assert_eq!(resolver.expand_variables("~").unwrap(), home_str);
-            assert_eq!(resolver.expand_variables("a/~/b").unwrap(), "a/~/b");
-            cleanup_test_env(&["HOME"]);
-        });
+        // Tilde expansion
+        let home_str = resolver.home_dir().to_string_lossy().to_string();
+        assert_eq!(
+            resolver.expand_variables("~/path").unwrap(),
+            format!("{}/path", home_str)
+        );
+        assert_eq!(resolver.expand_variables("~").unwrap(), home_str);
+        assert_eq!(resolver.expand_variables("a/~/b").unwrap(), "a/~/b");
+        env::remove_var("HOME");
     }
 
     #[test]
-    fn test_public_functions() {
-        with_env_test(|| {
-            setup_test_env(&[("HOME", "/tmp/home")]);
-
-            assert_eq!(resolve_path("~").unwrap(), PathBuf::from("/tmp/home"));
-            assert_eq!(home_dir(), PathBuf::from("/tmp/home"));
-            assert_eq!(xdg_config_home(), PathBuf::from("/tmp/home/.config"));
-            assert_eq!(xdg_data_home(), PathBuf::from("/tmp/home/.local/share"));
-            assert_eq!(xdg_cache_home(), PathBuf::from("/tmp/home/.cache"));
-
-            cleanup_test_env(&["HOME"]);
-        });
+    fn test_public_convenience_functions() {
+        env::set_var("HOME", "/tmp/home");
+        assert_eq!(resolve_path("~").unwrap(), PathBuf::from("/tmp/home"));
+        assert_eq!(home_dir(), PathBuf::from("/tmp/home"));
+        assert_eq!(xdg_config_home(), PathBuf::from("/tmp/home/.config"));
+        assert_eq!(xdg_data_home(), PathBuf::from("/tmp/home/.local/share"));
+        assert_eq!(xdg_cache_home(), PathBuf::from("/tmp/home/.cache"));
+        env::remove_var("HOME");
     }
 
     #[test]
@@ -534,35 +506,33 @@ mod tests {
 
     #[test]
     fn test_expand_env_var_special_vars() {
-        with_env_test(|| {
-            setup_test_env(&[("HOME", "/tmp/home")]);
-            let resolver = SystemPathResolver;
+        let resolver = SystemPathResolver;
+        env::set_var("HOME", "/tmp/home");
 
-            let mut result = String::new();
-            resolver
-                .expand_env_var("HOME", &mut result, "$HOME")
-                .unwrap();
-            assert_eq!(result, "/tmp/home");
+        let mut result = String::new();
+        resolver
+            .expand_env_var("HOME", &mut result, "$HOME")
+            .unwrap();
+        assert_eq!(result, "/tmp/home");
 
-            result.clear();
-            resolver
-                .expand_env_var("XDG_CONFIG_HOME", &mut result, "$XDG_CONFIG_HOME")
-                .unwrap();
-            assert_eq!(result, "/tmp/home/.config");
+        result.clear();
+        resolver
+            .expand_env_var("XDG_CONFIG_HOME", &mut result, "$XDG_CONFIG_HOME")
+            .unwrap();
+        assert_eq!(result, "/tmp/home/.config");
 
-            result.clear();
-            resolver
-                .expand_env_var("XDG_DATA_HOME", &mut result, "$XDG_DATA_HOME")
-                .unwrap();
-            assert_eq!(result, "/tmp/home/.local/share");
+        result.clear();
+        resolver
+            .expand_env_var("XDG_DATA_HOME", &mut result, "$XDG_DATA_HOME")
+            .unwrap();
+        assert_eq!(result, "/tmp/home/.local/share");
 
-            result.clear();
-            resolver
-                .expand_env_var("XDG_CACHE_HOME", &mut result, "$XDG_CACHE_HOME")
-                .unwrap();
-            assert_eq!(result, "/tmp/home/.cache");
+        result.clear();
+        resolver
+            .expand_env_var("XDG_CACHE_HOME", &mut result, "$XDG_CACHE_HOME")
+            .unwrap();
+        assert_eq!(result, "/tmp/home/.cache");
 
-            cleanup_test_env(&["HOME"]);
-        });
+        env::remove_var("HOME");
     }
 }
