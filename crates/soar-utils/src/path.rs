@@ -293,6 +293,7 @@ pub fn xdg_cache_home() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
 
     #[test]
@@ -346,6 +347,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_directories() {
         let resolver = SystemPathResolver;
         // We need to set HOME to have a predictable home directory for the test
@@ -385,6 +387,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_path() {
         let resolver = SystemPathResolver;
         env::set_var("HOME", "/tmp/home");
@@ -427,12 +430,13 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_home_dir() {
         let resolver = SystemPathResolver;
 
         // Test with HOME set
-        env::set_var("HOME", "/custom/home");
-        assert_eq!(resolver.home_dir(), PathBuf::from("/custom/home"));
+        env::set_var("HOME", "/tmp/home");
+        assert_eq!(resolver.home_dir(), PathBuf::from("/tmp/home"));
 
         // Test with HOME unset
         env::remove_var("HOME");
@@ -441,6 +445,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_expand_variables_edge_cases() {
         let resolver = SystemPathResolver;
         env::set_var("HOME", "/tmp/home");
@@ -476,6 +481,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_public_convenience_functions() {
         env::set_var("HOME", "/tmp/home");
         assert_eq!(resolve_path("~").unwrap(), PathBuf::from("/tmp/home"));
@@ -505,6 +511,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_expand_env_var_special_vars() {
         let resolver = SystemPathResolver;
         env::set_var("HOME", "/tmp/home");
