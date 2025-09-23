@@ -436,4 +436,20 @@ mod tests {
 
         env::remove_var("HOME");
     }
+
+    #[test]
+    #[serial]
+    fn test_desktop_dir() {
+        env::set_var("XDG_DATA_HOME", "/tmp/data");
+        let desktop = desktop_dir();
+        assert_eq!(desktop, PathBuf::from("/tmp/data/applications"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_icons_dir() {
+        env::set_var("XDG_DATA_HOME", "/tmp/data");
+        let icons = icons_dir();
+        assert_eq!(icons, PathBuf::from("/tmp/data/icons/hicolor"));
+    }
 }

@@ -94,7 +94,7 @@ pub fn ensure_dir_exists<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
 }
 
 /// Creates symlink from `source` to `target`
-/// If `target` is a symlink, it will be removed before creating the symlink.
+/// If `target` is a file, it will be removed before creating the symlink.
 ///
 /// # Arguments
 ///
@@ -128,7 +128,7 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
         ensure_dir_exists(parent)?;
     }
 
-    if target.is_symlink() {
+    if target.is_file() {
         fs::remove_file(target).map_err(|err| FileSystemError::File {
             path: target.to_path_buf(),
             action: "remove",
@@ -300,6 +300,8 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+
     use super::*;
     use tempfile::tempdir;
 
@@ -414,5 +416,291 @@ mod tests {
         let mut perms = fs::metadata(&sub_dir).unwrap().permissions();
         perms.set_readonly(false);
         fs::set_permissions(&sub_dir, perms).unwrap();
+    }
+
+    #[test]
+    fn test_create_symlink() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        fs::write(&source, "content").unwrap();
+        create_symlink(&source, &target).unwrap();
+        assert!(target.is_symlink());
+        assert_eq!(fs::read_link(&target).unwrap(), source);
+    }
+
+    #[test]
+    fn test_create_symlink_already_exists() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        fs::write(&source, "content").unwrap();
+        fs::write(&target, "content").unwrap();
+        create_symlink(&source, &target).unwrap();
+        assert!(target.is_symlink());
+        assert_eq!(fs::read_link(&target).unwrap(), source);
+    }
+
+    #[test]
+    fn test_create_symlink_permission_denied() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        fs::write(&source, "content").unwrap();
+
+        // Set read-only permissions on the parent directory.
+        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(dir.path(), perms).unwrap();
+
+        let result = create_symlink(&source, &target);
+        assert!(result.is_err());
+
+        // Cleanup: Set back to writable to allow tempdir to be removed.
+        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
+        perms.set_readonly(false);
+        fs::set_permissions(dir.path(), perms).unwrap();
+    }
+
+    #[test]
+    fn test_walk_dir() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+        let file = dir.join("file");
+        fs::File::create(&file).unwrap();
+
+        let mut results = Vec::new();
+        walk_dir(&dir, &mut |path| {
+            results.push(path.to_path_buf());
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(results, vec![file]);
+    }
+
+    #[test]
+    fn test_walk_dir_not_a_dir() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let file = tempdir.path().join("file");
+        fs::File::create(&file).unwrap();
+
+        let result = walk_dir(&file, &mut |_| Ok(()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_walk_recursive_dir() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+        let file = dir.join("file");
+        File::create(&file).unwrap();
+
+        let nested_dir = dir.join("nested");
+        fs::create_dir(&nested_dir).unwrap();
+        let nested_file = nested_dir.join("file");
+        File::create(&nested_file).unwrap();
+
+        let mut results = Vec::new();
+        walk_dir(&dir, &mut |path| {
+            results.push(path.to_path_buf());
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(results, vec![file, nested_file]);
+    }
+
+    #[test]
+    fn test_walk_failing_entry() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+        let file = dir.join("file");
+        File::create(&file).unwrap();
+
+        let mut results = Vec::new();
+        walk_dir(&dir, &mut |path| {
+            results.push(path.to_path_buf());
+            Err(FileSystemError::File {
+                path: path.to_path_buf(),
+                action: "read",
+                source: std::io::Error::from(std::io::ErrorKind::Other),
+            })
+        })
+        .ok();
+
+        assert_eq!(results, vec![file]);
+    }
+
+    #[test]
+    fn test_walk_invalid_dir() {
+        let result = walk_dir("/this/path/does/not/exist", &mut |_| Ok(()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_walk_dir_permission_denied() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+
+        fs::set_permissions(dir, Permissions::from_mode(0o000)).unwrap();
+
+        let result = walk_dir(dir, &mut |_| Ok(()));
+
+        fs::set_permissions(dir, Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_walk_dir_permission_denied_recursive() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+        let nested_dir = dir.join("nested");
+        fs::create_dir(&nested_dir).unwrap();
+
+        fs::set_permissions(&nested_dir, Permissions::from_mode(0o000)).unwrap();
+
+        let result = walk_dir(dir, &mut |_| Ok(()));
+
+        fs::set_permissions(nested_dir, Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_file_signature() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let file = tempdir.path().join("file");
+        File::create(&file).unwrap();
+        fs::write(&file, b"sample test content").unwrap();
+
+        let signature = read_file_signature(&file, 8).unwrap();
+        assert_eq!(signature.len(), 8);
+        assert_eq!(signature, b"sample t");
+    }
+
+    #[test]
+    fn test_read_file_signature_empty() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let file = tempdir.path().join("file");
+        File::create(&file).unwrap();
+
+        let signature = read_file_signature(&file, 0).unwrap();
+        assert!(signature.is_empty());
+    }
+
+    #[test]
+    fn test_read_file_signature_invalid() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let file = tempdir.path().join("file");
+        File::create(&file).unwrap();
+
+        let result = read_file_signature(&file, 1024);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_file_signature_non_existent() {
+        let result = read_file_signature("/this/path/does/not/exist", 1024);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_calculate_directory_size() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+
+        let file = dir.join("file");
+        File::create(&file).unwrap();
+        fs::write(&file, b"sample test content").unwrap(); // 19 bytes
+
+        let nested_dir = dir.join("nested");
+        fs::create_dir(&nested_dir).unwrap();
+
+        let nested_file = nested_dir.join("file");
+        File::create(&nested_file).unwrap();
+        fs::write(&nested_file, b"sample test content").unwrap();
+
+        let size = dir_size(&dir).unwrap();
+        assert_eq!(size, 38);
+    }
+
+    #[test]
+    fn test_calculate_directory_size_empty() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+
+        let size = dir_size(&dir).unwrap();
+        assert_eq!(size, 0);
+    }
+
+    #[test]
+    fn test_calculate_directory_size_invalid() {
+        let result = dir_size("/this/path/does/not/exist");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_calculate_directory_size_inner_permission_denied() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+        let inner_dir = dir.join("inner");
+        ensure_dir_exists(&inner_dir).unwrap();
+
+        fs::set_permissions(&inner_dir, Permissions::from_mode(0o000)).unwrap();
+
+        let result = dir_size(dir);
+        assert!(result.is_err());
+
+        // Cleanup: Set back to writable to allow tempdir to be removed.
+        fs::set_permissions(inner_dir, Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn test_create_symlink_inner_target() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let source = tempdir.path().join("source");
+        let target = tempdir.path().join("inner").join("target");
+
+        let result = create_symlink(&source, &target);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_create_symlink_target_invalid_parent() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let source = tempdir.path().join("source");
+
+        let file = tempdir.path().join("file");
+        File::create(&file).unwrap();
+        let target = tempdir.path().join("file").join("target");
+
+        let result = create_symlink(&source, &target);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_symlink_target_no_permissions() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let source = tempdir.path().join("source");
+        let target = tempdir.path().join("target");
+        File::create(&target).unwrap();
+
+        // Set read-only permissions on the parent directory.
+        let mut perms = fs::metadata(tempdir.path()).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(tempdir.path(), perms).unwrap();
+
+        let result = create_symlink(&source, &target);
+        assert!(result.is_err());
+
+        // Cleanup: Set back to writable to allow tempdir to be removed.
+        let mut perms = fs::metadata(tempdir.path()).unwrap().permissions();
+        perms.set_readonly(false);
+        fs::set_permissions(tempdir.path(), perms).unwrap();
     }
 }
