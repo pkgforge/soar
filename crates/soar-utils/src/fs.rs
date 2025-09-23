@@ -2,124 +2,90 @@ use std::{fs, path::Path};
 
 use crate::error::{FileSystemError, FileSystemResult};
 
-pub trait FileSystemProvider {
-    /// Removes the specified file or directory safely.
-    ///
-    /// If the path does not exist, this function returns `Ok(())` without error. If the path
-    /// points to a directory, it and all of its contents are removed recursively, equivalent to
-    /// [`std::fs::remove_dir_all`]. If the path points to a file, it is removed with
-    /// [`std::fs::remove_file`].
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`FileSystemError::File`] if the removal fails for any reason other than
-    /// the path not existing (e.g., permission denied, path is in use, etc.).
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use soar_utils::error::FileSystemResult;
-    /// use soar_utils::fs::{FileSystemProvider, StandardFileSystemProvider};
-    ///
-    /// fn main() -> FileSystemResult<()> {
-    ///     let fs = StandardFileSystemProvider;
-    ///     // Remove a file or directory, ignoring if it doesn't exist
-    ///     fs.safe_remove("/tmp/some_path")?;
-    ///     Ok(())
-    /// }
-    /// ```
-    fn safe_remove<P: AsRef<Path>>(&self, path: P) -> FileSystemResult<()>;
+/// Removes the specified file or directory safely.
+///
+/// If the path does not exist, this function returns `Ok(())` without error. If the path
+/// points to a directory, it and all of its contents are removed recursively, equivalent to
+/// [`std::fs::remove_dir_all`]. If the path points to a file, it is removed with
+/// [`std::fs::remove_file`].
+///
+/// # Errors
+///
+/// Returns a [`FileSystemError::File`] if the removal fails for any reason other than
+/// the path not existing (e.g., permission denied, path is in use, etc.).
+///
+/// # Example
+///
+/// ```no_run
+/// use soar_utils::error::FileSystemResult;
+/// use soar_utils::fs::safe_remove;
+///
+/// fn main() -> FileSystemResult<()> {
+///     safe_remove("/tmp/some_path")?;
+///     Ok(())
+/// }
+/// ```
+pub fn safe_remove<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
+    let path = path.as_ref();
 
-    /// Creates a directory structure if it doesn't exist.
-    ///
-    /// If the directory already exists, this function does nothing. If the directory structure
-    /// exists but is not a directory, this function returns an error.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path to create.
-    ///
-    /// # Errors
-    ///
-    /// * [`FileSystemError::Directory`] if the directory could not be created.
-    /// * [`FileSystemError::NotADirectory`] if the path exists but is not a directory.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use soar_utils::error::FileSystemResult;
-    /// use soar_utils::fs::{FileSystemProvider, StandardFileSystemProvider};
-    ///
-    /// fn main() -> FileSystemResult<()> {
-    ///     let fs = StandardFileSystemProvider;
-    ///     let dir = "/tmp/soar-doc/internal/dir";
-    ///     fs.ensure_dir_exists(dir)?;
-    ///     Ok(())
-    /// }
-    /// ```
-    fn ensure_dir_exists<P: AsRef<Path>>(&self, path: P) -> FileSystemResult<()>;
-}
-
-#[derive(Default, Clone)]
-pub struct StandardFileSystemProvider;
-
-impl FileSystemProvider for StandardFileSystemProvider {
-    fn safe_remove<P: AsRef<Path>>(&self, path: P) -> FileSystemResult<()> {
-        let path = path.as_ref();
-
-        if !path.exists() {
-            return Ok(());
-        }
-
-        let result = if path.is_dir() {
-            fs::remove_dir_all(path)
-        } else {
-            fs::remove_file(path)
-        };
-
-        result.map_err(|err| FileSystemError::File {
-            path: path.to_path_buf(),
-            action: "remove",
-            source: err,
-        })
+    if !path.exists() {
+        return Ok(());
     }
 
-    fn ensure_dir_exists<P: AsRef<Path>>(&self, path: P) -> FileSystemResult<()> {
-        let path = path.as_ref();
-        if !path.exists() {
-            std::fs::create_dir_all(path).map_err(|err| FileSystemError::Directory {
-                path: path.to_path_buf(),
-                action: "create",
-                source: err,
-            })?;
-        } else if !path.is_dir() {
-            return Err(FileSystemError::NotADirectory {
-                path: path.to_path_buf(),
-            });
-        }
+    let result = if path.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    };
 
-        Ok(())
-    }
+    result.map_err(|err| FileSystemError::File {
+        path: path.to_path_buf(),
+        action: "remove",
+        source: err,
+    })
 }
 
 /// Creates a directory structure if it doesn't exist.
 ///
-/// This is a convenience function that creates a [`StandardFileSystemProvider`] and calls
-/// [`FileSystemProvider::ensure_dir_exists`] on it.
+/// If the directory already exists, this function does nothing. If the directory structure
+/// exists but is not a directory, this function returns an error.
 ///
-/// See [`FileSystemProvider::ensure_dir_exists`] for detailed documentation.
+/// # Arguments
+///
+/// * `path` - The path to create.
+///
+/// # Errors
+///
+/// * [`FileSystemError::Directory`] if the directory could not be created.
+/// * [`FileSystemError::NotADirectory`] if the path exists but is not a directory.
+///
+/// # Example
+///
+/// ```no_run
+/// use soar_utils::error::FileSystemResult;
+/// use soar_utils::fs::ensure_dir_exists;
+///
+/// fn main() -> FileSystemResult<()> {
+///     let dir = "/tmp/soar-doc/internal/dir";
+///     ensure_dir_exists(dir)?;
+///     Ok(())
+/// }
+/// ```
 pub fn ensure_dir_exists<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
-    StandardFileSystemProvider.ensure_dir_exists(path)
-}
+    let path = path.as_ref();
+    if !path.exists() {
+        std::fs::create_dir_all(path).map_err(|err| FileSystemError::Directory {
+            path: path.to_path_buf(),
+            action: "create",
+            source: err,
+        })?;
+    } else if !path.is_dir() {
+        return Err(FileSystemError::NotADirectory {
+            path: path.to_path_buf(),
+        });
+    }
 
-/// Removes the specified file or directory safely.
-///
-/// This is a convenience function that creates a [`StandardFileSystemProvider`] and calls
-/// [`FileSystemProvider::safe_remove`] on it.
-///
-/// See [`FileSystemProvider::safe_remove`] for detailed documentation.
-pub fn safe_remove<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
-    StandardFileSystemProvider.safe_remove(path)
+    Ok(())
 }
 
 #[cfg(test)]
