@@ -394,6 +394,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_path_invalid_cwd() {
         let temp_dir = tempfile::tempdir().unwrap();
         let invalid_path = temp_dir.path().join("invalid");

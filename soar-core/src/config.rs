@@ -8,7 +8,7 @@ use std::{
 use documented::{Documented, DocumentedFields};
 use serde::{de::Error, Deserialize, Serialize};
 use soar_utils::{
-    path::{home_dir, resolve_path, xdg_data_home},
+    path::{resolve_path, xdg_config_home, xdg_data_home},
     system::platform,
     time::parse_duration,
 };
@@ -217,7 +217,7 @@ pub static CURRENT_PROFILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| 
 pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
     RwLock::new(match std::env::var("SOAR_CONFIG") {
         Ok(path_str) => PathBuf::from(path_str),
-        Err(_) => home_dir().join("soar").join("config.toml"),
+        Err(_) => xdg_config_home().join("soar").join("config.toml"),
     })
 });
 
