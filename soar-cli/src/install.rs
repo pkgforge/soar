@@ -26,10 +26,11 @@ use soar_core::{
         install::{InstallTarget, PackageInstaller},
         query::PackageQuery,
     },
-    utils::{apply_sig_variants, calculate_checksum, default_install_patterns},
+    utils::{apply_sig_variants, default_install_patterns},
     SoarResult,
 };
 use soar_dl::downloader::DownloadState;
+use soar_utils::hash::calculate_checksum;
 use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
 

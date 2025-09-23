@@ -5,8 +5,12 @@ use soar_core::{
     config::get_config,
     database::packages::{FilterCondition, PackageQueryBuilder},
     package::remove::PackageRemover,
-    utils::{desktop_dir, icons_dir, process_dir},
     SoarResult,
+};
+use soar_utils::{
+    error::FileSystemResult,
+    fs::walk_dir,
+    path::{desktop_dir, icons_dir},
 };
 use tracing::{info, warn};
 
@@ -68,14 +72,14 @@ pub fn list_broken_symlinks() -> SoarResult<()> {
     let broken_symlinks = Rc::new(RefCell::new(Vec::new()));
 
     let broken_symlinks_clone = Rc::clone(&broken_symlinks);
-    let mut collect_action = |path: &Path| -> SoarResult<()> {
+    let mut collect_action = |path: &Path| -> FileSystemResult<()> {
         if !path.exists() {
             broken_symlinks_clone.borrow_mut().push(path.to_path_buf());
         }
         Ok(())
     };
 
-    let mut soar_files_action = |path: &Path| -> SoarResult<()> {
+    let mut soar_files_action = |path: &Path| -> FileSystemResult<()> {
         if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
             if filename.ends_with("-soar") && !path.exists() {
                 broken_symlinks_clone.borrow_mut().push(path.to_path_buf());
@@ -84,9 +88,9 @@ pub fn list_broken_symlinks() -> SoarResult<()> {
         Ok(())
     };
 
-    process_dir(&get_config().get_bin_path()?, &mut collect_action)?;
-    process_dir(desktop_dir(), &mut soar_files_action)?;
-    process_dir(icons_dir(), &mut soar_files_action)?;
+    walk_dir(&get_config().get_bin_path()?, &mut collect_action)?;
+    walk_dir(desktop_dir(), &mut soar_files_action)?;
+    walk_dir(icons_dir(), &mut soar_files_action)?;
 
     let broken_symlinks = Rc::try_unwrap(broken_symlinks)
         .unwrap_or_else(|rc| rc.borrow().clone().into())

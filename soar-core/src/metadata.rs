@@ -6,6 +6,7 @@ use std::{
 
 use reqwest::header::{self, HeaderMap};
 use rusqlite::Connection;
+use soar_utils::fs::read_file_signature;
 use tracing::info;
 
 use crate::{
@@ -18,7 +19,7 @@ use crate::{
         nests::models::Nest,
     },
     error::{ErrorContext, SoarError},
-    utils::{calc_magic_bytes, get_platform},
+    utils::get_platform,
     SoarResult,
 };
 
@@ -128,7 +129,7 @@ fn process_metadata_content(
         io::copy(&mut decoder, &mut tmp_file)
             .with_context(|| format!("decoding zstd from {tmp_path}"))?;
 
-        let magic_bytes = calc_magic_bytes(&tmp_path, 4)?;
+        let magic_bytes = read_file_signature(&tmp_path, 4)?;
         if magic_bytes == SQLITE_MAGIC_BYTES {
             fs::rename(&tmp_path, metadata_db_path).with_context(|| {
                 format!("renaming {} to {}", tmp_path, metadata_db_path.display())

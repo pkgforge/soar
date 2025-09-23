@@ -13,6 +13,12 @@ use soar_dl::{
     error::DownloadError,
     utils::FileMode,
 };
+use soar_utils::{
+    error::FileSystemResult,
+    fs::{safe_remove, walk_dir},
+    hash::calculate_checksum,
+    path::{desktop_dir, icons_dir},
+};
 
 use crate::{
     config::get_config,
@@ -21,7 +27,7 @@ use crate::{
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},
     },
     error::{ErrorContext, SoarError},
-    utils::{calculate_checksum, desktop_dir, get_extract_dir, icons_dir, process_dir},
+    utils::get_extract_dir,
     SoarResult,
 };
 
@@ -368,29 +374,25 @@ impl PackageInstaller {
             for package in alternate_packages {
                 let installed_path = PathBuf::from(&package.installed_path);
 
-                let mut remove_action = |path: &Path| -> SoarResult<()> {
+                let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                     if let Ok(real_path) = fs::read_link(path) {
                         if real_path.parent() == Some(&installed_path) {
-                            fs::remove_file(path).with_context(|| {
-                                format!("removing desktop file {}", path.display())
-                            })?;
+                            safe_remove(path)?;
                         }
                     }
                     Ok(())
                 };
-                process_dir(desktop_dir(), &mut remove_action)?;
+                walk_dir(desktop_dir(), &mut remove_action)?;
 
-                let mut remove_action = |path: &Path| -> SoarResult<()> {
+                let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                     if let Ok(real_path) = fs::read_link(path) {
                         if real_path.parent() == Some(&installed_path) {
-                            fs::remove_file(path).with_context(|| {
-                                format!("removing icon file {}", path.display())
-                            })?;
+                            safe_remove(path)?;
                         }
                     }
                     Ok(())
                 };
-                process_dir(icons_dir(), &mut remove_action)?;
+                walk_dir(icons_dir(), &mut remove_action)?;
 
                 if let Some(provides) = package.provides {
                     for provide in provides {

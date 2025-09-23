@@ -97,6 +97,12 @@ pub enum FileSystemError {
     NotADirectory {
         path: PathBuf,
     },
+
+    Symlink {
+        from: PathBuf,
+        target: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl fmt::Display for FileSystemError {
@@ -123,6 +129,18 @@ impl fmt::Display for FileSystemError {
             FileSystemError::NotADirectory { path } => {
                 write!(f, "`{}` is not a directory", path.display())
             }
+            FileSystemError::Symlink {
+                from,
+                target,
+                source,
+            } => {
+                write!(
+                    f,
+                    "Failed to create symlink from `{}` to `{}`: {source}",
+                    from.display(),
+                    target.display()
+                )
+            }
         }
     }
 }
@@ -132,6 +150,7 @@ impl Error for FileSystemError {
         match self {
             FileSystemError::File { source, .. } => Some(source),
             FileSystemError::Directory { source, .. } => Some(source),
+            FileSystemError::Symlink { source, .. } => Some(source),
             _ => None,
         }
     }

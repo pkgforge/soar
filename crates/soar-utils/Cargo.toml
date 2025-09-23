@@ -12,6 +12,7 @@ categories.workspace = true
 [dependencies]
 blake3 = { version = "1.8.2", features = ["mmap"] }
 nix = { version = "0.30.1", features = ["ioctl", "term", "user"] }
+serial_test = "3.2.0"
 
 [dev-dependencies]
 tempfile = "3.10.1"

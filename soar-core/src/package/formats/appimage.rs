@@ -1,10 +1,10 @@
 use std::{fs, path::Path};
 
+use soar_utils::fs::read_file_signature;
 use squishy::{appimage::AppImage, EntryKind};
 
 use crate::{
-    constants::PNG_MAGIC_BYTES, database::models::PackageExt, error::ErrorContext,
-    utils::calc_magic_bytes, SoarResult,
+    constants::PNG_MAGIC_BYTES, database::models::PackageExt, error::ErrorContext, SoarResult,
 };
 
 use super::common::{symlink_desktop, symlink_icon};
@@ -31,7 +31,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
                 let dest = format!("{}/{}.DirIcon", install_dir.display(), pkg_name);
                 let _ = squashfs.write_file(basic_file, &dest);
 
-                let magic_bytes = calc_magic_bytes(&dest, 8)?;
+                let magic_bytes = read_file_signature(&dest, 8)?;
                 let ext = if magic_bytes == PNG_MAGIC_BYTES {
                     "png"
                 } else {

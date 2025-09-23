@@ -16,10 +16,11 @@ use run::run_package;
 use soar_core::{
     config::{self, generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH},
     error::{ErrorContext, SoarError},
-    utils::{build_path, cleanup_cache, remove_broken_symlinks, setup_required_paths},
+    utils::{cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
 };
 use soar_dl::http_client::{configure_http_client, create_http_header_map};
+use soar_utils::path::resolve_path;
 use state::AppState;
 use tracing::{error, info, warn};
 use update::update_packages;
@@ -81,7 +82,7 @@ async fn handle_cli() -> SoarResult<()> {
     if let Some(ref c) = args.config {
         {
             let mut config_path = CONFIG_PATH.write().unwrap();
-            let path = build_path(c)?;
+            let path = resolve_path(c)?;
             let path = if path.is_absolute() {
                 path
             } else {

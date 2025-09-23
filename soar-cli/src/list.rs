@@ -13,9 +13,9 @@ use soar_core::{
         packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse, SortDirection},
     },
     package::query::PackageQuery,
-    utils::calculate_dir_size,
     SoarResult,
 };
+use soar_utils::fs::dir_size;
 use tracing::info;
 
 use crate::{
@@ -553,7 +553,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
             |(installed_count, unique_count, broken_count, installed_size, broken_size),
              package| {
                 let installed_path = PathBuf::from(&package.installed_path);
-                let size = calculate_dir_size(&installed_path).unwrap_or(0);
+                let size = dir_size(&installed_path).unwrap_or(0);
                 let is_installed = package.is_installed && installed_path.exists();
                 info!(
                     pkg_name = package.pkg_name,

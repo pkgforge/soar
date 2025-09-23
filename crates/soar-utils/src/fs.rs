@@ -1,4 +1,9 @@
-use std::{fs, path::Path};
+use std::{
+    fs::{self, File},
+    io::{BufReader, Read},
+    os,
+    path::Path,
+};
 
 use crate::error::{FileSystemError, FileSystemResult};
 
@@ -86,6 +91,211 @@ pub fn ensure_dir_exists<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
     }
 
     Ok(())
+}
+
+/// Creates symlink from `source` to `target`
+/// If `target` is a symlink, it will be removed before creating the symlink.
+///
+/// # Arguments
+///
+/// * `source` - The path to the file or directory to symlink
+/// * `target` - The path to the symlink
+///
+/// # Errors
+///
+/// Returns a [`FileSystemError::Symlink`] if the symlink could not be created.
+/// Returns a [`FileSystemError::File`] if the symlink could not be removed.
+///
+/// # Example
+///
+/// ```no_run
+/// use soar_utils::error::FileSystemResult;
+/// use soar_utils::fs::create_symlink;
+///
+/// fn main() -> FileSystemResult<()> {
+///     create_symlink("/tmp/source", "/tmp/target")?;
+///     Ok(())
+/// }
+/// ```
+pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
+    source: P,
+    target: Q,
+) -> FileSystemResult<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    if let Some(parent) = target.parent() {
+        ensure_dir_exists(parent)?;
+    }
+
+    if target.is_symlink() {
+        fs::remove_file(target).map_err(|err| FileSystemError::File {
+            path: target.to_path_buf(),
+            action: "remove",
+            source: err,
+        })?;
+    }
+
+    os::unix::fs::symlink(source, target).map_err(|err| FileSystemError::Symlink {
+        from: source.to_path_buf(),
+        target: target.to_path_buf(),
+        source: err,
+    })
+}
+
+/// Walks a directory recursively and calls the provided function on each file or directory.
+///
+/// # Arguments
+///
+/// * `dir` - The directory to walk
+/// * `action` - The function to call on each file or directory
+///
+/// # Errors
+///
+/// Returns a [`FileSystemError::Directory`] if the directory could not be read.
+/// Returns a [`FileSystemError::NotADirectory`] if the path is not a directory.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::path::Path;
+///
+/// use soar_utils::error::FileSystemResult;
+/// use soar_utils::fs::walk_dir;
+///
+/// fn main() -> FileSystemResult<()> {
+///     let _ = walk_dir("/tmp/dir", &mut |path: &Path| {
+///         println!("Found file or directory: {}", path.display());
+///         Ok(())
+///     })?;
+///     Ok(())
+/// }
+/// ```
+pub fn walk_dir<P: AsRef<Path>, F>(dir: P, action: &mut F) -> FileSystemResult<()>
+where
+    F: FnMut(&Path) -> FileSystemResult<()>,
+{
+    let dir = dir.as_ref();
+
+    if !dir.is_dir() {
+        return Err(FileSystemError::NotADirectory {
+            path: dir.to_path_buf(),
+        });
+    }
+
+    for entry in fs::read_dir(dir).map_err(|err| FileSystemError::Directory {
+        path: dir.to_path_buf(),
+        action: "read",
+        source: err,
+    })? {
+        let path = entry
+            .map_err(|err| FileSystemError::Directory {
+                path: dir.to_path_buf(),
+                action: "read entry in",
+                source: err,
+            })?
+            .path();
+
+        if path.is_dir() {
+            walk_dir(&path, action)?;
+            continue;
+        }
+
+        action(&path)?;
+    }
+
+    Ok(())
+}
+
+/// Reads the first `bytes` bytes from a file and returns the signature.
+///
+/// # Arguments
+/// * `path` - The path to the file
+/// * `bytes` - The number of bytes to read from the file
+///
+/// # Returns
+/// Returns a byte array of the first `bytes` bytes from the file.
+///
+/// # Errors
+/// Returns a [`FileSystemError::File`] if the file could not be opened or read.
+///
+/// # Example
+/// ```no_run
+/// use soar_utils::fs::read_file_signature;
+/// use soar_utils::error::FileSystemResult;
+///
+/// fn main() -> FileSystemResult<()> {
+///     let signature = read_file_signature("/tmp/file", 1024)?;
+///     println!("File signature: {:?}", signature);
+///     Ok(())
+/// }
+pub fn read_file_signature<P: AsRef<Path>>(path: P, bytes: usize) -> FileSystemResult<Vec<u8>> {
+    let path = path.as_ref();
+    let file = File::open(path).map_err(|err| FileSystemError::File {
+        path: path.to_path_buf(),
+        action: "open",
+        source: err,
+    })?;
+
+    let mut reader = BufReader::new(file);
+    let mut buffer = vec![0u8; bytes];
+    reader
+        .read_exact(&mut buffer)
+        .map_err(|err| FileSystemError::File {
+            path: path.to_path_buf(),
+            action: "read",
+            source: err,
+        })?;
+    Ok(buffer)
+}
+
+/// Returns the total size of a directory and its contents.
+///
+/// # Arguments
+/// * `path` - The path to the directory
+///
+/// # Returns
+/// Returns the total size of the directory and its contents.
+///
+/// # Errors
+/// Returns a [`FileSystemError::Directory`] if the directory could not be read.
+///
+/// # Example
+/// ```no_run
+/// use soar_utils::fs::dir_size;
+/// use soar_utils::error::FileSystemResult;
+///
+/// fn main() -> FileSystemResult<()> {
+///     let size = dir_size("/tmp/dir")?;
+///     println!("Directory size: {}", size);
+///     Ok(())
+/// }
+/// ```
+pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
+    let path = path.as_ref();
+    let mut total_size = 0;
+
+    for entry in fs::read_dir(path).map_err(|err| FileSystemError::Directory {
+        path: path.to_path_buf(),
+        action: "read",
+        source: err,
+    })? {
+        let Ok(entry) = entry else {
+            continue;
+        };
+
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+
+        if metadata.is_file() {
+            total_size += metadata.len();
+        } else if metadata.is_dir() {
+            total_size += dir_size(entry.path())?;
+        }
+    }
+
+    Ok(total_size)
 }
 
 #[cfg(test)]

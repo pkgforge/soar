@@ -133,6 +133,16 @@ pub fn xdg_cache_home() -> PathBuf {
         .unwrap_or_else(|_| home_dir().join(".cache"))
 }
 
+/// Returns the user's desktop directory
+pub fn desktop_dir() -> PathBuf {
+    xdg_data_home().join("applications")
+}
+
+/// Returns the user's icons directory
+pub fn icons_dir() -> PathBuf {
+    xdg_data_home().join("icons/hicolor")
+}
+
 fn expand_variables(path: &str) -> PathResult<String> {
     let mut result = String::with_capacity(path.len());
     let mut chars = path.chars().peekable();
@@ -215,6 +225,8 @@ mod tests {
     use super::*;
     use std::env;
 
+    use serial_test::serial;
+
     #[test]
     fn test_expand_variables_simple() {
         env::set_var("TEST_VAR", "test_value");
@@ -259,6 +271,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_directories() {
         // We need to set HOME to have a predictable home directory for the test
         env::set_var("HOME", "/tmp/home");
@@ -297,6 +310,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_path() {
         env::set_var("HOME", "/tmp/home");
 
@@ -335,6 +349,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_home_dir() {
         // Test with HOME set
         env::set_var("HOME", "/tmp/home");
@@ -347,6 +362,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_expand_variables_edge_cases() {
         env::set_var("HOME", "/tmp/home");
 
@@ -395,6 +411,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_expand_env_var_special_vars() {
         env::set_var("HOME", "/tmp/home");
         env::remove_var("XDG_CONFIG_HOME");

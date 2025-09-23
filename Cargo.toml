@@ -23,6 +23,7 @@ codegen-units = 1
 panic = "abort"
 
 [workspace.dependencies]
+soar-utils = { path = "crates/soar-utils" }
 futures = "0.3.31"
 rayon = "1.11.0"
 regex = { version = "1.11.2", default-features = false, features = ["unicode-case", "unicode-perl", "std"] }
