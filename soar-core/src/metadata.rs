@@ -6,7 +6,7 @@ use std::{
 
 use reqwest::header::{self, HeaderMap};
 use rusqlite::Connection;
-use soar_utils::fs::read_file_signature;
+use soar_utils::{fs::read_file_signature, system::platform};
 use tracing::info;
 
 use crate::{
@@ -19,16 +19,15 @@ use crate::{
         nests::models::Nest,
     },
     error::{ErrorContext, SoarError},
-    utils::get_platform,
     SoarResult,
 };
 
 fn construct_nest_url(url: &str) -> SoarResult<reqwest::Url> {
     let url = if let Some(repo) = url.strip_prefix("github:") {
-        let platform = get_platform();
         format!(
             "https://github.com/{}/releases/download/soar-nest/{}.json",
-            repo, platform
+            repo,
+            platform()
         )
     } else {
         url.to_string()

@@ -2191,7 +2191,6 @@ dependencies = [
 name = "soar-core"
 version = "0.8.1"
 dependencies = [
- "blake3",
  "documented",
  "image",
  "include_dir",

@@ -220,7 +220,7 @@ pub fn create_portable_link<P: AsRef<Path>>(
 
     fs::create_dir_all(&portable_path)
         .with_context(|| format!("creating directory {}", portable_path.display()))?;
-    create_symlink(&portable_path, &real_path.as_ref().to_path_buf())?;
+    create_symlink(&portable_path, real_path)?;
     Ok(())
 }
 

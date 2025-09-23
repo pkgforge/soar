@@ -7,7 +7,11 @@ use std::{
 
 use documented::{Documented, DocumentedFields};
 use serde::{de::Error, Deserialize, Serialize};
-use soar_utils::path::{home_dir, resolve_path, xdg_data_home};
+use soar_utils::{
+    path::{home_dir, resolve_path, xdg_data_home},
+    system::platform,
+    time::parse_duration,
+};
 use toml_edit::{DocumentMut, Item};
 use tracing::{info, warn};
 
@@ -16,7 +20,7 @@ use crate::{
     error::{ConfigError, SoarError},
     repositories::get_platform_repositories,
     toml::{annotate_toml_array_of_tables, annotate_toml_table},
-    utils::{default_install_patterns, get_platform, parse_duration},
+    utils::default_install_patterns,
     SoarResult,
 };
 use rusqlite::Connection;
@@ -273,7 +277,7 @@ impl Config {
         };
         let default_profile_name = "default".to_string();
 
-        let current_platform = get_platform();
+        let current_platform = platform();
         let mut repositories = Vec::new();
         let selected_set: HashSet<&str> = selected_repos.iter().map(|s| s.as_ref()).collect();
 

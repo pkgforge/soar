@@ -1,10 +1,8 @@
 use std::{
-    env::consts::{ARCH, OS},
     fs,
     path::{Path, PathBuf},
 };
 
-use regex::Regex;
 use soar_utils::{
     error::{FileSystemError, FileSystemResult},
     fs::walk_dir,
@@ -87,33 +85,6 @@ pub fn remove_broken_symlinks() -> Result<()> {
     Ok(())
 }
 
-/// Retrieves the platform string in the format `ARCH-Os`.
-///
-/// This function combines the architecture (e.g., `x86_64`) and the operating
-/// system (e.g., `Linux`) into a single string to identify the platform.
-pub fn get_platform() -> String {
-    format!("{}-{}{}", ARCH, &OS[..1].to_uppercase(), &OS[1..])
-}
-
-pub fn parse_duration(input: &str) -> Option<u128> {
-    let re = Regex::new(r"(\d+)([smhd])").ok()?;
-    let mut total: u128 = 0;
-
-    for cap in re.captures_iter(input) {
-        let number: u128 = cap[1].parse().ok()?;
-        let multiplier = match &cap[2] {
-            "s" => 1000,
-            "m" => 60 * 1000,
-            "h" => 60 * 60 * 1000,
-            "d" => 24 * 60 * 60 * 1000,
-            _ => return None,
-        };
-        total += number * multiplier;
-    }
-
-    Some(total)
-}
-
 pub fn default_install_patterns() -> Vec<String> {
     ["!*.log", "!SBUILD", "!*.json", "!*.version"]
         .into_iter()
@@ -124,26 +95,4 @@ pub fn default_install_patterns() -> Vec<String> {
 pub fn get_extract_dir<P: AsRef<Path>>(base_dir: P) -> PathBuf {
     let base_dir = base_dir.as_ref();
     base_dir.join("SOAR_AUTOEXTRACT")
-}
-
-pub fn apply_sig_variants(patterns: Vec<String>) -> Vec<String> {
-    patterns
-        .into_iter()
-        .map(|pat| {
-            let (negate, inner) = if let Some(rest) = pat.strip_prefix('!') {
-                (true, rest)
-            } else {
-                (false, pat.as_str())
-            };
-
-            let sig_variant = format!("{inner}.sig");
-            let brace_pattern = format!("{{{inner},{sig_variant}}}");
-
-            if negate {
-                format!("!{brace_pattern}")
-            } else {
-                brace_pattern
-            }
-        })
-        .collect()
 }
