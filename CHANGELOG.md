@@ -1,4 +1,10 @@
 
+## [0.8.2](https://github.com/pkgforge/soar/compare/v0.8.1...v0.8.2) - 2025-09-25
+
+### ⛰️  Features
+
+- *(crate)* Init soar-utils crate ([#92](https://github.com/pkgforge/soar/pull/92)) - ([26a9d92](https://github.com/pkgforge/soar/commit/26a9d92237d419946186bf084f8b45fad21cc4a1))
+
 ## [0.8.1](https://github.com/pkgforge/soar/compare/v0.8.0...v0.8.1) - 2025-09-19
 
 ### 🐛 Bug Fixes
