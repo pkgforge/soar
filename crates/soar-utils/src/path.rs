@@ -2,7 +2,7 @@ use std::{env, path::PathBuf};
 
 use crate::{
     error::{PathError, PathResult},
-    user::get_username,
+    system::get_username,
 };
 
 /// Resolves a path string that may contain environment variables
@@ -53,7 +53,7 @@ pub fn resolve_path(path: &str) -> PathResult<PathBuf> {
     } else {
         env::current_dir()
             .map(|cwd| cwd.join(path_buf))
-            .map_err(|err| PathError::CurrentDir { source: err })
+            .map_err(|err| PathError::FailedToGetCurrentDir { source: err })
     }
 }
 

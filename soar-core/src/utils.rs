@@ -4,8 +4,8 @@ use std::{
 };
 
 use soar_utils::{
-    error::{FileSystemError, FileSystemResult},
-    fs::walk_dir,
+    error::FileSystemResult,
+    fs::{safe_remove, walk_dir},
     path::{desktop_dir, icons_dir},
 };
 use tracing::info;
@@ -58,11 +58,7 @@ pub fn cleanup_cache() -> Result<()> {
 
 fn remove_action(path: &Path) -> FileSystemResult<()> {
     if !path.exists() {
-        fs::remove_file(path).map_err(|err| FileSystemError::File {
-            path: path.to_path_buf(),
-            action: "remove",
-            source: err,
-        })?;
+        safe_remove(path)?;
         info!("Removed broken symlink: {}", path.display());
     }
     Ok(())

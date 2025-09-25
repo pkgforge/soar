@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use crate::error::{FileSystemError, FileSystemResult};
+use crate::error::{FileSystemError, FileSystemResult, IoOperation, IoResultExt};
 
 /// Removes the specified file or directory safely.
 ///
@@ -43,11 +43,9 @@ pub fn safe_remove<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
         fs::remove_file(path)
     };
 
-    result.map_err(|err| FileSystemError::File {
-        path: path.to_path_buf(),
-        action: "remove",
-        source: err,
-    })
+    result.with_path(path, IoOperation::RemoveFile)?;
+
+    Ok(())
 }
 
 /// Creates a directory structure if it doesn't exist.
@@ -79,11 +77,7 @@ pub fn safe_remove<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
 pub fn ensure_dir_exists<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
     let path = path.as_ref();
     if !path.exists() {
-        std::fs::create_dir_all(path).map_err(|err| FileSystemError::Directory {
-            path: path.to_path_buf(),
-            action: "create",
-            source: err,
-        })?;
+        std::fs::create_dir_all(path).with_path(path, IoOperation::CreateDirectory)?;
     } else if !path.is_dir() {
         return Err(FileSystemError::NotADirectory {
             path: path.to_path_buf(),
@@ -129,18 +123,15 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
     }
 
     if target.is_file() {
-        fs::remove_file(target).map_err(|err| FileSystemError::File {
-            path: target.to_path_buf(),
-            action: "remove",
-            source: err,
-        })?;
+        fs::remove_file(target).with_path(target, IoOperation::RemoveFile)?;
     }
 
-    os::unix::fs::symlink(source, target).map_err(|err| FileSystemError::Symlink {
-        from: source.to_path_buf(),
-        target: target.to_path_buf(),
-        source: err,
-    })
+    os::unix::fs::symlink(source, target).with_path(
+        source,
+        IoOperation::CreateSymlink {
+            target: target.into(),
+        },
+    )
 }
 
 /// Walks a directory recursively and calls the provided function on each file or directory.
@@ -183,18 +174,12 @@ where
         });
     }
 
-    for entry in fs::read_dir(dir).map_err(|err| FileSystemError::Directory {
-        path: dir.to_path_buf(),
-        action: "read",
-        source: err,
-    })? {
-        let path = entry
-            .map_err(|err| FileSystemError::Directory {
-                path: dir.to_path_buf(),
-                action: "read entry in",
-                source: err,
-            })?
-            .path();
+    for entry in fs::read_dir(dir).with_path(dir, IoOperation::ReadDirectory)? {
+        let Ok(entry) = entry else {
+            continue;
+        };
+
+        let path = entry.path();
 
         if path.is_dir() {
             walk_dir(&path, action)?;
@@ -231,21 +216,13 @@ where
 /// }
 pub fn read_file_signature<P: AsRef<Path>>(path: P, bytes: usize) -> FileSystemResult<Vec<u8>> {
     let path = path.as_ref();
-    let file = File::open(path).map_err(|err| FileSystemError::File {
-        path: path.to_path_buf(),
-        action: "open",
-        source: err,
-    })?;
+    let file = File::open(path).with_path(path, IoOperation::ReadFile)?;
 
     let mut reader = BufReader::new(file);
     let mut buffer = vec![0u8; bytes];
     reader
         .read_exact(&mut buffer)
-        .map_err(|err| FileSystemError::File {
-            path: path.to_path_buf(),
-            action: "read",
-            source: err,
-        })?;
+        .with_path(path, IoOperation::ReadFile)?;
     Ok(buffer)
 }
 
@@ -275,11 +252,7 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
     let path = path.as_ref();
     let mut total_size = 0;
 
-    for entry in fs::read_dir(path).map_err(|err| FileSystemError::Directory {
-        path: path.to_path_buf(),
-        action: "read",
-        source: err,
-    })? {
+    for entry in fs::read_dir(path).with_path(path, IoOperation::ReadDirectory)? {
         let Ok(entry) = entry else {
             continue;
         };
@@ -524,9 +497,8 @@ mod tests {
         let mut results = Vec::new();
         walk_dir(&dir, &mut |path| {
             results.push(path.to_path_buf());
-            Err(FileSystemError::File {
+            Err(FileSystemError::ReadFile {
                 path: path.to_path_buf(),
-                action: "read",
                 source: std::io::Error::from(std::io::ErrorKind::Other),
             })
         })

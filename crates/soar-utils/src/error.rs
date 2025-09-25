@@ -45,7 +45,7 @@ impl Error for BytesError {}
 
 #[derive(Debug)]
 pub enum PathError {
-    CurrentDir { source: std::io::Error },
+    FailedToGetCurrentDir { source: std::io::Error },
 
     Empty,
 
@@ -58,7 +58,7 @@ impl fmt::Display for PathError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PathError::Empty => write!(f, "Path is empty"),
-            PathError::CurrentDir { source } => {
+            PathError::FailedToGetCurrentDir { source } => {
                 write!(f, "Failed to get current directory: {source}")
             }
             PathError::UnclosedVariable { input } => {
@@ -74,7 +74,7 @@ impl fmt::Display for PathError {
 impl Error for PathError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            PathError::CurrentDir { source } => Some(source),
+            PathError::FailedToGetCurrentDir { source } => Some(source),
             _ => None,
         }
     }
@@ -82,54 +82,107 @@ impl Error for PathError {
 
 #[derive(Debug)]
 pub enum FileSystemError {
-    File {
+    // File operations
+    ReadFile {
         path: PathBuf,
-        action: &'static str,
         source: std::io::Error,
     },
 
-    Directory {
+    WriteFile {
         path: PathBuf,
-        action: &'static str,
         source: std::io::Error,
+    },
+
+    CreateFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    RemoveFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    // Directory operations
+    ReadDirectory {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    CreateDirectory {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    RemoveDirectory {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    // Symlink operations
+    CreateSymlink {
+        from: PathBuf,
+        target: PathBuf,
+        source: std::io::Error,
+    },
+
+    RemoveSymlink {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    ReadSymlink {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    // Path validation
+    NotFound {
+        path: PathBuf,
     },
 
     NotADirectory {
         path: PathBuf,
     },
 
-    Symlink {
-        from: PathBuf,
-        target: PathBuf,
-        source: std::io::Error,
+    NotAFile {
+        path: PathBuf,
     },
 }
 
 impl fmt::Display for FileSystemError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FileSystemError::File {
-                path,
-                action,
-                source,
-            } => {
-                write!(f, "Failed to {action} file `{}`: {source}", path.display())
+            FileSystemError::ReadFile { path, source } => {
+                write!(f, "Failed to read file `{}`: {source}", path.display())
             }
-            FileSystemError::Directory {
-                path,
-                action,
-                source,
-            } => {
+            FileSystemError::WriteFile { path, source } => {
+                write!(f, "Failed to write file `{}`: {source}", path.display())
+            }
+            FileSystemError::CreateFile { path, source } => {
+                write!(f, "Failed to create file `{}`: {source}", path.display())
+            }
+            FileSystemError::RemoveFile { path, source } => {
+                write!(f, "Failed to remove file `{}`: {source}", path.display())
+            }
+            FileSystemError::ReadDirectory { path, source } => {
+                write!(f, "Failed to read directory `{}`: {source}", path.display())
+            }
+            FileSystemError::CreateDirectory { path, source } => {
                 write!(
                     f,
-                    "Failed to {action} directory `{}`: {source}",
+                    "Failed to create directory `{}`: {source}",
                     path.display()
                 )
             }
-            FileSystemError::NotADirectory { path } => {
-                write!(f, "`{}` is not a directory", path.display())
+            FileSystemError::RemoveDirectory { path, source } => {
+                write!(
+                    f,
+                    "Failed to remove directory `{}`: {source}",
+                    path.display()
+                )
             }
-            FileSystemError::Symlink {
+            FileSystemError::CreateSymlink {
                 from,
                 target,
                 source,
@@ -141,6 +194,21 @@ impl fmt::Display for FileSystemError {
                     target.display()
                 )
             }
+            FileSystemError::RemoveSymlink { path, source } => {
+                write!(f, "Failed to remove symlink `{}`: {source}", path.display())
+            }
+            FileSystemError::ReadSymlink { path, source } => {
+                write!(f, "Failed to read symlink `{}`: {source}", path.display())
+            }
+            FileSystemError::NotFound { path } => {
+                write!(f, "Path `{}` not found", path.display())
+            }
+            FileSystemError::NotADirectory { path } => {
+                write!(f, "`{}` is not a directory", path.display())
+            }
+            FileSystemError::NotAFile { path } => {
+                write!(f, "`{}` is not a file", path.display())
+            }
         }
     }
 }
@@ -148,11 +216,153 @@ impl fmt::Display for FileSystemError {
 impl Error for FileSystemError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            FileSystemError::File { source, .. } => Some(source),
-            FileSystemError::Directory { source, .. } => Some(source),
-            FileSystemError::Symlink { source, .. } => Some(source),
+            FileSystemError::ReadFile { source, .. } => Some(source),
+            FileSystemError::WriteFile { source, .. } => Some(source),
+            FileSystemError::CreateFile { source, .. } => Some(source),
+            FileSystemError::RemoveFile { source, .. } => Some(source),
+            FileSystemError::ReadDirectory { source, .. } => Some(source),
+            FileSystemError::CreateDirectory { source, .. } => Some(source),
+            FileSystemError::RemoveDirectory { source, .. } => Some(source),
+            FileSystemError::CreateSymlink { source, .. } => Some(source),
+            FileSystemError::RemoveSymlink { source, .. } => Some(source),
+            FileSystemError::ReadSymlink { source, .. } => Some(source),
             _ => None,
         }
+    }
+}
+
+pub struct IoContext {
+    path: PathBuf,
+    operation: IoOperation,
+}
+
+#[derive(Debug, Clone)]
+pub enum IoOperation {
+    ReadFile,
+    WriteFile,
+    CreateFile,
+    RemoveFile,
+    CreateDirectory,
+    RemoveDirectory,
+    ReadDirectory,
+    CreateSymlink { target: PathBuf },
+    RemoveSymlink,
+    ReadSymlink,
+}
+
+impl IoContext {
+    pub fn new(path: PathBuf, operation: IoOperation) -> Self {
+        Self { path, operation }
+    }
+
+    pub fn read_file<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::ReadFile)
+    }
+
+    pub fn write_file<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::WriteFile)
+    }
+
+    pub fn create_file<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::CreateFile)
+    }
+
+    pub fn remove_file<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::RemoveFile)
+    }
+
+    pub fn read_directory<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::ReadDirectory)
+    }
+
+    pub fn create_directory<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::CreateDirectory)
+    }
+
+    pub fn remove_directory<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::RemoveDirectory)
+    }
+
+    pub fn read_symlink<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::ReadSymlink)
+    }
+
+    pub fn create_symlink<P: Into<PathBuf>, T: Into<PathBuf>>(from: P, target: T) -> Self {
+        Self::new(
+            from.into(),
+            IoOperation::CreateSymlink {
+                target: target.into(),
+            },
+        )
+    }
+
+    pub fn remove_symlink<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::RemoveSymlink)
+    }
+
+    pub fn operation(&self) -> &IoOperation {
+        &self.operation
+    }
+}
+
+impl From<(IoContext, std::io::Error)> for FileSystemError {
+    fn from((ctx, source): (IoContext, std::io::Error)) -> Self {
+        match ctx.operation {
+            IoOperation::ReadFile => FileSystemError::ReadFile {
+                path: ctx.path,
+                source,
+            },
+            IoOperation::WriteFile => FileSystemError::WriteFile {
+                path: ctx.path,
+                source,
+            },
+            IoOperation::CreateFile => FileSystemError::CreateFile {
+                path: ctx.path,
+                source,
+            },
+            IoOperation::RemoveFile => FileSystemError::RemoveFile {
+                path: ctx.path,
+                source,
+            },
+            IoOperation::CreateDirectory => FileSystemError::CreateDirectory {
+                path: ctx.path,
+                source,
+            },
+            IoOperation::RemoveDirectory => FileSystemError::RemoveDirectory {
+                path: ctx.path,
+                source,
+            },
+            IoOperation::ReadDirectory => FileSystemError::ReadDirectory {
+                path: ctx.path,
+                source,
+            },
+            IoOperation::CreateSymlink { target } => FileSystemError::CreateSymlink {
+                from: ctx.path,
+                target,
+                source,
+            },
+            IoOperation::RemoveSymlink => FileSystemError::RemoveSymlink {
+                path: ctx.path,
+                source,
+            },
+            IoOperation::ReadSymlink => FileSystemError::ReadSymlink {
+                path: ctx.path,
+                source,
+            },
+        }
+    }
+}
+
+pub trait IoResultExt<T> {
+    fn with_path<P: Into<PathBuf>>(self, path: P, operation: IoOperation) -> FileSystemResult<T>;
+}
+
+impl<T> IoResultExt<T> for std::io::Result<T> {
+    fn with_path<P: Into<PathBuf>>(self, path: P, operation: IoOperation) -> FileSystemResult<T> {
+        self.map_err(|e| {
+            let ctx = IoContext::new(path.into(), operation);
+            (ctx, e).into()
+        })
     }
 }
 
@@ -242,7 +452,7 @@ mod tests {
     #[test]
     fn test_path_error_display_and_source() {
         let io_error = io::Error::other("some error");
-        let current_dir_error = PathError::CurrentDir { source: io_error };
+        let current_dir_error = PathError::FailedToGetCurrentDir { source: io_error };
         assert_eq!(
             current_dir_error.to_string(),
             "Failed to get current directory: some error"
@@ -276,9 +486,8 @@ mod tests {
     #[test]
     fn test_file_system_error_display_and_source() {
         let io_error = io::Error::new(io::ErrorKind::PermissionDenied, "permission denied");
-        let file_error = FileSystemError::File {
+        let file_error = FileSystemError::ReadFile {
             path: PathBuf::from("/file"),
-            action: "read",
             source: io_error,
         };
         assert_eq!(
@@ -288,9 +497,8 @@ mod tests {
         assert!(file_error.source().is_some());
 
         let io_error2 = io::Error::new(io::ErrorKind::PermissionDenied, "permission denied");
-        let dir_error = FileSystemError::Directory {
+        let dir_error = FileSystemError::CreateDirectory {
             path: PathBuf::from("/dir"),
-            action: "create",
             source: io_error2,
         };
         assert_eq!(
