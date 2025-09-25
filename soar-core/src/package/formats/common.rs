@@ -10,13 +10,17 @@ use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use regex::Regex;
 use soar_dl::downloader::{DownloadOptions, Downloader};
 use soar_dl::utils::FileMode;
+use soar_utils::{
+    error::FileSystemResult,
+    fs::{create_symlink, read_file_signature, walk_dir},
+    path::{desktop_dir, icons_dir},
+};
 
 use crate::{
     config::get_config,
     constants::PNG_MAGIC_BYTES,
     database::models::{Package, PackageExt},
     error::{ErrorContext, SoarError},
-    utils::{calc_magic_bytes, create_symlink, home_data_path, process_dir},
     SoarResult,
 };
 
@@ -83,12 +87,14 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> SoarResult<PathBuf> {
         (w, h)
     };
 
-    let final_path = PathBuf::from(format!(
-        "{}/icons/hicolor/{w}x{h}/apps/{}-soar.{}",
-        home_data_path(),
-        icon_name.to_string_lossy(),
-        ext.unwrap_or_default().to_string_lossy()
-    ));
+    let final_path = icons_dir()
+        .join(format!("{w}x{h}"))
+        .join("apps")
+        .join(format!(
+            "{}-soar.{}",
+            icon_name.to_string_lossy(),
+            ext.unwrap_or_default().to_string_lossy()
+        ));
 
     create_symlink(real_path, &final_path)?;
     Ok(final_path)
@@ -133,11 +139,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         .write_all(final_content.as_bytes())
         .with_context(|| format!("writing desktop file to {}", real_path.display()))?;
 
-    let final_path = PathBuf::from(format!(
-        "{}/applications/{}-soar.desktop",
-        home_data_path(),
-        file_name.to_string_lossy()
-    ));
+    let final_path = desktop_dir().join(format!("{}-soar.desktop", file_name.to_string_lossy()));
 
     create_symlink(real_path, &final_path)?;
     Ok(final_path)
@@ -168,7 +170,7 @@ pub async fn integrate_remote<P: AsRef<Path>>(
         };
         downloader.download(options).await?;
 
-        let ext = if calc_magic_bytes(icon_output_path, 8)? == PNG_MAGIC_BYTES {
+        let ext = if read_file_signature(icon_output_path, 8)? == PNG_MAGIC_BYTES {
             "png"
         } else {
             "svg"
@@ -218,7 +220,7 @@ pub fn create_portable_link<P: AsRef<Path>>(
 
     fs::create_dir_all(&portable_path)
         .with_context(|| format!("creating directory {}", portable_path.display()))?;
-    create_symlink(&portable_path, &real_path.as_ref().to_path_buf())?;
+    create_symlink(&portable_path, real_path)?;
     Ok(())
 }
 
@@ -308,25 +310,27 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
 
     let mut has_desktop = false;
     let mut has_icon = false;
-    let mut symlink_action = |path: &Path| -> SoarResult<()> {
+    let mut symlink_action = |path: &Path| -> FileSystemResult<()> {
         let ext = path.extension();
         if ext == Some(OsStr::new("desktop")) {
             has_desktop = true;
-            symlink_desktop(path, package)?;
+            // FIXME: handle error
+            symlink_desktop(path, package).unwrap();
         }
         Ok(())
     };
-    process_dir(install_dir, &mut symlink_action)?;
+    walk_dir(install_dir, &mut symlink_action)?;
 
-    let mut symlink_action = |path: &Path| -> SoarResult<()> {
+    let mut symlink_action = |path: &Path| -> FileSystemResult<()> {
         let ext = path.extension();
         if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
             has_icon = true;
-            symlink_icon(path)?;
+            // FIXME: handle error
+            symlink_icon(path).unwrap();
         }
         Ok(())
     };
-    process_dir(install_dir, &mut symlink_action)?;
+    walk_dir(install_dir, &mut symlink_action)?;
 
     let mut reader = BufReader::new(
         File::open(&bin_path).with_context(|| format!("opening {}", bin_path.display()))?,

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/soar-utils",
   "soar-cli",
   "soar-core"
 ]
@@ -22,6 +23,7 @@ codegen-units = 1
 panic = "abort"
 
 [workspace.dependencies]
+soar-utils = { path = "crates/soar-utils" }
 futures = "0.3.31"
 rayon = "1.11.0"
 regex = { version = "1.11.2", default-features = false, features = ["unicode-case", "unicode-perl", "std"] }
@@ -29,5 +31,7 @@ reqwest = { version = "0.12.23", default-features = false, features = ["rustls-t
 rusqlite = { version = "0.37.0", features = ["bundled", "rusqlite-macros"] }
 serde = { version = "1.0.225", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["indexmap"] }
+serial_test = "3.2.0"
 soar-dl = { version = "0.6.3" }
+tempfile = "3.10.1"
 tracing = { version = "0.1.41", default-features = false }

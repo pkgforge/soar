@@ -20,10 +20,10 @@ use soar_core::{
     error::{ErrorContext, SoarError},
     package::install::InstallTarget,
     repositories::get_platform_repositories,
-    utils::get_platform,
     SoarResult,
 };
 use soar_dl::utils::{is_elf, FileMode};
+use soar_utils::system::platform;
 use tracing::{error, info};
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
@@ -268,11 +268,9 @@ pub async fn mangle_package_symlinks(
 
 pub fn parse_default_repos_arg(arg: &str) -> SoarResult<String> {
     let repo = arg.trim().to_lowercase();
-    let platform = get_platform();
-
     let supported_repos: Vec<&str> = get_platform_repositories()
         .into_iter()
-        .filter(|repo| repo.platforms.contains(&platform.as_str()))
+        .filter(|repo| repo.platforms.contains(&platform().as_str()))
         .map(|repo| repo.name)
         .collect();
 
@@ -282,7 +280,7 @@ pub fn parse_default_repos_arg(arg: &str) -> SoarResult<String> {
         Err(SoarError::Custom(format!(
             "Invalid repository '{}'. Valid options for this platform ({}) are: {}",
             repo,
-            platform,
+            platform(),
             supported_repos.join(", ")
         )))
     }

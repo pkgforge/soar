@@ -7,13 +7,14 @@ use soar_core::{
     },
     error::{ErrorContext, SoarError},
     package::query::PackageQuery,
-    utils::{calculate_checksum, get_extract_dir},
+    utils::get_extract_dir,
     SoarResult,
 };
 use soar_dl::{
     downloader::{DownloadOptions, Downloader, OciDownloadOptions, OciDownloader},
     utils::FileMode,
 };
+use soar_utils::hash::calculate_checksum;
 
 use crate::{
     progress::{self, create_progress_bar},

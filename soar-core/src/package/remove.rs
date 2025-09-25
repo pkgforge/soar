@@ -6,12 +6,12 @@ use std::{
 };
 
 use rusqlite::{params, Connection};
+use soar_utils::{error::FileSystemResult, fs::walk_dir, path::desktop_dir};
 
 use crate::{
     config::get_config,
     database::{models::InstalledPackage, packages::ProvideStrategy},
     error::ErrorContext,
-    utils::{desktop_dir, icons_dir, process_dir},
     SoarResult,
 };
 
@@ -60,7 +60,7 @@ impl PackageRemover {
 
             let installed_path = PathBuf::from(&self.package.installed_path);
 
-            let mut remove_action = |path: &Path| -> SoarResult<()> {
+            let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                 if path.extension() == Some(&OsString::from("desktop")) {
                     if let Ok(real_path) = fs::read_link(path) {
                         if real_path.parent() == Some(&installed_path) {
@@ -70,9 +70,9 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            process_dir(desktop_dir(), &mut remove_action)?;
+            walk_dir(desktop_dir(), &mut remove_action)?;
 
-            let mut remove_action = |path: &Path| -> SoarResult<()> {
+            let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                 if let Ok(real_path) = fs::read_link(path) {
                     if real_path.parent() == Some(&installed_path) {
                         let _ = fs::remove_file(path);
@@ -80,7 +80,7 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            process_dir(icons_dir(), &mut remove_action)?;
+            walk_dir(desktop_dir(), &mut remove_action)?;
         }
 
         if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {

@@ -7,6 +7,11 @@ use std::{
 
 use documented::{Documented, DocumentedFields};
 use serde::{de::Error, Deserialize, Serialize};
+use soar_utils::{
+    path::{resolve_path, xdg_config_home, xdg_data_home},
+    system::platform,
+    time::parse_duration,
+};
 use toml_edit::{DocumentMut, Item};
 use tracing::{info, warn};
 
@@ -15,10 +20,7 @@ use crate::{
     error::{ConfigError, SoarError},
     repositories::get_platform_repositories,
     toml::{annotate_toml_array_of_tables, annotate_toml_table},
-    utils::{
-        build_path, default_install_patterns, get_platform, home_config_path, home_data_path,
-        parse_duration,
-    },
+    utils::default_install_patterns,
     SoarResult,
 };
 use rusqlite::Connection;
@@ -50,7 +52,7 @@ impl Profile {
 
     pub fn get_packages_path(&self) -> SoarResult<PathBuf> {
         if let Some(ref packages_path) = self.packages_path {
-            build_path(packages_path)
+            Ok(resolve_path(packages_path)?)
         } else {
             Ok(self.get_root_path()?.join("packages"))
         }
@@ -70,9 +72,9 @@ impl Profile {
 
     pub fn get_root_path(&self) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_ROOT") {
-            return build_path(&env_path);
+            return Ok(resolve_path(&env_path)?);
         }
-        build_path(&self.root_path)
+        Ok(resolve_path(&self.root_path)?)
     }
 }
 
@@ -215,9 +217,7 @@ pub static CURRENT_PROFILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| 
 pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
     RwLock::new(match std::env::var("SOAR_CONFIG") {
         Ok(path_str) => PathBuf::from(path_str),
-        Err(_) => PathBuf::from(home_config_path())
-            .join("soar")
-            .join("config.toml"),
+        Err(_) => xdg_config_home().join("soar").join("config.toml"),
     })
 });
 
@@ -268,8 +268,8 @@ pub fn set_current_profile(name: &str) -> Result<()> {
 
 impl Config {
     pub fn default_config<T: AsRef<str>>(external: bool, selected_repos: &[T]) -> Self {
-        let soar_root =
-            std::env::var("SOAR_ROOT").unwrap_or_else(|_| format!("{}/soar", home_data_path()));
+        let soar_root = std::env::var("SOAR_ROOT")
+            .unwrap_or_else(|_| format!("{}/soar", xdg_data_home().display()));
 
         let default_profile = Profile {
             root_path: soar_root.clone(),
@@ -277,7 +277,7 @@ impl Config {
         };
         let default_profile_name = "default".to_string();
 
-        let current_platform = get_platform();
+        let current_platform = platform();
         let mut repositories = Vec::new();
         let selected_set: HashSet<&str> = selected_repos.iter().map(|s| s.as_ref()).collect();
 
@@ -450,27 +450,27 @@ impl Config {
 
     pub fn get_bin_path(&self) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_BIN") {
-            return build_path(&env_path);
+            return Ok(resolve_path(&env_path)?);
         }
         if let Some(bin_path) = &self.bin_path {
-            return build_path(bin_path);
+            return Ok(resolve_path(bin_path)?);
         }
         self.default_profile()?.get_bin_path()
     }
 
     pub fn get_db_path(&self) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_DB") {
-            return build_path(&env_path);
+            return Ok(resolve_path(&env_path)?);
         }
         if let Some(soar_db) = &self.db_path {
-            return build_path(soar_db);
+            return Ok(resolve_path(soar_db)?);
         }
         self.default_profile()?.get_db_path()
     }
 
     pub fn get_packages_path(&self, profile_name: Option<String>) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_PACKAGES") {
-            return build_path(&env_path);
+            return Ok(resolve_path(&env_path)?);
         }
         let profile_name = profile_name.unwrap_or_else(get_current_profile);
         self.get_profile(&profile_name)?.get_packages_path()
@@ -478,31 +478,31 @@ impl Config {
 
     pub fn get_cache_path(&self) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_CACHE") {
-            return build_path(&env_path);
+            return Ok(resolve_path(&env_path)?);
         }
         if let Some(soar_cache) = &self.cache_path {
-            return build_path(soar_cache);
+            return Ok(resolve_path(soar_cache)?);
         }
         self.get_profile(&get_current_profile())?.get_cache_path()
     }
 
     pub fn get_repositories_path(&self) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_REPOSITORIES") {
-            return build_path(&env_path);
+            return Ok(resolve_path(&env_path)?);
         }
         if let Some(repositories_path) = &self.repositories_path {
-            return build_path(repositories_path);
+            return Ok(resolve_path(repositories_path)?);
         }
         self.default_profile()?.get_repositories_path()
     }
 
     pub fn get_portable_dirs(&self) -> SoarResult<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_PORTABLE_DIRS") {
-            return build_path(&env_path);
+            return Ok(resolve_path(&env_path)?);
         }
 
         if let Some(portable_dirs) = &self.portable_dirs {
-            return build_path(portable_dirs);
+            return Ok(resolve_path(portable_dirs)?);
         }
         self.default_profile()?.get_portable_dirs()
     }

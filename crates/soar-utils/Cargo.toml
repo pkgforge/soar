@@ -1,0 +1,19 @@
+[package]
+name = "soar-utils"
+version = "0.1.0"
+description = "Utilities for soar package manager"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+categories.workspace = true
+
+[dependencies]
+blake3 = { version = "1.8.2", features = ["mmap"] }
+nix = { version = "0.30.1", features = ["ioctl", "term", "user"] }
+serial_test = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

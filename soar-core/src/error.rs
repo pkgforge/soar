@@ -1,3 +1,4 @@
+use soar_utils::error::{FileSystemError, HashError, PathError};
 use std::error::Error;
 use thiserror::Error;
 
@@ -47,6 +48,15 @@ pub enum SoarError {
 
     #[error("Environment variable error: {0}")]
     VarError(#[from] std::env::VarError),
+
+    #[error("{0}")]
+    FileSystemError(#[from] FileSystemError),
+
+    #[error("{0}")]
+    HashError(#[from] HashError),
+
+    #[error("{0}")]
+    PathError(#[from] PathError),
 
     #[error("IO error while {action}: {source}")]
     IoError {
