@@ -2211,6 +2211,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "soar-db"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "soar-utils",
+]
+
+[[package]]
 name = "soar-dl"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

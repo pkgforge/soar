@@ -1,0 +1,17 @@
+[package]
+name = "soar-db"
+version = "0.1.0"
+description = "Database operations for soar package manager"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+categories.workspace = true
+
+[dependencies]
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+soar-utils = { workspace = true }
