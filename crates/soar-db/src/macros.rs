@@ -34,7 +34,7 @@
 /// # Usage
 ///
 /// ```ignore
-/// use soar_db::{Query, define_entity, FromRow};
+/// use soar_db::{SelectQuery, define_entity, FromRow};
 /// define_entity!(
 ///     users {
 ///         table: "users",
@@ -58,7 +58,7 @@
 /// }
 ///
 /// let db = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
-/// Query::<User>::from(db, "users")
+/// SelectQuery::<User>::from(db, "users")
 ///     .filter(users::NAME.eq("User".to_string()));
 /// ```
 #[macro_export]
@@ -74,9 +74,34 @@ macro_rules! define_entity {
         pub mod $entity {
             use $crate::expr::column::Col;
 
+            pub const TABLE: &str = $table;
+
             $(
-                pub const $col_name: Col<$col_type> = Col::new($db_col);
+                $crate::define_column!($col_name, $col_type, $db_col);
             )*
         }
+    };
+}
+
+#[macro_export]
+macro_rules! define_column {
+    // JSON detection - Vec<T>
+    ($name:ident, Vec<$inner:ty>, $db_col:literal) => {
+        pub const $name: Col<String> = Col::json($db_col);
+    };
+
+    // JSON detection - Option<Vec<T>>
+    ($name:ident, Option<Vec<$inner:ty>>, $db_col:literal) => {
+        pub const $name: Col<Option<String>> = Col::json($db_col);
+    };
+
+    // Optional regular types
+    ($name:ident, Option<$inner:ty>, $db_col:literal) => {
+        pub const $name: Col<Option<$inner>> = Col::new($db_col);
+    };
+
+    // Regular types (fallback)
+    ($name:ident, $type:ty, $db_col:literal) => {
+        pub const $name: Col<$type> = Col::new($db_col);
     };
 }

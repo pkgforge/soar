@@ -1,8 +1,10 @@
 pub mod expr;
+pub mod helpers;
 pub mod macros;
 pub mod query;
 pub mod traits;
 
+pub use helpers::*;
 pub use query::*;
 pub use traits::FromRow;
 
@@ -10,13 +12,10 @@ pub use traits::FromRow;
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use rusqlite::{params, Connection, Row};
+    use rusqlite::{Connection, Row};
 
     use super::*;
-    use crate::{
-        query::builder::Query,
-        traits::{Expression as _, FromRow},
-    };
+    use crate::traits::Expression as _;
 
     #[derive(Debug, Clone)]
     struct Package {
@@ -24,6 +23,8 @@ mod tests {
         pub name: String,
         pub version: String,
         pub downloads: u64,
+        pub description: Option<String>,
+        pub maintainers: Option<Vec<String>>,
     }
 
     impl FromRow for Package {
@@ -33,6 +34,21 @@ mod tests {
                 name: row.get("name")?,
                 version: row.get("version")?,
                 downloads: row.get("downloads")?,
+                description: row.get("description")?,
+                maintainers: from_optional_json(row.get("maintainers")),
+            })
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct PackageWithName {
+        pub name: String,
+    }
+
+    impl FromRow for PackageWithName {
+        fn from_row(row: &Row) -> rusqlite::Result<Self> {
+            Ok(Self {
+                name: row.get("name")?,
             })
         }
     }
@@ -44,7 +60,9 @@ mod tests {
                 ID: i64 => "id",
                 NAME: String => "name",
                 VERSION: String => "version",
-                DOWNLOADS: u64 => "downloads"
+                DOWNLOADS: u64 => "downloads",
+                DESCRIPTION: Option<String> => "description",
+                MAINTAINERS: Option<Vec<String>> => "maintainers"
             }
         }
     );
@@ -57,28 +75,11 @@ mod tests {
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 version TEXT NOT NULL,
-                downloads INTEGER NOT NULL
+                downloads INTEGER NOT NULL DEFAULT 0,
+                maintainers JSONB,
+                description TEXT
             )",
             [],
-        )
-        .unwrap();
-
-        // insert test data
-        conn.execute(
-            "INSERT INTO packages (name, version, downloads) VALUES (?1, ?2, ?3)",
-            params!["soar", "1.0.0", 120],
-        )
-        .unwrap();
-
-        conn.execute(
-            "INSERT INTO packages (name, version, downloads) VALUES (?1, ?2, ?3)",
-            params!["soar", "1.1.0", 340],
-        )
-        .unwrap();
-
-        conn.execute(
-            "INSERT INTO packages (name, version, downloads) VALUES (?1, ?2, ?3)",
-            params!["glide", "0.9.1", 50],
         )
         .unwrap();
 
@@ -86,69 +87,63 @@ mod tests {
     }
 
     #[test]
-    fn test_basic_fetch() {
+    fn test_insert() {
         let db = setup_db();
 
-        let results = Query::<Package>::from(db.clone(), "packages")
-            .filter(packages::NAME.eq("soar".to_string()))
-            .order_by(packages::VERSION, false)
-            .fetch()
+        let maintainers = vec!["John Doe", "Jane Smith"]
+            .into_iter()
+            .map(|v| v.to_string())
+            .collect();
+
+        let id = InsertQuery::into(db.clone(), packages::TABLE)
+            .set(packages::NAME, "soar".to_string())
+            .set(packages::VERSION, "1.0.0".to_string())
+            .set(packages::DOWNLOADS, 100000)
+            .set(packages::DESCRIPTION, "Test description".to_string())
+            .set(packages::MAINTAINERS, to_json(&maintainers))
+            .execute()
             .unwrap();
 
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].name, "soar");
-    }
+        assert!(id > 0);
 
-    #[test]
-    fn test_fetch_one() {
-        let db = setup_db();
-
-        let one = Query::<Package>::from(db.clone(), "packages")
-            .filter(packages::NAME.eq("glide".to_string()))
+        let pkg = SelectQuery::<Package>::from(db, packages::TABLE)
+            .filter(packages::ID.eq(id))
             .fetch_one()
             .unwrap()
             .unwrap();
 
-        assert_eq!(one.name, "glide");
-        assert_eq!(one.version, "0.9.1");
+        assert_eq!(pkg.name, "soar");
+        assert_eq!(pkg.version, "1.0.0");
+        assert_eq!(pkg.downloads, 100000);
+        assert_eq!(pkg.description, Some("Test description".into()));
+        assert_eq!(pkg.maintainers, Some(maintainers));
     }
 
     #[test]
-    fn test_count() {
+    fn test_select_with_like() {
         let db = setup_db();
 
-        let count = Query::<Package>::from(db.clone(), "packages")
-            .filter(packages::NAME.like("soar"))
-            .count()
+        InsertQuery::into(db.clone(), packages::TABLE)
+            .set(packages::NAME, "zls".to_string())
+            .set(packages::VERSION, "0.15.1".to_string())
+            .set(packages::DESCRIPTION, "Zig Language Server".to_string())
+            .execute()
             .unwrap();
 
-        assert_eq!(count, 2);
-    }
+        InsertQuery::into(db.clone(), packages::TABLE)
+            .set(packages::NAME, "rust-analyzer".to_string())
+            .set(packages::VERSION, "1.92.0-nightly".to_string())
+            .set(packages::DESCRIPTION, "Rusty Language Server".to_string())
+            .execute()
+            .unwrap();
 
-    #[test]
-    fn test_pagination() {
-        let db = setup_db();
-
-        let results = Query::<Package>::from(db.clone(), "packages")
-            .filter(packages::DOWNLOADS.gt(100))
-            .order_by(packages::DOWNLOADS, true)
-            .page(1, 1) // first page, one item
+        let pkgs = SelectQuery::<PackageWithName>::from(db, packages::TABLE)
+            .select(&[packages::NAME])
+            .filter(packages::NAME.like("rust"))
             .fetch()
             .unwrap();
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].downloads, 340);
-    }
-
-    #[test]
-    fn test_in_clause() {
-        let db = setup_db();
-
-        let results = Query::<Package>::from(db.clone(), "packages")
-            .filter(packages::NAME.in_(["soar", "glide"].iter().map(|s| s.to_string())))
-            .fetch()
-            .unwrap();
-
-        assert_eq!(results.len(), 3);
+        assert_eq!(pkgs.len(), 1);
+        assert_eq!(pkgs[0].name, "rust-analyzer");
     }
 }

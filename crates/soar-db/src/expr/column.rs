@@ -24,6 +24,7 @@ use crate::traits::Expression;
 #[derive(Clone, Copy)]
 pub struct Col<T> {
     pub name: &'static str,
+    pub is_json: bool,
     _type: PhantomData<T>,
 }
 
@@ -36,7 +37,26 @@ impl<T> Col<T> {
     pub const fn new(name: &'static str) -> Self {
         Self {
             name,
+            is_json: false,
             _type: PhantomData,
+        }
+    }
+
+    /// Mark this column as JSON for proper SELECT handling
+    pub const fn json(name: &'static str) -> Self {
+        Self {
+            name,
+            is_json: true,
+            _type: PhantomData,
+        }
+    }
+
+    /// Get the select expression for this column
+    pub fn select_expr(&self) -> String {
+        if self.is_json {
+            format!("json({}) AS {}", self.name, self.name)
+        } else {
+            self.name.to_string()
         }
     }
 }

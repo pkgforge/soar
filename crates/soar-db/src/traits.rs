@@ -124,7 +124,7 @@ pub trait Expression: Sized {
 
 /// A trait for types that can be constructed from a SQLite row.
 ///
-/// This is used by [`super::Query::fetch`] and [`super::Query::fetch_one`] to map query results.
+/// This is used by [`super::SelectQuery::fetch`] and [`super::SelectQuery::fetch_one`] to map query results.
 ///
 /// # Example
 ///

@@ -9,16 +9,13 @@ use rusqlite::{types::Value, Connection, ToSql};
 
 use crate::{
     expr::column::Col,
-    query::{
-        clause::{OrderClause, WhereClause},
-        state::{Filtered, Unfiltered},
-    },
+    query::clause::{OrderClause, WhereClause},
     traits::{Expression, FromRow},
 };
 
 /// An ergonomic SQL query builder for SQLite.
 ///
-/// Constructed via [`Query::from`], then chained with `.filter()`, `.order_by()`, etc.
+/// Constructed via [`SelectQuery::from`], then chained with `.filter()`, `.order_by()`, etc.
 ///
 /// # Type Parameters
 ///
@@ -28,7 +25,7 @@ use crate::{
 /// # Example
 ///
 /// ```rust
-/// use soar_db::{Query, FromRow, define_entity};
+/// use soar_db::{SelectQuery, FromRow, define_entity};
 /// use soar_db::traits::Expression as _;
 /// use std::sync::{Arc, Mutex};
 /// use rusqlite::Connection;
@@ -65,26 +62,26 @@ use crate::{
 ///
 ///
 /// let db = Arc::new(Mutex::new(conn));
-/// let users = Query::<User>::from(db, "users")
+/// let users = SelectQuery::<User>::from(db, "users")
 ///     .filter(users::ID.gt(0))
 ///     .order_by(users::ID, false)
 ///     .limit(10)
 ///     .fetch()
 ///     .unwrap();
 /// ```
-pub struct Query<E, State = Unfiltered> {
+pub struct SelectQuery<E> {
     db: Arc<Mutex<Connection>>,
     table: &'static str,
+    columns: Vec<String>,
     joins: Vec<String>,
     wheres: Vec<WhereClause>,
     orders: Vec<OrderClause>,
     limit: Option<u32>,
     offset: Option<u32>,
-    pub(crate) _entity: PhantomData<E>,
-    _state: PhantomData<State>,
+    _entity: PhantomData<E>,
 }
 
-impl<E> Query<E, Unfiltered> {
+impl<E> SelectQuery<E> {
     /// Starts a new query on the given table.
     ///
     /// # Parameters
@@ -95,49 +92,35 @@ impl<E> Query<E, Unfiltered> {
         Self {
             db,
             table,
+            columns: vec![],
             joins: vec![],
             wheres: vec![],
             orders: vec![],
             limit: None,
             offset: None,
             _entity: PhantomData,
-            _state: PhantomData,
         }
     }
 
+    /// Select specific columns from the table.
+    pub fn select<T>(mut self, cols: &[Col<T>]) -> Self {
+        self.columns.extend(cols.iter().map(|c| c.select_expr()));
+        self
+    }
+
+    /// Select all columns from the table
+    pub fn select_all(mut self) -> Self {
+        self.columns.clear();
+        self
+    }
+
     /// Adds a JOIN clause.
-    ///
-    /// # Example
-    /// ```ignore
-    /// .join("JOIN profiles ON users.id = profiles.user_id")
-    /// ```
     pub fn join(mut self, join: impl Into<String>) -> Self {
         self.joins.push(join.into());
         self
     }
 
-    /// Applies the first filter, transitioning to `Filtered` state.
-    pub fn filter<Expr: Expression + 'static>(self, expr: Expr) -> Query<E, Filtered> {
-        let mut query = Query {
-            db: self.db,
-            table: self.table,
-            joins: self.joins,
-            wheres: self.wheres,
-            orders: self.orders,
-            limit: self.limit,
-            offset: self.offset,
-            _entity: PhantomData,
-            _state: PhantomData,
-        };
-        query.wheres.push(WhereClause {
-            sql_fn: Box::new(move |params| expr.to_sql(params)),
-        });
-        query
-    }
-}
-
-impl<E> Query<E, Filtered> {
-    /// Adds an additional WHERE condition.
+    /// Applies the WHERE condition.
     pub fn filter<Expr: Expression + 'static>(mut self, expr: Expr) -> Self {
         self.wheres.push(WhereClause {
             sql_fn: Box::new(move |params| expr.to_sql(params)),
@@ -154,16 +137,19 @@ impl<E> Query<E, Filtered> {
         self
     }
 
+    /// Limit the number of results
     pub fn limit(mut self, limit: u32) -> Self {
         self.limit = Some(limit);
         self
     }
 
+    /// Set query offset
     pub fn offset(mut self, offset: u32) -> Self {
         self.offset = Some(offset);
         self
     }
 
+    /// Set pagination params
     pub fn page(mut self, page: u32, per_page: u32) -> Self {
         self.limit = Some(per_page);
         self.offset = Some((page - 1) * per_page);
@@ -171,7 +157,7 @@ impl<E> Query<E, Filtered> {
     }
 }
 
-impl<E: FromRow> Query<E, Filtered> {
+impl<E: FromRow> SelectQuery<E> {
     pub fn fetch(self) -> rusqlite::Result<Vec<E>> {
         let (sql, params) = self.build_sql();
         let conn = self.db.lock().unwrap();
@@ -198,7 +184,14 @@ impl<E: FromRow> Query<E, Filtered> {
 
     fn build_sql(&self) -> (String, Vec<Value>) {
         let mut params = vec![];
-        let mut sql = format!("SELECT * FROM {}", self.table);
+
+        let select = if self.columns.is_empty() {
+            "*".to_string()
+        } else {
+            self.columns.join(", ")
+        };
+
+        let mut sql = format!("SELECT {} FROM {}", select, self.table);
 
         for join in &self.joins {
             sql.push_str(&format!(" {}", join));
