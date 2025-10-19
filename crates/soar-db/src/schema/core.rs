@@ -1,6 +1,6 @@
 diesel::table! {
     packages (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         repo_name -> Text,
         pkg -> Nullable<Text>,
         pkg_id -> Text,

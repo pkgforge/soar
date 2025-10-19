@@ -1,6 +1,6 @@
 diesel::table! {
-    packages (id) {
-        id -> Nullable<Integer>,
+    nests (id) {
+        id -> Integer,
         name -> Text,
         url -> Text,
     }

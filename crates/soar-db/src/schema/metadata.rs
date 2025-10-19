@@ -1,6 +1,6 @@
 diesel::table! {
     maintainers (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         contact -> Text,
         name -> Text,
     }
@@ -16,12 +16,11 @@ diesel::table! {
 
 diesel::table! {
     packages (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         rank -> Nullable<Integer>,
         pkg -> Nullable<Text>,
         pkg_id -> Text,
         pkg_name -> Text,
-        pkg_family -> Nullable<Text>,
         pkg_type -> Nullable<Text>,
         pkg_webpage -> Nullable<Text>,
         app_id -> Nullable<Text>,
@@ -52,9 +51,6 @@ diesel::table! {
         provides -> Nullable<Jsonb>,
         snapshots -> Nullable<Jsonb>,
         replaces -> Nullable<Jsonb>,
-        download_count -> Nullable<Integer>,
-        download_count_week -> Nullable<Integer>,
-        download_count_month -> Nullable<Integer>,
         soar_syms -> Bool,
         desktop_integration -> Nullable<Bool>,
         portable -> Nullable<Bool>,
@@ -69,3 +65,10 @@ diesel::table! {
         etag -> Text,
     }
 }
+
+diesel::allow_tables_to_appear_in_same_query!(
+    maintainers,
+    package_maintainers,
+    packages,
+    repository,
+);
