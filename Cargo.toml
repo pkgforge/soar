@@ -24,7 +24,7 @@ codegen-units = 1
 panic = "abort"
 
 [workspace.dependencies]
-diesel = { version = "2.3.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel = { version = "2.3.2", features = ["64-column-tables", "sqlite", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = { version = "2.3.0", features = ["sqlite"] }
 futures = "0.3.31"
 rayon = "1.11.0"
