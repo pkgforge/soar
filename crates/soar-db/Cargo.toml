@@ -11,6 +11,8 @@ readme.workspace = true
 categories.workspace = true
 
 [dependencies]
+diesel = { workspace = true }
+diesel_migrations = { workspace = true }
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
