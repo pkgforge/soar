@@ -1,8 +1,5 @@
 use diesel::{
-    debug_query, sql_query,
-    sql_types::{Integer, Text},
-    sqlite::Sqlite,
-    Connection, ConnectionError, RunQueryDsl as _, SqliteConnection,
+    sql_query, sql_types::Text, Connection, ConnectionError, RunQueryDsl as _, SqliteConnection,
 };
 
 pub mod migration;
@@ -27,12 +24,8 @@ impl Database {
             .execute(&mut conn)
             .map_err(|err| ConnectionError::BadConnection(err.to_string()))?;
         for (idx, path) in paths.iter().enumerate().skip(1) {
-            let query = sql_query("ATTACH DATABASE ?1 AS shard?2")
+            sql_query(format!("ATTACH DATABASE ?1 AS shard{}", idx))
                 .bind::<Text, _>(path)
-                .bind::<Integer, _>(idx as i32);
-            debug_query::<Sqlite, _>(&query);
-
-            query
                 .execute(&mut conn)
                 .map_err(|err| ConnectionError::BadConnection(err.to_string()))?;
         }
