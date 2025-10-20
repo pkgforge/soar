@@ -40,12 +40,9 @@ fn mark_first_pending(
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let pending = conn.pending_migrations(CORE_MIGRATIONS)?;
     if let Some(first) = pending.first() {
-        sql_query(
-            "INSERT INTO __diesel_schema_migrations (version, run_on)
-            VALUES (?1, CURRENT_TIMESTAMP)",
-        )
-        .bind::<diesel::sql_types::Text, _>(first.name().version())
-        .execute(conn)?;
+        sql_query("INSERT INTO __diesel_schema_migrations (version) VALUES (?1)")
+            .bind::<diesel::sql_types::Text, _>(first.name().version())
+            .execute(conn)?;
     }
 
     Ok(())
