@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/soar-db",
   "crates/soar-utils",
   "soar-cli",
   "soar-core"
@@ -23,7 +24,8 @@ codegen-units = 1
 panic = "abort"
 
 [workspace.dependencies]
-soar-utils = { path = "crates/soar-utils" }
+diesel = { version = "2.3.2", features = ["64-column-tables", "sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel_migrations = { version = "2.3.0", features = ["sqlite"] }
 futures = "0.3.31"
 rayon = "1.11.0"
 regex = { version = "1.11.2", default-features = false, features = ["unicode-case", "unicode-perl", "std"] }
@@ -33,5 +35,6 @@ serde = { version = "1.0.225", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["indexmap"] }
 serial_test = "3.2.0"
 soar-dl = { version = "0.6.3" }
+soar-utils = { path = "crates/soar-utils" }
 tempfile = "3.10.1"
 tracing = { version = "0.1.41", default-features = false }
