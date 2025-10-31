@@ -59,7 +59,7 @@ impl PlatformUrl {
         }
 
         if let Some((project, tag)) = Self::parse_repo(&GITLAB_RE, url) {
-            if project.starts_with("api") || project.contains("/-/") {
+            if project.starts_with("api/") || project.contains("/-/") {
                 return Url::parse(url).ok().map(|_| {
                     Self::Direct {
                         url: url.to_string(),
