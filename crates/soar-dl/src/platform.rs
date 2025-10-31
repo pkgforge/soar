@@ -45,9 +45,12 @@ impl PlatformUrl {
     pub fn parse(url: impl AsRef<str>) -> Option<Self> {
         let url = url.as_ref();
 
-        if url.starts_with("ghcr.io") {
+        let normalized = url
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+        if normalized.starts_with("ghcr.io/") {
             return Some(Self::Oci {
-                reference: url.to_string(),
+                reference: normalized.to_string(),
             });
         }
 
