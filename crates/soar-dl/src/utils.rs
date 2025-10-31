@@ -20,7 +20,7 @@ pub fn filename_from_header(value: &HeaderValue) -> Option<String> {
     value
         .to_str()
         .ok()?
-        .split(',')
+        .split(';')
         .find_map(|p| p.trim().strip_prefix("filename="))
         .map(|s| s.trim_matches('"').to_string())
 }
