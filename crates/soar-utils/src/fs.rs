@@ -271,12 +271,25 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
     Ok(total_size)
 }
 
+/// Check if file is ELF binary
+pub fn is_elf<P: AsRef<Path>>(path: P) -> bool {
+    std::fs::read(path.as_ref())
+        .ok()
+        .and_then(|bytes| {
+            bytes
+                .get(..4)
+                .map(|magic| magic == [0x7f, 0x45, 0x4c, 0x46])
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 
-    use super::*;
     use tempfile::tempdir;
+
+    use super::*;
 
     #[test]
     fn test_safe_remove_file() {

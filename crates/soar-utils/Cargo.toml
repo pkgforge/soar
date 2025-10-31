@@ -13,6 +13,7 @@ categories.workspace = true
 [dependencies]
 blake3 = { version = "1.8.2", features = ["mmap"] }
 nix = { version = "0.30.1", features = ["ioctl", "term", "user"] }
+regex = { workspace = true }
 serial_test = { workspace = true }
 
 [dev-dependencies]
