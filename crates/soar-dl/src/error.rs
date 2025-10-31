@@ -60,6 +60,21 @@ pub enum DownloadError {
 pub type Result<T> = miette::Result<T>;
 
 impl From<ureq::Error> for DownloadError {
+    /// Converts a `ureq::Error` into a `DownloadError::Network` variant.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use soar_dl::error::DownloadError;
+    ///
+    /// // Given a `ureq::Error` `e`, convert it into a `DownloadError`
+    /// let e: ureq::Error = /* obtained from a ureq request */ unimplemented!();
+    /// let err: DownloadError = DownloadError::from(e);
+    /// match err {
+    ///     DownloadError::Network(_) => (),
+    ///     _ => panic!("expected DownloadError::Network"),
+    /// }
+    /// ```
     fn from(e: ureq::Error) -> Self {
         Self::Network(Box::new(e))
     }

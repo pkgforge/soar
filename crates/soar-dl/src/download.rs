@@ -32,6 +32,22 @@ pub struct Download {
 }
 
 impl Download {
+    /// Creates a new `Download` configured for the given URL with sensible defaults.
+    ///
+    /// The returned builder defaults to:
+    /// - no explicit output path (downloaded filename will be resolved automatically),
+    /// - `OverwriteMode::Prompt` for existing files,
+    /// - extraction disabled,
+    /// - no extraction destination,
+    /// - no progress callback.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let dl = Download::new("https://example.com/archive.tar.gz")
+    ///     .output("archive.tar.gz");
+    /// // `dl` is ready to call `execute()`
+    /// ```
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -43,26 +59,95 @@ impl Download {
         }
     }
 
+    /// Sets the download output destination.
+    ///
+    /// The `output` value may be a filesystem path or `"-"` to write to stdout.
+    ///
+    /// # Returns
+    ///
+    /// The modified `Download` builder.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::download::Download;
+    /// let _ = Download::new("https://example.com/file").output("path/to/file");
+    /// ```
     pub fn output(mut self, output: impl Into<String>) -> Self {
         self.output = Some(output.into());
         self
     }
 
+    /// Sets how existing destination files are handled when performing the download.
+    ///
+    /// Sets the overwrite mode that determines what to do if the resolved output path already exists. The method returns the modified `Download` builder to allow chaining.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::download::Download;
+    /// use crate::types::OverwriteMode;
+    ///
+    /// let d = Download::new("https://example.com/file")
+    ///     .overwrite(OverwriteMode::Force)
+    ///     .output("file.bin");
+    /// ```
     pub fn overwrite(mut self, overwrite: OverwriteMode) -> Self {
         self.overwrite = overwrite;
         self
     }
 
+    /// Enable or disable extraction of the downloaded archive after a successful download.
+    ///
+    /// When set to `true`, the downloader will extract the downloaded archive to the configured
+    /// extraction directory (or to the output file's parent directory if no extraction target was set).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let dl = crate::download::Download::new("https://example.com/archive.tar.gz")
+    ///     .extract(true);
+    /// ```
     pub fn extract(mut self, extract: bool) -> Self {
         self.extract = extract;
         self
     }
 
+    /// Set the directory to extract a downloaded archive into.
+    ///
+    /// When `extract` is enabled on the downloader, the downloaded archive will be
+    /// extracted into this path instead of the default (the downloaded file's
+    /// parent directory).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let dl = Download::new("https://example.com/archive.tar.gz")
+    ///     .extract(true)
+    ///     .extract_to("/tmp/my-extract-dir");
+    /// ```
     pub fn extract_to(mut self, extract_to: impl Into<PathBuf>) -> Self {
         self.extract_to = Some(extract_to.into());
         self
     }
 
+    /// Registers a progress callback that will be invoked with `Progress` events during the download lifecycle.
+    ///
+    /// The provided closure is stored and called for events such as `Progress::Starting`, `Progress::Chunk`, and `Progress::Complete`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::download::Download;
+    /// use crate::types::Progress;
+    ///
+    /// let _dl = Download::new("https://example.com/file")
+    ///     .progress(|event: Progress| match event {
+    ///         Progress::Starting { total } => eprintln!("starting, total={}", total),
+    ///         Progress::Chunk { downloaded, chunk } => eprintln!("downloaded {} (+{})", downloaded, chunk),
+    ///         Progress::Complete { total } => eprintln!("complete, total={}", total),
+    ///     });
+    /// ```
     pub fn progress<F>(mut self, on_progress: F) -> Self
     where
         F: Fn(Progress) + Send + Sync + 'static,
@@ -71,6 +156,30 @@ impl Download {
         self
     }
 
+    /// Performs the configured download and returns the final output path.
+    ///
+    /// The method downloads the URL configured in this `Download` instance to the resolved
+    /// output location (or to stdout when the configured output is `"-"`). It creates parent
+    /// directories as needed, respects the configured overwrite mode (skip, force, or prompt),
+    /// supports resuming interrupted downloads when resume metadata is available, and persists
+    /// resume state during an active download. After a successful download, it clears any
+    /// stored resume metadata, sets the executable bit on ELF binaries, and—if extraction was
+    /// requested—extracts the archive into the configured destination directory.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(PathBuf)` containing the filesystem path to the downloaded file (or `PathBuf::from("-")`
+    /// when written to stdout), or `Err(DownloadError)` on failure.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let dl = Download::new("https://example.com/archive.tar.gz")
+    ///     .output("archive.tar.gz")
+    ///     .extract(true);
+    /// let path = dl.execute().expect("download failed");
+    /// assert!(path.ends_with("archive.tar.gz"));
+    /// ```
     pub fn execute(self) -> Result<PathBuf, DownloadError> {
         if self.output.as_deref() == Some("-") {
             return self.download_to_stdout();
@@ -132,6 +241,21 @@ impl Download {
         Ok(output_path)
     }
 
+    /// Streams the HTTP response body for this download's URL to standard output.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// // The function returns a PathBuf `"-"` to indicate stdout was used.
+    /// let stdout_path = PathBuf::from("-");
+    /// assert_eq!(stdout_path.to_str(), Some("-"));
+    /// ```
+    ///
+    /// # Returns
+    ///
+    /// `PathBuf::from("-")` on success.
     fn download_to_stdout(&self) -> Result<PathBuf, DownloadError> {
         let resp = Http::fetch(&self.url, None, None)?;
         let mut stdout = std::io::stdout();
@@ -143,6 +267,31 @@ impl Download {
         Ok(PathBuf::from("-"))
     }
 
+    /// Download the HTTP response body into the given file path, using resume metadata when available and emitting progress events.
+    ///
+    /// When `resume_info` is provided the method attempts to resume the download from the recorded byte offset and validates server support
+    /// for ranged requests; if the server does not return a partial-content (206) response, the download restarts from the beginning.
+    /// Progress callbacks (if configured on `self`) are invoked with `Progress::Starting`, `Progress::Chunk`, and `Progress::Complete`.
+    ///
+    /// # Parameters
+    ///
+    /// - `path`: destination filesystem path to write the downloaded bytes to. If resuming, the file is opened for append; otherwise it is (re)created.
+    /// - `resume_info`: optional resume metadata describing previously downloaded bytes and a prior `ETag`; when present the method will request a ranged response starting at `resume_info.downloaded`.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on successful completion of the download and file write, or `Err(DownloadError)` on IO, HTTP, or resume-state persistence failures.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::path::Path;
+    ///
+    /// // Illustrative usage (no network interaction in this example).
+    /// let download = crate::download::Download::new("https://example.com/file.tar.gz").output("file.tar.gz");
+    /// // Attempt a fresh download (no resume info).
+    /// let _ = download.download_to_file(Path::new("file.tar.gz"), None);
+    /// ```
     fn download_to_file(
         &self,
         path: &Path,
@@ -222,6 +371,24 @@ impl Download {
         Ok(())
     }
 
+    /// Determine the total size of the response body from HTTP headers.
+    ///
+    /// Checks the `Content-Range` header first (parsing the value after the final '/'),
+    /// and falls back to the `Content-Length` header. If neither header yields a valid
+    /// size, returns 0.
+    ///
+    /// # Returns
+    ///
+    /// `u64` total size in bytes if present in the response headers, `0` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ureq::{Response, Body};
+    ///
+    /// // Given a `Response<Body>` named `resp`, obtain the total size:
+    /// // let total = parse_content_length(&resp);
+    /// ```
     fn parse_content_length(resp: &Response<Body>) -> u64 {
         resp.headers()
             .get(CONTENT_RANGE)
@@ -237,6 +404,27 @@ impl Download {
     }
 }
 
+/// Prompts the user to confirm overwriting the specified path.
+///
+/// Reads a line from stdin after printing "Overwrite <path>? [y/N] " and interprets
+/// a case-insensitive `"y"` or `"yes"` as confirmation.
+///
+/// # Returns
+///
+/// `true` if the user entered `"y"` or `"yes"` (case-insensitive), `false` otherwise.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+///
+/// let confirmed = prompt_overwrite(Path::new("output.bin")).unwrap();
+/// if confirmed {
+///     println!("User confirmed overwrite");
+/// } else {
+///     println!("User declined overwrite");
+/// }
+/// ```
 fn prompt_overwrite(path: &Path) -> std::io::Result<bool> {
     print!("Overwrite {}? [y/N] ", path.display());
     std::io::stdout().flush()?;
@@ -247,6 +435,20 @@ fn prompt_overwrite(path: &Path) -> std::io::Result<bool> {
     Ok(matches!(line.trim().to_lowercase().as_str(), "y" | "yes"))
 }
 
+/// Extracts the archive at `archive_path` into the directory `output_dir`.
+///
+/// This function is intended to unpack supported archive formats (for example `.zip`, `.tar`, `.tar.gz`)
+/// into the specified output directory. Currently the function is a no-op and always returns `Ok(())`.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+/// // Intended usage; currently does nothing and returns Ok(())
+/// let archive = Path::new("example.tar.gz");
+/// let out_dir = Path::new("out");
+/// assert!(crate::download::extract_archive(archive, out_dir).is_ok());
+/// ```
 pub fn extract_archive(archive_path: &Path, output_dir: &Path) -> Result<(), DownloadError> {
     Ok(())
 }
