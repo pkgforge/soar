@@ -120,8 +120,9 @@ impl Filter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use regex::Regex;
+
+    use super::*;
 
     #[test]
     fn test_filter_default() {
@@ -151,7 +152,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("archive.tar.gz"));
         assert!(filter.matches("file-v1.0.tar.gz"));
         assert!(!filter.matches("archive.zip"));
@@ -161,16 +162,13 @@ mod tests {
     #[test]
     fn test_matches_multiple_regexes() {
         let filter = Filter {
-            regexes: vec![
-                Regex::new(r"^file").unwrap(),
-                Regex::new(r"linux").unwrap(),
-            ],
+            regexes: vec![Regex::new(r"^file").unwrap(), Regex::new(r"linux").unwrap()],
             globs: vec![],
             include: vec![],
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-linux-x86_64"));
         assert!(!filter.matches("archive-linux-x86_64")); // doesn't start with "file"
         assert!(!filter.matches("file-windows-x86_64")); // doesn't contain "linux"
@@ -185,7 +183,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("archive.tar.gz"));
         assert!(filter.matches("file.tar.gz"));
         assert!(!filter.matches("archive.TAR.GZ"));
@@ -201,7 +199,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: false,
         };
-        
+
         assert!(filter.matches("archive.tar.gz"));
         assert!(filter.matches("archive.TAR.GZ"));
         assert!(filter.matches("file.Tar.Gz"));
@@ -217,7 +215,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("archive.tar.gz"));
         assert!(filter.matches("file.zip"));
         assert!(!filter.matches("file.tar"));
@@ -233,7 +231,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-linux-x86_64"));
         assert!(filter.matches("linux-binary"));
         assert!(!filter.matches("file-windows-x86_64"));
@@ -249,7 +247,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-linux-x86_64"));
         assert!(!filter.matches("file-linux-arm64")); // missing x86_64
         assert!(!filter.matches("file-darwin-x86_64")); // missing linux
@@ -264,7 +262,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-linux-x86_64"));
         assert!(filter.matches("file-darwin-x86_64"));
         assert!(!filter.matches("file-windows-x86_64"));
@@ -279,7 +277,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: false,
         };
-        
+
         assert!(filter.matches("file-linux-x86_64"));
         assert!(filter.matches("file-LINUX-x86_64"));
         assert!(filter.matches("file-Linux-x86_64"));
@@ -294,7 +292,7 @@ mod tests {
             exclude: vec!["debug".to_string()],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-release"));
         assert!(!filter.matches("file-debug"));
         assert!(!filter.matches("debug-symbols"));
@@ -309,7 +307,7 @@ mod tests {
             exclude: vec!["debug".to_string(), "test".to_string()],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-release"));
         assert!(!filter.matches("file-debug"));
         assert!(!filter.matches("test-binary"));
@@ -325,7 +323,7 @@ mod tests {
             exclude: vec!["debug,test".to_string()],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-release"));
         assert!(!filter.matches("file-debug"));
         assert!(!filter.matches("file-test"));
@@ -340,7 +338,7 @@ mod tests {
             exclude: vec!["debug".to_string()],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-linux-x86_64-v1.0.tar.gz"));
         assert!(!filter.matches("archive-linux-x86_64-v1.0.tar.gz")); // doesn't start with "file"
         assert!(!filter.matches("file-linux-x86_64-v1.0.zip")); // wrong extension
@@ -365,7 +363,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-linux-x86_64"));
         assert!(filter.matches("file-darwin-x86_64"));
     }
@@ -379,7 +377,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         // Empty alternatives should be filtered out
         assert!(filter.matches("file-linux-x86_64"));
         assert!(filter.matches("file-darwin-x86_64"));
@@ -394,7 +392,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-linux-x86_64"));
         assert!(filter.matches("file-darwin-x86_64"));
         assert!(filter.matches("file-windows-x86_64"));
@@ -410,7 +408,7 @@ mod tests {
             exclude: vec![],
             case_sensitive: true,
         };
-        
+
         assert!(filter.matches("file-1.tar.gz"));
         assert!(filter.matches("file-a.tar.gz"));
         assert!(!filter.matches("file-10.tar.gz"));

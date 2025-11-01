@@ -905,14 +905,14 @@ mod tests {
             "org.opencontainers.image.title".to_string(),
             "myfile.tar.gz".to_string(),
         );
-        
+
         let layer = OciLayer {
             media_type: "application/vnd.oci.image.layer.v1.tar".to_string(),
             digest: "sha256:abc123".to_string(),
             size: 1024,
             annotations,
         };
-        
+
         assert_eq!(layer.title(), Some("myfile.tar.gz"));
     }
 
@@ -924,7 +924,7 @@ mod tests {
             size: 1024,
             annotations: std::collections::HashMap::new(),
         };
-        
+
         assert_eq!(layer.title(), None);
     }
 
@@ -932,14 +932,14 @@ mod tests {
     fn test_oci_layer_clone() {
         let mut annotations = std::collections::HashMap::new();
         annotations.insert("key".to_string(), "value".to_string());
-        
+
         let layer1 = OciLayer {
             media_type: "type".to_string(),
             digest: "digest".to_string(),
             size: 100,
             annotations,
         };
-        
+
         let layer2 = layer1.clone();
         assert_eq!(layer1.media_type, layer2.media_type);
         assert_eq!(layer1.digest, layer2.digest);
@@ -964,7 +964,7 @@ mod tests {
             .extract(true)
             .extract_to("/tmp/extract")
             .parallel(4);
-        
+
         assert_eq!(dl.api, "https://custom.registry/v2");
         assert_eq!(dl.output, Some("downloads".to_string()));
         assert!(dl.extract);
@@ -976,7 +976,7 @@ mod tests {
     fn test_oci_download_parallel_clamped() {
         let dl = OciDownload::new("org/repo:tag").parallel(0);
         assert_eq!(dl.parallel, 1);
-        
+
         let dl = OciDownload::new("org/repo:tag").parallel(100);
         assert_eq!(dl.parallel, 100);
     }
@@ -1001,9 +1001,12 @@ mod tests {
                 }
             ]
         }"#;
-        
+
         let manifest: OciManifest = serde_json::from_str(json).unwrap();
-        assert_eq!(manifest.media_type, "application/vnd.oci.image.manifest.v1+json");
+        assert_eq!(
+            manifest.media_type,
+            "application/vnd.oci.image.manifest.v1+json"
+        );
         assert_eq!(manifest.config.digest, "sha256:config123");
         assert_eq!(manifest.layers.len(), 1);
         assert_eq!(manifest.layers[0].title(), Some("file.tar.gz"));
@@ -1016,7 +1019,7 @@ mod tests {
             "digest": "sha256:abc",
             "size": 2048
         }"#;
-        
+
         let layer: OciLayer = serde_json::from_str(json).unwrap();
         assert_eq!(layer.media_type, "application/vnd.oci.image.layer.v1.tar");
         assert_eq!(layer.digest, "sha256:abc");
@@ -1031,9 +1034,12 @@ mod tests {
             "digest": "sha256:xyz789",
             "size": 256
         }"#;
-        
+
         let config: OciConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.media_type, "application/vnd.oci.image.config.v1+json");
+        assert_eq!(
+            config.media_type,
+            "application/vnd.oci.image.config.v1+json"
+        );
         assert_eq!(config.digest, "sha256:xyz789");
         assert_eq!(config.size, 256);
     }

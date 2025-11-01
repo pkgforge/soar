@@ -113,10 +113,7 @@ mod tests {
     #[test]
     fn test_download_error_no_match() {
         let err = DownloadError::NoMatch {
-            available: vec![
-                "file1.zip".to_string(),
-                "file2.tar.gz".to_string(),
-            ],
+            available: vec!["file1.zip".to_string(), "file2.tar.gz".to_string()],
         };
         let msg = format!("{}", err);
         assert!(msg.contains("No matching assets found"));
@@ -153,10 +150,7 @@ mod tests {
     #[test]
     fn test_download_error_multiple() {
         let err = DownloadError::Multiple {
-            errors: vec![
-                "Error 1".to_string(),
-                "Error 2".to_string(),
-            ],
+            errors: vec!["Error 1".to_string(), "Error 2".to_string()],
         };
         let msg = format!("{}", err);
         assert_eq!(msg, "Multiple download errors occurred");
@@ -179,12 +173,9 @@ mod tests {
 
     #[test]
     fn test_from_ureq_error() {
-        // Create a simple ureq error by attempting to connect to an invalid address
-        let ureq_err = ureq::Error::Transport(
-            std::io::Error::new(std::io::ErrorKind::Other, "test error").into()
-        );
+        let ureq_err = ureq::Error::ConnectionFailed;
         let download_err: DownloadError = ureq_err.into();
-        
+
         match download_err {
             DownloadError::Network(_) => (),
             _ => panic!("Expected Network error variant"),
@@ -195,7 +186,7 @@ mod tests {
     fn test_error_source_chain() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let err = DownloadError::Io(io_err);
-        
+
         // Check that we can get the source
         assert!(std::error::Error::source(&err).is_some());
     }

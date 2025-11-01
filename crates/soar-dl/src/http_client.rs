@@ -325,7 +325,7 @@ mod tests {
         configure_http_client(|cfg| {
             cfg.user_agent = Some("custom-agent/1.0".to_string());
         });
-        
+
         // Verify configuration was applied by checking we can still create requests
         let agent = SharedAgent::new();
         let _ = agent.get("https://example.com");
@@ -336,7 +336,7 @@ mod tests {
         configure_http_client(|cfg| {
             cfg.timeout = Some(Duration::from_secs(10));
         });
-        
+
         let agent = SharedAgent::new();
         let _ = agent.get("https://example.com");
     }
@@ -345,7 +345,7 @@ mod tests {
     fn test_shared_agent_clone() {
         let agent1 = SharedAgent::new();
         let agent2 = agent1.clone();
-        
+
         // Both should work
         let _ = agent1.get("https://example.com");
         let _ = agent2.get("https://example.com");
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn test_apply_headers_none() {
-        let agent = ureq::Agent::config_builder().build().into();
+        let agent: ureq::Agent = ureq::Agent::config_builder().build().into();
         let req = agent.get("https://example.com");
         let req = apply_headers(req, &None);
         let _ = req;
@@ -367,15 +367,15 @@ mod tests {
 
     #[test]
     fn test_apply_headers_some() {
-        let agent = ureq::Agent::config_builder().build().into();
+        let agent: ureq::Agent = ureq::Agent::config_builder().build().into();
         let req = agent.get("https://example.com");
-        
+
         let mut headers = ureq::http::HeaderMap::new();
         headers.insert(
             ureq::http::header::USER_AGENT,
             ureq::http::HeaderValue::from_static("test-agent"),
         );
-        
+
         let req = apply_headers(req, &Some(headers));
         let _ = req;
     }
@@ -384,7 +384,7 @@ mod tests {
     fn test_client_config_clone() {
         let config1 = ClientConfig::default();
         let config2 = config1.clone();
-        
+
         assert_eq!(config1.user_agent, config2.user_agent);
     }
 

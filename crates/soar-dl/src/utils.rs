@@ -139,8 +139,9 @@ pub fn resolve_output_path(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use ureq::http::HeaderValue;
+
+    use super::*;
 
     #[test]
     fn test_filename_from_url_simple() {
@@ -202,27 +203,34 @@ mod tests {
     #[test]
     fn test_filename_from_header_simple() {
         let header = HeaderValue::from_static("attachment; filename=\"example.txt\"");
-        assert_eq!(filename_from_header(&header), Some("example.txt".to_string()));
+        assert_eq!(
+            filename_from_header(&header),
+            Some("example.txt".to_string())
+        );
     }
 
     #[test]
     fn test_filename_from_header_no_quotes() {
         let header = HeaderValue::from_static("attachment; filename=example.txt");
-        assert_eq!(filename_from_header(&header), Some("example.txt".to_string()));
+        assert_eq!(
+            filename_from_header(&header),
+            Some("example.txt".to_string())
+        );
     }
 
     #[test]
     fn test_filename_from_header_with_path() {
         let header = HeaderValue::from_static("attachment; filename=\"/path/to/file.txt\"");
         assert_eq!(filename_from_header(&header), Some("file.txt".to_string()));
-        
+
         let header = HeaderValue::from_static("attachment; filename=\"path\\to\\file.txt\"");
         assert_eq!(filename_from_header(&header), Some("file.txt".to_string()));
     }
 
     #[test]
     fn test_filename_from_header_multiple_params() {
-        let header = HeaderValue::from_static("inline; name=value; filename=\"test.pdf\"; size=1024");
+        let header =
+            HeaderValue::from_static("inline; name=value; filename=\"test.pdf\"; size=1024");
         assert_eq!(filename_from_header(&header), Some("test.pdf".to_string()));
     }
 
@@ -230,7 +238,7 @@ mod tests {
     fn test_filename_from_header_no_filename() {
         let header = HeaderValue::from_static("attachment");
         assert_eq!(filename_from_header(&header), None);
-        
+
         let header = HeaderValue::from_static("inline; name=value");
         assert_eq!(filename_from_header(&header), None);
     }
@@ -252,19 +260,17 @@ mod tests {
         let result = resolve_output_path(
             Some("downloads/"),
             Some("from_url.txt".into()),
-            Some("from_header.txt".into())
-        ).unwrap();
+            Some("from_header.txt".into()),
+        )
+        .unwrap();
         // Should prefer header filename
         assert_eq!(result, PathBuf::from("downloads/from_header.txt"));
     }
 
     #[test]
     fn test_resolve_output_path_trailing_slash_no_header() {
-        let result = resolve_output_path(
-            Some("downloads/"),
-            Some("from_url.txt".into()),
-            None
-        ).unwrap();
+        let result =
+            resolve_output_path(Some("downloads/"), Some("from_url.txt".into()), None).unwrap();
         assert_eq!(result, PathBuf::from("downloads/from_url.txt"));
     }
 
@@ -279,8 +285,9 @@ mod tests {
         let result = resolve_output_path(
             Some("output.txt"),
             Some("url.txt".into()),
-            Some("header.txt".into())
-        ).unwrap();
+            Some("header.txt".into()),
+        )
+        .unwrap();
         assert_eq!(result, PathBuf::from("output.txt"));
     }
 
@@ -289,18 +296,15 @@ mod tests {
         let result = resolve_output_path(
             None,
             Some("from_url.txt".into()),
-            Some("from_header.txt".into())
-        ).unwrap();
+            Some("from_header.txt".into()),
+        )
+        .unwrap();
         assert_eq!(result, PathBuf::from("from_header.txt"));
     }
 
     #[test]
     fn test_resolve_output_path_none_uses_url() {
-        let result = resolve_output_path(
-            None,
-            Some("from_url.txt".into()),
-            None
-        ).unwrap();
+        let result = resolve_output_path(None, Some("from_url.txt".into()), None).unwrap();
         assert_eq!(result, PathBuf::from("from_url.txt"));
     }
 
@@ -312,11 +316,7 @@ mod tests {
 
     #[test]
     fn test_resolve_output_path_with_subdirectories() {
-        let result = resolve_output_path(
-            Some("path/to/"),
-            Some("file.txt".into()),
-            None
-        ).unwrap();
+        let result = resolve_output_path(Some("path/to/"), Some("file.txt".into()), None).unwrap();
         assert_eq!(result, PathBuf::from("path/to/file.txt"));
     }
 }
