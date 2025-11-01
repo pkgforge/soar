@@ -25,7 +25,9 @@ impl Default for ClientConfig {
     /// # Examples
     ///
     /// ```
-    /// let cfg = crates::soar_dl::http_client::ClientConfig::default();
+    /// use soar_dl::http_client::ClientConfig;
+    ///
+    /// let cfg = ClientConfig::default();
     /// assert_eq!(cfg.user_agent.as_deref(), Some("pkgforge/soar"));
     /// assert!(cfg.proxy.is_none());
     /// assert!(cfg.headers.is_none());
@@ -50,6 +52,8 @@ impl ClientConfig {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::http_client::ClientConfig;
+    ///
     /// let config = ClientConfig::default();
     /// let agent = config.build();
     /// // create a request builder using the configured agent
@@ -92,7 +96,7 @@ impl SharedAgent {
     /// # Examples
     ///
     /// ```
-    /// use crate::http_client::SharedAgent;
+    /// use soar_dl::http_client::SharedAgent;
     ///
     /// let _agent = SharedAgent::new();
     /// ```
@@ -140,8 +144,9 @@ impl SharedAgent {
     /// # Examples
     ///
     /// ```no_run
-    /// let req = crate::SHARED_AGENT.post("https://example.com/");
-    /// let req = req.send_string("payload"); // sends the request with a string body
+    /// use soar_dl::http_client::SHARED_AGENT;
+    ///
+    /// let req = SHARED_AGENT.post("https://example.com/");
     /// ```
     pub fn post<T>(&self, uri: T) -> RequestBuilder<WithBody>
     where
@@ -158,14 +163,10 @@ impl SharedAgent {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::http_client::SHARED_AGENT;
+    ///
     /// let req = SHARED_AGENT.put("https://example.com/resource");
-    /// // `req` is a `RequestBuilder<ureq::WithBody>` ready to have a body set and be sent:
-    /// // let resp = req.send_string("payload");
     /// ```
-    pub fn put<T>(&self, uri: T) -> RequestBuilder<WithBody>
-    where
-    Uri: TryFrom<T>,
-    <Uri as TryFrom<T>>::Error: Into<http::Error>,
     pub fn put<T>(&self, uri: T) -> RequestBuilder<WithBody>
     where
         Uri: TryFrom<T>,
@@ -185,6 +186,8 @@ impl SharedAgent {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::http_client::SharedAgent;
+    ///
     /// let agent = SharedAgent::new();
     /// let _req = agent.delete("https://example.com/resource");
     /// ```
@@ -204,22 +207,6 @@ impl SharedAgent {
 /// If `headers` is `Some`, each header key/value pair is added to the provided request
 /// and the modified `RequestBuilder` is returned. If `headers` is `None`, the original
 /// request is returned unchanged.
-///
-/// # Examples
-///
-/// ```
-/// use http::HeaderMap;
-/// use ureq::Agent;
-///
-/// // create headers
-/// let mut headers = HeaderMap::new();
-/// headers.insert("x-test".parse().unwrap(), "v".parse().unwrap());
-///
-/// let agent = Agent::new();
-/// let req = agent.get("http://example.com");
-/// let req = apply_headers(req, &Some(headers));
-/// // `req` now contains the `x-test: v` header
-/// ```
 fn apply_headers<B>(mut req: RequestBuilder<B>, headers: &Option<HeaderMap>) -> RequestBuilder<B> {
     if let Some(headers) = headers {
         for (key, value) in headers.iter() {
@@ -239,6 +226,8 @@ pub static SHARED_AGENT: LazyLock<SharedAgent> = LazyLock::new(SharedAgent::new)
 /// # Examples
 ///
 /// ```
+/// use soar_dl::http_client::configure_http_client;
+///
 /// // Change the global user agent string used by the shared HTTP client.
 /// configure_http_client(|cfg| {
 ///     cfg.user_agent = Some("my-app/1.0".to_string());

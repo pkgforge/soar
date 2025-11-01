@@ -44,6 +44,8 @@ impl Download {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::download::Download;
+    ///
     /// let dl = Download::new("https://example.com/archive.tar.gz")
     ///     .output("archive.tar.gz");
     /// // `dl` is ready to call `execute()`
@@ -70,7 +72,8 @@ impl Download {
     /// # Examples
     ///
     /// ```
-    /// use crate::download::Download;
+    /// use soar_dl::download::Download;
+    ///
     /// let _ = Download::new("https://example.com/file").output("path/to/file");
     /// ```
     pub fn output(mut self, output: impl Into<String>) -> Self {
@@ -85,8 +88,8 @@ impl Download {
     /// # Examples
     ///
     /// ```
-    /// use crate::download::Download;
-    /// use crate::types::OverwriteMode;
+    /// use soar_dl::download::Download;
+    /// use soar_dl::types::OverwriteMode;
     ///
     /// let d = Download::new("https://example.com/file")
     ///     .overwrite(OverwriteMode::Force)
@@ -105,7 +108,9 @@ impl Download {
     /// # Examples
     ///
     /// ```
-    /// let dl = crate::download::Download::new("https://example.com/archive.tar.gz")
+    /// use soar_dl::download::Download;
+    ///
+    /// let dl = Download::new("https://example.com/archive.tar.gz")
     ///     .extract(true);
     /// ```
     pub fn extract(mut self, extract: bool) -> Self {
@@ -122,6 +127,8 @@ impl Download {
     /// # Examples
     ///
     /// ```no_run
+    /// use soar_dl::download::Download;
+    ///
     /// let dl = Download::new("https://example.com/archive.tar.gz")
     ///     .extract(true)
     ///     .extract_to("/tmp/my-extract-dir");
@@ -137,14 +144,14 @@ impl Download {
     ///
     /// # Examples
     ///
-    /// ```
-    /// use crate::download::Download;
-    /// use crate::types::Progress;
+    /// ```no_run
+    /// use soar_dl::download::Download;
+    /// use soar_dl::types::Progress;
     ///
     /// let _dl = Download::new("https://example.com/file")
     ///     .progress(|event: Progress| match event {
     ///         Progress::Starting { total } => eprintln!("starting, total={}", total),
-    ///         Progress::Chunk { downloaded, chunk } => eprintln!("downloaded {} (+{})", downloaded, chunk),
+    ///         Progress::Chunk { total, current } => eprintln!("downloaded {} (+{})", total, current),
     ///         Progress::Complete { total } => eprintln!("complete, total={}", total),
     ///     });
     /// ```
@@ -173,7 +180,9 @@ impl Download {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
+    /// use soar_dl::download::Download;
+    ///
     /// let dl = Download::new("https://example.com/archive.tar.gz")
     ///     .output("archive.tar.gz")
     ///     .extract(true);
@@ -281,17 +290,6 @@ impl Download {
     /// # Returns
     ///
     /// `Ok(())` on successful completion of the download and file write, or `Err(DownloadError)` on IO, HTTP, or resume-state persistence failures.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::Path;
-    ///
-    /// // Illustrative usage (no network interaction in this example).
-    /// let download = crate::download::Download::new("https://example.com/file.tar.gz").output("file.tar.gz");
-    /// // Attempt a fresh download (no resume info).
-    /// let _ = download.download_to_file(Path::new("file.tar.gz"), None);
-    /// ```
     fn download_to_file(
         &self,
         path: &Path,
@@ -380,15 +378,6 @@ impl Download {
     /// # Returns
     ///
     /// `u64` total size in bytes if present in the response headers, `0` otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use ureq::{Response, Body};
-    ///
-    /// // Given a `Response<Body>` named `resp`, obtain the total size:
-    /// // let total = parse_content_length(&resp);
-    /// ```
     fn parse_content_length(resp: &Response<Body>) -> u64 {
         resp.headers()
             .get(CONTENT_RANGE)
@@ -412,19 +401,6 @@ impl Download {
 /// # Returns
 ///
 /// `true` if the user entered `"y"` or `"yes"` (case-insensitive), `false` otherwise.
-///
-/// # Examples
-///
-/// ```no_run
-/// use std::path::Path;
-///
-/// let confirmed = prompt_overwrite(Path::new("output.bin")).unwrap();
-/// if confirmed {
-///     println!("User confirmed overwrite");
-/// } else {
-///     println!("User declined overwrite");
-/// }
-/// ```
 fn prompt_overwrite(path: &Path) -> std::io::Result<bool> {
     print!("Overwrite {}? [y/N] ", path.display());
     std::io::stdout().flush()?;

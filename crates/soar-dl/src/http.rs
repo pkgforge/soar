@@ -20,13 +20,13 @@ impl Http {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// # use soar_dl::http::Http;
-    /// # use ureq::http::Status;
+    ///
     /// let resp = Http::fetch("https://example.com/resource", Some(1024), Some("\"etag-value\""));
     /// match resp {
     ///     Ok(r) => {
-    ///         assert!(r.status() < 600); // got a response
+    ///         assert!(r.status().as_u16() < 600); // got a response
     ///     }
     ///     Err(e) => panic!("request failed: {:?}", e),
     /// }
@@ -73,4 +73,3 @@ impl Http {
             .map_err(|_| DownloadError::InvalidResponse)
     }
 }
-

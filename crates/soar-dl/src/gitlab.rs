@@ -10,11 +10,11 @@ pub struct GitLab;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GitLabRelease {
-    name: String,
-    tag_name: String,
-    upcoming_release: bool,
-    released_at: String,
-    assets: GitLabAssets,
+    pub name: String,
+    pub tag_name: String,
+    pub upcoming_release: bool,
+    pub released_at: String,
+    pub assets: GitLabAssets,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +52,9 @@ impl Platform for GitLab {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::GitLab;
+    /// use soar_dl::traits::Platform;
+    ///
     /// // Fetch all releases for a namespaced project
     /// let _ = GitLab::fetch_releases("group/project", None);
     ///
@@ -62,12 +65,17 @@ impl Platform for GitLab {
         project: &str,
         tag: Option<&str>,
     ) -> Result<Vec<Self::Release>, DownloadError> {
-        let encoded = project.replace('/', "%2F");
+        let encoded_project = project.replace('/', "%2F");
         let path = match tag {
             Some(t) if project.chars().all(char::is_numeric) => {
-                format!("/api/v4/projects/{}/releases/{}", encoded, t)
+                let encoded_tag =
+                    url::form_urlencoded::byte_serialize(t.as_bytes()).collect::<String>();
+                format!(
+                    "/api/v4/projects/{}/releases/{}",
+                    encoded_project, encoded_tag
+                )
             }
-            _ => format!("/api/v4/projects/{}/releases", encoded),
+            _ => format!("/api/v4/projects/{}/releases", encoded_project),
         };
 
         fetch_with_fallback::<Self::Release>(
@@ -87,6 +95,9 @@ impl Release for GitLabRelease {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::GitLabAsset;
+    /// use soar_dl::traits::Asset;
+    ///
     /// let asset = GitLabAsset { name: String::from("v1.0.0"), direct_asset_url: String::from("https://example") };
     /// assert_eq!(asset.name(), "v1.0.0");
     /// ```
@@ -99,6 +110,9 @@ impl Release for GitLabRelease {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::{GitLabAssets, GitLabRelease};
+    /// use soar_dl::traits::Release;
+    ///
     /// let r = GitLabRelease {
     ///     name: "Release".into(),
     ///     tag_name: "v1.0.0".into(),
@@ -121,6 +135,9 @@ impl Release for GitLabRelease {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::{GitLabAssets, GitLabRelease};
+    /// use soar_dl::traits::Release;
+    ///
     /// let rel = GitLabRelease {
     ///     name: "v1".to_string(),
     ///     tag_name: "v1".to_string(),
@@ -139,6 +156,9 @@ impl Release for GitLabRelease {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::{GitLabAssets, GitLabRelease};
+    /// use soar_dl::traits::Release;
+    ///
     /// let r = GitLabRelease {
     ///     name: String::from("v1"),
     ///     tag_name: String::from("v1"),
@@ -157,6 +177,9 @@ impl Release for GitLabRelease {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::{GitLabAsset, GitLabAssets, GitLabRelease};
+    /// use soar_dl::traits::{Asset, Release};
+    ///
     /// let asset = GitLabAsset { name: "file.tar.gz".into(), direct_asset_url: "https://example.com/file.tar.gz".into() };
     /// let assets = GitLabAssets { links: vec![asset.clone()] };
     /// let release = GitLabRelease {
@@ -185,6 +208,9 @@ impl Asset for GitLabAsset {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::GitLabAsset;
+    /// use soar_dl::traits::Asset;
+    ///
     /// let asset = GitLabAsset { name: String::from("v1.0.0"), direct_asset_url: String::from("https://example") };
     /// assert_eq!(asset.name(), "v1.0.0");
     /// ```
@@ -199,6 +225,9 @@ impl Asset for GitLabAsset {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::GitLabAsset;
+    /// use soar_dl::traits::Asset;
+    ///
     /// let asset = GitLabAsset {
     ///     name: "example".into(),
     ///     direct_asset_url: "https://gitlab.com/example".into(),
@@ -214,6 +243,9 @@ impl Asset for GitLabAsset {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::gitlab::GitLabAsset;
+    /// use soar_dl::traits::Asset;
+    ///
     /// let asset = GitLabAsset {
     ///     name: String::from("example"),
     ///     direct_asset_url: String::from("https://example.com/download"),

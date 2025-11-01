@@ -10,18 +10,18 @@ pub struct Github;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubRelease {
-    name: Option<String>,
-    tag_name: String,
-    prerelease: bool,
-    published_at: String,
-    assets: Vec<GithubAsset>,
+    pub name: Option<String>,
+    pub tag_name: String,
+    pub prerelease: bool,
+    pub published_at: String,
+    pub assets: Vec<GithubAsset>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubAsset {
-    name: String,
-    size: u64,
-    browser_download_url: String,
+    pub name: String,
+    pub size: u64,
+    pub browser_download_url: String,
 }
 
 impl Platform for Github {
@@ -47,6 +47,9 @@ impl Platform for Github {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::github::Github;
+    /// use soar_dl::traits::{Platform, Release};
+    ///
     /// let releases = Github::fetch_releases("rust-lang/rust", None).unwrap();
     /// assert!(releases.iter().all(|r| r.tag().len() > 0));
     /// ```
@@ -83,6 +86,9 @@ impl Release for GithubRelease {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::github::GithubRelease;
+    /// use soar_dl::traits::Release;
+    ///
     /// let r = GithubRelease {
     ///     name: Some("v1.0".into()),
     ///     tag_name: "v1.0".into(),
@@ -110,7 +116,10 @@ impl Release for GithubRelease {
     /// # Examples
     ///
     /// ```
-    /// let release = crate::github::GithubRelease {
+    /// use soar_dl::github::GithubRelease;
+    /// use soar_dl::traits::Release;
+    ///
+    /// let release = GithubRelease {
     ///     name: None,
     ///     tag_name: "v1.0.0".into(),
     ///     prerelease: false,
@@ -136,6 +145,9 @@ impl Release for GithubRelease {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::github::GithubRelease;
+    /// use soar_dl::traits::Release;
+    ///
     /// let r = GithubRelease {
     ///     name: None,
     ///     tag_name: "v1.0.0".to_string(),
@@ -154,6 +166,9 @@ impl Release for GithubRelease {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::github::GithubRelease;
+    /// use soar_dl::traits::Release;
+    ///
     /// let r = GithubRelease {
     ///     name: None,
     ///     tag_name: "v1.0.0".into(),
@@ -174,7 +189,8 @@ impl Release for GithubRelease {
     /// # Examples
     ///
     /// ```
-    /// use crate::github::{GithubRelease, GithubAsset};
+    /// use soar_dl::github::{GithubRelease, GithubAsset};
+    /// use soar_dl::traits::Release;
     ///
     /// let asset = GithubAsset {
     ///     name: "example.zip".into(),
@@ -203,7 +219,10 @@ impl Asset for GithubAsset {
     /// # Examples
     ///
     /// ```
-    /// let asset = crate::github::GithubAsset {
+    /// use soar_dl::github::GithubAsset;
+    /// use soar_dl::traits::Asset;
+    ///
+    /// let asset = GithubAsset {
     ///     name: "file.zip".to_string(),
     ///     size: 123,
     ///     browser_download_url: "https://example.com/file.zip".to_string(),
@@ -227,7 +246,10 @@ impl Asset for GithubAsset {
     /// # Examples
     ///
     /// ```
-    /// let asset = crate::github::GithubAsset { name: "file".into(), size: 12345, browser_download_url: "https://example.com".into() };
+    /// use soar_dl::github::GithubAsset;
+    /// use soar_dl::traits::Asset;
+    ///
+    /// let asset = GithubAsset { name: "file".into(), size: 12345, browser_download_url: "https://example.com".into() };
     /// assert_eq!(asset.size(), Some(12345));
     /// ```
     fn size(&self) -> Option<u64> {
@@ -239,7 +261,10 @@ impl Asset for GithubAsset {
     /// # Examples
     ///
     /// ```
-    /// let asset = crate::github::GithubAsset {
+    /// use soar_dl::github::GithubAsset;
+    /// use soar_dl::traits::Asset;
+    ///
+    /// let asset = GithubAsset {
     ///     name: "example".into(),
     ///     size: 123,
     ///     browser_download_url: "https://example.com/download".into(),

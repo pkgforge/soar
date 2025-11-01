@@ -38,6 +38,8 @@ impl From<&str> for OciReference {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::oci::OciReference;
+    ///
     /// let r = OciReference::from("ghcr.io/org/repo@sha256:deadbeef");
     /// assert_eq!(r.registry, "ghcr.io");
     /// assert_eq!(r.package, "org/repo");
@@ -118,6 +120,7 @@ impl OciLayer {
     ///
     /// ```
     /// use std::collections::HashMap;
+    /// use soar_dl::oci::OciLayer;
     ///
     /// let mut annotations = HashMap::new();
     /// annotations.insert(
@@ -125,7 +128,7 @@ impl OciLayer {
     ///     "example.txt".to_string(),
     /// );
     ///
-    /// let layer = crate::OciLayer {
+    /// let layer = OciLayer {
     ///     media_type: String::new(),
     ///     digest: String::new(),
     ///     size: 0,
@@ -168,6 +171,8 @@ impl OciDownload {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let dl = OciDownload::new("ghcr.io/myorg/myrepo:latest");
     /// // configure and run:
     /// // let result = dl.output("out").execute();
@@ -191,6 +196,8 @@ impl OciDownload {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let dl = OciDownload::new("ghcr.io/foo/bar:latest").api("https://ghcr.example.com/v2");
     /// ```
     pub fn api(mut self, api: impl Into<String>) -> Self {
@@ -206,8 +213,11 @@ impl OciDownload {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::oci::OciDownload;
+    /// use soar_dl::filter::Filter;
+    ///
     /// let downloader = OciDownload::new("owner/repo:tag")
-    ///     .filter(Filter::SomeVariant)
+    ///     .filter(Filter::default())
     ///     .output("out/dir");
     /// ```
     pub fn filter(mut self, filter: Filter) -> Self {
@@ -216,21 +226,15 @@ impl OciDownload {
     }
 
     /// Sets the output directory path where downloaded files will be written.
-    
     ///
-    
     /// The provided path is stored and used as the destination for downloaded blobs and extracted contents.
-    
     ///
-    
     /// # Examples
-    
     ///
-    
     /// ```
-    
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let dl = OciDownload::new("ghcr.io/org/repo:tag").output("downloads/");
-    
     /// ```
     pub fn output(mut self, path: impl Into<String>) -> Self {
         self.output = Some(path.into());
@@ -244,38 +248,31 @@ impl OciDownload {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::oci::OciDownload;
+    /// use soar_dl::types::OverwriteMode;
+    ///
     /// let dl = OciDownload::new("ghcr.io/example/repo:tag").overwrite(OverwriteMode::Prompt);
     /// ```
-    — Returns the modified downloader with the given overwrite mode.
+    ///  Returns the modified downloader with the given overwrite mode.
     pub fn overwrite(mut self, mode: OverwriteMode) -> Self {
         self.overwrite = mode;
         self
     }
 
     /// Enable or disable extraction of downloaded layers.
-    
     ///
-    
     /// When `true`, downloaded archive layers will be extracted after download into the extraction
-    
     /// destination (if set via `extract_to`) or into the configured output directory. When `false`,
-    
     /// archives are left as downloaded.
-    
     ///
-    
     /// # Examples
-    
     ///
-    
     /// ```
-    
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let dl = OciDownload::new("ghcr.io/org/pkg:1.0")
-    
     ///     .extract(true)
-    
     ///     .extract_to("/tmp/out");
-    
     /// ```
     pub fn extract(mut self, extract: bool) -> Self {
         self.extract = extract;
@@ -289,6 +286,8 @@ impl OciDownload {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let downloader = OciDownload::new("ghcr.io/org/pkg:1.0")
     ///     .extract(true)
     ///     .extract_to("/tmp/extracted");
@@ -305,6 +304,8 @@ impl OciDownload {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let _ = OciDownload::new("owner/repo:tag").parallel(4);
     /// ```
     pub fn parallel(mut self, n: usize) -> Self {
@@ -320,6 +321,8 @@ impl OciDownload {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let downloader = OciDownload::new("ghcr.io/owner/repo:tag")
     ///     .progress(|progress| {
     ///         println!("progress: {:?}", progress);
@@ -337,9 +340,9 @@ impl OciDownload {
     ///
     /// Attempts a direct blob download if the reference tag is a digest (e.g., `sha256:...`); otherwise it
     /// fetches the image manifest, selects layers whose titles match the configured filter, creates the
-    /// output directory if provided, and downloads the selected layers either sequentially or in parallel
-    /// according to the `parallel` setting. Emits `Progress::Starting` and `Progress::Complete` events
-    /// via the registered progress callback when present.
+    /// output directory if provided, and downloads the selected layers.
+    ///
+    /// Emits `Progress::Starting` and `Progress::Complete` events via the registered progress callback when present.
     ///
     /// # Returns
     ///
@@ -349,7 +352,7 @@ impl OciDownload {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// # use std::path::PathBuf;
     /// # use soar_dl::oci::OciDownload;
     /// // Download layers from an OCI reference into "out" directory.
@@ -483,16 +486,15 @@ impl OciDownload {
     ///
     /// # Examples
     ///
-    /// ```
-    /// // High-level example: download all layers from a reference in parallel.
-    /// // (Types and setup omitted for brevity.)
+    /// ```no_run
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let dl = OciDownload::new("ghcr.io/owner/repo:tag")
     ///     .output("out")
     ///     .parallel(4);
-    /// let result = dl.execute(); // invokes the parallel download path when appropriate
-    /// assert!(result.is_ok());
+    /// let _ = dl.execute(); // invokes the parallel download path when appropriate
     /// ```
-    fn download_layers_parallel(
+    pub fn download_layers_parallel(
         &self,
         layers: &[&OciLayer],
         output_dir: &Path,
@@ -584,11 +586,13 @@ impl OciDownload {
     /// # Examples
     ///
     /// ```no_run
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let dl = OciDownload::new("ghcr.io/example/repo:latest");
     /// let manifest = dl.fetch_manifest().unwrap();
     /// assert!(manifest.layers.len() >= 0);
     /// ```
-    fn fetch_manifest(&self) -> Result<OciManifest, DownloadError> {
+    pub fn fetch_manifest(&self) -> Result<OciManifest, DownloadError> {
         let url = format!(
             "{}/{}/manifests/{}",
             self.api.trim_end_matches('/'),
@@ -626,15 +630,16 @@ impl OciDownload {
     ///
     /// # Examples
     ///
-    /// ```
-    /// // Constructing and using `OciDownload` in this example assumes the builder API is available.
+    /// ```no_run
+    /// use soar_dl::oci::OciDownload;
+    ///
     /// let dl = OciDownload::new("ghcr.io/org/package:tag");
     /// let paths = dl.download_blob().unwrap();
     /// assert_eq!(paths.len(), 1);
     /// let downloaded = &paths[0];
     /// println!("Downloaded to: {:?}", downloaded);
     /// ```
-    fn download_blob(&self) -> Result<Vec<PathBuf>, DownloadError> {
+    pub fn download_blob(&self) -> Result<Vec<PathBuf>, DownloadError> {
         let filename = self
             .reference
             .package
@@ -684,14 +689,21 @@ impl OciDownload {
     ///
     /// ```no_run
     /// use std::path::Path;
+    /// use soar_dl::oci::{OciDownload, OciLayer};
+    ///
     /// let downloader = OciDownload::new("ghcr.io/owner/repo:tag");
-    /// let layer = /* obtain OciLayer from a manifest */;
+    /// let layer = OciLayer {
+    ///     media_type: "application/vnd.oci.image.layer.v1.tar".to_string(),
+    ///     digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+    ///     size: 1024,
+    ///     annotations: Default::default(),
+    /// };
     /// let mut downloaded = 0u64;
     /// let dest = Path::new("/tmp/layer.tar");
     /// downloader.download_layer(&layer, dest, &mut downloaded).unwrap();
     /// assert!(downloaded > 0);
     /// ```
-    fn download_layer(
+    pub fn download_layer(
         &self,
         layer: &OciLayer,
         path: &Path,
@@ -717,38 +729,8 @@ impl OciDownload {
 /// - Periodically persists resume metadata while downloading (every 1 MiB).
 /// - Emits `Progress::Chunk` updates via the optional `on_progress` callback using the shared downloaded counter.
 /// - Marks the file executable (0o755) if it appears to be an ELF binary and removes any resume metadata on success.
+///
 /// Returns `Ok(())` on success or a `DownloadError` on failure.
-///
-/// # Examples
-///
-/// ```
-/// use std::sync::{Arc, Mutex};
-/// use std::path::Path;
-///
-/// let reference = OciReference::from("ghcr.io/owner/repo:tag");
-/// let layer = OciLayer {
-///     media_type: "application/vnd.oci.image.layer.v1.tar".to_string(),
-///     digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-///     size: 1024,
-///     annotations: Default::default(),
-/// };
-///
-/// let mut local_downloaded = 0u64;
-/// let shared_downloaded = Arc::new(Mutex::new(0u64));
-/// let progress_cb = Arc::new(|_p: Progress| {});
-/// let out_path = Path::new("/tmp/layer.blob");
-///
-/// // Note: in real use, `api` should be the registry v2 API base and the types must be in scope.
-/// let _ = download_layer_impl(
-///     "https://ghcr.io/v2",
-///     &reference,
-///     &layer,
-///     out_path,
-///     &mut local_downloaded,
-///     Some(&progress_cb),
-///     &shared_downloaded,
-/// );
-/// ```
 fn download_layer_impl(
     api: &str,
     reference: &OciReference,

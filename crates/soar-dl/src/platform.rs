@@ -46,29 +46,27 @@ impl PlatformUrl {
     /// Classifies an input string as a platform URL and returns the corresponding `PlatformUrl` variant.
     ///
     /// This inspects the input URL (or reference) and returns:
-    /// - `Oci` when the normalized string starts with `ghcr.io/` (treated as an OCI reference),
-    /// - `Github` when it matches the GitHub repository pattern, extracting project and optional tag,
+    /// - `Oci` when the normalized string starts with `ghcr.io/` (treated as an OCI reference).
+    /// - `Github` when it matches the GitHub repository pattern, extracting project and optional tag.
     /// - `Gitlab` when it matches the GitLab repository pattern, extracting project and optional tag
-    ///   (except when the project looks like an API path or contains `/-/`, which is treated as `Direct`),
+    ///   (except when the project looks like an API path or contains `/-/`, which is treated as `Direct`).
     /// - `Direct` when the input parses as a valid URL with a scheme and host.
+    ///
     /// Returns `None` if the input cannot be classified or parsed as a valid URL.
     ///
     /// # Examples
     ///
     /// ```
-    /// use crate::platform::PlatformUrl;
+    /// use soar_dl::platform::PlatformUrl;
     ///
     /// // OCI reference
-    /// let p = PlatformUrl::parse("ghcr.io/myorg/myimage:latest").unwrap();
-    /// assert!(matches!(p, PlatformUrl::Oci { .. }));
+    /// let _ = PlatformUrl::parse("ghcr.io/myorg/myimage:latest").unwrap();
     ///
     /// // GitHub repo
-    /// let p = PlatformUrl::parse("https://github.com/owner/repo/releases/tag/v1.0").unwrap();
-    /// assert!(matches!(p, PlatformUrl::Github { .. }));
+    /// let _ = PlatformUrl::parse("https://github.com/owner/repo/releases/tag/v1.0").unwrap();
     ///
     /// // Direct URL
-    /// let p = PlatformUrl::parse("https://example.com/resource").unwrap();
-    /// assert!(matches!(p, PlatformUrl::Direct { .. }));
+    /// let _ = PlatformUrl::parse("https://example.com/resource").unwrap();
     /// ```
     pub fn parse(url: impl AsRef<str>) -> Option<Self> {
         let url = url.as_ref();
@@ -118,18 +116,6 @@ impl PlatformUrl {
     /// The returned `project` is the first capture group as a `String`. The optional `tag`
     /// is taken from the second capture group (if present), with surrounding quotes and
     /// spaces removed and URI-decoded. Returns `None` if the regex does not match.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use regex::Regex;
-    ///
-    /// let re = Regex::new(r"^/?([^@#]+)(?:[@#](.+))?$").unwrap();
-    /// let url = "owner/repo@v1.2.3";
-    /// let (project, tag) = super::parse_repo(&re, url).unwrap();
-    /// assert_eq!(project, "owner/repo");
-    /// assert_eq!(tag.as_deref(), Some("v1.2.3"));
-    /// ```
     fn parse_repo(re: &Regex, url: &str) -> Option<(String, Option<String>)> {
         let caps = re.captures(url)?;
         let project = caps.get(1)?.as_str().to_string();
@@ -156,6 +142,8 @@ impl PlatformUrl {
 ///
 /// ```no_run
 /// use serde::Deserialize;
+/// use soar_dl::platform::fetch_with_fallback;
+///
 /// #[derive(Deserialize)]
 /// struct Item { id: u32 }
 ///

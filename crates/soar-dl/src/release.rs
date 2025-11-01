@@ -35,9 +35,10 @@ impl<P: Platform> ReleaseDownload<P> {
     /// # Examples
     ///
     /// ```
-    /// // `MyPlatform` must implement the `Platform` trait for your environment.
-    /// // Replace `MyPlatform` with the concrete platform type you use (e.g., `GitHub`).
-    /// let dl = ReleaseDownload::<MyPlatform>::new("owner/repo");
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::github::Github;
+    ///
+    /// let dl = ReleaseDownload::<Github>::new("owner/repo");
     /// // You can then chain further configuration:
     /// // let dl = dl.tag("v1.2.3").output("downloads/").extract(true);
     /// ```
@@ -63,7 +64,10 @@ impl<P: Platform> ReleaseDownload<P> {
     /// # Examples
     ///
     /// ```
-    /// let builder = ReleaseDownload::<MyPlatform>::new("owner/repo").tag("v1.2.3");
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::github::Github;
+    ///
+    /// let builder = ReleaseDownload::<Github>::new("owner/repo").tag("v1.2.3");
     /// ```
     pub fn tag(mut self, tag: impl Into<String>) -> Self {
         self.tag = Some(tag.into());
@@ -77,7 +81,11 @@ impl<P: Platform> ReleaseDownload<P> {
     /// # Examples
     ///
     /// ```
-    /// let rd = ReleaseDownload::new("owner/repo").filter(Filter::default());
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::filter::Filter;
+    /// use soar_dl::github::Github;
+    ///
+    /// let _rd = ReleaseDownload::<Github>::new("owner/repo").filter(Filter::default());
     /// ```
     pub fn filter(mut self, filter: Filter) -> Self {
         self.filter = filter;
@@ -95,7 +103,10 @@ impl<P: Platform> ReleaseDownload<P> {
     /// # Examples
     ///
     /// ```
-    /// let dl = ReleaseDownload::<MyPlatform>::new("owner/repo").output("downloads");
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::github::Github;
+    ///
+    /// let dl = ReleaseDownload::<Github>::new("owner/repo").output("downloads");
     /// ```
     pub fn output(mut self, path: impl Into<String>) -> Self {
         self.output = Some(path.into());
@@ -109,7 +120,11 @@ impl<P: Platform> ReleaseDownload<P> {
     /// # Examples
     ///
     /// ```
-    /// let dl = ReleaseDownload::new("owner/repo").overwrite(OverwriteMode::Overwrite);
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::types::OverwriteMode;
+    /// use soar_dl::github::Github;
+    ///
+    /// let dl = ReleaseDownload::<Github>::new("owner/repo").overwrite(OverwriteMode::Force);
     /// ```
     pub fn overwrite(mut self, mode: OverwriteMode) -> Self {
         self.overwrite = mode;
@@ -123,7 +138,10 @@ impl<P: Platform> ReleaseDownload<P> {
     /// # Examples
     ///
     /// ```
-    /// let rd = ReleaseDownload::<MyPlatform>::new("owner/repo").extract(true);
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::github::Github;
+    ///
+    /// let rd = ReleaseDownload::<Github>::new("owner/repo").extract(true);
     /// ```
     pub fn extract(mut self, extract: bool) -> Self {
         self.extract = extract;
@@ -139,7 +157,10 @@ impl<P: Platform> ReleaseDownload<P> {
     /// # Examples
     ///
     /// ```
-    /// let rd = ReleaseDownload::new("owner/repo").extract_to("out/artifacts");
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::github::Github;
+    ///
+    /// let rd = ReleaseDownload::<Github>::new("owner/repo").extract_to("out/artifacts");
     /// ```
     pub fn extract_to(mut self, path: impl Into<PathBuf>) -> Self {
         self.extract_to = Some(path.into());
@@ -154,9 +175,11 @@ impl<P: Platform> ReleaseDownload<P> {
     ///
     /// ```
     /// use std::sync::Arc;
-    /// use soar_dl::{ReleaseDownload, Progress};
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::types::Progress;
+    /// use soar_dl::github::Github;
     ///
-    /// let _rd = ReleaseDownload::new("owner/repo")
+    /// let _rd = ReleaseDownload::<Github>::new("owner/repo")
     ///     .progress(|progress: Progress| {
     ///         // handle progress (e.g., log or update UI)
     ///         println!("{:?}", progress);
@@ -173,10 +196,12 @@ impl<P: Platform> ReleaseDownload<P> {
     /// Downloads matched assets for a project's release and returns their local file paths.
     ///
     /// Selects a release by the configured tag if provided; otherwise prefers the first non-prerelease
-    /// release or falls back to the first release. Filters the release's assets using the configured
-    /// `Filter`, downloads each matching asset with the configured output, overwrite, and extraction
-    /// options, and returns a vector of the resulting local `PathBuf`s. Returns an error if no release
-    /// is found or if no assets match the filter.
+    /// release or falls back to the first release.
+    ///
+    /// Filters the release's assets using the configured `Filter`, downloads each matching asset with the configured
+    /// output, overwrite, and extraction options, and returns a vector of the resulting local `PathBuf`s.
+    ///
+    /// Returns an error if no release is found or if no assets match the filter.
     ///
     /// # Returns
     ///
@@ -187,9 +212,11 @@ impl<P: Platform> ReleaseDownload<P> {
     ///
     /// ```no_run
     /// use std::path::PathBuf;
+    /// use soar_dl::release::ReleaseDownload;
+    /// use soar_dl::github::Github;
+    /// use soar_dl::filter::Filter;
     ///
-    /// // Example usage (replace `MyPlatform` with an implementation of `Platform`).
-    /// let paths: Vec<PathBuf> = ReleaseDownload::<MyPlatform>::new("owner/repo")
+    /// let paths: Vec<PathBuf> = ReleaseDownload::<Github>::new("owner/repo")
     ///     .tag("v1.0")
     ///     .filter(Filter::default())
     ///     .output("downloads")

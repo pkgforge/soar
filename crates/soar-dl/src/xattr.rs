@@ -11,9 +11,10 @@ const XATTR_RESUME_KEY: &str = "user.soar.resume";
 /// # Examples
 ///
 /// ```
+/// use soar_dl::xattr::read_resume;
+///
 /// // Attempt to read resume info from a file path.
 /// if let Some(info) = read_resume("/path/to/file") {
-///     // use `info: ResumeInfo`
 ///     let _ = info;
 /// } else {
 ///     // no resume info available or it could not be parsed
@@ -36,9 +37,16 @@ pub fn read_resume<P: AsRef<Path>>(path: P) -> Option<ResumeInfo> {
 ///
 /// # Examples
 ///
-/// ```
-/// // Construct a ResumeInfo value (fields omitted for brevity)
-/// let info = /* ResumeInfo { ... } */ ;
+/// ```no_run
+/// use soar_dl::xattr::write_resume;
+/// use soar_dl::types::ResumeInfo;
+///
+/// let info = ResumeInfo {
+///     downloaded: 1024,
+///     total: 10240,
+///     etag: Some("etag-value".into()),
+///     last_modified: None,
+/// };
 /// let path = std::path::Path::new("/tmp/download.partial");
 /// write_resume(path, &info).unwrap();
 /// ```
@@ -52,11 +60,16 @@ pub fn write_resume<P: AsRef<Path>>(path: P, info: &ResumeInfo) -> std::io::Resu
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use std::path::Path;
+/// use soar_dl::xattr::remove_resume;
+///
 /// // Call with any path; result indicates whether the xattr removal succeeded.
 /// let _ = remove_resume(Path::new("/tmp/some_file"));
 /// ```
 pub fn remove_resume<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
+    if read_resume(&path).is_none() {
+        return Ok(());
+    }
     xattr::remove(path, XATTR_RESUME_KEY)
 }

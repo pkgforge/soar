@@ -25,6 +25,8 @@ impl Filter {
     /// # Examples
     ///
     /// ```
+    /// use soar_dl::filter::Filter;
+    ///
     /// let f = Filter {
     ///     regexes: Vec::new(),
     ///     globs: vec!["*".into()],
@@ -37,7 +39,14 @@ impl Filter {
     pub fn matches(&self, name: &str) -> bool {
         let matches_regex =
             self.regexes.is_empty() || self.regexes.iter().all(|r| r.is_match(name));
-        let matches_glob = self.globs.is_empty() || self.globs.iter().any(|g| glob_match(g, name));
+        let matches_glob = self.globs.is_empty()
+            || if self.case_sensitive {
+                self.globs.iter().any(|g| glob_match(g, name))
+            } else {
+                self.globs
+                    .iter()
+                    .any(|g| glob_match(g.to_lowercase(), name.to_lowercase()))
+            };
         let matches_include = self.matches_keywords(name, &self.include, true);
         let matches_exclude = self.matches_keywords(name, &self.exclude, false);
 
@@ -60,7 +69,7 @@ impl Filter {
     ///
     /// ```
     /// use regex::Regex;
-    /// use crate::filter::Filter;
+    /// use soar_dl::filter::Filter;
     ///
     /// let filter = Filter {
     ///     regexes: vec![],
