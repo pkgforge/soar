@@ -136,3 +136,187 @@ pub fn resolve_output_path(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ureq::http::HeaderValue;
+
+    #[test]
+    fn test_filename_from_url_simple() {
+        assert_eq!(
+            filename_from_url("https://example.com/file.txt"),
+            Some("file.txt".to_string())
+        );
+        assert_eq!(
+            filename_from_url("https://example.com/path/to/archive.tar.gz"),
+            Some("archive.tar.gz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_filename_from_url_trailing_slash() {
+        assert_eq!(filename_from_url("https://example.com/path/"), None);
+        assert_eq!(filename_from_url("https://example.com/"), None);
+    }
+
+    #[test]
+    fn test_filename_from_url_no_path() {
+        assert_eq!(filename_from_url("https://example.com"), None);
+    }
+
+    #[test]
+    fn test_filename_from_url_invalid() {
+        assert_eq!(filename_from_url("not a url"), None);
+        assert_eq!(filename_from_url(""), None);
+    }
+
+    #[test]
+    fn test_filename_from_url_percent_encoded() {
+        assert_eq!(
+            filename_from_url("https://example.com/hello%20world.txt"),
+            Some("hello world.txt".to_string())
+        );
+        assert_eq!(
+            filename_from_url("https://example.com/file%2Bname.tar.gz"),
+            Some("file+name.tar.gz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_filename_from_url_query_params() {
+        assert_eq!(
+            filename_from_url("https://example.com/file.txt?version=1"),
+            Some("file.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_filename_from_url_fragment() {
+        assert_eq!(
+            filename_from_url("https://example.com/file.txt#section"),
+            Some("file.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_filename_from_header_simple() {
+        let header = HeaderValue::from_static("attachment; filename=\"example.txt\"");
+        assert_eq!(filename_from_header(&header), Some("example.txt".to_string()));
+    }
+
+    #[test]
+    fn test_filename_from_header_no_quotes() {
+        let header = HeaderValue::from_static("attachment; filename=example.txt");
+        assert_eq!(filename_from_header(&header), Some("example.txt".to_string()));
+    }
+
+    #[test]
+    fn test_filename_from_header_with_path() {
+        let header = HeaderValue::from_static("attachment; filename=\"/path/to/file.txt\"");
+        assert_eq!(filename_from_header(&header), Some("file.txt".to_string()));
+        
+        let header = HeaderValue::from_static("attachment; filename=\"path\\to\\file.txt\"");
+        assert_eq!(filename_from_header(&header), Some("file.txt".to_string()));
+    }
+
+    #[test]
+    fn test_filename_from_header_multiple_params() {
+        let header = HeaderValue::from_static("inline; name=value; filename=\"test.pdf\"; size=1024");
+        assert_eq!(filename_from_header(&header), Some("test.pdf".to_string()));
+    }
+
+    #[test]
+    fn test_filename_from_header_no_filename() {
+        let header = HeaderValue::from_static("attachment");
+        assert_eq!(filename_from_header(&header), None);
+        
+        let header = HeaderValue::from_static("inline; name=value");
+        assert_eq!(filename_from_header(&header), None);
+    }
+
+    #[test]
+    fn test_filename_from_header_empty_filename() {
+        let header = HeaderValue::from_static("attachment; filename=\"\"");
+        assert_eq!(filename_from_header(&header), Some("".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_output_path_stdout() {
+        let result = resolve_output_path(Some("-"), None, None).unwrap();
+        assert_eq!(result, PathBuf::from("-"));
+    }
+
+    #[test]
+    fn test_resolve_output_path_trailing_slash() {
+        let result = resolve_output_path(
+            Some("downloads/"),
+            Some("from_url.txt".into()),
+            Some("from_header.txt".into())
+        ).unwrap();
+        // Should prefer header filename
+        assert_eq!(result, PathBuf::from("downloads/from_header.txt"));
+    }
+
+    #[test]
+    fn test_resolve_output_path_trailing_slash_no_header() {
+        let result = resolve_output_path(
+            Some("downloads/"),
+            Some("from_url.txt".into()),
+            None
+        ).unwrap();
+        assert_eq!(result, PathBuf::from("downloads/from_url.txt"));
+    }
+
+    #[test]
+    fn test_resolve_output_path_trailing_slash_no_filenames() {
+        let result = resolve_output_path(Some("downloads/"), None, None);
+        assert!(matches!(result, Err(DownloadError::NoFilename)));
+    }
+
+    #[test]
+    fn test_resolve_output_path_explicit_file() {
+        let result = resolve_output_path(
+            Some("output.txt"),
+            Some("url.txt".into()),
+            Some("header.txt".into())
+        ).unwrap();
+        assert_eq!(result, PathBuf::from("output.txt"));
+    }
+
+    #[test]
+    fn test_resolve_output_path_none_uses_header() {
+        let result = resolve_output_path(
+            None,
+            Some("from_url.txt".into()),
+            Some("from_header.txt".into())
+        ).unwrap();
+        assert_eq!(result, PathBuf::from("from_header.txt"));
+    }
+
+    #[test]
+    fn test_resolve_output_path_none_uses_url() {
+        let result = resolve_output_path(
+            None,
+            Some("from_url.txt".into()),
+            None
+        ).unwrap();
+        assert_eq!(result, PathBuf::from("from_url.txt"));
+    }
+
+    #[test]
+    fn test_resolve_output_path_none_no_filenames() {
+        let result = resolve_output_path(None, None, None);
+        assert!(matches!(result, Err(DownloadError::NoFilename)));
+    }
+
+    #[test]
+    fn test_resolve_output_path_with_subdirectories() {
+        let result = resolve_output_path(
+            Some("path/to/"),
+            Some("file.txt".into()),
+            None
+        ).unwrap();
+        assert_eq!(result, PathBuf::from("path/to/file.txt"));
+    }
+}
