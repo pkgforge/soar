@@ -442,12 +442,13 @@ impl OciDownload {
     ) -> Result<Vec<PathBuf>, DownloadError> {
         let mut paths = Vec::new();
         let mut downloaded = 0u64;
+        let total_size: u64 = layers.iter().map(|l| l.size).sum();
 
         for layer in layers {
             let filename = layer.title().unwrap();
             let path = output_dir.join(filename);
 
-            self.download_layer(layer, &path, &mut downloaded)?;
+            self.download_layer(layer, &path, &mut downloaded, total_size)?;
 
             if self.extract {
                 let extract_dir = self
@@ -503,6 +504,8 @@ impl OciDownload {
         let paths = Arc::new(Mutex::new(Vec::new()));
         let errors = Arc::new(Mutex::new(Vec::new()));
 
+        let total_size: u64 = layers.iter().map(|l| l.size).sum();
+
         let owned_layers: Vec<OciLayer> = layers.iter().map(|&layer| layer.clone()).collect();
         let chunks: Vec<_> = owned_layers
             .chunks(layers.len().div_ceil(self.parallel))
@@ -539,6 +542,7 @@ impl OciDownload {
                             &mut local_downloaded,
                             on_progress.as_ref(),
                             &downloaded,
+                            total_size,
                         );
 
                         match result {
@@ -700,7 +704,7 @@ impl OciDownload {
     /// };
     /// let mut downloaded = 0u64;
     /// let dest = Path::new("/tmp/layer.tar");
-    /// downloader.download_layer(&layer, dest, &mut downloaded).unwrap();
+    /// downloader.download_layer(&layer, dest, &mut downloaded, 1024).unwrap();
     /// assert!(downloaded > 0);
     /// ```
     pub fn download_layer(
@@ -708,6 +712,7 @@ impl OciDownload {
         layer: &OciLayer,
         path: &Path,
         downloaded: &mut u64,
+        total_size: u64,
     ) -> Result<(), DownloadError> {
         download_layer_impl(
             &self.api,
@@ -716,7 +721,8 @@ impl OciDownload {
             path,
             downloaded,
             self.on_progress.as_ref(),
-            &std::sync::Arc::new(std::sync::Mutex::new(0u64)),
+            &Arc::new(Mutex::new(0u64)),
+            total_size,
         )
     }
 }
@@ -731,6 +737,7 @@ impl OciDownload {
 /// - Marks the file executable (0o755) if it appears to be an ELF binary and removes any resume metadata on success.
 ///
 /// Returns `Ok(())` on success or a `DownloadError` on failure.
+#[allow(clippy::too_many_arguments)]
 fn download_layer_impl(
     api: &str,
     reference: &OciReference,
@@ -738,7 +745,8 @@ fn download_layer_impl(
     path: &Path,
     local_downloaded: &mut u64,
     on_progress: Option<&Arc<dyn Fn(Progress) + Send + Sync>>,
-    shared_downloaded: &std::sync::Arc<std::sync::Mutex<u64>>,
+    shared_downloaded: &Arc<Mutex<u64>>,
+    total_size: u64,
 ) -> Result<(), DownloadError> {
     let url = format!(
         "{}/{}/blobs/{}",
@@ -795,10 +803,11 @@ fn download_layer_impl(
         file.write_all(&buffer[..n])?;
         *local_downloaded += n as u64;
 
-        {
+        let current_total = {
             let mut shared = shared_downloaded.lock().unwrap();
             *shared += n as u64;
-        }
+            *shared
+        };
 
         if (*local_downloaded).is_multiple_of(1024 * 1024) {
             write_resume(
@@ -813,10 +822,9 @@ fn download_layer_impl(
         }
 
         if let Some(cb) = on_progress {
-            let shared = shared_downloaded.lock().unwrap();
             cb(Progress::Chunk {
-                current: *shared,
-                total: layer.size,
+                current: current_total,
+                total: total_size,
             });
         }
     }
