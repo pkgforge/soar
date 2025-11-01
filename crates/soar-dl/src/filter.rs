@@ -16,7 +16,7 @@ impl Filter {
             self.regexes.is_empty() || self.regexes.iter().all(|r| r.is_match(name));
         let matches_glob = self.globs.is_empty() || self.globs.iter().any(|g| glob_match(g, name));
         let matches_include = self.matches_keywords(name, &self.include, true);
-        let matches_exclude = !self.matches_keywords(name, &self.exclude, false);
+        let matches_exclude = self.matches_keywords(name, &self.exclude, false);
 
         matches_regex && matches_glob && matches_include && matches_exclude
     }
