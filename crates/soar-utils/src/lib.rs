@@ -4,6 +4,5 @@ pub mod fs;
 pub mod hash;
 pub mod path;
 pub mod pattern;
-pub mod string;
 pub mod system;
 pub mod time;

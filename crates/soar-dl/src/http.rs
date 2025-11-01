@@ -5,6 +5,10 @@ use crate::{error::DownloadError, http_client::SHARED_AGENT};
 pub struct Http;
 
 impl Http {
+    pub fn head(url: &str) -> Result<Response<Body>, DownloadError> {
+        SHARED_AGENT.head(url).call().map_err(DownloadError::from)
+    }
+
     /// Fetches a GET response for the given URL, optionally requesting a byte range and using an ETag for conditional requests.
     ///
     /// If `resume_from` is `Some(pos)`, the request includes a `Range: bytes={pos}-` header. If `etag` is `Some(tag)` and a range is requested,
@@ -69,3 +73,4 @@ impl Http {
             .map_err(|_| DownloadError::InvalidResponse)
     }
 }
+

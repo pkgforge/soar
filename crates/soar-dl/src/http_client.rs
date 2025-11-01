@@ -100,6 +100,16 @@ impl SharedAgent {
         Self
     }
 
+    pub fn head<T>(&self, uri: T) -> RequestBuilder<WithoutBody>
+    where
+        Uri: TryFrom<T>,
+        <Uri as TryFrom<T>>::Error: Into<http::Error>,
+    {
+        let state = SHARED_CLIENT_STATE.read().unwrap();
+        let req = state.agent.head(uri);
+        apply_headers(req, &state.config.headers)
+    }
+
     /// Create a GET request builder for the given URI using the shared agent.
     ///
     /// The returned `RequestBuilder` does not contain a body; any global headers

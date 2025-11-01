@@ -230,18 +230,22 @@ impl<P: Platform> ReleaseDownload<P> {
 
         let mut paths = Vec::new();
         for asset in assets {
-            let dl = Download::new(asset.url())
-                .output(self.output.clone().unwrap_or_default())
+            let mut dl = Download::new(asset.url())
                 .overwrite(self.overwrite)
-                .extract(self.extract)
-                .extract_to(self.extract_to.clone().unwrap_or_default());
+                .extract(self.extract);
 
-            let dl = if let Some(ref cb) = self.on_progress {
+            if let Some(ref output) = self.output {
+                dl = dl.output(output);
+            }
+
+            if let Some(ref extract_to) = self.extract_to {
+                dl = dl.extract_to(extract_to);
+            }
+
+            if let Some(ref cb) = self.on_progress {
                 let cb = cb.clone();
-                dl.progress(move |p| cb(p))
-            } else {
-                dl
-            };
+                dl = dl.progress(move |p| cb(p));
+            }
 
             let path = dl.execute()?;
 

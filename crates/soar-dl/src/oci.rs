@@ -12,7 +12,7 @@ use soar_utils::fs::is_elf;
 use ureq::http::header::{ACCEPT, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
 
 use crate::{
-    download::{extract_archive, Download},
+    download::Download,
     error::DownloadError,
     filter::Filter,
     http_client::SHARED_AGENT,
@@ -451,7 +451,7 @@ impl OciDownload {
                     .extract_to
                     .clone()
                     .unwrap_or_else(|| output_dir.to_path_buf());
-                extract_archive(&path, &extract_dir)?;
+                compak::extract_archive(&path, &extract_dir)?;
             }
 
             paths.push(path);
@@ -544,7 +544,7 @@ impl OciDownload {
                                 if extract {
                                     let extract_dir =
                                         extract_to.clone().unwrap_or_else(|| output_dir.clone());
-                                    if let Err(e) = extract_archive(&path, &extract_dir) {
+                                    if let Err(e) = compak::extract_archive(&path, &extract_dir) {
                                         errors.lock().unwrap().push(format!("{e}"));
                                         continue;
                                     }

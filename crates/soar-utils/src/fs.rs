@@ -294,13 +294,9 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
 /// assert!(is_elf(&path));
 /// ```
 pub fn is_elf<P: AsRef<Path>>(path: P) -> bool {
-    std::fs::read(path.as_ref())
+    read_file_signature(path, 4)
         .ok()
-        .and_then(|bytes| {
-            bytes
-                .get(..4)
-                .map(|magic| magic == [0x7f, 0x45, 0x4c, 0x46])
-        })
+        .map(|magic| magic == [0x7f, 0x45, 0x4c, 0x46])
         .unwrap_or(false)
 }
 
