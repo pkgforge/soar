@@ -226,19 +226,22 @@ pub fn read_file_signature<P: AsRef<Path>>(path: P, bytes: usize) -> FileSystemR
     Ok(buffer)
 }
 
-/// Returns the total size of a directory and its contents.
+/// Calculate the total size in bytes of a directory and all files contained within it.
 ///
-/// # Arguments
-/// * `path` - The path to the directory
+/// Skips entries whose directory entry or metadata cannot be read. Recurses into subdirectories
+/// and accumulates file sizes.
 ///
 /// # Returns
-/// Returns the total size of the directory and its contents.
+///
+/// The total size in bytes of the directory and its contents.
 ///
 /// # Errors
-/// Returns a [`FileSystemError::Directory`] if the directory could not be read.
 ///
-/// # Example
-/// ```no_run
+/// Returns a [`FileSystemError::Directory`] if the directory itself cannot be read.
+///
+/// # Examples
+///
+/// ```
 /// use soar_utils::fs::dir_size;
 /// use soar_utils::error::FileSystemResult;
 ///
@@ -271,7 +274,25 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
     Ok(total_size)
 }
 
-/// Check if file is ELF binary
+/// Determine whether the file at the given path is an ELF binary.
+///
+/// Checks the file's first four bytes for the ELF magic sequence (0x7F, 'E', 'L', 'F') and
+/// returns `true` if they match, `false` otherwise.
+///
+/// # Examples
+///
+/// ```
+/// use std::fs::File;
+/// use std::io::Write;
+/// use tempfile::tempdir;
+///
+/// let dir = tempdir().unwrap();
+/// let path = dir.path().join("example_elf");
+/// let mut f = File::create(&path).unwrap();
+/// f.write_all(&[0x7f, b'E', b'L', b'F', 0x00]).unwrap();
+///
+/// assert!(is_elf(&path));
+/// ```
 pub fn is_elf<P: AsRef<Path>>(path: P) -> bool {
     read_file_signature(path, 4)
         .ok()

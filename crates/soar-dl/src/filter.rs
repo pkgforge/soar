@@ -11,6 +11,29 @@ pub struct Filter {
 }
 
 impl Filter {
+    /// Determines whether a name satisfies this filter's combined criteria.
+    ///
+    /// The name must match every regex in `self.regexes`, match at least one glob in
+    /// `self.globs`, satisfy all include keyword groups in `self.include`, and must
+    /// not match any exclude keyword groups in `self.exclude`.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the name matches all regexes, at least one glob, all include groups,
+    /// and no exclude groups; `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let f = Filter {
+    ///     regexes: Vec::new(),
+    ///     globs: vec!["*".into()],
+    ///     include: Vec::new(),
+    ///     exclude: Vec::new(),
+    ///     case_sensitive: true,
+    /// };
+    /// assert!(f.matches("anything"));
+    /// ```
     pub fn matches(&self, name: &str) -> bool {
         let matches_regex =
             self.regexes.is_empty() || self.regexes.iter().all(|r| r.is_match(name));
@@ -21,6 +44,35 @@ impl Filter {
         matches_regex && matches_glob && matches_include && matches_exclude
     }
 
+    /// Determines whether every keyword group in `keywords` satisfies the required presence or absence
+    /// against `name` according to `must_match`.
+    ///
+    /// - If `keywords` is empty, returns `true`.
+    /// - Splits each keyword string on commas, trims parts, and ignores empty parts.
+    /// - Respects `case_sensitive`: comparisons use the original case when `true`, otherwise both
+    ///   haystack and needles are lowercased.
+    /// - For each keyword (a group of comma-separated alternatives), any one alternative matching
+    ///   `name` counts as a match for that keyword.
+    /// - If `must_match` is `true`, each keyword group must have at least one matching alternative.
+    ///   If `must_match` is `false`, each keyword group must have no matching alternatives.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use regex::Regex;
+    /// use crate::filter::Filter;
+    ///
+    /// let filter = Filter {
+    ///     regexes: vec![],
+    ///     globs: vec![],
+    ///     include: vec!["foo,bar".to_string()],
+    ///     exclude: vec![],
+    ///     case_sensitive: false,
+    /// };
+    ///
+    /// // "barbaz" contains "bar", one of the alternatives in the include group.
+    /// assert!(filter.matches("barbaz"));
+    /// ```
     fn matches_keywords(&self, name: &str, keywords: &[String], must_match: bool) -> bool {
         if keywords.is_empty() {
             return true;
