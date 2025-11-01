@@ -8,10 +8,9 @@ use std::{
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use regex::Regex;
-use soar_dl::{download::Download, types::OverwriteMode};
 use soar_utils::{
     error::FileSystemResult,
-    fs::{create_symlink, read_file_signature, walk_dir},
+    fs::{create_symlink, walk_dir},
     path::{desktop_dir, icons_dir},
 };
 
@@ -20,8 +19,7 @@ use super::{
 };
 use crate::{
     config::get_config,
-    constants::PNG_MAGIC_BYTES,
-    database::models::{Package, PackageExt},
+    database::models::PackageExt,
     error::{ErrorContext, SoarError},
     SoarResult,
 };
@@ -145,49 +143,6 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     Ok(final_path)
 }
 
-pub async fn integrate_remote<P: AsRef<Path>>(
-    package_path: P,
-    package: &Package,
-) -> SoarResult<()> {
-    let package_path = package_path.as_ref();
-    let icon_url = &package.icon;
-    let desktop_url = &package.desktop;
-
-    let mut icon_output_path = package_path.join(".DirIcon");
-    let desktop_output_path = package_path.join(format!("{}.desktop", package.pkg_name));
-
-    if let Some(icon_url) = icon_url {
-        Download::new(icon_url)
-            .output(icon_output_path.to_string_lossy())
-            .overwrite(OverwriteMode::Skip)
-            .execute()?;
-
-        let ext = if read_file_signature(icon_output_path, 8)? == PNG_MAGIC_BYTES {
-            "png"
-        } else {
-            "svg"
-        };
-        icon_output_path = package_path.join(format!("{}.{}", package.pkg_name, ext));
-    }
-
-    if let Some(desktop_url) = desktop_url {
-        Download::new(desktop_url)
-            .output(desktop_output_path.to_string_lossy())
-            .overwrite(OverwriteMode::Skip)
-            .execute()?;
-    } else {
-        let content = create_default_desktop_entry(&package.pkg_name, "Utility");
-        fs::write(&desktop_output_path, &content).with_context(|| {
-            format!("writing to desktop file {}", desktop_output_path.display())
-        })?;
-    }
-
-    symlink_icon(&icon_output_path)?;
-    symlink_desktop(&desktop_output_path, package)?;
-
-    Ok(())
-}
-
 pub fn create_portable_link<P: AsRef<Path>>(
     portable_path: P,
     real_path: P,
@@ -266,19 +221,6 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     }
 
     Ok(())
-}
-
-fn create_default_desktop_entry(name: &str, categories: &str) -> Vec<u8> {
-    format!(
-        "[Desktop Entry]\n\
-        Type=Application\n\
-        Name={name}\n\
-        Icon={name}\n\
-        Exec={name}\n\
-        Categories={categories};\n",
-    )
-    .as_bytes()
-    .to_vec()
 }
 
 pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(

@@ -90,16 +90,31 @@ impl Platform for GitLab {
 impl Release for GitLabRelease {
     type Asset = GitLabAsset;
 
-    /// Gets the asset's name.
+    /// The release's name, or an empty string if the release has no name.
     ///
     /// # Examples
     ///
     /// ```
-    /// use soar_dl::gitlab::GitLabAsset;
-    /// use soar_dl::traits::Asset;
+    /// use soar_dl::gitlab::{GitlabAssets, GitLabRelease};
+    /// use soar_dl::traits::Release;
     ///
-    /// let asset = GitLabAsset { name: String::from("v1.0.0"), direct_asset_url: String::from("https://example") };
-    /// assert_eq!(asset.name(), "v1.0.0");
+    /// let r = GitLabRelease {
+    ///     name: Some("v1.0".into()),
+    ///     tag_name: "v1.0".into(),
+    ///     upcoming_release: false,
+    ///     released_at: "".into(),
+    ///     assets: GitlabAssets { links: vec![] },
+    /// };
+    /// assert_eq!(r.name(), "v1.0");
+    ///
+    /// let unnamed = GitLabRelease {
+    ///     name: None,
+    ///     tag_name: "v1.1".into(),
+    ///     upcoming_release: false,
+    ///     released_at: "".into(),
+    ///     assets: GitlabAssets { links: vec![] },
+    /// };
+    /// assert_eq!(unnamed.name(), "");
     /// ```
     fn name(&self) -> &str {
         &self.name

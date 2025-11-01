@@ -256,7 +256,7 @@ async fn handle_cli() -> SoarResult<()> {
                     let progress_bar = create_progress_bar();
                     let progress_callback =
                         Arc::new(move |state| progress::handle_progress(state, &progress_bar));
-                    let regexes = create_regex_patterns(regexes);
+                    let regexes = create_regex_patterns(regexes)?;
                     let globs = globs.unwrap_or_default();
                     let match_keywords = match_keywords.unwrap_or_default();
                     let exclude_keywords = exclude_keywords.unwrap_or_default();

@@ -121,6 +121,9 @@ pub enum SoarError {
 
     #[error("{0}")]
     Warning(String),
+
+    #[error("Regex compilation error: {0}")]
+    RegexError(#[from] regex::Error),
 }
 
 impl SoarError {

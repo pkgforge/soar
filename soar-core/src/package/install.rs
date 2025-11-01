@@ -143,9 +143,7 @@ impl PackageInstaller {
             loop {
                 if retries > 5 {
                     if let Some(ref callback) = self.progress_callback {
-                        callback(Progress::Complete {
-                            total: 0,
-                        });
+                        callback(Progress::Aborted);
                     }
                     break;
                 }

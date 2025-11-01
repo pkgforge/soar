@@ -196,13 +196,17 @@ impl Download {
             return self.download_to_stdout();
         }
 
-        let resp = Http::head(&self.url)?;
-
-        let header_filename = resp
-            .headers()
-            .get(CONTENT_DISPOSITION)
-            .and_then(filename_from_header);
-        let url_filename = filename_from_url(&self.url);
+        let (header_filename, url_filename) = if self.output.as_deref().is_none() {
+            let resp = Http::head(&self.url)?;
+            (
+                resp.headers()
+                    .get(CONTENT_DISPOSITION)
+                    .and_then(filename_from_header),
+                filename_from_url(&self.url),
+            )
+        } else {
+            (None, filename_from_url(&self.url))
+        };
 
         let output_path =
             resolve_output_path(self.output.as_deref(), url_filename, header_filename)?;

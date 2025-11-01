@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread::sleep, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use indicatif::HumanBytes;
 use regex::Regex;
@@ -19,6 +19,7 @@ use soar_dl::{
     traits::{Asset, Platform as _, Release as _},
     types::{OverwriteMode, Progress},
 };
+use tokio::time::sleep;
 use tracing::{error, info};
 
 use crate::{
@@ -246,12 +247,12 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
                 retries += 1;
                 info!("Retrying... ({}/{})", retries, max_retries);
                 ctx.progress_callback.clone()(Progress::Recovered);
-                sleep(Duration::from_secs(5));
+                sleep(Duration::from_secs(5)).await;
             }
             Err(err) => {
                 ctx.progress_callback.clone()(Progress::Error);
                 error!("Download failed: {}", err);
-                return Err(err)?;
+                return Err(err.into());
             }
         }
     }
@@ -407,18 +408,16 @@ fn handle_gitlab_release(
     Ok(())
 }
 
-pub fn create_regex_patterns(regex_patterns: Option<Vec<String>>) -> Vec<Regex> {
-    regex_patterns
-        .clone()
-        .map(|patterns| {
+pub fn create_regex_patterns(regex_patterns: Option<Vec<String>>) -> SoarResult<Vec<Regex>> {
+    match regex_patterns {
+        Some(patterns) => {
             patterns
                 .iter()
-                .map(|pattern| Regex::new(pattern))
-                .collect::<Result<Vec<Regex>, regex::Error>>()
-        })
-        .transpose()
-        .unwrap()
-        .unwrap_or_default()
+                .map(|pattern| Regex::new(pattern).map_err(|err| err.into()))
+                .collect()
+        }
+        None => Ok(Vec::new()),
+    }
 }
 
 pub async fn handle_github_downloads(
