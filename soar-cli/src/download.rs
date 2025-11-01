@@ -16,7 +16,6 @@ use soar_dl::{
     gitlab::GitLab,
     oci::OciDownload,
     platform::PlatformUrl,
-    release::ReleaseDownload,
     traits::{Asset, Platform as _, Release as _},
     types::{OverwriteMode, Progress},
 };
@@ -344,14 +343,51 @@ fn handle_gitlab_release(
     project: &str,
     tag: Option<&str>,
 ) -> SoarResult<()> {
-    let mut dl = ReleaseDownload::<GitLab>::new(project)
-        .filter(ctx.create_filter())
+    let releases = GitLab::fetch_releases(project, tag)?;
+
+    let release = if let Some(tag) = tag {
+        releases.iter().find(|r| r.tag() == tag)
+    } else {
+        releases
+            .iter()
+            .find(|r| !r.is_prerelease())
+            .or_else(|| releases.first())
+    };
+
+    let release = release.ok_or_else(|| DownloadError::InvalidResponse)?;
+
+    info!("Found release: {}", release.tag());
+    let filter = ctx.create_filter();
+
+    let assets: Vec<_> = release
+        .assets()
+        .iter()
+        .filter(|a| filter.matches(a.name()))
+        .collect();
+
+    if assets.is_empty() {
+        let available = release
+            .assets()
+            .iter()
+            .map(|a| a.name().to_string())
+            .collect::<Vec<String>>();
+
+        Err(DownloadError::NoMatch {
+            available,
+        })?
+    }
+
+    let selected_asset = if assets.len() == 1 || ctx.yes {
+        assets[0]
+    } else {
+        &select_asset_interactively(assets)?
+    };
+
+    info!("Downloading asset: {}", selected_asset.name());
+
+    let mut dl = Download::new(selected_asset.url())
         .overwrite(ctx.get_overwrite_mode())
         .extract(ctx.extract);
-
-    if let Some(tag) = tag {
-        dl = dl.tag(tag);
-    }
 
     if let Some(ref out) = ctx.output {
         dl = dl.output(out);
@@ -366,14 +402,7 @@ fn handle_gitlab_release(
         cb(p);
     });
 
-    let paths = dl.execute()?;
-
-    if paths.len() > 1 && !ctx.yes {
-        info!("Multiple assets found, please select one:");
-        for (i, path) in paths.iter().enumerate() {
-            info!("{}. {}", i + 1, path.display());
-        }
-    }
+    dl.execute()?;
 
     Ok(())
 }
