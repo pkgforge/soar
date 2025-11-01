@@ -76,7 +76,7 @@ impl Download {
             return self.download_to_stdout();
         }
 
-        let resp = Http::fetch(&self.url, None, None)?;
+        let resp = Http::head(&self.url)?;
 
         let header_filename = resp
             .headers()
@@ -126,7 +126,7 @@ impl Download {
                     .unwrap_or_else(|| PathBuf::from("."))
             });
 
-            extract_archive(&output_path, &extract_dir)?;
+            compak::extract_archive(&output_path, &extract_dir)?;
         }
 
         Ok(output_path)
@@ -245,8 +245,4 @@ fn prompt_overwrite(path: &Path) -> std::io::Result<bool> {
     std::io::stdin().read_line(&mut line)?;
 
     Ok(matches!(line.trim().to_lowercase().as_str(), "y" | "yes"))
-}
-
-pub fn extract_archive(archive_path: &Path, output_dir: &Path) -> Result<(), DownloadError> {
-    Ok(())
 }

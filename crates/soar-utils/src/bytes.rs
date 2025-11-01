@@ -101,9 +101,11 @@ pub fn parse_bytes(s: &str) -> BytesResult<u64> {
                     .map(|n| n.round() as u64)
             })
         })
-        .ok_or_else(|| BytesError::ParseFailed {
-            input: s.to_string(),
-            reason: "Unrecognized size format".into(),
+        .ok_or_else(|| {
+            BytesError::ParseFailed {
+                input: s.to_string(),
+                reason: "Unrecognized size format".into(),
+            }
         })
 }
 

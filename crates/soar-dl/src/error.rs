@@ -11,6 +11,10 @@ pub enum DownloadError {
         source: url::ParseError,
     },
 
+    #[error("Error extracting archive")]
+    #[diagnostic(code(soar_dl::extract_error))]
+    ExtractError(#[from] compak::error::ArchiveError),
+
     #[error("Network request failed")]
     #[diagnostic(
         code(soar_dl::network),

@@ -65,6 +65,16 @@ impl SharedAgent {
         Self
     }
 
+    pub fn head<T>(&self, uri: T) -> RequestBuilder<WithoutBody>
+    where
+        Uri: TryFrom<T>,
+        <Uri as TryFrom<T>>::Error: Into<http::Error>,
+    {
+        let state = SHARED_CLIENT_STATE.read().unwrap();
+        let req = state.agent.head(uri);
+        apply_headers(req, &state.config.headers)
+    }
+
     pub fn get<T>(&self, uri: T) -> RequestBuilder<WithoutBody>
     where
         Uri: TryFrom<T>,

@@ -36,7 +36,14 @@ impl Platform for Github {
         tag: Option<&str>,
     ) -> Result<Vec<Self::Release>, DownloadError> {
         let path = match tag {
-            Some(tag) => format!("/repos/{project}/releases/tags/{tag}?per_page=100"),
+            Some(tag) => {
+                let encoded_tag =
+                    url::form_urlencoded::byte_serialize(tag.as_bytes()).collect::<String>();
+                format!(
+                    "/repos/{project}/releases/tags/{}?per_page=100",
+                    encoded_tag
+                )
+            }
             None => format!("/repos/{project}/releases?per_page=100"),
         };
 

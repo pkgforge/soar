@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use percent_encoding::percent_decode_str;
 use ureq::http::HeaderValue;
 use url::Url;
 
@@ -11,7 +12,12 @@ pub fn filename_from_url(url: &str) -> Option<String> {
         u.path_segments()
             .and_then(|mut s| s.next_back())
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
+            .and_then(|s| {
+                percent_decode_str(s)
+                    .decode_utf8()
+                    .ok()
+                    .map(|cow| cow.into_owned())
+            })
     })
 }
 
@@ -23,6 +29,12 @@ pub fn filename_from_header(value: &HeaderValue) -> Option<String> {
         .split(';')
         .find_map(|p| p.trim().strip_prefix("filename="))
         .map(|s| s.trim_matches('"').to_string())
+        .map(|s| {
+            s.split(['/', '\\'])
+                .next_back()
+                .map(String::from)
+                .unwrap_or(s)
+        })
 }
 
 /// Determine output path

@@ -5,6 +5,10 @@ use crate::{error::DownloadError, http_client::SHARED_AGENT};
 pub struct Http;
 
 impl Http {
+    pub fn head(url: &str) -> Result<Response<Body>, DownloadError> {
+        SHARED_AGENT.head(url).call().map_err(DownloadError::from)
+    }
+
     pub fn fetch(
         url: &str,
         resume_from: Option<u64>,

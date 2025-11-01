@@ -1,12 +1,13 @@
 use std::{env, sync::LazyLock};
 
+use percent_encoding::percent_decode_str;
 use regex::Regex;
-use soar_utils::string::decode_uri;
 use ureq::http::header::AUTHORIZATION;
 use url::Url;
 
 use crate::{error::DownloadError, http_client::SHARED_AGENT};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApiKind {
     Pkgforge,
     Primary,
@@ -92,7 +93,12 @@ impl PlatformUrl {
             .get(2)
             .map(|m| m.as_str().trim_matches(&['\'', '"', ' '][..]))
             .filter(|s| !s.is_empty())
-            .map(decode_uri);
+            .and_then(|s| {
+                percent_decode_str(s)
+                    .decode_utf8()
+                    .ok()
+                    .map(|cow| cow.into_owned())
+            });
 
         Some((project, tag))
     }
@@ -113,7 +119,7 @@ where
 
         if use_token {
             if let Ok(token) = env::var(token_env) {
-                req = req.header(AUTHORIZATION, &format!("Bearer {}", token));
+                req = req.header(AUTHORIZATION, &format!("Bearer {}", token.trim()));
             }
         }
 

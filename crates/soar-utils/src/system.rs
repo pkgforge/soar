@@ -62,6 +62,7 @@ mod tests {
         fn env_var(&self, _: &str) -> Option<String> {
             None
         }
+
         fn uid_name(&self) -> Option<String> {
             None
         }
