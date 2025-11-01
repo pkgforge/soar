@@ -32,14 +32,15 @@ pub enum PlatformUrl {
 }
 
 static GITHUB_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"^(?i)(?:https?://)?(?:github(?:\.com)?[:/])([^/@]+/[^/@]+)(?:@([^/\s]+(?:/[^/\s]*)*)?)?$",
-    )
-    .expect("unable to compile github release regex")
+    Regex::new(r"^(?i)(?:https?://)?(?:github(?:\.com)?[:/])([^/@]+/[^/@]+)(?:@([^\r\n]+))?$")
+        .expect("unable to compile github release regex")
 });
+
 static GITLAB_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?i)(?:https?://)?(?:gitlab(?:\.com)?[:/])((?:\d+)|(?:[^/@]+(?:/[^/@]+)*))(?:@([^/\s]+(?:/[^/\s]*)*)?)?$")
-        .expect("unable to compile gitlab release regex")
+    Regex::new(
+        r"^(?i)(?:https?://)?(?:gitlab(?:\.com)?[:/])((?:\d+)|(?:[^/@]+(?:/[^/@]+)*))(?:@([^\r\n]+))?$",
+    )
+    .expect("unable to compile gitlab release regex")
 });
 
 impl PlatformUrl {
@@ -214,4 +215,281 @@ where
 fn should_fallback_status(e: &DownloadError) -> bool {
     matches!(e, DownloadError::HttpError { status, .. }
         if *status == 429 || *status == 401 || *status == 403 || *status >= 500)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_platform_url_parse_oci() {
+        let result = PlatformUrl::parse("ghcr.io/owner/repo:latest");
+        match result {
+            Some(PlatformUrl::Oci {
+                reference,
+            }) => {
+                assert_eq!(reference, "ghcr.io/owner/repo:latest");
+            }
+            _ => panic!("Expected OCI variant"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_oci_with_prefix() {
+        let result = PlatformUrl::parse("https://ghcr.io/owner/repo:v1.0");
+        match result {
+            Some(PlatformUrl::Oci {
+                reference,
+            }) => {
+                assert_eq!(reference, "ghcr.io/owner/repo:v1.0");
+            }
+            _ => panic!("Expected OCI variant"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_github_https() {
+        let result = PlatformUrl::parse("https://github.com/owner/repo");
+        match result {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, None);
+            }
+            _ => panic!("Expected Github variant"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_github_with_tag() {
+        let result = PlatformUrl::parse("https://github.com/owner/repo@v1.0.0");
+        match result {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, Some("v1.0.0".to_string()));
+            }
+            _ => panic!("Expected Github variant with tag"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_github_shorthand() {
+        let result = PlatformUrl::parse("github:owner/repo");
+        match result {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, None);
+            }
+            _ => panic!("Expected Github variant"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_github_case_insensitive() {
+        let result = PlatformUrl::parse("GITHUB.COM/owner/repo");
+        match result {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, None);
+            }
+            _ => panic!("Expected Github variant"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_gitlab_https() {
+        let result = PlatformUrl::parse("https://gitlab.com/owner/repo");
+        match result {
+            Some(PlatformUrl::Gitlab {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, None);
+            }
+            _ => panic!("Expected Gitlab variant"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_gitlab_with_tag() {
+        let result = PlatformUrl::parse("https://gitlab.com/owner/repo@v2.0");
+        match result {
+            Some(PlatformUrl::Gitlab {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, Some("v2.0".to_string()));
+            }
+            _ => panic!("Expected Gitlab variant with tag"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_gitlab_numeric_project() {
+        let result = PlatformUrl::parse("https://gitlab.com/12345@v1.0");
+        match result {
+            Some(PlatformUrl::Gitlab {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "12345");
+                assert_eq!(tag, Some("v1.0".to_string()));
+            }
+            _ => panic!("Expected Gitlab variant with numeric project"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_gitlab_nested_groups() {
+        let result = PlatformUrl::parse("https://gitlab.com/group/subgroup/repo");
+        match result {
+            Some(PlatformUrl::Gitlab {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "group/subgroup/repo");
+                assert_eq!(tag, None);
+            }
+            _ => panic!("Expected Gitlab variant with nested groups"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_gitlab_api_path_as_direct() {
+        let result = PlatformUrl::parse("https://gitlab.com/api/v4/projects/123");
+        match result {
+            Some(PlatformUrl::Direct {
+                url,
+            }) => {
+                assert_eq!(url, "https://gitlab.com/api/v4/projects/123");
+            }
+            _ => panic!("Expected Direct variant for API path"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_gitlab_special_path_as_direct() {
+        let result = PlatformUrl::parse("https://gitlab.com/owner/repo/-/releases");
+        match result {
+            Some(PlatformUrl::Direct {
+                url,
+            }) => {
+                assert_eq!(url, "https://gitlab.com/owner/repo/-/releases");
+            }
+            _ => panic!("Expected Direct variant for special path"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_direct_url() {
+        let result = PlatformUrl::parse("https://example.com/download/file.tar.gz");
+        match result {
+            Some(PlatformUrl::Direct {
+                url,
+            }) => {
+                assert_eq!(url, "https://example.com/download/file.tar.gz");
+            }
+            _ => panic!("Expected Direct variant"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_direct_http() {
+        let result = PlatformUrl::parse("http://example.com/file.zip");
+        match result {
+            Some(PlatformUrl::Direct {
+                url,
+            }) => {
+                assert_eq!(url, "http://example.com/file.zip");
+            }
+            _ => panic!("Expected Direct variant"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_invalid() {
+        assert!(PlatformUrl::parse("not a valid url").is_none());
+        assert!(PlatformUrl::parse("").is_none());
+        assert!(PlatformUrl::parse("/not/a/url").is_none());
+    }
+
+    #[test]
+    fn test_platform_url_parse_github_with_spaces_in_tag() {
+        let result = PlatformUrl::parse("github.com/owner/repo@v1.0 beta");
+        match result {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, Some("v1.0 beta".to_string()));
+            }
+            _ => panic!("Expected Github variant with tag containing spaces"),
+        }
+    }
+
+    #[test]
+    fn test_platform_url_parse_tag_with_special_chars() {
+        let result = PlatformUrl::parse("github.com/owner/repo@v1.0-rc.1+build.123");
+        match result {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, Some("v1.0-rc.1+build.123".to_string()));
+            }
+            _ => panic!("Expected Github variant with complex tag"),
+        }
+    }
+
+    #[test]
+    fn test_api_kind_equality() {
+        assert_eq!(ApiKind::Pkgforge, ApiKind::Pkgforge);
+        assert_eq!(ApiKind::Primary, ApiKind::Primary);
+        assert_ne!(ApiKind::Pkgforge, ApiKind::Primary);
+    }
+
+    #[test]
+    fn test_parse_repo_with_quotes() {
+        let result = PlatformUrl::parse("github.com/owner/repo@'v1.0'");
+        match result {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, Some("v1.0".to_string()));
+            }
+            _ => panic!("Expected quotes to be stripped from tag"),
+        }
+    }
+
+    #[test]
+    fn test_parse_repo_percent_encoded_tag() {
+        let result = PlatformUrl::parse("github.com/owner/repo@v1.0%2Bbuild");
+        match result {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, Some("v1.0+build".to_string()));
+            }
+            _ => panic!("Expected percent-encoded tag to be decoded"),
+        }
+    }
 }

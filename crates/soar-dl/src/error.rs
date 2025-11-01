@@ -83,3 +83,111 @@ impl From<ureq::Error> for DownloadError {
         Self::Network(Box::new(e))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_download_error_invalid_url() {
+        let err = DownloadError::InvalidUrl {
+            url: "invalid".to_string(),
+            source: url::ParseError::RelativeUrlWithoutBase,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("Invalid URL"));
+        assert!(msg.contains("invalid"));
+    }
+
+    #[test]
+    fn test_download_error_http_error() {
+        let err = DownloadError::HttpError {
+            status: 404,
+            url: "https://example.com/notfound".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("HTTP 404"));
+        assert!(msg.contains("https://example.com/notfound"));
+    }
+
+    #[test]
+    fn test_download_error_no_match() {
+        let err = DownloadError::NoMatch {
+            available: vec!["file1.zip".to_string(), "file2.tar.gz".to_string()],
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("No matching assets found"));
+    }
+
+    #[test]
+    fn test_download_error_layer_not_found() {
+        let err = DownloadError::LayerNotFound;
+        let msg = format!("{}", err);
+        assert_eq!(msg, "Layer not found");
+    }
+
+    #[test]
+    fn test_download_error_invalid_response() {
+        let err = DownloadError::InvalidResponse;
+        let msg = format!("{}", err);
+        assert_eq!(msg, "Invalid response from server");
+    }
+
+    #[test]
+    fn test_download_error_no_filename() {
+        let err = DownloadError::NoFilename;
+        let msg = format!("{}", err);
+        assert_eq!(msg, "File name could not be determined");
+    }
+
+    #[test]
+    fn test_download_error_resume_mismatch() {
+        let err = DownloadError::ResumeMismatch;
+        let msg = format!("{}", err);
+        assert_eq!(msg, "Resume metadata mismatch");
+    }
+
+    #[test]
+    fn test_download_error_multiple() {
+        let err = DownloadError::Multiple {
+            errors: vec!["Error 1".to_string(), "Error 2".to_string()],
+        };
+        let msg = format!("{}", err);
+        assert_eq!(msg, "Multiple download errors occurred");
+    }
+
+    #[test]
+    fn test_download_error_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err = DownloadError::Io(io_err);
+        let msg = format!("{}", err);
+        assert!(msg.contains("I/O error"));
+    }
+
+    #[test]
+    fn test_download_error_debug() {
+        let err = DownloadError::LayerNotFound;
+        let debug = format!("{:?}", err);
+        assert!(debug.contains("LayerNotFound"));
+    }
+
+    #[test]
+    fn test_from_ureq_error() {
+        let ureq_err = ureq::Error::ConnectionFailed;
+        let download_err: DownloadError = ureq_err.into();
+
+        match download_err {
+            DownloadError::Network(_) => (),
+            _ => panic!("Expected Network error variant"),
+        }
+    }
+
+    #[test]
+    fn test_error_source_chain() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err = DownloadError::Io(io_err);
+
+        // Check that we can get the source
+        assert!(std::error::Error::source(&err).is_some());
+    }
+}

@@ -836,3 +836,211 @@ fn download_layer_impl(
     remove_resume(path)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_oci_reference_from_str_simple() {
+        let reference = OciReference::from("org/repo:tag");
+        assert_eq!(reference.registry, "ghcr.io");
+        assert_eq!(reference.package, "org/repo");
+        assert_eq!(reference.tag, "tag");
+    }
+
+    #[test]
+    fn test_oci_reference_from_str_with_prefix() {
+        let reference = OciReference::from("ghcr.io/org/repo:latest");
+        assert_eq!(reference.registry, "ghcr.io");
+        assert_eq!(reference.package, "org/repo");
+        assert_eq!(reference.tag, "latest");
+    }
+
+    #[test]
+    fn test_oci_reference_from_str_with_digest() {
+        let reference = OciReference::from("org/repo@sha256:deadbeef1234567890");
+        assert_eq!(reference.registry, "ghcr.io");
+        assert_eq!(reference.package, "org/repo");
+        assert_eq!(reference.tag, "sha256:deadbeef1234567890");
+    }
+
+    #[test]
+    fn test_oci_reference_from_str_no_tag() {
+        let reference = OciReference::from("org/repo");
+        assert_eq!(reference.registry, "ghcr.io");
+        assert_eq!(reference.package, "org/repo");
+        assert_eq!(reference.tag, "latest");
+    }
+
+    #[test]
+    fn test_oci_reference_from_str_nested_package() {
+        let reference = OciReference::from("org/team/repo:v1.0");
+        assert_eq!(reference.registry, "ghcr.io");
+        assert_eq!(reference.package, "org/team/repo");
+        assert_eq!(reference.tag, "v1.0");
+    }
+
+    #[test]
+    fn test_oci_reference_from_str_digest_with_prefix() {
+        let reference = OciReference::from("ghcr.io/org/repo@sha256:abc123");
+        assert_eq!(reference.registry, "ghcr.io");
+        assert_eq!(reference.package, "org/repo");
+        assert_eq!(reference.tag, "sha256:abc123");
+    }
+
+    #[test]
+    fn test_oci_reference_clone() {
+        let ref1 = OciReference::from("org/repo:tag");
+        let ref2 = ref1.clone();
+        assert_eq!(ref1.registry, ref2.registry);
+        assert_eq!(ref1.package, ref2.package);
+        assert_eq!(ref1.tag, ref2.tag);
+    }
+
+    #[test]
+    fn test_oci_layer_title_present() {
+        let mut annotations = std::collections::HashMap::new();
+        annotations.insert(
+            "org.opencontainers.image.title".to_string(),
+            "myfile.tar.gz".to_string(),
+        );
+
+        let layer = OciLayer {
+            media_type: "application/vnd.oci.image.layer.v1.tar".to_string(),
+            digest: "sha256:abc123".to_string(),
+            size: 1024,
+            annotations,
+        };
+
+        assert_eq!(layer.title(), Some("myfile.tar.gz"));
+    }
+
+    #[test]
+    fn test_oci_layer_title_absent() {
+        let layer = OciLayer {
+            media_type: "application/vnd.oci.image.layer.v1.tar".to_string(),
+            digest: "sha256:abc123".to_string(),
+            size: 1024,
+            annotations: std::collections::HashMap::new(),
+        };
+
+        assert_eq!(layer.title(), None);
+    }
+
+    #[test]
+    fn test_oci_layer_clone() {
+        let mut annotations = std::collections::HashMap::new();
+        annotations.insert("key".to_string(), "value".to_string());
+
+        let layer1 = OciLayer {
+            media_type: "type".to_string(),
+            digest: "digest".to_string(),
+            size: 100,
+            annotations,
+        };
+
+        let layer2 = layer1.clone();
+        assert_eq!(layer1.media_type, layer2.media_type);
+        assert_eq!(layer1.digest, layer2.digest);
+        assert_eq!(layer1.size, layer2.size);
+    }
+
+    #[test]
+    fn test_oci_download_new() {
+        let dl = OciDownload::new("org/repo:tag");
+        assert_eq!(dl.reference.registry, "ghcr.io");
+        assert_eq!(dl.reference.package, "org/repo");
+        assert_eq!(dl.reference.tag, "tag");
+        assert_eq!(dl.parallel, 1);
+        assert!(!dl.extract);
+    }
+
+    #[test]
+    fn test_oci_download_builder_pattern() {
+        let dl = OciDownload::new("org/repo:tag")
+            .api("https://custom.registry/v2")
+            .output("downloads")
+            .extract(true)
+            .extract_to("/tmp/extract")
+            .parallel(4);
+
+        assert_eq!(dl.api, "https://custom.registry/v2");
+        assert_eq!(dl.output, Some("downloads".to_string()));
+        assert!(dl.extract);
+        assert_eq!(dl.extract_to, Some(PathBuf::from("/tmp/extract")));
+        assert_eq!(dl.parallel, 4);
+    }
+
+    #[test]
+    fn test_oci_download_parallel_clamped() {
+        let dl = OciDownload::new("org/repo:tag").parallel(0);
+        assert_eq!(dl.parallel, 1);
+
+        let dl = OciDownload::new("org/repo:tag").parallel(100);
+        assert_eq!(dl.parallel, 100);
+    }
+
+    #[test]
+    fn test_oci_manifest_deserialize() {
+        let json = r#"{
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": {
+                "mediaType": "application/vnd.oci.image.config.v1+json",
+                "digest": "sha256:config123",
+                "size": 512
+            },
+            "layers": [
+                {
+                    "mediaType": "application/vnd.oci.image.layer.v1.tar",
+                    "digest": "sha256:layer123",
+                    "size": 1024,
+                    "annotations": {
+                        "org.opencontainers.image.title": "file.tar.gz"
+                    }
+                }
+            ]
+        }"#;
+
+        let manifest: OciManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            manifest.media_type,
+            "application/vnd.oci.image.manifest.v1+json"
+        );
+        assert_eq!(manifest.config.digest, "sha256:config123");
+        assert_eq!(manifest.layers.len(), 1);
+        assert_eq!(manifest.layers[0].title(), Some("file.tar.gz"));
+    }
+
+    #[test]
+    fn test_oci_layer_deserialize_without_annotations() {
+        let json = r#"{
+            "mediaType": "application/vnd.oci.image.layer.v1.tar",
+            "digest": "sha256:abc",
+            "size": 2048
+        }"#;
+
+        let layer: OciLayer = serde_json::from_str(json).unwrap();
+        assert_eq!(layer.media_type, "application/vnd.oci.image.layer.v1.tar");
+        assert_eq!(layer.digest, "sha256:abc");
+        assert_eq!(layer.size, 2048);
+        assert!(layer.annotations.is_empty());
+    }
+
+    #[test]
+    fn test_oci_config_deserialize() {
+        let json = r#"{
+            "mediaType": "application/vnd.oci.image.config.v1+json",
+            "digest": "sha256:xyz789",
+            "size": 256
+        }"#;
+
+        let config: OciConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            config.media_type,
+            "application/vnd.oci.image.config.v1+json"
+        );
+        assert_eq!(config.digest, "sha256:xyz789");
+        assert_eq!(config.size, 256);
+    }
+}
