@@ -6,12 +6,13 @@ use std::{
     time::Duration,
 };
 
-use reqwest::StatusCode;
 use rusqlite::{params, prepare_and_bind, Connection};
 use soar_dl::{
-    downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions, OciDownloader},
+    download::Download,
     error::DownloadError,
-    utils::FileMode,
+    filter::Filter,
+    oci::OciDownload,
+    types::{OverwriteMode, Progress},
 };
 use soar_utils::{
     error::FileSystemResult,
@@ -34,7 +35,7 @@ use crate::{
 pub struct PackageInstaller {
     package: Package,
     install_dir: PathBuf,
-    progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
+    progress_callback: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
     db: Arc<Mutex<Connection>>,
     with_pkg_id: bool,
     globs: Vec<String>,
@@ -57,7 +58,7 @@ impl PackageInstaller {
     pub async fn new<P: AsRef<Path>>(
         target: &InstallTarget,
         install_dir: P,
-        progress_callback: Option<Arc<dyn Fn(DownloadState) + Send + Sync>>,
+        progress_callback: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
         db: Arc<Mutex<Connection>>,
         with_pkg_id: bool,
         globs: Vec<String>,
@@ -119,74 +120,87 @@ impl PackageInstaller {
         };
 
         if self.package.ghcr_pkg.is_some() {
-            let progress_callback = &self.progress_callback.clone();
-            let options = OciDownloadOptions {
-                url: url.to_string(),
-                output_path: Some(output_path.to_string_lossy().to_string()),
-                progress_callback: self.progress_callback.clone(),
-                api: None,
-                concurrency: Some(get_config().ghcr_concurrency.unwrap_or(8)),
-                regexes: vec![],
-                exclude_keywords: vec![],
-                match_keywords: vec![],
-                exact_case: true,
-                globs: self.globs.clone(),
-                file_mode: FileMode::SkipExisting,
-            };
-            let mut downloader = OciDownloader::new(options);
+            let mut dl = OciDownload::new(url.as_str())
+                .output(output_path.to_string_lossy())
+                .parallel(get_config().ghcr_concurrency.unwrap_or(8))
+                .overwrite(OverwriteMode::Skip);
+
+            if let Some(ref cb) = self.progress_callback {
+                let cb = cb.clone();
+                dl = dl.progress(move |p| {
+                    cb(p);
+                });
+            }
+
+            if !self.globs.is_empty() {
+                dl = dl.filter(Filter {
+                    globs: self.globs.clone(),
+                    ..Default::default()
+                });
+            }
+
             let mut retries = 0;
             loop {
                 if retries > 5 {
-                    if let Some(ref callback) = progress_callback {
-                        callback(DownloadState::Aborted);
+                    if let Some(ref callback) = self.progress_callback {
+                        callback(Progress::Complete {
+                            total: 0,
+                        });
                     }
                     break;
                 }
-                match downloader.download_oci().await {
+                match dl.clone().execute() {
                     Ok(_) => break,
-                    Err(
-                        DownloadError::ResourceError {
-                            status: StatusCode::TOO_MANY_REQUESTS,
-                            ..
+                    Err(err) => {
+                        if matches!(
+                            err,
+                            DownloadError::HttpError {
+                                status: 429,
+                                ..
+                            } | DownloadError::Network(_)
+                        ) {
+                            sleep(Duration::from_secs(5));
+                            retries += 1;
+                            if retries > 1 {
+                                if let Some(ref callback) = self.progress_callback {
+                                    callback(Progress::Error);
+                                }
+                            }
+                        } else {
+                            return Err(err)?;
                         }
-                        | DownloadError::ChunkError,
-                    ) => sleep(Duration::from_secs(5)),
-                    Err(err) => return Err(err)?,
-                };
-                retries += 1;
-                if retries > 1 {
-                    continue;
-                }
-                if let Some(ref callback) = progress_callback {
-                    callback(DownloadState::Error);
+                    }
                 }
             }
 
             Ok(None)
         } else {
-            let downloader = Downloader::default();
             let extract_dir = get_extract_dir(&self.install_dir);
-            let options = DownloadOptions {
-                url: url.to_string(),
-                output_path: Some(output_path.to_string_lossy().to_string()),
-                progress_callback: self.progress_callback.clone(),
-                extract_archive: true,
-                file_mode: FileMode::SkipExisting,
-                extract_dir: Some(extract_dir.to_string_lossy().to_string()),
-                prompt: None,
-            };
 
-            let file_name = downloader.download(options).await?;
+            let mut dl = Download::new(url.as_str())
+                .output(output_path.to_string_lossy())
+                .overwrite(OverwriteMode::Skip)
+                .extract(true)
+                .extract_to(&extract_dir);
 
-            let checksum = if PathBuf::from(&file_name).exists() {
-                Some(calculate_checksum(&file_name)?)
+            if let Some(ref cb) = self.progress_callback {
+                let cb = cb.clone();
+                dl = dl.progress(move |p| {
+                    cb(p);
+                });
+            }
+
+            let file_path = dl.execute()?;
+
+            let checksum = if PathBuf::from(&file_path).exists() {
+                Some(calculate_checksum(&file_path)?)
             } else {
                 None
             };
 
             let extract_path = PathBuf::from(&extract_dir);
             if extract_path.exists() {
-                fs::remove_file(file_name).ok();
+                fs::remove_file(file_path).ok();
 
                 for entry in fs::read_dir(&extract_path)
                     .with_context(|| format!("reading {} directory", extract_path.display()))?

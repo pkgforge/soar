@@ -22,7 +22,10 @@ pub struct PackageRemover {
 
 impl PackageRemover {
     pub async fn new(package: InstalledPackage, db: Arc<Mutex<Connection>>) -> Self {
-        Self { package, db }
+        Self {
+            package,
+            db,
+        }
     }
 
     pub async fn remove(&self) -> SoarResult<()> {

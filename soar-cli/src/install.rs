@@ -29,7 +29,7 @@ use soar_core::{
     utils::default_install_patterns,
     SoarResult,
 };
-use soar_dl::downloader::DownloadState;
+use soar_dl::types::Progress;
 use soar_utils::{hash::calculate_checksum, pattern::apply_sig_variants};
 use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
@@ -412,16 +412,18 @@ async fn spawn_installation_task(
                 installed_count.fetch_add(1, Ordering::Relaxed);
                 total_pb.inc(1);
             }
-            Err(err) => match err {
-                SoarError::Warning(err) => {
-                    let mut warnings = ctx.warnings.lock().unwrap();
-                    warnings.push(err);
+            Err(err) => {
+                match err {
+                    SoarError::Warning(err) => {
+                        let mut warnings = ctx.warnings.lock().unwrap();
+                        warnings.push(err);
+                    }
+                    _ => {
+                        let mut errors = ctx.errors.lock().unwrap();
+                        errors.push(err.to_string());
+                    }
                 }
-                _ => {
-                    let mut errors = ctx.errors.lock().unwrap();
-                    errors.push(err.to_string());
-                }
-            },
+            }
         }
 
         drop(permit);
@@ -431,7 +433,7 @@ async fn spawn_installation_task(
 pub async fn install_single_package(
     ctx: &InstallContext,
     target: &InstallTarget,
-    progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
+    progress_callback: Arc<dyn Fn(Progress) + Send + Sync>,
     core_db: Arc<Mutex<Connection>>,
 ) -> SoarResult<(PathBuf, Vec<(PathBuf, PathBuf)>)> {
     let bin_dir = get_config().get_bin_path()?;

@@ -1,5 +1,6 @@
-use soar_utils::error::{FileSystemError, HashError, PathError};
 use std::error::Error;
+
+use soar_utils::error::{FileSystemError, HashError, PathError};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -82,9 +83,6 @@ pub enum SoarError {
     #[error("Download failed: {0}")]
     DownloadError(#[from] soar_dl::error::DownloadError),
 
-    #[error("{0}")]
-    PlatformError(soar_dl::error::PlatformError),
-
     #[error("Squashy Error: {0}")]
     SquishyError(#[from] squishy::error::SquishyError),
 
@@ -132,16 +130,20 @@ impl SoarError {
 
     pub fn root_cause(&self) -> String {
         match self {
-            Self::ReqwestError(e) => format!(
-                "Root cause: {}",
-                e.source()
-                    .map_or_else(|| e.to_string(), |source| source.to_string())
-            ),
-            Self::RusqliteError(e) => format!(
-                "Root cause: {}",
-                e.source()
-                    .map_or_else(|| e.to_string(), |source| source.to_string())
-            ),
+            Self::ReqwestError(e) => {
+                format!(
+                    "Root cause: {}",
+                    e.source()
+                        .map_or_else(|| e.to_string(), |source| source.to_string())
+                )
+            }
+            Self::RusqliteError(e) => {
+                format!(
+                    "Root cause: {}",
+                    e.source()
+                        .map_or_else(|| e.to_string(), |source| source.to_string())
+                )
+            }
             Self::Config(err) => err.to_string(),
             _ => self.to_string(),
         }
@@ -151,12 +153,6 @@ impl SoarError {
 impl<T> From<std::sync::PoisonError<T>> for SoarError {
     fn from(_: std::sync::PoisonError<T>) -> Self {
         Self::PoisonError
-    }
-}
-
-impl From<soar_dl::error::PlatformError> for SoarError {
-    fn from(value: soar_dl::error::PlatformError) -> Self {
-        Self::PlatformError(value)
     }
 }
 
@@ -171,9 +167,11 @@ impl<T> ErrorContext<T> for std::io::Result<T> {
     where
         C: FnOnce() -> String,
     {
-        self.map_err(|err| SoarError::IoError {
-            action: context(),
-            source: err,
+        self.map_err(|err| {
+            SoarError::IoError {
+                action: context(),
+                source: err,
+            }
         })
     }
 }

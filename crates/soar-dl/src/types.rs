@@ -6,6 +6,9 @@ pub enum Progress {
     Starting { total: u64 },
     Chunk { current: u64, total: u64 },
     Complete { total: u64 },
+    Error,
+    Aborted,
+    Recovered,
 }
 
 /// How to handle existing files

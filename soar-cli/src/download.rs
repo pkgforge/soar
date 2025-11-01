@@ -2,8 +2,6 @@ use std::{sync::Arc, thread::sleep, time::Duration};
 
 use indicatif::HumanBytes;
 use regex::Regex;
-use reqwest::StatusCode;
-use serde::Deserialize;
 use soar_core::{
     config::get_config,
     database::{models::Package, packages::PackageQueryBuilder},
@@ -11,21 +9,22 @@ use soar_core::{
     SoarResult,
 };
 use soar_dl::{
-    downloader::{DownloadOptions, DownloadState, Downloader, OciDownloadOptions, OciDownloader},
+    download::Download,
     error::DownloadError,
-    github::{Github, GithubAsset, GithubRelease},
-    gitlab::{Gitlab, GitlabAsset, GitlabRelease},
-    platform::{
-        PlatformDownloadOptions, PlatformUrl, Release, ReleaseAsset, ReleaseHandler,
-        ReleasePlatform,
-    },
-    utils::FileMode,
+    filter::Filter,
+    github::Github,
+    gitlab::GitLab,
+    oci::OciDownload,
+    platform::PlatformUrl,
+    release::ReleaseDownload,
+    traits::{Asset, Platform as _, Release as _},
+    types::{OverwriteMode, Progress},
 };
 use tracing::{error, info};
 
 use crate::{
     state::AppState,
-    utils::{get_file_mode, interactive_ask, select_package_interactively},
+    utils::{interactive_ask, select_package_interactively},
 };
 
 pub struct DownloadContext {
@@ -35,12 +34,34 @@ pub struct DownloadContext {
     pub exclude_keywords: Vec<String>,
     pub output: Option<String>,
     pub yes: bool,
-    pub progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
+    pub progress_callback: Arc<dyn Fn(Progress) + Send + Sync>,
     pub exact_case: bool,
     pub extract: bool,
     pub extract_dir: Option<String>,
     pub skip_existing: bool,
     pub force_overwrite: bool,
+}
+
+impl DownloadContext {
+    fn get_overwrite_mode(&self) -> OverwriteMode {
+        if self.force_overwrite || self.yes {
+            OverwriteMode::Force
+        } else if self.skip_existing {
+            OverwriteMode::Skip
+        } else {
+            OverwriteMode::Prompt
+        }
+    }
+
+    fn create_filter(&self) -> Filter {
+        Filter {
+            regexes: self.regexes.clone(),
+            globs: self.globs.clone(),
+            include: self.match_keywords.clone(),
+            exclude: self.exclude_keywords.clone(),
+            case_sensitive: self.exact_case,
+        }
+    }
 }
 
 pub async fn download(
@@ -49,7 +70,7 @@ pub async fn download(
     github: Vec<String>,
     gitlab: Vec<String>,
     ghcr: Vec<String>,
-    progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
+    progress_callback: Arc<dyn Fn(Progress) + Send + Sync>,
 ) -> SoarResult<()> {
     handle_direct_downloads(&ctx, links, ctx.output.clone(), progress_callback.clone()).await?;
 
@@ -72,57 +93,62 @@ pub async fn handle_direct_downloads(
     ctx: &DownloadContext,
     links: Vec<String>,
     output: Option<String>,
-    progress_callback: Arc<dyn Fn(DownloadState) + Send + Sync>,
+    progress_callback: Arc<dyn Fn(Progress) + Send + Sync>,
 ) -> SoarResult<()> {
-    let downloader = Downloader::default();
-
     for link in &links {
         match PlatformUrl::parse(link) {
-            Ok(PlatformUrl::DirectUrl(url)) => {
+            Some(PlatformUrl::Direct {
+                url,
+            }) => {
                 info!("Downloading using direct link: {}", url);
 
-                let options = DownloadOptions {
-                    url: link.clone(),
-                    output_path: output.clone(),
-                    progress_callback: Some(progress_callback.clone()),
-                    extract_archive: ctx.extract,
-                    extract_dir: ctx.extract_dir.clone(),
-                    file_mode: get_file_mode(ctx.skip_existing, ctx.yes || ctx.force_overwrite),
-                    prompt: None,
-                };
-                let _ = downloader
-                    .download(options)
-                    .await
-                    .map_err(|e| error!("{}", e));
+                let mut dl = Download::new(url)
+                    .overwrite(ctx.get_overwrite_mode())
+                    .extract(ctx.extract);
+
+                if let Some(ref out) = output {
+                    dl = dl.output(out);
+                }
+
+                if let Some(extract_dir) = ctx.extract_dir.clone() {
+                    dl = dl.extract_to(extract_dir);
+                }
+
+                let cb = ctx.progress_callback.clone();
+                dl = dl.progress(move |p| {
+                    cb(p);
+                });
+
+                if let Err(err) = dl.execute() {
+                    error!("{}", err);
+                }
             }
-            Ok(PlatformUrl::Github(project)) => {
+            Some(PlatformUrl::Github {
+                project,
+                tag,
+            }) => {
                 info!("Detected GitHub URL, processing as GitHub release");
-                let handler = ReleaseHandler::<Github>::new();
-                if let Err(e) = handle_platform_download::<Github, GithubRelease, GithubAsset>(
-                    ctx, &handler, &project,
-                )
-                .await
-                {
-                    error!("{}", e);
+                if let Err(err) = handle_github_release(ctx, &project, tag.as_deref()) {
+                    error!("{}", err);
                 }
             }
-            Ok(PlatformUrl::Gitlab(project)) => {
+            Some(PlatformUrl::Gitlab {
+                project,
+                tag,
+            }) => {
                 info!("Detected GitLab URL, processing as GitLab release");
-                let handler = ReleaseHandler::<Gitlab>::new();
-                if let Err(e) = handle_platform_download::<Gitlab, GitlabRelease, GitlabAsset>(
-                    ctx, &handler, &project,
-                )
-                .await
-                {
-                    error!("{}", e);
+                if let Err(err) = handle_gitlab_release(ctx, &project, tag.as_deref()) {
+                    error!("{}", err);
                 }
             }
-            Ok(PlatformUrl::Oci(url)) => {
-                if let Err(e) = handle_oci_download(ctx, &url).await {
-                    error!("{}", e);
+            Some(PlatformUrl::Oci {
+                reference,
+            }) => {
+                if let Err(err) = handle_oci_download(ctx, &reference).await {
+                    error!("{}", err);
                 };
             }
-            Err(_) => {
+            None => {
                 // if it's not a url, try to parse it as package
                 let state = AppState::new();
                 let repo_db = state.repo_db().await?;
@@ -147,36 +173,34 @@ pub async fn handle_direct_downloads(
                     package.pkg_name, package.pkg_id
                 );
                 if let Some(ref url) = package.ghcr_blob {
-                    let options = OciDownloadOptions {
-                        url: url.to_string(),
-                        output_path: output.clone(),
-                        progress_callback: Some(progress_callback.clone()),
-                        api: None,
-                        concurrency: Some(1),
-                        regexes: Vec::new(),
-                        globs: Vec::new(),
-                        exclude_keywords: Vec::new(),
-                        match_keywords: Vec::new(),
-                        exact_case: false,
-                        file_mode: FileMode::ForceOverwrite,
-                    };
+                    let mut dl = OciDownload::new(url.as_str()).overwrite(OverwriteMode::Force);
 
-                    let mut downloader = OciDownloader::new(options);
+                    if let Some(ref out) = output {
+                        dl = dl.output(out);
+                    }
 
-                    downloader.download_oci().await?;
+                    let cb = progress_callback.clone();
+                    dl = dl.progress(move |p| {
+                        cb(p);
+                    });
+
+                    if let Err(err) = dl.execute() {
+                        error!("{}", err);
+                    }
                 } else {
-                    let downloader = Downloader::default();
-                    let options = DownloadOptions {
-                        url: package.download_url.clone(),
-                        output_path: output.clone(),
-                        progress_callback: Some(progress_callback.clone()),
-                        extract_archive: false,
-                        extract_dir: Some("SOAR_AUTO_EXTRACT".into()),
-                        file_mode: FileMode::ForceOverwrite,
-                        prompt: None,
-                    };
+                    let mut dl =
+                        Download::new(&package.download_url).overwrite(OverwriteMode::Force);
 
-                    downloader.download(options).await?;
+                    if let Some(ref out) = output {
+                        dl = dl.output(out);
+                    }
+
+                    let cb = progress_callback.clone();
+                    dl = dl.progress(move |p| {
+                        cb(p);
+                    });
+
+                    dl.execute()?;
                 }
             }
         };
@@ -188,42 +212,49 @@ pub async fn handle_direct_downloads(
 async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResult<()> {
     info!("Downloading using OCI reference: {}", reference);
 
-    let options = OciDownloadOptions {
-        url: reference.to_string(),
-        output_path: ctx.output.clone(),
-        progress_callback: Some(ctx.progress_callback.clone()),
-        api: None,
-        regexes: ctx.regexes.clone(),
-        concurrency: get_config().ghcr_concurrency,
-        match_keywords: ctx.match_keywords.clone(),
-        exclude_keywords: ctx.exclude_keywords.clone(),
-        exact_case: ctx.exact_case,
-        globs: ctx.globs.clone(),
-        file_mode: get_file_mode(ctx.skip_existing, ctx.yes || ctx.force_overwrite),
-    };
+    let mut dl = OciDownload::new(reference)
+        .filter(ctx.create_filter())
+        .parallel(get_config().ghcr_concurrency.unwrap_or(8))
+        .overwrite(ctx.get_overwrite_mode());
 
-    let mut downloader = OciDownloader::new(options);
+    if let Some(ref output) = ctx.output {
+        dl = dl.output(output);
+    }
+
+    let cb = ctx.progress_callback.clone();
+    dl = dl.progress(move |p| {
+        cb(p);
+    });
+
     let mut retries = 0;
+    let max_retries = 5;
+
     loop {
-        if retries > 5 {
-            error!("Max retries exhausted. Aborting.");
-            break;
-        }
-        match downloader.download_oci().await {
-            Ok(_) => break,
-            Err(
-                DownloadError::ResourceError {
-                    status: StatusCode::TOO_MANY_REQUESTS,
-                    ..
-                }
-                | DownloadError::ChunkError,
-            ) => sleep(Duration::from_secs(5)),
-            Err(err) => {
-                error!("{}", err);
+        match dl.clone().execute() {
+            Ok(_) => {
+                info!("Download completed successfully");
                 break;
             }
-        };
-        retries += 1;
+            Err(err)
+                if matches!(
+                    err,
+                    DownloadError::HttpError {
+                        status: 429,
+                        ..
+                    } | DownloadError::Network(_)
+                ) && retries < max_retries =>
+            {
+                retries += 1;
+                info!("Retrying... ({}/{})", retries, max_retries);
+                ctx.progress_callback.clone()(Progress::Recovered);
+                sleep(Duration::from_secs(5));
+            }
+            Err(err) => {
+                ctx.progress_callback.clone()(Progress::Error);
+                error!("Download failed: {}", err);
+                return Err(err)?;
+            }
+        }
     }
 
     Ok(())
@@ -236,6 +267,114 @@ pub async fn handle_oci_downloads(
     for reference in &references {
         handle_oci_download(ctx, reference).await?;
     }
+    Ok(())
+}
+
+fn handle_github_release(
+    ctx: &DownloadContext,
+    project: &str,
+    tag: Option<&str>,
+) -> SoarResult<()> {
+    let releases = Github::fetch_releases(project, tag)?;
+
+    let release = if let Some(tag) = tag {
+        releases.iter().find(|r| r.tag() == tag)
+    } else {
+        releases
+            .iter()
+            .find(|r| !r.is_prerelease())
+            .or_else(|| releases.first())
+    };
+
+    let release = release.ok_or_else(|| DownloadError::InvalidResponse)?;
+
+    info!("Found release: {}", release.tag());
+    let filter = ctx.create_filter();
+
+    let assets: Vec<_> = release
+        .assets()
+        .iter()
+        .filter(|a| filter.matches(a.name()))
+        .collect();
+
+    if assets.is_empty() {
+        let available = release
+            .assets()
+            .iter()
+            .map(|a| a.name().to_string())
+            .collect::<Vec<String>>();
+
+        Err(DownloadError::NoMatch {
+            available,
+        })?
+    }
+
+    let selected_asset = if assets.len() == 1 || ctx.yes {
+        assets[0]
+    } else {
+        &select_asset_interactively(assets)?
+    };
+
+    info!("Downloading asset: {}", selected_asset.name());
+
+    let mut dl = Download::new(selected_asset.url())
+        .overwrite(ctx.get_overwrite_mode())
+        .extract(ctx.extract);
+
+    if let Some(ref out) = ctx.output {
+        dl = dl.output(out);
+    }
+
+    if let Some(ref extract_dir) = ctx.extract_dir {
+        dl = dl.extract_to(extract_dir);
+    }
+
+    let cb = ctx.progress_callback.clone();
+    dl = dl.progress(move |p| {
+        cb(p);
+    });
+
+    dl.execute()?;
+
+    Ok(())
+}
+
+fn handle_gitlab_release(
+    ctx: &DownloadContext,
+    project: &str,
+    tag: Option<&str>,
+) -> SoarResult<()> {
+    let mut dl = ReleaseDownload::<GitLab>::new(project)
+        .filter(ctx.create_filter())
+        .overwrite(ctx.get_overwrite_mode())
+        .extract(ctx.extract);
+
+    if let Some(tag) = tag {
+        dl = dl.tag(tag);
+    }
+
+    if let Some(ref out) = ctx.output {
+        dl = dl.output(out);
+    }
+
+    if let Some(ref extract_dir) = ctx.extract_dir {
+        dl = dl.extract_to(extract_dir);
+    }
+
+    let cb = ctx.progress_callback.clone();
+    dl = dl.progress(move |p| {
+        cb(p);
+    });
+
+    let paths = dl.execute()?;
+
+    if paths.len() > 1 && !ctx.yes {
+        info!("Multiple assets found, please select one:");
+        for (i, path) in paths.iter().enumerate() {
+            info!("{}. {}", i + 1, path.display());
+        }
+    }
+
     Ok(())
 }
 
@@ -253,63 +392,20 @@ pub fn create_regex_patterns(regex_patterns: Option<Vec<String>>) -> Vec<Regex> 
         .unwrap_or_default()
 }
 
-fn create_platform_options(ctx: &DownloadContext, tag: Option<String>) -> PlatformDownloadOptions {
-    PlatformDownloadOptions {
-        output_path: ctx.output.clone(),
-        progress_callback: Some(ctx.progress_callback.clone()),
-        tag,
-        regexes: ctx.regexes.clone(),
-        globs: ctx.globs.clone(),
-        match_keywords: ctx.match_keywords.clone(),
-        exclude_keywords: ctx.exclude_keywords.clone(),
-        exact_case: ctx.exact_case,
-        extract_archive: ctx.extract,
-        extract_dir: ctx.extract_dir.clone(),
-        file_mode: get_file_mode(ctx.skip_existing, ctx.yes || ctx.force_overwrite),
-        prompt: None,
-    }
-}
-
-async fn handle_platform_download<P: ReleasePlatform, R, A>(
-    ctx: &DownloadContext,
-    handler: &ReleaseHandler<'_, P>,
-    project: &str,
-) -> SoarResult<()>
-where
-    R: Release<A> + for<'de> Deserialize<'de>,
-    A: ReleaseAsset + Clone,
-{
-    let (project, tag) = match project.trim().split_once('@') {
-        Some((proj, tag)) if !tag.trim().is_empty() => (proj, Some(tag.trim())),
-        _ => (project.trim_end_matches('@'), None),
-    };
-
-    let options = create_platform_options(ctx, tag.map(String::from));
-    let releases = handler.fetch_releases::<R>(project, tag).await?;
-    let assets = handler.filter_releases(&releases, &options).await?;
-
-    let selected_asset = if assets.len() == 1 || ctx.yes {
-        assets[0].clone()
-    } else {
-        select_asset(&assets)?
-    };
-
-    info!("Downloading asset from {}", selected_asset.download_url());
-    handler.download(&selected_asset, options.clone()).await?;
-    Ok(())
-}
-
 pub async fn handle_github_downloads(
     ctx: &DownloadContext,
     projects: Vec<String>,
 ) -> SoarResult<()> {
-    let handler = ReleaseHandler::<Github>::new();
     for project in &projects {
         info!("Fetching releases from GitHub: {}", project);
-        if let Err(e) =
-            handle_platform_download::<_, GithubRelease, _>(ctx, &handler, project).await
-        {
-            error!("{}", e);
+
+        let (project, tag) = match project.trim().split_once('@') {
+            Some((proj, tag)) if !tag.trim().is_empty() => (proj, Some(tag.trim())),
+            _ => (project.trim_end_matches('@'), None),
+        };
+
+        if let Err(err) = handle_github_release(ctx, project, tag) {
+            error!("{}", err);
         }
     }
     Ok(())
@@ -319,22 +415,24 @@ pub async fn handle_gitlab_downloads(
     ctx: &DownloadContext,
     projects: Vec<String>,
 ) -> SoarResult<()> {
-    let handler = ReleaseHandler::<Gitlab>::new();
     for project in &projects {
         info!("Fetching releases from GitLab: {}", project);
-        if let Err(e) =
-            handle_platform_download::<_, GitlabRelease, _>(ctx, &handler, project).await
-        {
-            error!("{}", e);
+
+        let (project, tag) = match project.trim().split_once('@') {
+            Some((proj, tag)) if !tag.trim().is_empty() => (proj, Some(tag.trim())),
+            _ => (project.trim_end_matches('@'), None),
+        };
+
+        if let Err(err) = handle_gitlab_release(ctx, project, tag) {
+            error!("{}", err);
         }
     }
     Ok(())
 }
 
-fn select_asset<A>(assets: &[A]) -> SoarResult<A>
+fn select_asset_interactively<A>(assets: Vec<&A>) -> SoarResult<A>
 where
-    A: Clone,
-    A: ReleaseAsset,
+    A: Asset + Clone,
 {
     info!("\nAvailable assets:");
     for (i, asset) in assets.iter().enumerate() {
@@ -342,13 +440,13 @@ where
             .size()
             .map(|s| format!(" ({})", HumanBytes(s)))
             .unwrap_or_default();
-        info!("{}. {}{}", i + 1, asset.name(), size);
+        info!("  {}. {}{}", i + 1, asset.name(), size);
     }
 
     loop {
         let max = assets.len();
-        let response = interactive_ask(&format!("Select an asset (1-{max}): "))?;
-        match response.parse::<usize>() {
+        let response = interactive_ask(&format!("Select an asset (1-{}): ", max))?;
+        match response.trim().parse::<usize>() {
             Ok(n) if n > 0 && n <= max => return Ok(assets[n - 1].clone()),
             _ => error!("Invalid selection, please try again."),
         }

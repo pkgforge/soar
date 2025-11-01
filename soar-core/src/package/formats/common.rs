@@ -8,24 +8,22 @@ use std::{
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use regex::Regex;
-use soar_dl::downloader::{DownloadOptions, Downloader};
-use soar_dl::utils::FileMode;
+use soar_dl::{download::Download, types::OverwriteMode};
 use soar_utils::{
     error::FileSystemResult,
     fs::{create_symlink, read_file_signature, walk_dir},
     path::{desktop_dir, icons_dir},
 };
 
+use super::{
+    appimage::integrate_appimage, get_file_type, wrappe::setup_wrappe_portable_dir, PackageFormat,
+};
 use crate::{
     config::get_config,
     constants::PNG_MAGIC_BYTES,
     database::models::{Package, PackageExt},
     error::{ErrorContext, SoarError},
     SoarResult,
-};
-
-use super::{
-    appimage::integrate_appimage, get_file_type, wrappe::setup_wrappe_portable_dir, PackageFormat,
 };
 
 const SUPPORTED_DIMENSIONS: &[(u32, u32)] = &[
@@ -113,20 +111,22 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     let final_content = {
         let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
 
-        re.replace_all(&content, |caps: &regex::Captures| match &caps[1] {
-            "Icon" => format!("Icon={}-soar", file_name.to_string_lossy()),
-            "Exec" | "TryExec" => {
-                let value = &caps[0];
-                let bin_path = get_config().get_bin_path().unwrap();
-                let new_value = format!("{}/{}", &bin_path.display(), pkg_name);
+        re.replace_all(&content, |caps: &regex::Captures| {
+            match &caps[1] {
+                "Icon" => format!("Icon={}-soar", file_name.to_string_lossy()),
+                "Exec" | "TryExec" => {
+                    let value = &caps[0];
+                    let bin_path = get_config().get_bin_path().unwrap();
+                    let new_value = format!("{}/{}", &bin_path.display(), pkg_name);
 
-                if value.contains("{{pkg_path}}") {
-                    value.replace("{{pkg_path}}", &new_value)
-                } else {
-                    format!("{}={}", &caps[1], new_value)
+                    if value.contains("{{pkg_path}}") {
+                        value.replace("{{pkg_path}}", &new_value)
+                    } else {
+                        format!("{}={}", &caps[1], new_value)
+                    }
                 }
+                _ => unreachable!(),
             }
-            _ => unreachable!(),
         })
         .to_string()
     };
@@ -156,19 +156,11 @@ pub async fn integrate_remote<P: AsRef<Path>>(
     let mut icon_output_path = package_path.join(".DirIcon");
     let desktop_output_path = package_path.join(format!("{}.desktop", package.pkg_name));
 
-    let downloader = Downloader::default();
-
     if let Some(icon_url) = icon_url {
-        let options = DownloadOptions {
-            url: icon_url.clone(),
-            output_path: Some(icon_output_path.to_string_lossy().to_string()),
-            progress_callback: None,
-            extract_archive: false,
-            extract_dir: None,
-            file_mode: FileMode::SkipExisting,
-            prompt: None,
-        };
-        downloader.download(options).await?;
+        Download::new(icon_url)
+            .output(icon_output_path.to_string_lossy())
+            .overwrite(OverwriteMode::Skip)
+            .execute()?;
 
         let ext = if read_file_signature(icon_output_path, 8)? == PNG_MAGIC_BYTES {
             "png"
@@ -179,16 +171,10 @@ pub async fn integrate_remote<P: AsRef<Path>>(
     }
 
     if let Some(desktop_url) = desktop_url {
-        let options = DownloadOptions {
-            url: desktop_url.clone(),
-            output_path: Some(desktop_output_path.to_string_lossy().to_string()),
-            progress_callback: None,
-            extract_archive: false,
-            extract_dir: None,
-            file_mode: FileMode::SkipExisting,
-            prompt: None,
-        };
-        downloader.download(options).await?;
+        Download::new(desktop_url)
+            .output(desktop_output_path.to_string_lossy())
+            .overwrite(OverwriteMode::Skip)
+            .execute()?;
     } else {
         let content = create_default_desktop_entry(&package.pkg_name, "Utility");
         fs::write(&desktop_output_path, &content).with_context(|| {

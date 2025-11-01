@@ -144,6 +144,7 @@ impl OciLayer {
     }
 }
 
+#[derive(Clone)]
 pub struct OciDownload {
     reference: OciReference,
     api: String,

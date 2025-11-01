@@ -3,6 +3,7 @@ use std::{
     io::{Read as _, Write as _},
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use soar_utils::fs::is_elf;
@@ -22,13 +23,14 @@ use crate::{
     xattr::{read_resume, remove_resume, write_resume},
 };
 
+#[derive(Clone)]
 pub struct Download {
     pub url: String,
     pub output: Option<String>,
     pub overwrite: OverwriteMode,
     pub extract: bool,
     pub extract_to: Option<PathBuf>,
-    pub on_progress: Option<Box<dyn Fn(Progress) + Send + Sync>>,
+    pub on_progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
 }
 
 impl Download {
@@ -159,7 +161,7 @@ impl Download {
     where
         F: Fn(Progress) + Send + Sync + 'static,
     {
-        self.on_progress = Some(Box::new(on_progress));
+        self.on_progress = Some(Arc::new(on_progress));
         self
     }
 

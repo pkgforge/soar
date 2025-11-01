@@ -2,13 +2,12 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, ToSql};
 
+use super::{FilterCondition, LogicalOp, PaginatedResponse, QueryFilter, SortDirection};
 use crate::{
     database::models::{FromRow, InstalledPackage},
     error::SoarError,
     SoarResult,
 };
-
-use super::{FilterCondition, LogicalOp, PaginatedResponse, QueryFilter, SortDirection};
 
 #[derive(Debug, Clone)]
 pub struct PackageQueryBuilder {
@@ -147,11 +146,13 @@ impl PackageQueryBuilder {
 
         let items = stmt
             .query_map(params_ref.as_slice(), T::from_row)?
-            .filter_map(|r| match r {
-                Ok(pkg) => Some(pkg),
-                Err(err) => {
-                    eprintln!("Package map error: {err:#?}");
-                    None
+            .filter_map(|r| {
+                match r {
+                    Ok(pkg) => Some(pkg),
+                    Err(err) => {
+                        eprintln!("Package map error: {err:#?}");
+                        None
+                    }
                 }
             })
             .collect();
@@ -355,11 +356,13 @@ impl PackageQueryBuilder {
             .collect();
         let items = stmt
             .query_map(params_ref.as_slice(), InstalledPackage::from_row)?
-            .filter_map(|r| match r {
-                Ok(pkg) => Some(pkg),
-                Err(err) => {
-                    eprintln!("Installed package map error: {err:#?}");
-                    None
+            .filter_map(|r| {
+                match r {
+                    Ok(pkg) => Some(pkg),
+                    Err(err) => {
+                        eprintln!("Installed package map error: {err:#?}");
+                        None
+                    }
                 }
             })
             .collect();

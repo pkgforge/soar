@@ -22,8 +22,7 @@ use soar_core::{
     repositories::get_platform_repositories,
     SoarResult,
 };
-use soar_dl::utils::{is_elf, FileMode};
-use soar_utils::system::platform;
+use soar_utils::{fs::is_elf, system::platform};
 use tracing::{error, info};
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
@@ -159,16 +158,6 @@ pub fn ask_target_action(targets: &[InstallTarget], action: &str) -> SoarResult<
     Ok(())
 }
 
-pub fn get_file_mode(skip_existing: bool, force_overwrite: bool) -> FileMode {
-    if force_overwrite {
-        FileMode::ForceOverwrite
-    } else if skip_existing {
-        FileMode::SkipExisting
-    } else {
-        FileMode::PromptOverwrite
-    }
-}
-
 pub async fn mangle_package_symlinks(
     install_dir: &Path,
     bin_dir: &Path,
@@ -240,7 +229,7 @@ pub async fn mangle_package_symlinks(
                     )
                 })?
                 .path();
-            if path.is_file() && (is_syms || is_elf(&path).await) {
+            if path.is_file() && (is_syms || is_elf(&path)) {
                 if let Some(file_name) = path.file_name() {
                     let symlink_target_path = bin_dir.join(file_name);
                     if symlink_target_path.is_symlink() || symlink_target_path.is_file() {

@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::SoarResult;
-
 use super::common::create_portable_link;
+use crate::SoarResult;
 
 pub fn setup_wrappe_portable_dir<P: AsRef<Path>>(
     bin_path: P,

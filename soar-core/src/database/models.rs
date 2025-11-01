@@ -285,15 +285,19 @@ where
 {
     match Option::<FlexiBool>::deserialize(deserializer)? {
         Some(FlexiBool::Bool(b)) => Ok(Some(b)),
-        Some(FlexiBool::String(s)) => match s.to_lowercase().as_str() {
-            "true" | "yes" | "1" => Ok(Some(true)),
-            "false" | "no" | "0" => Ok(Some(false)),
-            "" => Ok(None),
-            _ => Err(de::Error::invalid_value(
-                de::Unexpected::Str(&s),
-                &"a valid boolean (true/false, yes/no, 1/0)",
-            )),
-        },
+        Some(FlexiBool::String(s)) => {
+            match s.to_lowercase().as_str() {
+                "true" | "yes" | "1" => Ok(Some(true)),
+                "false" | "no" | "0" => Ok(Some(false)),
+                "" => Ok(None),
+                _ => {
+                    Err(de::Error::invalid_value(
+                        de::Unexpected::Str(&s),
+                        &"a valid boolean (true/false, yes/no, 1/0)",
+                    ))
+                }
+            }
+        }
         None => Ok(None),
     }
 }
