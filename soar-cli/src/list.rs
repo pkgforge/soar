@@ -100,10 +100,12 @@ pub async fn search_packages(
             package.pkg_name.clone(),
         );
         let install_state = match installed_pkgs.get(&key) {
-            Some(is_installed) => match is_installed {
-                true => "+",
-                false => "?",
-            },
+            Some(is_installed) => {
+                match is_installed {
+                    true => "+",
+                    false => "?",
+                }
+            }
             None => "-",
         };
 
@@ -471,10 +473,12 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
                 package.pkg_name.clone(),
             );
             let install_state = match installed_pkgs.get(&key) {
-                Some(is_installed) => match is_installed {
-                    true => "+",
-                    false => "?",
-                },
+                Some(is_installed) => {
+                    match is_installed {
+                        true => "+",
+                        false => "?",
+                    }
+                }
                 None => "-",
             };
 

@@ -31,12 +31,12 @@ use crate::error::{HashError, HashResult};
 pub fn calculate_checksum<P: AsRef<Path>>(file_path: P) -> HashResult<String> {
     let file_path = file_path.as_ref();
     let mut hasher = blake3::Hasher::new();
-    hasher
-        .update_mmap(file_path)
-        .map_err(|err| HashError::ReadFailed {
+    hasher.update_mmap(file_path).map_err(|err| {
+        HashError::ReadFailed {
             path: file_path.to_path_buf(),
             source: err,
-        })?;
+        }
+    })?;
     Ok(hasher.finalize().to_hex().to_string())
 }
 
@@ -74,9 +74,11 @@ pub fn verify_checksum<P: AsRef<Path>>(file_path: P, expected: &str) -> HashResu
 
 #[cfg(test)]
 mod tests {
-    use super::{calculate_checksum, verify_checksum};
     use std::io::Write;
+
     use tempfile::NamedTempFile;
+
+    use super::{calculate_checksum, verify_checksum};
 
     #[test]
     fn test_calculate_checksum() {

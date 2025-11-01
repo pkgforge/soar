@@ -8,7 +8,10 @@ pub enum BytesError {
 impl fmt::Display for BytesError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BytesError::ParseFailed { input, reason } => {
+            BytesError::ParseFailed {
+                input,
+                reason,
+            } => {
                 write!(f, "Failed to parse `{input}` as bytes: {reason}")
             }
         }
@@ -26,7 +29,10 @@ pub enum HashError {
 impl fmt::Display for HashError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            HashError::ReadFailed { path, source } => {
+            HashError::ReadFailed {
+                path,
+                source,
+            } => {
                 write!(f, "Failed to read file `{}`: {source}", path.display())
             }
         }
@@ -36,7 +42,9 @@ impl fmt::Display for HashError {
 impl Error for HashError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            HashError::ReadFailed { source, .. } => Some(source),
+            HashError::ReadFailed {
+                source, ..
+            } => Some(source),
         }
     }
 }
@@ -58,13 +66,20 @@ impl fmt::Display for PathError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PathError::Empty => write!(f, "Path is empty"),
-            PathError::FailedToGetCurrentDir { source } => {
+            PathError::FailedToGetCurrentDir {
+                source,
+            } => {
                 write!(f, "Failed to get current directory: {source}")
             }
-            PathError::UnclosedVariable { input } => {
+            PathError::UnclosedVariable {
+                input,
+            } => {
                 write!(f, "Unclosed variable expression starting at `{input}`")
             }
-            PathError::MissingEnvVar { var, input } => {
+            PathError::MissingEnvVar {
+                var,
+                input,
+            } => {
                 write!(f, "Environment variable `{var}` not set in `{input}`")
             }
         }
@@ -74,7 +89,9 @@ impl fmt::Display for PathError {
 impl Error for PathError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            PathError::FailedToGetCurrentDir { source } => Some(source),
+            PathError::FailedToGetCurrentDir {
+                source,
+            } => Some(source),
             _ => None,
         }
     }
@@ -153,29 +170,50 @@ pub enum FileSystemError {
 impl fmt::Display for FileSystemError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FileSystemError::ReadFile { path, source } => {
+            FileSystemError::ReadFile {
+                path,
+                source,
+            } => {
                 write!(f, "Failed to read file `{}`: {source}", path.display())
             }
-            FileSystemError::WriteFile { path, source } => {
+            FileSystemError::WriteFile {
+                path,
+                source,
+            } => {
                 write!(f, "Failed to write file `{}`: {source}", path.display())
             }
-            FileSystemError::CreateFile { path, source } => {
+            FileSystemError::CreateFile {
+                path,
+                source,
+            } => {
                 write!(f, "Failed to create file `{}`: {source}", path.display())
             }
-            FileSystemError::RemoveFile { path, source } => {
+            FileSystemError::RemoveFile {
+                path,
+                source,
+            } => {
                 write!(f, "Failed to remove file `{}`: {source}", path.display())
             }
-            FileSystemError::ReadDirectory { path, source } => {
+            FileSystemError::ReadDirectory {
+                path,
+                source,
+            } => {
                 write!(f, "Failed to read directory `{}`: {source}", path.display())
             }
-            FileSystemError::CreateDirectory { path, source } => {
+            FileSystemError::CreateDirectory {
+                path,
+                source,
+            } => {
                 write!(
                     f,
                     "Failed to create directory `{}`: {source}",
                     path.display()
                 )
             }
-            FileSystemError::RemoveDirectory { path, source } => {
+            FileSystemError::RemoveDirectory {
+                path,
+                source,
+            } => {
                 write!(
                     f,
                     "Failed to remove directory `{}`: {source}",
@@ -194,19 +232,31 @@ impl fmt::Display for FileSystemError {
                     target.display()
                 )
             }
-            FileSystemError::RemoveSymlink { path, source } => {
+            FileSystemError::RemoveSymlink {
+                path,
+                source,
+            } => {
                 write!(f, "Failed to remove symlink `{}`: {source}", path.display())
             }
-            FileSystemError::ReadSymlink { path, source } => {
+            FileSystemError::ReadSymlink {
+                path,
+                source,
+            } => {
                 write!(f, "Failed to read symlink `{}`: {source}", path.display())
             }
-            FileSystemError::NotFound { path } => {
+            FileSystemError::NotFound {
+                path,
+            } => {
                 write!(f, "Path `{}` not found", path.display())
             }
-            FileSystemError::NotADirectory { path } => {
+            FileSystemError::NotADirectory {
+                path,
+            } => {
                 write!(f, "`{}` is not a directory", path.display())
             }
-            FileSystemError::NotAFile { path } => {
+            FileSystemError::NotAFile {
+                path,
+            } => {
                 write!(f, "`{}` is not a file", path.display())
             }
         }
@@ -216,16 +266,36 @@ impl fmt::Display for FileSystemError {
 impl Error for FileSystemError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            FileSystemError::ReadFile { source, .. } => Some(source),
-            FileSystemError::WriteFile { source, .. } => Some(source),
-            FileSystemError::CreateFile { source, .. } => Some(source),
-            FileSystemError::RemoveFile { source, .. } => Some(source),
-            FileSystemError::ReadDirectory { source, .. } => Some(source),
-            FileSystemError::CreateDirectory { source, .. } => Some(source),
-            FileSystemError::RemoveDirectory { source, .. } => Some(source),
-            FileSystemError::CreateSymlink { source, .. } => Some(source),
-            FileSystemError::RemoveSymlink { source, .. } => Some(source),
-            FileSystemError::ReadSymlink { source, .. } => Some(source),
+            FileSystemError::ReadFile {
+                source, ..
+            } => Some(source),
+            FileSystemError::WriteFile {
+                source, ..
+            } => Some(source),
+            FileSystemError::CreateFile {
+                source, ..
+            } => Some(source),
+            FileSystemError::RemoveFile {
+                source, ..
+            } => Some(source),
+            FileSystemError::ReadDirectory {
+                source, ..
+            } => Some(source),
+            FileSystemError::CreateDirectory {
+                source, ..
+            } => Some(source),
+            FileSystemError::RemoveDirectory {
+                source, ..
+            } => Some(source),
+            FileSystemError::CreateSymlink {
+                source, ..
+            } => Some(source),
+            FileSystemError::RemoveSymlink {
+                source, ..
+            } => Some(source),
+            FileSystemError::ReadSymlink {
+                source, ..
+            } => Some(source),
             _ => None,
         }
     }
@@ -252,7 +322,10 @@ pub enum IoOperation {
 
 impl IoContext {
     pub fn new(path: PathBuf, operation: IoOperation) -> Self {
-        Self { path, operation }
+        Self {
+            path,
+            operation,
+        }
     }
 
     pub fn read_file<P: Into<PathBuf>>(path: P) -> Self {
@@ -308,47 +381,69 @@ impl IoContext {
 impl From<(IoContext, std::io::Error)> for FileSystemError {
     fn from((ctx, source): (IoContext, std::io::Error)) -> Self {
         match ctx.operation {
-            IoOperation::ReadFile => FileSystemError::ReadFile {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::WriteFile => FileSystemError::WriteFile {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::CreateFile => FileSystemError::CreateFile {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::RemoveFile => FileSystemError::RemoveFile {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::CreateDirectory => FileSystemError::CreateDirectory {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::RemoveDirectory => FileSystemError::RemoveDirectory {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::ReadDirectory => FileSystemError::ReadDirectory {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::CreateSymlink { target } => FileSystemError::CreateSymlink {
-                from: ctx.path,
+            IoOperation::ReadFile => {
+                FileSystemError::ReadFile {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::WriteFile => {
+                FileSystemError::WriteFile {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::CreateFile => {
+                FileSystemError::CreateFile {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::RemoveFile => {
+                FileSystemError::RemoveFile {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::CreateDirectory => {
+                FileSystemError::CreateDirectory {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::RemoveDirectory => {
+                FileSystemError::RemoveDirectory {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::ReadDirectory => {
+                FileSystemError::ReadDirectory {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::CreateSymlink {
                 target,
-                source,
-            },
-            IoOperation::RemoveSymlink => FileSystemError::RemoveSymlink {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::ReadSymlink => FileSystemError::ReadSymlink {
-                path: ctx.path,
-                source,
-            },
+            } => {
+                FileSystemError::CreateSymlink {
+                    from: ctx.path,
+                    target,
+                    source,
+                }
+            }
+            IoOperation::RemoveSymlink => {
+                FileSystemError::RemoveSymlink {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::ReadSymlink => {
+                FileSystemError::ReadSymlink {
+                    path: ctx.path,
+                    source,
+                }
+            }
         }
     }
 }
@@ -420,8 +515,9 @@ pub type UtilsResult<T> = std::result::Result<T, UtilsError>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io;
+
+    use super::*;
 
     #[test]
     fn test_bytes_error_display() {
@@ -452,7 +548,9 @@ mod tests {
     #[test]
     fn test_path_error_display_and_source() {
         let io_error = io::Error::other("some error");
-        let current_dir_error = PathError::FailedToGetCurrentDir { source: io_error };
+        let current_dir_error = PathError::FailedToGetCurrentDir {
+            source: io_error,
+        };
         assert_eq!(
             current_dir_error.to_string(),
             "Failed to get current directory: some error"

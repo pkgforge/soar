@@ -63,22 +63,26 @@ where
     for (mut key_mut, value_item) in table.iter_mut() {
         let key_str = key_mut.get();
         match T::get_field_docs(key_str) {
-            Ok(docs) => match value_item {
-                Item::None => {
-                    return Err(ConfigError::Custom(format!(
-                        "Encountered TomlEditItem::None for key '{key_str}' unexpectedly",
-                    )))
+            Ok(docs) => {
+                match value_item {
+                    Item::None => {
+                        return Err(ConfigError::Custom(format!(
+                            "Encountered TomlEditItem::None for key '{key_str}' unexpectedly",
+                        )))
+                    }
+                    Item::Value(_) => append_docs_as_toml_comments(key_mut.leaf_decor_mut(), docs),
+                    Item::Table(sub_table) => {
+                        append_docs_as_toml_comments(sub_table.decor_mut(), docs)
+                    }
+                    Item::ArrayOfTables(array) => {
+                        let first_table = array
+                            .iter_mut()
+                            .next()
+                            .expect("Array of table should not be empty");
+                        append_docs_as_toml_comments(first_table.decor_mut(), docs);
+                    }
                 }
-                Item::Value(_) => append_docs_as_toml_comments(key_mut.leaf_decor_mut(), docs),
-                Item::Table(sub_table) => append_docs_as_toml_comments(sub_table.decor_mut(), docs),
-                Item::ArrayOfTables(array) => {
-                    let first_table = array
-                        .iter_mut()
-                        .next()
-                        .expect("Array of table should not be empty");
-                    append_docs_as_toml_comments(first_table.decor_mut(), docs);
-                }
-            },
+            }
             Err(_) => {
                 warn!(
                     "Field '{}' found in TOML but not in struct '{}' for documentation lookup, or it's a complex case like flatten.",

@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf, process::Command, sync::Arc};
+use std::{fs, process::Command, sync::Arc};
 
 use soar_core::{
     database::{
@@ -10,10 +10,7 @@ use soar_core::{
     utils::get_extract_dir,
     SoarResult,
 };
-use soar_dl::{
-    downloader::{DownloadOptions, Downloader, OciDownloadOptions, OciDownloader},
-    utils::FileMode,
-};
+use soar_dl::{download::Download, oci::OciDownload, types::OverwriteMode};
 use soar_utils::hash::calculate_checksum;
 
 use crate::{
@@ -83,46 +80,37 @@ pub async fn run_package(
         });
 
         if let Some(url) = package.ghcr_blob {
-            let options = OciDownloadOptions {
-                url: url.to_string(),
-                output_path: Some(output_path.to_string_lossy().to_string()),
-                progress_callback: Some(progress_callback.clone()),
-                api: None,
-                concurrency: Some(1),
-                regexes: Vec::new(),
-                globs: Vec::new(),
-                exclude_keywords: Vec::new(),
-                match_keywords: Vec::new(),
-                exact_case: false,
-                file_mode: FileMode::ForceOverwrite,
-            };
+            let mut dl = OciDownload::new(url.as_str())
+                .output(output_path.to_string_lossy())
+                .overwrite(OverwriteMode::Force);
+            let cb = progress_callback.clone();
+            dl = dl.progress(move |p| {
+                cb(p);
+            });
 
-            let mut downloader = OciDownloader::new(options);
-
-            downloader.download_oci().await?;
+            dl.execute()?;
         } else {
-            let downloader = Downloader::default();
             let extract_dir = get_extract_dir(&cache_bin);
-            let options = DownloadOptions {
-                url: package.download_url.clone(),
-                output_path: Some(output_path.to_string_lossy().to_string()),
-                progress_callback: Some(progress_callback),
-                extract_archive: true,
-                extract_dir: Some(extract_dir.to_string_lossy().to_string()),
-                file_mode: FileMode::ForceOverwrite,
-                prompt: None,
-            };
+            let mut dl = Download::new(&package.download_url)
+                .output(output_path.to_string_lossy())
+                .overwrite(OverwriteMode::Force)
+                .extract(true)
+                .extract_to(&extract_dir);
 
-            let file_name = downloader.download(options).await?;
-            let extract_path = PathBuf::from(&extract_dir);
-            if extract_path.exists() {
+            let cb = progress_callback.clone();
+            dl = dl.progress(move |p| {
+                cb(p);
+            });
+
+            let file_name = dl.execute()?;
+            if extract_dir.exists() {
                 fs::remove_file(file_name).ok();
 
-                for entry in fs::read_dir(&extract_path)
-                    .with_context(|| format!("reading {} directory", extract_path.display()))?
+                for entry in fs::read_dir(&extract_dir)
+                    .with_context(|| format!("reading {} directory", extract_dir.display()))?
                 {
                     let entry = entry.with_context(|| {
-                        format!("reading entry from directory {}", extract_path.display())
+                        format!("reading entry from directory {}", extract_dir.display())
                     })?;
                     let from = entry.path();
                     let to = cache_bin.join(entry.file_name());
@@ -131,7 +119,7 @@ pub async fn run_package(
                     })?;
                 }
 
-                fs::remove_dir_all(&extract_path).ok();
+                fs::remove_dir_all(&extract_dir).ok();
             }
         }
 

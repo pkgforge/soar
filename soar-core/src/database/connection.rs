@@ -5,9 +5,8 @@ use std::{
 
 use rusqlite::Connection;
 
-use crate::error::SoarError;
-
 use super::{models::RemotePackage, repository::PackageRepository, statements::DbStatements};
+use crate::error::SoarError;
 
 type Result<T> = std::result::Result<T, SoarError>;
 
@@ -20,7 +19,9 @@ impl Database {
         let path = path.as_ref();
         let conn = Connection::open(path)?;
         let conn = Arc::new(Mutex::new(conn));
-        Ok(Database { conn })
+        Ok(Database {
+            conn,
+        })
     }
 
     pub fn new_multi<P: AsRef<Path>>(paths: &[P]) -> Result<Self> {
@@ -36,7 +37,9 @@ impl Database {
             conn.execute(&format!("PRAGMA shard{idx}.case_sensitive_like = ON;"), [])?;
         }
         let conn = Arc::new(Mutex::new(conn));
-        Ok(Database { conn })
+        Ok(Database {
+            conn,
+        })
     }
 
     pub fn from_remote_metadata(&self, metadata: &[RemotePackage], repo_name: &str) -> Result<()> {

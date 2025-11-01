@@ -4,12 +4,15 @@ use std::{
 };
 
 use semver::Version;
-use soar_core::{error::ErrorContext, SoarResult};
+use soar_core::{
+    error::{ErrorContext, SoarError},
+    SoarResult,
+};
 use soar_dl::{
-    downloader::{DownloadOptions, Downloader},
-    github::{Github, GithubRelease},
-    platform::{Release, ReleaseAsset, ReleaseHandler},
-    utils::FileMode,
+    download::Download,
+    github::Github,
+    traits::{Asset as _, Platform as _, Release as _},
+    types::{OverwriteMode, Progress},
 };
 use tracing::{debug, error, info};
 
@@ -33,28 +36,24 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                 _ => is_nightly,
             };
 
-            let handler = ReleaseHandler::<Github>::new();
-            let releases = handler
-                .fetch_releases::<GithubRelease>("pkgforge/soar", None)
-                .await?;
+            let releases = Github::fetch_releases("pkgforge/soar", None)?;
 
-            let release = releases.iter().find(|rel| {
-                let is_nightly_release = rel.tag_name().starts_with("nightly");
-
+            let release = releases.iter().find(|release| {
+                let is_nightly_release = release.tag().starts_with("nightly");
                 debug!(
                     "Checking release: {}, Release Channel: {}",
-                    rel.tag_name(),
+                    release.tag(),
                     if is_nightly_release {
                         "nightly"
                     } else {
                         "stable"
                     }
                 );
-                if target_nightly {
-                    is_nightly_release && rel.name() != self_version
-                } else {
-                    let release_version = rel.tag_name().trim_start_matches("v");
 
+                if target_nightly {
+                    is_nightly_release && release.name() != self_version
+                } else {
+                    let release_version = release.tag().trim_start_matches("v");
                     let parsed_release_version = Version::parse(release_version).ok();
                     let parsed_self_version = Version::parse(self_version).ok();
 
@@ -87,7 +86,7 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                         if target_nightly { "nightly" } else { "stable" }
                     );
                 } else {
-                    info!("Found new update: {}", release.tag_name());
+                    info!("Found new update: {}", release.tag());
                 }
                 let assets = release.assets();
                 let asset = assets
@@ -95,24 +94,43 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                     .find(|a| {
                         a.name.contains(ARCH) && !a.name.contains("tar") && !a.name.contains("sum")
                     })
-                    .unwrap();
+                    .ok_or_else(|| {
+                        SoarError::Custom(format!("No matching asset fund for {}", ARCH))
+                    })?;
 
-                debug!("Selected asset: {}", asset.name);
+                debug!("Selected asset: {}", asset.name());
 
-                let downloader = Downloader::default();
-                let options = DownloadOptions {
-                    url: asset.download_url().to_string(),
-                    output_path: Some(self_bin.to_string_lossy().to_string()),
-                    progress_callback: None,
-                    extract_archive: false,
-                    extract_dir: None,
-                    file_mode: FileMode::ForceOverwrite,
-                    prompt: None,
-                };
+                let dl = Download::new(asset.url())
+                    .output(self_bin.to_string_lossy())
+                    .overwrite(OverwriteMode::Force)
+                    .progress(|p| {
+                        match p {
+                            Progress::Starting {
+                                total,
+                            } => {
+                                info!("Downloading update ({} bytes)...", total);
+                            }
+                            Progress::Chunk {
+                                current,
+                                total,
+                            } => {
+                                if current % (1024 * 1024) == 0 {
+                                    let pct = (current as f64 / total as f64 * 100.0) as u8;
+                                    debug!("Progress: {}%", pct);
+                                }
+                            }
+                            Progress::Complete {
+                                ..
+                            } => {
+                                debug!("Download complete");
+                            }
+                            _ => {}
+                        }
+                    });
 
-                debug!("Downloading update from: {}", options.url);
-                downloader.download(options).await?;
-                info!("Soar updated to {}", release.tag_name());
+                debug!("Downloading update from: {}", asset.url());
+                dl.execute()?;
+                info!("Soar updated to {}", release.tag());
             } else {
                 eprintln!("No updates found.");
             }
