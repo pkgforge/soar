@@ -330,6 +330,7 @@ impl Download {
         let mut reader = resp.into_body().into_reader();
         let mut buffer = [0u8; 8192];
         let mut downloaded = resume_from.unwrap_or(0);
+        let mut last_checkpoint = downloaded / (1024 * 1024);
 
         loop {
             let n = reader.read(&mut buffer)?;
@@ -340,7 +341,9 @@ impl Download {
             file.write_all(&buffer[..n])?;
             downloaded += n as u64;
 
-            if downloaded % (1024 * 1024) == 0 {
+            let checkpoint = downloaded / (1024 * 1024);
+            if checkpoint > last_checkpoint {
+                last_checkpoint = checkpoint;
                 write_resume(
                     path,
                     &ResumeInfo {

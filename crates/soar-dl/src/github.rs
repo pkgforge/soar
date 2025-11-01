@@ -46,7 +46,7 @@ impl Platform for Github {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use soar_dl::github::Github;
     /// use soar_dl::traits::{Platform, Release};
     ///

@@ -109,28 +109,20 @@ pub fn resolve_output_path(
     url_filename: Option<String>,
     header_filename: Option<String>,
 ) -> Result<PathBuf, DownloadError> {
+    let filename = || header_filename.or(url_filename);
+
     match output {
         Some("-") => Ok(PathBuf::from("-")),
-        Some(p) if p.ends_with('/') => {
-            let filename = header_filename
-                .or(url_filename)
-                .ok_or(DownloadError::NoFilename)?;
-            Ok(PathBuf::from(p).join(filename))
-        }
         Some(p) => {
             let path = PathBuf::from(p);
-            if path.is_dir() {
-                let filename = header_filename
-                    .or(url_filename)
-                    .ok_or(DownloadError::NoFilename)?;
-                Ok(path.join(filename))
+            if p.ends_with('/') || path.is_dir() {
+                Ok(path.join(filename().ok_or(DownloadError::NoFilename)?))
             } else {
                 Ok(path)
             }
         }
         None => {
-            header_filename
-                .or(url_filename)
+            filename()
                 .map(PathBuf::from)
                 .ok_or(DownloadError::NoFilename)
         }

@@ -51,7 +51,7 @@ impl Platform for GitLab {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use soar_dl::gitlab::GitLab;
     /// use soar_dl::traits::Platform;
     ///

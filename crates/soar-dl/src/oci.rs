@@ -567,7 +567,12 @@ impl OciDownload {
             .collect();
 
         for handle in handles {
-            handle.join().ok();
+            if let Err(err) = handle.join() {
+                errors
+                    .lock()
+                    .unwrap()
+                    .push(format!("Worker thread panicked: {err:?}"));
+            }
         }
 
         let errors = errors.lock().unwrap();
@@ -594,7 +599,6 @@ impl OciDownload {
     ///
     /// let dl = OciDownload::new("ghcr.io/example/repo:latest");
     /// let manifest = dl.fetch_manifest().unwrap();
-    /// assert!(manifest.layers.len() >= 0);
     /// ```
     pub fn fetch_manifest(&self) -> Result<OciManifest, DownloadError> {
         let url = format!(
@@ -652,7 +656,6 @@ impl OciDownload {
             .unwrap_or(&self.reference.tag);
 
         let output = self.output.as_deref().unwrap_or(filename);
-        let path = PathBuf::from(output);
 
         let url = format!(
             "{}/{}/blobs/{}",
@@ -670,7 +673,7 @@ impl OciDownload {
             dl
         };
 
-        dl.execute()?;
+        let path = dl.execute()?;
 
         Ok(vec![path])
     }
@@ -793,6 +796,7 @@ fn download_layer_impl(
     let mut reader = resp.into_body().into_reader();
     let mut buffer = [0u8; 8192];
     *local_downloaded = resume_from.unwrap_or(0);
+    let mut last_checkpoint = *local_downloaded / (1024 * 1024);
 
     loop {
         let n = reader.read(&mut buffer)?;
@@ -809,7 +813,9 @@ fn download_layer_impl(
             *shared
         };
 
-        if (*local_downloaded).is_multiple_of(1024 * 1024) {
+        let checkpoint = *local_downloaded / (1024 * 1024);
+        if checkpoint > last_checkpoint {
+            last_checkpoint = checkpoint;
             write_resume(
                 path,
                 &ResumeInfo {
