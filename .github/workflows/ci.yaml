@@ -54,7 +54,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@0e09747a63ae497bf945b3dcaf38fef0050d0109 # v2.62.0
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
         with:
           tool: cargo-llvm-cov
 
@@ -77,7 +77,7 @@ jobs:
           toolchain: stable
 
       - name: Install cargo-machete
-        uses: taiki-e/install-action@0e09747a63ae497bf945b3dcaf38fef0050d0109
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532
         with:
           tool: cargo-machete
 
