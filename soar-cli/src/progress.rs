@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
 use nu_ansi_term::Color::Red;
 use soar_core::database::models::Package;
-use soar_dl::downloader::DownloadState;
+use soar_dl::types::Progress;
 
 use crate::{install::InstallContext, utils::Colored};
 
@@ -29,21 +29,27 @@ fn format_bytes(state: &ProgressState, w: &mut dyn std::fmt::Write) {
     .unwrap();
 }
 
-pub fn handle_progress(state: DownloadState, progress_bar: &ProgressBar) {
+pub fn handle_progress(state: Progress, progress_bar: &ProgressBar) {
     match state {
-        DownloadState::Preparing(total) => {
+        Progress::Starting {
+            total,
+        } => {
             progress_bar.set_length(total);
         }
-        DownloadState::Progress(progress) => {
-            progress_bar.set_position(progress);
+        Progress::Chunk {
+            current, ..
+        } => {
+            progress_bar.set_position(current);
         }
-        DownloadState::Complete => progress_bar.finish(),
+        Progress::Complete {
+            ..
+        } => progress_bar.finish(),
         _ => {}
     }
 }
 
 pub fn handle_install_progress(
-    state: DownloadState,
+    state: Progress,
     progress_bar: &mut Option<ProgressBar>,
     ctx: &InstallContext,
     package: &Package,
@@ -73,22 +79,28 @@ pub fn handle_install_progress(
     }
 
     match state {
-        DownloadState::Preparing(total) => {
+        Progress::Starting {
+            total,
+        } => {
             if let Some(pb) = progress_bar {
                 pb.set_length(total);
             }
         }
-        DownloadState::Progress(progress) => {
+        Progress::Chunk {
+            current, ..
+        } => {
             if let Some(pb) = progress_bar {
-                pb.set_position(progress);
+                pb.set_position(current);
             }
         }
-        DownloadState::Complete => {
+        Progress::Complete {
+            ..
+        } => {
             if let Some(pb) = progress_bar.take() {
                 pb.finish();
             }
         }
-        DownloadState::Error => {
+        Progress::Error => {
             let count = ctx.retrying.fetch_add(1, Ordering::Relaxed);
             let failed_count = ctx.failed.load(Ordering::Relaxed);
             ctx.total_progress_bar.set_message(format!(
@@ -101,7 +113,7 @@ pub fn handle_install_progress(
                 },
             ));
         }
-        DownloadState::Aborted => {
+        Progress::Aborted => {
             let failed_count = ctx.failed.fetch_add(1, Ordering::Relaxed);
             if let Some(pb) = progress_bar {
                 let prefix = format!(
@@ -130,7 +142,7 @@ pub fn handle_install_progress(
                 }
             }
         }
-        DownloadState::Recovered => {
+        Progress::Recovered => {
             let count = ctx.retrying.fetch_sub(1, Ordering::Relaxed);
             let failed_count = ctx.failed.load(Ordering::Relaxed);
             if count > 1 || failed_count > 0 {

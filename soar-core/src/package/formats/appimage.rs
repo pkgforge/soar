@@ -3,11 +3,10 @@ use std::{fs, path::Path};
 use soar_utils::fs::read_file_signature;
 use squishy::{appimage::AppImage, EntryKind};
 
+use super::common::{symlink_desktop, symlink_icon};
 use crate::{
     constants::PNG_MAGIC_BYTES, database::models::PackageExt, error::ErrorContext, SoarResult,
 };
-
-use super::common::{symlink_desktop, symlink_icon};
 
 pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,

@@ -6,6 +6,7 @@ use std::{
 };
 
 use documented::{Documented, DocumentedFields};
+use rusqlite::Connection;
 use serde::{de::Error, Deserialize, Serialize};
 use soar_utils::{
     path::{resolve_path, xdg_config_home, xdg_data_home},
@@ -23,7 +24,6 @@ use crate::{
     utils::default_install_patterns,
     SoarResult,
 };
-use rusqlite::Connection;
 
 type Result<T> = std::result::Result<T, ConfigError>;
 
@@ -184,7 +184,7 @@ pub struct Config {
 
     /// Maximum number of concurrent requests for GHCR (GitHub Container Registry).
     /// Default: 8
-    pub ghcr_concurrency: Option<u64>,
+    pub ghcr_concurrency: Option<usize>,
 
     /// Limits the number of results returned by a search.
     /// Default: 20
@@ -357,10 +357,12 @@ impl Config {
         let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
 
         let mut config = match fs::read_to_string(&config_path) {
-            Ok(content) => match toml::from_str(&content) {
-                Ok(c) => Ok(c),
-                Err(err) => Err(ConfigError::TomlDeError(err)),
-            },
+            Ok(content) => {
+                match toml::from_str(&content) {
+                    Ok(c) => Ok(c),
+                    Err(err) => Err(ConfigError::TomlDeError(err)),
+                }
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Ok(Self::default_config::<&str>(false, &[]))
             }

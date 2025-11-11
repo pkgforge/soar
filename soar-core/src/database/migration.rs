@@ -21,7 +21,9 @@ pub enum DbKind {
 
 impl MigrationManager {
     pub fn new(conn: Connection) -> rusqlite::Result<Self> {
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+        })
     }
 
     fn get_current_version(&self) -> rusqlite::Result<i32> {
@@ -69,7 +71,10 @@ impl MigrationManager {
 
                 let sql = entry.contents_utf8().unwrap().to_string();
 
-                migrations.push(Migration { version, sql });
+                migrations.push(Migration {
+                    version,
+                    sql,
+                });
             }
         }
 

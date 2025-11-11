@@ -53,7 +53,11 @@ pub fn resolve_path(path: &str) -> PathResult<PathBuf> {
     } else {
         env::current_dir()
             .map(|cwd| cwd.join(path_buf))
-            .map_err(|err| PathError::FailedToGetCurrentDir { source: err })
+            .map_err(|err| {
+                PathError::FailedToGetCurrentDir {
+                    source: err,
+                }
+            })
     }
 }
 
@@ -210,9 +214,11 @@ fn expand_env_var(var_name: &str, result: &mut String, original: &str) -> PathRe
         "XDG_DATA_HOME" => result.push_str(&xdg_data_home().to_string_lossy()),
         "XDG_CACHE_HOME" => result.push_str(&xdg_cache_home().to_string_lossy()),
         _ => {
-            let value = env::var(var_name).map_err(|_| PathError::MissingEnvVar {
-                input: original.into(),
-                var: var_name.into(),
+            let value = env::var(var_name).map_err(|_| {
+                PathError::MissingEnvVar {
+                    input: original.into(),
+                    var: var_name.into(),
+                }
             })?;
             result.push_str(&value);
         }
@@ -222,10 +228,11 @@ fn expand_env_var(var_name: &str, result: &mut String, original: &str) -> PathRe
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::env;
 
     use serial_test::serial;
+
+    use super::*;
 
     #[test]
     fn test_expand_variables_simple() {

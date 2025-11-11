@@ -1,8 +1,7 @@
 use rusqlite::{params, Result};
 
-use crate::{database::models::FromRow, error::SoarError, SoarResult};
-
 use super::models::Nest;
+use crate::{database::models::FromRow, error::SoarError, SoarResult};
 
 pub fn add(tx: &rusqlite::Transaction, nest: &Nest) -> Result<()> {
     tx.execute(
@@ -16,11 +15,13 @@ pub fn list(tx: &rusqlite::Transaction) -> Result<Vec<Nest>> {
     let mut stmt = tx.prepare("SELECT id, name, url FROM nests")?;
     let nests = stmt
         .query_map([], Nest::from_row)?
-        .filter_map(|n| match n {
-            Ok(nest) => Some(nest),
-            Err(err) => {
-                eprintln!("Nest map error: {err:#?}");
-                None
+        .filter_map(|n| {
+            match n {
+                Ok(nest) => Some(nest),
+                Err(err) => {
+                    eprintln!("Nest map error: {err:#?}");
+                    None
+                }
             }
         })
         .collect();

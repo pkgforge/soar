@@ -1,7 +1,6 @@
-use std::{env, error::Error, fs, io::Read, process::Command, sync::Arc};
+use std::{env, fs, io::Read, process::Command, sync::Arc};
 
 use clap::Parser;
-
 use cli::Args;
 use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};
@@ -19,11 +18,12 @@ use soar_core::{
     utils::{cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
 };
-use soar_dl::http_client::{configure_http_client, create_http_header_map};
+use soar_dl::http_client::configure_http_client;
 use soar_utils::path::resolve_path;
 use state::AppState;
 use tracing::{error, info, warn};
 use update::update_packages;
+use ureq::Proxy;
 use use_package::use_alternate_package;
 use utils::COLOR;
 
@@ -98,23 +98,26 @@ async fn handle_cli() -> SoarResult<()> {
     let user_agent = args.user_agent.clone();
     let header = args.header.clone();
 
-    if let Err(err) = configure_http_client(|config| {
-        config.proxy = proxy;
+    configure_http_client(|config| {
+        if let Some(proxy) = proxy.as_deref() {
+            config.proxy = Some(Proxy::new(proxy).unwrap());
+        }
 
         if let Some(user_agent) = user_agent {
             config.user_agent = Some(user_agent);
         }
 
         if let Some(headers) = header {
-            config.headers = Some(create_http_header_map(headers));
+            let headers = headers
+                .into_iter()
+                .filter_map(|header| {
+                    let (key, value) = header.split_once(':')?;
+                    Some((key.parse().unwrap(), value.parse().unwrap()))
+                })
+                .collect();
+            config.headers = Some(headers);
         }
-    }) {
-        error!("Error configuring HTTP client: {}", err);
-        if let Some(source) = err.source() {
-            error!("  Caused by: {}", source);
-        }
-        std::process::exit(1);
-    };
+    });
 
     match args.command {
         cli::Commands::DefConfig {
@@ -174,10 +177,14 @@ async fn handle_cli() -> SoarResult<()> {
                 } => {
                     search_packages(query, case_sensitive, limit).await?;
                 }
-                cli::Commands::Query { query } => {
+                cli::Commands::Query {
+                    query,
+                } => {
                     query_package(query).await?;
                 }
-                cli::Commands::Remove { packages } => {
+                cli::Commands::Remove {
+                    packages,
+                } => {
                     remove_packages(&packages).await?;
                 }
                 cli::Commands::Sync => {
@@ -193,18 +200,23 @@ async fn handle_cli() -> SoarResult<()> {
                 } => {
                     update_packages(packages, keep, ask, no_verify).await?;
                 }
-                cli::Commands::ListInstalledPackages { repo_name, count } => {
+                cli::Commands::ListInstalledPackages {
+                    repo_name,
+                    count,
+                } => {
                     list_installed_packages(repo_name, count).await?;
                 }
-                cli::Commands::ListPackages { repo_name } => {
+                cli::Commands::ListPackages {
+                    repo_name,
+                } => {
                     list_packages(repo_name).await?;
                 }
-                cli::Commands::Log { package } => {
-                    inspect_log(&package, InspectType::BuildLog).await?
-                }
-                cli::Commands::Inspect { package } => {
-                    inspect_log(&package, InspectType::BuildScript).await?
-                }
+                cli::Commands::Log {
+                    package,
+                } => inspect_log(&package, InspectType::BuildLog).await?,
+                cli::Commands::Inspect {
+                    package,
+                } => inspect_log(&package, InspectType::BuildScript).await?,
                 cli::Commands::Run {
                     yes,
                     command,
@@ -219,7 +231,9 @@ async fn handle_cli() -> SoarResult<()> {
                     )
                     .await?;
                 }
-                cli::Commands::Use { package_name } => {
+                cli::Commands::Use {
+                    package_name,
+                } => {
                     use_alternate_package(&package_name).await?;
                 }
                 cli::Commands::Download {
@@ -242,7 +256,7 @@ async fn handle_cli() -> SoarResult<()> {
                     let progress_bar = create_progress_bar();
                     let progress_callback =
                         Arc::new(move |state| progress::handle_progress(state, &progress_bar));
-                    let regexes = create_regex_patterns(regexes);
+                    let regexes = create_regex_patterns(regexes)?;
                     let globs = globs.unwrap_or_default();
                     let match_keywords = match_keywords.unwrap_or_default();
                     let exclude_keywords = exclude_keywords.unwrap_or_default();
@@ -262,7 +276,7 @@ async fn handle_cli() -> SoarResult<()> {
                         force_overwrite,
                     };
 
-                    download(context, links, github, gitlab, ghcr, progress_callback).await?;
+                    download(context, links, github, gitlab, ghcr).await?;
                 }
                 cli::Commands::Health => display_health().await?,
                 cli::Commands::Env => {
@@ -282,7 +296,9 @@ async fn handle_cli() -> SoarResult<()> {
                     );
                 }
                 #[cfg(feature = "self")]
-                cli::Commands::SelfCmd { action } => {
+                cli::Commands::SelfCmd {
+                    action,
+                } => {
                     process_self_action(&action).await?;
                 }
                 cli::Commands::Clean {
@@ -301,7 +317,9 @@ async fn handle_cli() -> SoarResult<()> {
                         remove_broken_packages().await?;
                     }
                 }
-                cli::Commands::Config { edit } => {
+                cli::Commands::Config {
+                    edit,
+                } => {
                     let config_path = CONFIG_PATH.read().unwrap();
                     match edit {
                         Some(editor) => {
@@ -339,17 +357,24 @@ async fn handle_cli() -> SoarResult<()> {
                         }
                     };
                 }
-                cli::Commands::Nest(nest_command) => match nest_command {
-                    cli::NestCommands::Add { name, url } => {
-                        add_nest(&name, &url).await?;
+                cli::Commands::Nest(nest_command) => {
+                    match nest_command {
+                        cli::NestCommands::Add {
+                            name,
+                            url,
+                        } => {
+                            add_nest(&name, &url).await?;
+                        }
+                        cli::NestCommands::Remove {
+                            name,
+                        } => {
+                            remove_nest(&name).await?;
+                        }
+                        cli::NestCommands::List => {
+                            list_nests().await?;
+                        }
                     }
-                    cli::NestCommands::Remove { name } => {
-                        remove_nest(&name).await?;
-                    }
-                    cli::NestCommands::List => {
-                        list_nests().await?;
-                    }
-                },
+                }
                 _ => unreachable!(),
             }
         }
