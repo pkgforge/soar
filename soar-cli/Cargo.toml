@@ -20,7 +20,6 @@ self = []
 
 [dependencies]
 clap = { version = "4.5.47", features = ["cargo", "derive"] }
-futures = { workspace = true }
 indicatif = "0.18.0"
 minisign-verify = "0.2.4"
 nu-ansi-term = "0.50.1"

@@ -26,7 +26,6 @@ diesel = { version = "2.3.2", features = [
 ] }
 diesel_migrations = { version = "2.3.0", features = ["sqlite"] }
 fast-glob = "1.0.0"
-futures = "0.3.31"
 miette = { version = "7.6.0", features = ["fancy"] }
 percent-encoding = "2.3.2"
 rayon = "1.11.0"
