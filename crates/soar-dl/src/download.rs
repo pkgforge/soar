@@ -31,6 +31,7 @@ pub struct Download {
     pub extract: bool,
     pub extract_to: Option<PathBuf>,
     pub on_progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
+    pub ghcr_blob: bool,
 }
 
 impl Download {
@@ -60,7 +61,25 @@ impl Download {
             extract: false,
             extract_to: None,
             on_progress: None,
+            ghcr_blob: false,
         }
+    }
+
+    /// Turns on GHCR blob support.
+    ///
+    /// When enabled, the `Authorization` header is set to `Bearer QQ==`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use soar_dl::download::Download;
+    ///
+    /// let dl = Download::new("https://example.com/archive.tar.gz")
+    ///     .ghcr_blob();
+    /// ```
+    pub fn ghcr_blob(mut self) -> Self {
+        self.ghcr_blob = true;
+        self
     }
 
     /// Sets the download output destination.
@@ -272,7 +291,7 @@ impl Download {
     ///
     /// `PathBuf::from("-")` on success.
     fn download_to_stdout(&self) -> Result<PathBuf, DownloadError> {
-        let resp = Http::fetch(&self.url, None, None)?;
+        let resp = Http::fetch(&self.url, None, None, self.ghcr_blob)?;
         let mut stdout = std::io::stdout();
         let mut reader = resp.into_body().into_reader();
 
@@ -306,7 +325,7 @@ impl Download {
             .map(|r| (Some(r.downloaded), r.etag.as_deref()))
             .unwrap_or((None, None));
 
-        let resp = Http::fetch(&self.url, resume_from, etag)?;
+        let resp = Http::fetch(&self.url, resume_from, etag, self.ghcr_blob)?;
 
         let status = resp.status();
         if resume_from.is_some() && status != 206 {

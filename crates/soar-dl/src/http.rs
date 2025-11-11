@@ -35,8 +35,13 @@ impl Http {
         url: &str,
         resume_from: Option<u64>,
         etag: Option<&str>,
+        ghcr_blob: bool,
     ) -> Result<Response<Body>, DownloadError> {
         let mut req = SHARED_AGENT.get(url);
+
+        if ghcr_blob {
+            req = req.header("Authorization", "Bearer QQ==");
+        }
 
         if let Some(pos) = resume_from {
             req = req.header("Range", &format!("bytes={}-", pos));

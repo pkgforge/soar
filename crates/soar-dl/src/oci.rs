@@ -665,7 +665,10 @@ impl OciDownload {
             self.reference.tag
         );
 
-        let dl = Download::new(url).output(output).overwrite(self.overwrite);
+        let dl = Download::new(url)
+            .output(output)
+            .overwrite(self.overwrite)
+            .ghcr_blob();
 
         let dl = if let Some(ref cb) = self.on_progress {
             let cb = cb.clone();
