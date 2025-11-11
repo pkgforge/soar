@@ -174,6 +174,7 @@ impl Download {
     ///         Progress::Starting { total } => eprintln!("starting, total={}", total),
     ///         Progress::Chunk { total, current } => eprintln!("downloaded {} (+{})", total, current),
     ///         Progress::Complete { total } => eprintln!("complete, total={}", total),
+    ///         _ => {}
     ///     });
     /// ```
     pub fn progress<F>(mut self, on_progress: F) -> Self
@@ -215,7 +216,16 @@ impl Download {
             return self.download_to_stdout();
         }
 
-        let (header_filename, url_filename) = if self.output.as_deref().is_none() {
+        let needs_head = match self.output.as_deref() {
+            None => true,
+            Some("-") => false,
+            Some(p) => {
+                let path = Path::new(p);
+                p.ends_with("/") || path.is_dir()
+            }
+        };
+
+        let (header_filename, url_filename) = if needs_head {
             let resp = Http::head(&self.url)?;
             (
                 resp.headers()
@@ -230,23 +240,27 @@ impl Download {
         let output_path =
             resolve_output_path(self.output.as_deref(), url_filename, header_filename)?;
 
-        let resume_info = if output_path.is_file() {
+        let mut resume_info = read_resume(&output_path);
+
+        if output_path.is_file() {
             match self.overwrite {
-                OverwriteMode::Skip => return Ok(output_path),
+                OverwriteMode::Skip => {
+                    return Ok(output_path);
+                }
                 OverwriteMode::Force => {
                     fs::remove_file(&output_path)?;
-                    None
+                    resume_info = None;
                 }
                 OverwriteMode::Prompt => {
-                    if !prompt_overwrite(&output_path)? {
-                        return Ok(output_path);
+                    if resume_info.is_none() {
+                        if !prompt_overwrite(&output_path)? {
+                            return Ok(output_path);
+                        }
+                        fs::remove_file(&output_path)?;
+                        resume_info = None;
                     }
-                    fs::remove_file(&output_path)?;
-                    None
                 }
             }
-        } else {
-            read_resume(&output_path)
         };
 
         if let Some(parent) = output_path.parent() {

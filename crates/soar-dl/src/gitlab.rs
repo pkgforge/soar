@@ -95,7 +95,7 @@ impl Release for GitLabRelease {
     /// # Examples
     ///
     /// ```
-    /// use soar_dl::gitlab::{GitlabAssets, GitLabRelease};
+    /// use soar_dl::gitlab::{GitLabAssets, GitLabRelease};
     /// use soar_dl::traits::Release;
     ///
     /// let r = GitLabRelease {
@@ -103,7 +103,7 @@ impl Release for GitLabRelease {
     ///     tag_name: "v1.0".into(),
     ///     upcoming_release: false,
     ///     released_at: "".into(),
-    ///     assets: GitlabAssets { links: vec![] },
+    ///     assets: GitLabAssets { links: vec![] },
     /// };
     /// assert_eq!(r.name(), "v1.0");
     ///
@@ -112,7 +112,7 @@ impl Release for GitLabRelease {
     ///     tag_name: "v1.1".into(),
     ///     upcoming_release: false,
     ///     released_at: "".into(),
-    ///     assets: GitlabAssets { links: vec![] },
+    ///     assets: GitLabAssets { links: vec![] },
     /// };
     /// assert_eq!(unnamed.name(), "");
     /// ```

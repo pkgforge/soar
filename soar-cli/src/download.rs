@@ -173,7 +173,7 @@ pub async fn handle_direct_downloads(
                     package.pkg_name, package.pkg_id
                 );
                 if let Some(ref url) = package.ghcr_blob {
-                    let mut dl = OciDownload::new(url.as_str()).overwrite(OverwriteMode::Force);
+                    let mut dl = OciDownload::new(url.as_str()).overwrite(ctx.get_overwrite_mode());
 
                     if let Some(ref out) = output {
                         dl = dl.output(out);
@@ -189,7 +189,7 @@ pub async fn handle_direct_downloads(
                     }
                 } else {
                     let mut dl =
-                        Download::new(&package.download_url).overwrite(OverwriteMode::Force);
+                        Download::new(&package.download_url).overwrite(ctx.get_overwrite_mode());
 
                     if let Some(ref out) = output {
                         dl = dl.output(out);
