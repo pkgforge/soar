@@ -4,10 +4,15 @@ use std::{
     path::Path,
 };
 
-use reqwest::header::{self, HeaderMap};
 use rusqlite::Connection;
+use soar_dl::{download::Download, http_client::SHARED_AGENT, types::OverwriteMode};
 use soar_utils::{fs::read_file_signature, system::platform};
 use tracing::info;
+use ureq::http::{
+    header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH, PRAGMA},
+    StatusCode,
+};
+use url::Url;
 
 use crate::{
     config::{self, Repository},
@@ -22,7 +27,7 @@ use crate::{
     SoarResult,
 };
 
-fn construct_nest_url(url: &str) -> SoarResult<reqwest::Url> {
+fn construct_nest_url(url: &str) -> SoarResult<String> {
     let url = if let Some(repo) = url.strip_prefix("github:") {
         format!(
             "https://github.com/{}/releases/download/soar-nest/{}.json",
@@ -32,7 +37,8 @@ fn construct_nest_url(url: &str) -> SoarResult<reqwest::Url> {
     } else {
         url.to_string()
     };
-    reqwest::Url::parse(&url).map_err(|err| SoarError::Custom(err.to_string()))
+    Url::parse(&url).map_err(|err| SoarError::Custom(err.to_string()))?;
+    Ok(url)
 }
 
 pub async fn fetch_nest_metadata(
@@ -73,17 +79,20 @@ pub async fn fetch_nest_metadata(
 
     let url = construct_nest_url(&nest.url)?;
 
-    let client = reqwest::Client::new();
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
-    headers.insert(header::PRAGMA, "no-cache".parse().unwrap());
+    let mut req = SHARED_AGENT
+        .get(&nest.url)
+        .header(CACHE_CONTROL, "no-cache")
+        .header(PRAGMA, "no-cache");
+
     if !etag.is_empty() {
-        headers.insert(header::IF_NONE_MATCH, etag.parse().unwrap());
+        req = req.header(IF_NONE_MATCH, etag);
     }
 
-    let resp = client.get(url.clone()).headers(headers).send().await?;
+    let resp = req
+        .call()
+        .map_err(|err| SoarError::FailedToFetchRemote(err.to_string()))?;
 
-    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+    if resp.status() == StatusCode::NOT_MODIFIED {
         return Ok(None);
     }
 
@@ -94,14 +103,14 @@ pub async fn fetch_nest_metadata(
 
     let etag = resp
         .headers()
-        .get(header::ETAG)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
+        .get(ETAG)
+        .and_then(|h| h.to_str().ok())
+        .map(String::from)
         .ok_or_else(|| SoarError::Custom("etag not found in metadata response".to_string()))?;
 
     info!("Fetching nest from {}", url);
 
-    let content = resp.bytes().await?.to_vec();
+    let content = resp.into_body().read_to_vec()?;
 
     let nest_name = format!("nest-{}", nest.name);
     process_metadata_content(content, &metadata_db, &nest_name, &nest.url)?;
@@ -190,11 +199,7 @@ fn handle_json_metadata<P: AsRef<Path>>(
     Ok(())
 }
 
-pub async fn fetch_public_key<P: AsRef<Path>>(
-    client: &reqwest::Client,
-    repo_path: P,
-    pubkey_url: &str,
-) -> SoarResult<()> {
+pub async fn fetch_public_key<P: AsRef<Path>>(repo_path: P, pubkey_url: &str) -> SoarResult<()> {
     let repo_path = repo_path.as_ref();
     let pubkey_file = repo_path.join("minisign.pub");
 
@@ -203,18 +208,12 @@ pub async fn fetch_public_key<P: AsRef<Path>>(
         return Ok(());
     }
 
-    let resp = client.get(pubkey_url).send().await?;
-
     info!("Fetching public key from {}", pubkey_url);
 
-    if !resp.status().is_success() {
-        let msg = format!("{} [{}]", pubkey_url, resp.status());
-        return Err(SoarError::FailedToFetchRemote(msg));
-    }
-
-    let content = resp.bytes().await?;
-    fs::write(&pubkey_file, content)
-        .with_context(|| format!("writing minisign key {}", pubkey_file.display()))?;
+    Download::new(pubkey_url)
+        .output(pubkey_file.to_string_lossy().to_string())
+        .overwrite(OverwriteMode::Force)
+        .execute()?;
 
     Ok(())
 }
@@ -250,24 +249,26 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
         String::new()
     };
 
-    let url = reqwest::Url::parse(&repo.url).map_err(|err| SoarError::Custom(err.to_string()))?;
-
-    let client = reqwest::Client::new();
+    Url::parse(&repo.url).map_err(|err| SoarError::Custom(err.to_string()))?;
 
     if let Some(ref pubkey_url) = repo.pubkey {
-        fetch_public_key(&client, &repo_path, pubkey_url).await?;
+        fetch_public_key(&repo_path, pubkey_url).await?;
     }
 
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
-    headers.insert(header::PRAGMA, "no-cache".parse().unwrap());
+    let mut req = SHARED_AGENT
+        .get(&repo.url)
+        .header(CACHE_CONTROL, "no-cache")
+        .header(PRAGMA, "no-cache");
+
     if !etag.is_empty() {
-        headers.insert(header::IF_NONE_MATCH, etag.parse().unwrap());
+        req = req.header(IF_NONE_MATCH, etag);
     }
 
-    let resp = client.get(url).headers(headers).send().await?;
+    let resp = req
+        .call()
+        .map_err(|err| SoarError::FailedToFetchRemote(err.to_string()))?;
 
-    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+    if resp.status() == StatusCode::NOT_MODIFIED {
         return Ok(None);
     }
 
@@ -278,16 +279,14 @@ pub async fn fetch_metadata(repo: Repository, force: bool) -> SoarResult<Option<
 
     let etag = resp
         .headers()
-        .get(header::ETAG)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            SoarError::Custom("etag is required in metadata response header".to_string())
-        })?;
+        .get(ETAG)
+        .and_then(|h| h.to_str().ok())
+        .map(String::from)
+        .ok_or_else(|| SoarError::Custom("etag not found in metadata response".to_string()))?;
 
     info!("Fetching metadata from {}", repo.url);
 
-    let content = resp.bytes().await?.to_vec();
+    let content = resp.into_body().read_to_vec()?;
 
     process_metadata_content(content, &metadata_db, &repo.name, &repo.url)?;
 

@@ -5,7 +5,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use futures::StreamExt;
 use indicatif::HumanBytes;
 use rusqlite::Connection;
 use soar_core::{
@@ -17,7 +16,9 @@ use soar_core::{
     package::query::PackageQuery,
     SoarResult,
 };
+use soar_dl::http_client::SHARED_AGENT;
 use tracing::{error, info};
+use ureq::http::header::CONTENT_LENGTH;
 
 use crate::{
     state::AppState,
@@ -131,7 +132,8 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
             url
         };
 
-        let resp = reqwest::get(url).await?;
+        let resp = SHARED_AGENT.get(url).call()?;
+
         if !resp.status().is_success() {
             error!(
                 "Error fetching build {inspect_type} from {} [{}]",
@@ -141,7 +143,13 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
             return Ok(());
         }
 
-        let content_length = resp.content_length().unwrap_or_default();
+        let content_length = resp
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|len| len.parse::<u64>().ok())
+            .unwrap_or(0);
+
         if content_length > 1_048_576 {
             let response = interactive_ask(
                 "The {inspect_type} file is too large. Do you really want to view it (y/N)?",
@@ -157,12 +165,7 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
             HumanBytes(content_length)
         );
 
-        let mut stream = resp.bytes_stream();
-        let mut content = Vec::new();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            content.extend_from_slice(&chunk);
-        }
+        let content = resp.into_body().read_to_vec()?;
         let output = String::from_utf8_lossy(&content).replace("\r", "\n");
 
         info!("\n{}", output);

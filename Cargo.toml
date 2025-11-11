@@ -35,18 +35,11 @@ regex = { version = "1.11.2", default-features = false, features = [
   "unicode-case",
   "unicode-perl"
 ] }
-reqwest = { version = "0.12.23", default-features = false, features = [
-  "blocking",
-  "gzip",
-  "http2",
-  "json",
-  "rustls-tls",
-  "stream"
-] }
 rusqlite = { version = "0.37.0", features = ["bundled", "rusqlite-macros"] }
 serde = { version = "1.0.225", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["indexmap"] }
 serial_test = "3.2.0"
+soar-core = { path = "soar-core" }
 soar-dl = { path = "crates/soar-dl" }
 soar-utils = { path = "crates/soar-utils" }
 tempfile = "3.10.1"

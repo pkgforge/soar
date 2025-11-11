@@ -78,7 +78,7 @@ pub enum SoarError {
     DatabaseError(String),
 
     #[error("HTTP request error: {0:?}")]
-    ReqwestError(#[from] reqwest::Error),
+    UreqError(#[from] ureq::Error),
 
     #[error("Download failed: {0}")]
     DownloadError(#[from] soar_dl::error::DownloadError),
@@ -133,7 +133,7 @@ impl SoarError {
 
     pub fn root_cause(&self) -> String {
         match self {
-            Self::ReqwestError(e) => {
+            Self::UreqError(e) => {
                 format!(
                     "Root cause: {}",
                     e.source()
