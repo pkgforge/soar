@@ -276,7 +276,7 @@ async fn handle_cli() -> SoarResult<()> {
                         force_overwrite,
                     };
 
-                    download(context, links, github, gitlab, ghcr, progress_callback).await?;
+                    download(context, links, github, gitlab, ghcr).await?;
                 }
                 cli::Commands::Health => display_health().await?,
                 cli::Commands::Env => {

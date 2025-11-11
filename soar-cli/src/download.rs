@@ -70,9 +70,8 @@ pub async fn download(
     github: Vec<String>,
     gitlab: Vec<String>,
     ghcr: Vec<String>,
-    progress_callback: Arc<dyn Fn(Progress) + Send + Sync>,
 ) -> SoarResult<()> {
-    handle_direct_downloads(&ctx, links, ctx.output.clone(), progress_callback.clone()).await?;
+    handle_direct_downloads(&ctx, links, ctx.output.clone()).await?;
 
     if !github.is_empty() {
         handle_github_downloads(&ctx, github).await?;
@@ -93,7 +92,6 @@ pub async fn handle_direct_downloads(
     ctx: &DownloadContext,
     links: Vec<String>,
     output: Option<String>,
-    progress_callback: Arc<dyn Fn(Progress) + Send + Sync>,
 ) -> SoarResult<()> {
     for link in &links {
         match PlatformUrl::parse(link) {
@@ -179,7 +177,7 @@ pub async fn handle_direct_downloads(
                         dl = dl.output(out);
                     }
 
-                    let cb = progress_callback.clone();
+                    let cb = ctx.progress_callback.clone();
                     dl = dl.progress(move |p| {
                         cb(p);
                     });
@@ -195,7 +193,7 @@ pub async fn handle_direct_downloads(
                         dl = dl.output(out);
                     }
 
-                    let cb = progress_callback.clone();
+                    let cb = ctx.progress_callback.clone();
                     dl = dl.progress(move |p| {
                         cb(p);
                     });

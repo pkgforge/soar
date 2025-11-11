@@ -23,7 +23,7 @@ impl Http {
     /// ```no_run
     /// # use soar_dl::http::Http;
     ///
-    /// let resp = Http::fetch("https://example.com/resource", Some(1024), Some("\"etag-value\""));
+    /// let resp = Http::fetch("https://example.com/resource", Some(1024), Some("\"etag-value\""), false);
     /// match resp {
     ///     Ok(r) => {
     ///         assert!(r.status().as_u16() < 600); // got a response
