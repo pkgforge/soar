@@ -1,0 +1,9 @@
+edition = "2024"
+force_multiline_blocks = true
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+newline_style = "Unix"
+reorder_impl_items = true
+reorder_imports = true
+struct_lit_single_line = false
+use_field_init_shorthand = true
