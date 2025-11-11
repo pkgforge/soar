@@ -80,7 +80,7 @@ pub async fn fetch_nest_metadata(
     let url = construct_nest_url(&nest.url)?;
 
     let mut req = SHARED_AGENT
-        .get(&nest.url)
+        .get(&url)
         .header(CACHE_CONTROL, "no-cache")
         .header(PRAGMA, "no-cache");
 
