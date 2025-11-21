@@ -6,141 +6,24 @@ use std::{
 };
 
 use documented::{Documented, DocumentedFields};
-use rusqlite::Connection;
-use serde::{de::Error, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use soar_utils::{
     path::{resolve_path, xdg_config_home, xdg_data_home},
     system::platform,
     time::parse_duration,
 };
-use toml_edit::{DocumentMut, Item};
+use toml_edit::DocumentMut;
 use tracing::{info, warn};
 
 use crate::{
-    database::migration,
-    error::{ConfigError, SoarError},
-    repositories::get_platform_repositories,
-    toml::{annotate_toml_array_of_tables, annotate_toml_table},
+    annotations::{annotate_toml_array_of_tables, annotate_toml_table},
+    error::ConfigError,
+    profile::Profile,
+    repository::{get_platform_repositories, Repository},
     utils::default_install_patterns,
-    SoarResult,
 };
 
 type Result<T> = std::result::Result<T, ConfigError>;
-
-/// A profile defines a local package store and its configuration.
-#[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
-pub struct Profile {
-    /// Root directory for this profile’s data and packages.
-    ///
-    /// If `packages_path` is not set, packages will be stored in `root_path/packages`.
-    pub root_path: String,
-
-    /// Optional path where packages are stored.
-    ///
-    /// If unset, defaults to `root_path/packages`.
-    pub packages_path: Option<String>,
-}
-
-impl Profile {
-    fn get_bin_path(&self) -> SoarResult<PathBuf> {
-        Ok(self.get_root_path()?.join("bin"))
-    }
-
-    fn get_db_path(&self) -> SoarResult<PathBuf> {
-        Ok(self.get_root_path()?.join("db"))
-    }
-
-    pub fn get_packages_path(&self) -> SoarResult<PathBuf> {
-        if let Some(ref packages_path) = self.packages_path {
-            Ok(resolve_path(packages_path)?)
-        } else {
-            Ok(self.get_root_path()?.join("packages"))
-        }
-    }
-
-    pub fn get_cache_path(&self) -> SoarResult<PathBuf> {
-        Ok(self.get_root_path()?.join("cache"))
-    }
-
-    fn get_repositories_path(&self) -> SoarResult<PathBuf> {
-        Ok(self.get_root_path()?.join("repos"))
-    }
-
-    fn get_portable_dirs(&self) -> SoarResult<PathBuf> {
-        Ok(self.get_root_path()?.join("portable-dirs"))
-    }
-
-    pub fn get_root_path(&self) -> SoarResult<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_ROOT") {
-            return Ok(resolve_path(&env_path)?);
-        }
-        Ok(resolve_path(&self.root_path)?)
-    }
-}
-
-/// Defines a remote repository that provides packages.
-#[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
-pub struct Repository {
-    /// Unique name of the repository.
-    pub name: String,
-
-    /// URL to the repository's metadata file.
-    pub url: String,
-
-    /// Enables desktop integration for packages from this repository.
-    /// Default: false
-    pub desktop_integration: Option<bool>,
-
-    /// URL to the repository's public key (for signature verification).
-    pub pubkey: Option<String>,
-
-    /// Whether the repository is enabled.
-    /// Default: true
-    pub enabled: Option<bool>,
-
-    /// Enables signature verification for this repository.
-    /// Default is derived based on the existence of `pubkey`
-    pub signature_verification: Option<bool>,
-
-    /// Optional sync interval (e.g., "1h", "12h", "1d").
-    /// Default: "3h"
-    pub sync_interval: Option<String>,
-}
-
-impl Repository {
-    pub fn get_path(&self) -> std::result::Result<PathBuf, SoarError> {
-        Ok(get_config().get_repositories_path()?.join(&self.name))
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled.unwrap_or(true)
-    }
-
-    pub fn signature_verification(&self) -> bool {
-        if let Some(global_override) = get_config().signature_verification {
-            return global_override;
-        }
-        if self.pubkey.is_none() {
-            return false;
-        };
-        self.signature_verification.unwrap_or(true)
-    }
-
-    pub fn sync_interval(&self) -> u128 {
-        match get_config()
-            .sync_interval
-            .clone()
-            .or(self.sync_interval.clone())
-            .as_deref()
-            .unwrap_or("3h")
-        {
-            "always" => 0,
-            "never" => u128::MAX,
-            "auto" => 3 * 3_600_000,
-            value => parse_duration(value).unwrap_or(3_600_000),
-        }
-    }
-}
 
 /// Application's configuration
 #[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
@@ -357,17 +240,12 @@ impl Config {
         let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
 
         let mut config = match fs::read_to_string(&config_path) {
-            Ok(content) => {
-                match toml::from_str(&content) {
-                    Ok(c) => Ok(c),
-                    Err(err) => Err(ConfigError::TomlDeError(err)),
-                }
-            }
+            Ok(content) => toml::from_str(&content)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Ok(Self::default_config::<&str>(false, &[]))
+                Self::default_config::<&str>(false, &[])
             }
-            Err(err) => Err(ConfigError::IoError(err)),
-        }?;
+            Err(err) => return Err(ConfigError::IoError(err)),
+        };
 
         config.resolve()?;
 
@@ -399,10 +277,8 @@ impl Config {
             if repo.name == "local" {
                 return Err(ConfigError::ReservedRepositoryName);
             }
-            if repo.name.starts_with("nest") {
-                return Err(ConfigError::Custom(
-                    "Repository name cannot start with `nest`".to_string(),
-                ));
+            if repo.name.starts_with("nest-") {
+                return Err(ConfigError::InvalidRepositoryNameStartsWithNest);
             }
             if !seen_repos.insert(&repo.name) {
                 return Err(ConfigError::DuplicateRepositoryName(repo.name.clone()));
@@ -450,7 +326,7 @@ impl Config {
             .ok_or(ConfigError::MissingProfile(name.to_string()))
     }
 
-    pub fn get_bin_path(&self) -> SoarResult<PathBuf> {
+    pub fn get_bin_path(&self) -> Result<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_BIN") {
             return Ok(resolve_path(&env_path)?);
         }
@@ -460,7 +336,7 @@ impl Config {
         self.default_profile()?.get_bin_path()
     }
 
-    pub fn get_db_path(&self) -> SoarResult<PathBuf> {
+    pub fn get_db_path(&self) -> Result<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_DB") {
             return Ok(resolve_path(&env_path)?);
         }
@@ -470,7 +346,7 @@ impl Config {
         self.default_profile()?.get_db_path()
     }
 
-    pub fn get_packages_path(&self, profile_name: Option<String>) -> SoarResult<PathBuf> {
+    pub fn get_packages_path(&self, profile_name: Option<String>) -> Result<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_PACKAGES") {
             return Ok(resolve_path(&env_path)?);
         }
@@ -478,7 +354,7 @@ impl Config {
         self.get_profile(&profile_name)?.get_packages_path()
     }
 
-    pub fn get_cache_path(&self) -> SoarResult<PathBuf> {
+    pub fn get_cache_path(&self) -> Result<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_CACHE") {
             return Ok(resolve_path(&env_path)?);
         }
@@ -488,7 +364,7 @@ impl Config {
         self.get_profile(&get_current_profile())?.get_cache_path()
     }
 
-    pub fn get_repositories_path(&self) -> SoarResult<PathBuf> {
+    pub fn get_repositories_path(&self) -> Result<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_REPOSITORIES") {
             return Ok(resolve_path(&env_path)?);
         }
@@ -498,7 +374,7 @@ impl Config {
         self.default_profile()?.get_repositories_path()
     }
 
-    pub fn get_portable_dirs(&self) -> SoarResult<PathBuf> {
+    pub fn get_portable_dirs(&self) -> Result<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_PORTABLE_DIRS") {
             return Ok(resolve_path(&env_path)?);
         }
@@ -507,15 +383,6 @@ impl Config {
             return Ok(resolve_path(portable_dirs)?);
         }
         self.default_profile()?.get_portable_dirs()
-    }
-
-    pub fn get_nests_db_conn(&self) -> SoarResult<Connection> {
-        let path = self.get_db_path()?.join("nests.db");
-        let conn = Connection::open(&path)?;
-        migration::run_nests(conn)
-            .map_err(|e| SoarError::Custom(format!("creating nests migration: {}", e)))?;
-        let conn = Connection::open(&path)?;
-        Ok(conn)
     }
 
     pub fn get_nests_sync_interval(&self) -> u128 {
@@ -553,10 +420,10 @@ impl Config {
     }
 
     pub fn to_annotated_document(&self) -> Result<DocumentMut> {
-        let toml_string = toml::to_string_pretty(self).map_err(ConfigError::TomlSerError)?;
-        let mut doc = toml_string
-            .parse::<DocumentMut>()
-            .map_err(|e| ConfigError::TomlDeError(toml::de::Error::custom(e.to_string())))?;
+        use toml_edit::Item;
+
+        let toml_string = toml::to_string_pretty(self)?;
+        let mut doc = toml_string.parse::<DocumentMut>()?;
 
         annotate_toml_table::<Config>(doc.as_table_mut(), true)?;
 
