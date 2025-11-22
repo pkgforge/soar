@@ -6,8 +6,8 @@ use std::{
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, LightRed, Magenta, Purple, Red, White, Yellow};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use soar_config::config::get_config;
 use soar_core::{
-    config::get_config,
     database::{
         models::{FromRow, Package},
         packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse, SortDirection},

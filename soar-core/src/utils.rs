@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use rusqlite::Connection;
+use soar_config::config::{get_config, Config};
 use soar_utils::{
     error::FileSystemResult,
     fs::{safe_remove, walk_dir},
@@ -11,8 +13,9 @@ use soar_utils::{
 use tracing::info;
 
 use crate::{
-    config::get_config,
+    database::migration,
     error::{ErrorContext, SoarError},
+    SoarResult,
 };
 
 type Result<T> = std::result::Result<T, SoarError>;
@@ -81,14 +84,16 @@ pub fn remove_broken_symlinks() -> Result<()> {
     Ok(())
 }
 
-pub fn default_install_patterns() -> Vec<String> {
-    ["!*.log", "!SBUILD", "!*.json", "!*.version"]
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<String>>()
-}
-
 pub fn get_extract_dir<P: AsRef<Path>>(base_dir: P) -> PathBuf {
     let base_dir = base_dir.as_ref();
     base_dir.join("SOAR_AUTOEXTRACT")
+}
+
+pub fn get_nests_db_conn(config: &Config) -> SoarResult<Connection> {
+    let path = config.get_db_path()?.join("nests.db");
+    let conn = Connection::open(&path)?;
+    migration::run_nests(conn)
+        .map_err(|e| SoarError::Custom(format!("creating nests migration: {}", e)))?;
+    let conn = Connection::open(&path)?;
+    Ok(conn)
 }

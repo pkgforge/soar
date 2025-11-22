@@ -1,43 +1,8 @@
 use std::error::Error;
 
+use soar_config::error::ConfigError;
 use soar_utils::error::{FileSystemError, HashError, PathError};
 use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum ConfigError {
-    #[error("Invalid configuration")]
-    InvalidConfig,
-
-    #[error("Configuration file already exists")]
-    ConfigAlreadyExists,
-
-    #[error("Invalid profile: {0}")]
-    InvalidProfile(String),
-
-    #[error("TOML deserialization error: {0}")]
-    TomlDeError(#[from] toml::de::Error),
-
-    #[error("TOML serialization error: {0}")]
-    TomlSerError(#[from] toml::ser::Error),
-
-    #[error("IO error reading config: {0}")]
-    IoError(#[from] std::io::Error),
-
-    #[error("Default profile '{0}' does not exist")]
-    MissingDefaultProfile(String),
-
-    #[error("Reserved repository name 'local' is not allowed")]
-    ReservedRepositoryName,
-
-    #[error("Duplicate repository name '{0}'")]
-    DuplicateRepositoryName(String),
-
-    #[error("Profile '{0}' does not exist")]
-    MissingProfile(String),
-
-    #[error("{0}")]
-    Custom(String),
-}
 
 #[derive(Error, Debug)]
 pub enum SoarError {
@@ -107,17 +72,11 @@ pub enum SoarError {
     #[error("Invalid checksum detected")]
     InvalidChecksum,
 
-    #[error("Configuration file already exists")]
-    ConfigAlreadyExists,
-
     #[error("Invalid package query: {0}")]
     InvalidPackageQuery(String),
 
     #[error("{0}")]
     Custom(String),
-
-    #[error("Invalid profile: {0}")]
-    InvalidProfile(String),
 
     #[error("{0}")]
     Warning(String),

@@ -1,13 +1,14 @@
+use soar_config::config::get_config;
 use soar_core::{
-    config::get_config,
     database::nests::{models::Nest, repository},
+    utils::get_nests_db_conn,
     SoarResult,
 };
 
 pub async fn add_nest(name: &str, url: &str) -> SoarResult<()> {
     let name = format!("nest-{name}");
     let config = get_config();
-    let mut conn = config.get_nests_db_conn()?;
+    let mut conn = get_nests_db_conn(&config)?;
     let tx = conn.transaction()?;
     let nest = Nest {
         id: 0,
@@ -22,7 +23,7 @@ pub async fn add_nest(name: &str, url: &str) -> SoarResult<()> {
 
 pub async fn remove_nest(name: &str) -> SoarResult<()> {
     let config = get_config();
-    let mut conn = config.get_nests_db_conn()?;
+    let mut conn = get_nests_db_conn(&config)?;
     let tx = conn.transaction()?;
     repository::remove(&tx, name)?;
     tx.commit()?;
@@ -32,7 +33,7 @@ pub async fn remove_nest(name: &str) -> SoarResult<()> {
 
 pub async fn list_nests() -> SoarResult<()> {
     let config = get_config();
-    let mut conn = config.get_nests_db_conn()?;
+    let mut conn = get_nests_db_conn(&config)?;
     let tx = conn.transaction()?;
     let nests = repository::list(&tx)?;
     for nest in nests {

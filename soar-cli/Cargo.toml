@@ -31,6 +31,7 @@ rusqlite = { workspace = true }
 semver = "1.0.27"
 serde = { workspace = true }
 serde_json = { workspace = true }
+soar-config = { workspace = true }
 soar-core = { workspace = true }
 soar-dl = { workspace = true }
 soar-utils = { workspace = true }

@@ -7,8 +7,11 @@ use std::{
 use nu_ansi_term::Color::{Blue, Green, Magenta, Red};
 use once_cell::sync::OnceCell;
 use rusqlite::{params, Connection};
+use soar_config::{
+    config::{get_config, Config},
+    repository::Repository,
+};
 use soar_core::{
-    config::{get_config, Config, Repository},
     constants::CORE_MIGRATIONS,
     database::{
         connection::Database,
@@ -19,6 +22,7 @@ use soar_core::{
     },
     error::{ErrorContext, SoarError},
     metadata::{fetch_metadata, fetch_nest_metadata},
+    utils::get_nests_db_conn,
     SoarResult,
 };
 use tracing::{error, info};
@@ -55,7 +59,7 @@ impl AppState {
     }
 
     async fn sync_nests(&self, force: bool) -> SoarResult<()> {
-        let mut nests_db = self.config().get_nests_db_conn()?;
+        let mut nests_db = get_nests_db_conn(&self.config())?;
         let tx = nests_db.transaction()?;
         let nests = nests::repository::list(&tx)?;
         tx.commit()?;
@@ -210,7 +214,7 @@ impl AppState {
             })
             .collect();
 
-        let mut nests_db = self.config().get_nests_db_conn()?;
+        let mut nests_db = get_nests_db_conn(&self.config())?;
         let tx = nests_db.transaction()?;
         let nests = nests::repository::list(&tx)?;
         tx.commit()?;

@@ -5,6 +5,7 @@ use std::{
 };
 
 use rusqlite::Connection;
+use soar_config::{config, repository::Repository};
 use soar_dl::{download::Download, http_client::SHARED_AGENT, types::OverwriteMode};
 use soar_utils::{fs::read_file_signature, system::platform};
 use tracing::info;
@@ -15,7 +16,6 @@ use ureq::http::{
 use url::Url;
 
 use crate::{
-    config::{self, Repository},
     constants::{METADATA_MIGRATIONS, SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES},
     database::{
         connection::Database,

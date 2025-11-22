@@ -1,8 +1,8 @@
 use std::{cell::RefCell, env, path::Path, rc::Rc};
 
 use nu_ansi_term::Color::{Blue, Green, Red};
+use soar_config::config::get_config;
 use soar_core::{
-    config::get_config,
     database::packages::{FilterCondition, PackageQueryBuilder},
     package::remove::PackageRemover,
     SoarResult,

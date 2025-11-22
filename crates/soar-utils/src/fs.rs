@@ -162,19 +162,25 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
 ///     Ok(())
 /// }
 /// ```
-pub fn walk_dir<P: AsRef<Path>, F>(dir: P, action: &mut F) -> FileSystemResult<()>
+pub fn walk_dir<P, F, E>(dir: P, action: &mut F) -> Result<(), E>
 where
-    F: FnMut(&Path) -> FileSystemResult<()>,
+    P: AsRef<Path>,
+    F: FnMut(&Path) -> Result<(), E>,
+    FileSystemError: Into<E>,
 {
     let dir = dir.as_ref();
 
     if !dir.is_dir() {
         return Err(FileSystemError::NotADirectory {
             path: dir.to_path_buf(),
-        });
+        }
+        .into());
     }
 
-    for entry in fs::read_dir(dir).with_path(dir, IoOperation::ReadDirectory)? {
+    for entry in fs::read_dir(dir)
+        .with_path(dir, IoOperation::ReadDirectory)
+        .map_err(|e| e.into())?
+    {
         let Ok(entry) = entry else {
             continue;
         };
@@ -474,7 +480,7 @@ mod tests {
         fs::File::create(&file).unwrap();
 
         let mut results = Vec::new();
-        walk_dir(&dir, &mut |path| {
+        walk_dir(&dir, &mut |path| -> FileSystemResult<()> {
             results.push(path.to_path_buf());
             Ok(())
         })
@@ -489,7 +495,7 @@ mod tests {
         let file = tempdir.path().join("file");
         fs::File::create(&file).unwrap();
 
-        let result = walk_dir(&file, &mut |_| Ok(()));
+        let result = walk_dir(&file, &mut |_| -> FileSystemResult<()> { Ok(()) });
         assert!(result.is_err());
     }
 
@@ -507,7 +513,7 @@ mod tests {
         File::create(&nested_file).unwrap();
 
         let mut results = Vec::new();
-        walk_dir(&dir, &mut |path| {
+        walk_dir(&dir, &mut |path| -> FileSystemResult<()> {
             results.push(path.to_path_buf());
             Ok(())
         })
@@ -539,7 +545,9 @@ mod tests {
 
     #[test]
     fn test_walk_invalid_dir() {
-        let result = walk_dir("/this/path/does/not/exist", &mut |_| Ok(()));
+        let result = walk_dir("/this/path/does/not/exist", &mut |_| -> FileSystemResult<
+            (),
+        > { Ok(()) });
         assert!(result.is_err());
     }
 
@@ -550,7 +558,7 @@ mod tests {
 
         fs::set_permissions(dir, Permissions::from_mode(0o000)).unwrap();
 
-        let result = walk_dir(dir, &mut |_| Ok(()));
+        let result = walk_dir(dir, &mut |_| -> FileSystemResult<()> { Ok(()) });
 
         fs::set_permissions(dir, Permissions::from_mode(0o755)).unwrap();
         assert!(result.is_err());
@@ -565,7 +573,7 @@ mod tests {
 
         fs::set_permissions(&nested_dir, Permissions::from_mode(0o000)).unwrap();
 
-        let result = walk_dir(dir, &mut |_| Ok(()));
+        let result = walk_dir(dir, &mut |_| -> FileSystemResult<()> { Ok(()) });
 
         fs::set_permissions(nested_dir, Permissions::from_mode(0o755)).unwrap();
         assert!(result.is_err());

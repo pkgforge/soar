@@ -6,10 +6,10 @@ use std::{
 };
 
 use rusqlite::{params, Connection};
+use soar_config::config::get_config;
 use soar_utils::{error::FileSystemResult, fs::walk_dir, path::desktop_dir};
 
 use crate::{
-    config::get_config,
     database::{models::InstalledPackage, packages::ProvideStrategy},
     error::ErrorContext,
     SoarResult,

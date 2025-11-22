@@ -11,15 +11,14 @@ use std::{
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta, Red};
 use serde::Serialize;
+use soar_config::{config::get_config, repository::get_platform_repositories};
 use soar_core::{
-    config::get_config,
     database::{
         models::{Package, PackageExt},
         packages::{PackageProvide, ProvideStrategy},
     },
     error::{ErrorContext, SoarError},
     package::install::InstallTarget,
-    repositories::get_platform_repositories,
     SoarResult,
 };
 use soar_utils::{fs::is_elf, system::platform};

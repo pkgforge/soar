@@ -4,7 +4,7 @@ use documented::{Documented, DocumentedFields};
 use toml_edit::{ArrayOfTables, Decor, Item, RawString, Table};
 use tracing::warn;
 
-use crate::error::ConfigError;
+use crate::error::{ConfigError, Result};
 
 /// Appends documentation lines as TOML comments to the given `Decor`.
 ///
@@ -52,7 +52,7 @@ pub fn append_docs_as_toml_comments(decor: &mut Decor, docs: &str) {
 ///
 /// # Returns
 /// Returns `Ok(())` if successful, or a `ConfigError` if a TOML item is unexpectedly `None`.
-pub fn annotate_toml_table<T>(table: &mut Table, is_root: bool) -> Result<(), ConfigError>
+pub fn annotate_toml_table<T>(table: &mut Table, is_root: bool) -> Result<()>
 where
     T: Documented + DocumentedFields,
 {
@@ -66,9 +66,7 @@ where
             Ok(docs) => {
                 match value_item {
                     Item::None => {
-                        return Err(ConfigError::Custom(format!(
-                            "Encountered TomlEditItem::None for key '{key_str}' unexpectedly",
-                        )))
+                        return Err(ConfigError::UnexpectedTomlItem(key_str.into()));
                     }
                     Item::Value(_) => append_docs_as_toml_comments(key_mut.leaf_decor_mut(), docs),
                     Item::Table(sub_table) => {
@@ -105,14 +103,60 @@ where
 ///
 /// # Returns
 /// Returns `Ok(())` if annotation succeeds, or a `ConfigError` if annotation fails on the first table.
-pub fn annotate_toml_array_of_tables<T>(array: &mut ArrayOfTables) -> Result<(), ConfigError>
+pub fn annotate_toml_array_of_tables<T>(array: &mut ArrayOfTables) -> Result<()>
 where
     T: Documented + DocumentedFields,
 {
     if let Some(first_table) = array.iter_mut().next() {
-        annotate_toml_table::<T>(first_table, false).map_err(|err| {
-            ConfigError::Custom(format!("Failed to annotate first table in array: {err}"))
-        })?;
+        annotate_toml_table::<T>(first_table, false)
+            .map_err(|err| ConfigError::AnnotateFirstTable(err.to_string()))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use toml_edit::Decor;
+
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn test_append_docs_as_toml_comments() {
+        let mut decor = Decor::new("", "");
+        append_docs_as_toml_comments(&mut decor, "Test documentation");
+
+        let prefix = decor.prefix().and_then(|p| p.as_str()).unwrap();
+        assert!(prefix.contains("# Test documentation"));
+    }
+
+    #[test]
+    fn test_append_docs_multiline() {
+        let mut decor = Decor::new("", "");
+        append_docs_as_toml_comments(&mut decor, "Line 1\nLine 2\nLine 3");
+
+        let prefix = decor.prefix().and_then(|p| p.as_str()).unwrap();
+        assert!(prefix.contains("# Line 1"));
+        assert!(prefix.contains("# Line 2"));
+        assert!(prefix.contains("# Line 3"));
+    }
+
+    #[test]
+    fn test_append_docs_empty_lines() {
+        let mut decor = Decor::new("", "");
+        append_docs_as_toml_comments(&mut decor, "Line 1\n\nLine 2");
+
+        let prefix = decor.prefix().and_then(|p| p.as_str()).unwrap();
+        assert!(prefix.contains("#\n"));
+    }
+
+    #[test]
+    fn test_annotate_toml_document() {
+        let config = Config::default_config::<&str>(false, &[]);
+        let doc = config.to_annotated_document();
+
+        assert!(doc.is_ok());
+        let doc = doc.unwrap();
+        assert!(doc.to_string().contains("#"));
+    }
 }

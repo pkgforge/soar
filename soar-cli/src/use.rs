@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Magenta, Red};
 use rusqlite::prepare_and_bind;
+use soar_config::config::get_config;
 use soar_core::{
-    config::get_config,
     database::{
         models::{InstalledPackage, Package},
         packages::{FilterCondition, PackageQueryBuilder, SortDirection},

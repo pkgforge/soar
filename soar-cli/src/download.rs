@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use indicatif::HumanBytes;
 use regex::Regex;
+use soar_config::config::get_config;
 use soar_core::{
-    config::get_config,
     database::{models::Package, packages::PackageQueryBuilder},
     package::query::PackageQuery,
     SoarResult,
