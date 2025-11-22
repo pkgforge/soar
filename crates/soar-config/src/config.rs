@@ -315,7 +315,7 @@ impl Config {
     pub fn default_profile(&self) -> Result<&Profile> {
         self.profile
             .get(&self.default_profile)
-            .ok_or_else(|| unreachable!())
+            .ok_or_else(|| ConfigError::MissingDefaultProfile(self.default_profile.clone()))
     }
 
     pub fn get_profile(&self, name: &str) -> Result<&Profile> {
@@ -451,8 +451,6 @@ pub fn generate_default_config<T: AsRef<str>>(external: bool, repos: &[T]) -> Re
     if config_path.exists() {
         return Err(ConfigError::ConfigAlreadyExists);
     }
-
-    fs::create_dir_all(config_path.parent().unwrap())?;
 
     let def_config = Config::default_config(external, repos);
     let annotated_doc = def_config.to_annotated_document()?;
