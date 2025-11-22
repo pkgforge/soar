@@ -87,7 +87,7 @@ pub enum ConfigError {
     #[diagnostic(code(soar_config::toml))]
     Toml(#[from] toml_edit::TomlError),
 
-    #[error("Encounted unexpected TOML item: {0}")]
+    #[error("Encountered unexpected TOML item: {0}")]
     #[diagnostic(code(soar_config::unexpected_toml_item))]
     UnexpectedTomlItem(String),
 
