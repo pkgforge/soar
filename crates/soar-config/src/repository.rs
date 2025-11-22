@@ -4,7 +4,7 @@ use documented::{Documented, DocumentedFields};
 use serde::{Deserialize, Serialize};
 use soar_utils::time::parse_duration;
 
-use crate::{config::get_config, error::ConfigError};
+use crate::{config::get_config, error::Result};
 
 /// Defines a remote repository that provides packages.
 #[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
@@ -36,7 +36,7 @@ pub struct Repository {
 }
 
 impl Repository {
-    pub fn get_path(&self) -> Result<PathBuf, ConfigError> {
+    pub fn get_path(&self) -> Result<PathBuf> {
         Ok(get_config().get_repositories_path()?.join(&self.name))
     }
 
@@ -45,13 +45,14 @@ impl Repository {
     }
 
     pub fn signature_verification(&self) -> bool {
-        if let Some(global_override) = get_config().signature_verification {
-            return global_override;
+        let config = get_config();
+
+        match config.signature_verification {
+            Some(false) => false,
+            _ if self.pubkey.is_none() => false,
+            Some(true) => true,
+            _ => self.signature_verification.unwrap_or(true),
         }
-        if self.pubkey.is_none() {
-            return false;
-        };
-        self.signature_verification.unwrap_or(true)
     }
 
     pub fn sync_interval(&self) -> u128 {
@@ -65,7 +66,7 @@ impl Repository {
             "always" => 0,
             "never" => u128::MAX,
             "auto" => 3 * 3_600_000,
-            value => parse_duration(value).unwrap_or(3_600_000),
+            value => parse_duration(value).unwrap_or(3 * 3_600_000),
         }
     }
 }

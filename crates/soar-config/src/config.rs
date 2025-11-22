@@ -17,13 +17,11 @@ use tracing::{info, warn};
 
 use crate::{
     annotations::{annotate_toml_array_of_tables, annotate_toml_table},
-    error::ConfigError,
+    error::{ConfigError, Result},
     profile::Profile,
     repository::{get_platform_repositories, Repository},
     utils::default_install_patterns,
 };
-
-type Result<T> = std::result::Result<T, ConfigError>;
 
 /// Application's configuration
 #[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
