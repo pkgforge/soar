@@ -115,3 +115,30 @@ impl From<soar_utils::error::FileSystemError> for ConfigError {
 }
 
 pub type Result<T> = std::result::Result<T, ConfigError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display() {
+        let err = ConfigError::ConfigAlreadyExists;
+        assert_eq!(err.to_string(), "Configuration file already exists");
+
+        let err = ConfigError::InvalidProfile("test".to_string());
+        assert_eq!(err.to_string(), "Invalid profile: test");
+
+        let err = ConfigError::DuplicateRepositoryName("duplicate".to_string());
+        assert_eq!(err.to_string(), "Duplicate repository name: duplicate");
+    }
+
+    #[test]
+    fn test_error_from_conversions() {
+        let path_err = soar_utils::error::PathError::MissingEnvVar {
+            var: "SOAR_ROOT".to_string(),
+            input: "$SOR_ROOT/test".to_string(),
+        };
+        let config_err: ConfigError = path_err.into();
+        assert!(matches!(config_err, ConfigError::Utils(_)));
+    }
+}

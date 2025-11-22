@@ -113,3 +113,50 @@ where
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use toml_edit::Decor;
+
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn test_append_docs_as_toml_comments() {
+        let mut decor = Decor::new("", "");
+        append_docs_as_toml_comments(&mut decor, "Test documentation");
+
+        let prefix = decor.prefix().and_then(|p| p.as_str()).unwrap();
+        assert!(prefix.contains("# Test documentation"));
+    }
+
+    #[test]
+    fn test_append_docs_multiline() {
+        let mut decor = Decor::new("", "");
+        append_docs_as_toml_comments(&mut decor, "Line 1\nLine 2\nLine 3");
+
+        let prefix = decor.prefix().and_then(|p| p.as_str()).unwrap();
+        assert!(prefix.contains("# Line 1"));
+        assert!(prefix.contains("# Line 2"));
+        assert!(prefix.contains("# Line 3"));
+    }
+
+    #[test]
+    fn test_append_docs_empty_lines() {
+        let mut decor = Decor::new("", "");
+        append_docs_as_toml_comments(&mut decor, "Line 1\n\nLine 2");
+
+        let prefix = decor.prefix().and_then(|p| p.as_str()).unwrap();
+        assert!(prefix.contains("#\n"));
+    }
+
+    #[test]
+    fn test_annotate_toml_document() {
+        let config = Config::default_config::<&str>(false, &[]);
+        let doc = config.to_annotated_document();
+
+        assert!(doc.is_ok());
+        let doc = doc.unwrap();
+        assert!(doc.to_string().contains("#"));
+    }
+}

@@ -56,3 +56,55 @@ impl Profile {
         Ok(resolve_path(&self.root_path)?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::with_env;
+
+    #[test]
+    fn test_profile_creation() {
+        let profile = Profile {
+            root_path: "/test/root".to_string(),
+            packages_path: Some("/test/packages".to_string()),
+        };
+
+        assert_eq!(profile.root_path, "/test/root");
+        assert_eq!(profile.packages_path, Some("/test/packages".to_string()));
+    }
+
+    #[test]
+    fn test_profile_get_packages_path_explicit() {
+        let profile = Profile {
+            root_path: "/test/root".to_string(),
+            packages_path: Some("/custom/packages".to_string()),
+        };
+
+        let path = profile.get_packages_path().unwrap();
+        assert!(path.ends_with("packages"));
+    }
+
+    #[test]
+    fn test_profile_get_packages_path_default() {
+        let profile = Profile {
+            root_path: "/test/root".to_string(),
+            packages_path: None,
+        };
+
+        let path = profile.get_packages_path().unwrap();
+        assert!(path.ends_with("packages"));
+    }
+
+    #[test]
+    fn test_profile_get_root_path_env_override() {
+        with_env(vec![("SOAR_ROOT", "/custom/root")], || {
+            let profile = Profile {
+                root_path: "/test/root".to_string(),
+                packages_path: None,
+            };
+
+            let path = profile.get_root_path().unwrap();
+            assert_eq!(path, PathBuf::from("/custom/root"));
+        });
+    }
+}

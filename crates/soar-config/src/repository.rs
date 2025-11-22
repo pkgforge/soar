@@ -150,3 +150,71 @@ pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
         },
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_repository_is_enabled() {
+        let repo = Repository {
+            name: "test".to_string(),
+            url: "https://example.com".to_string(),
+            desktop_integration: None,
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: None,
+            sync_interval: None,
+        };
+
+        assert!(repo.is_enabled());
+
+        let disabled = Repository {
+            enabled: Some(false),
+            ..repo.clone()
+        };
+        assert!(!disabled.is_enabled());
+
+        let default = Repository {
+            enabled: None,
+            ..repo
+        };
+        assert!(default.is_enabled());
+    }
+
+    #[test]
+    fn test_repository_sync_interval() {
+        let repo = Repository {
+            name: "test".to_string(),
+            url: "https://example.com".to_string(),
+            desktop_integration: None,
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: None,
+            sync_interval: Some("always".to_string()),
+        };
+
+        assert_eq!(repo.sync_interval(), 0);
+    }
+
+    #[test]
+    fn test_get_platform_repositories() {
+        let repos = get_platform_repositories();
+
+        assert!(!repos.is_empty());
+        assert!(repos.iter().any(|r| r.name == "bincache"));
+        assert!(repos.iter().any(|r| r.name == "pkgcache"));
+        assert!(repos.iter().any(|r| r.is_core));
+    }
+
+    #[test]
+    fn test_repository_info_platforms() {
+        let repos = get_platform_repositories();
+
+        for repo in repos {
+            assert!(!repo.platforms.is_empty());
+            assert!(!repo.name.is_empty());
+            assert!(!repo.url_template.is_empty());
+        }
+    }
+}

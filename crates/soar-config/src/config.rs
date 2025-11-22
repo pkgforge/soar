@@ -466,3 +466,215 @@ pub fn generate_default_config<T: AsRef<str>>(external: bool, repos: &[T]) -> Re
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{error::ConfigError, test_utils::with_env};
+
+    #[test]
+    fn test_default_config_creation() {
+        let config = Config::default_config::<&str>(false, &[]);
+
+        assert_eq!(config.default_profile, "default");
+        assert!(config.profile.contains_key("default"));
+        assert!(config.parallel.unwrap_or(false));
+        assert_eq!(config.parallel_limit, Some(4));
+        assert_eq!(config.search_limit, Some(20));
+        assert_eq!(config.ghcr_concurrency, Some(8));
+        assert_eq!(config.cross_repo_updates, Some(false));
+    }
+
+    #[test]
+    fn test_default_config_with_selected_repos() {
+        let config = Config::default_config(false, &["bincache"]);
+
+        assert!(!config.repositories.is_empty());
+        assert!(config.repositories.iter().any(|r| r.name == "bincache"));
+    }
+
+    #[test]
+    fn test_default_config_external_repos() {
+        let config = Config::default_config::<&str>(true, &[]);
+
+        let has_external = config
+            .repositories
+            .iter()
+            .any(|r| r.name == "ivan-hc-am" || r.name == "appimage-github-io");
+        assert!(has_external || config.repositories.is_empty()); // depends on platform
+    }
+
+    #[test]
+    fn test_config_resolve_missing_default_profile() {
+        let mut config = Config::default_config::<&str>(false, &[]);
+        config.default_profile = "nonexistent".to_string();
+
+        let result = config.resolve();
+        assert!(matches!(result, Err(ConfigError::MissingDefaultProfile(_))));
+    }
+
+    #[test]
+    fn test_config_resolve_reserved_repo_name() {
+        let mut config = Config::default_config::<&str>(false, &[]);
+        config.repositories.push(Repository {
+            name: "local".to_string(),
+            url: "https://example.com".to_string(),
+            desktop_integration: None,
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: None,
+            sync_interval: None,
+        });
+
+        let result = config.resolve();
+        assert!(matches!(result, Err(ConfigError::ReservedRepositoryName)));
+    }
+
+    #[test]
+    fn test_config_resolve_nest_prefix() {
+        let mut config = Config::default_config::<&str>(false, &[]);
+        config.repositories.push(Repository {
+            name: "nest-invalid".to_string(),
+            url: "https://example.com".to_string(),
+            desktop_integration: None,
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: None,
+            sync_interval: None,
+        });
+
+        let result = config.resolve();
+        assert!(matches!(
+            result,
+            Err(ConfigError::InvalidRepositoryNameStartsWithNest)
+        ));
+    }
+
+    #[test]
+    fn test_config_resolve_duplicate_repo() {
+        let mut config = Config::default_config::<&str>(false, &[]);
+        config.repositories.push(Repository {
+            name: "duplicate".to_string(),
+            url: "https://example.com".to_string(),
+            desktop_integration: None,
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: None,
+            sync_interval: None,
+        });
+        config.repositories.push(Repository {
+            name: "duplicate".to_string(),
+            url: "https://example2.com".to_string(),
+            desktop_integration: None,
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: None,
+            sync_interval: None,
+        });
+
+        let result = config.resolve();
+        assert!(matches!(
+            result,
+            Err(ConfigError::DuplicateRepositoryName(_))
+        ));
+    }
+
+    #[test]
+    fn test_config_resolve_sets_defaults() {
+        let mut config = Config::default_config::<&str>(false, &[]);
+        config.ghcr_concurrency = None;
+        config.search_limit = None;
+        config.cross_repo_updates = None;
+        config.install_patterns = None;
+
+        config.resolve().unwrap();
+
+        assert_eq!(config.ghcr_concurrency, Some(8));
+        assert_eq!(config.search_limit, Some(20));
+        assert_eq!(config.cross_repo_updates, Some(false));
+        assert!(config.install_patterns.is_some());
+    }
+
+    #[test]
+    fn test_get_profile() {
+        let config = Config::default_config::<&str>(false, &[]);
+
+        let profile = config.get_profile("default");
+        assert!(profile.is_ok());
+
+        let missing = config.get_profile("nonexistent");
+        assert!(matches!(missing, Err(ConfigError::MissingProfile(_))));
+    }
+
+    #[test]
+    fn test_get_repository() {
+        let config = Config::default_config::<&str>(false, &[]);
+
+        if let Some(repo) = config.repositories.first() {
+            let found = config.get_repository(&repo.name);
+            assert!(found.is_some());
+        }
+
+        let missing = config.get_repository("nonexistent");
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_has_desktop_integration() {
+        let mut config = Config::default_config::<&str>(false, &[]);
+
+        config.desktop_integration = Some(true);
+        assert!(config.has_desktop_integration("any_repo"));
+
+        config.desktop_integration = Some(false);
+        assert!(!config.has_desktop_integration("any_repo"));
+
+        config.desktop_integration = None;
+        config.repositories.push(Repository {
+            name: "test_repo".to_string(),
+            url: "https://example.com".to_string(),
+            desktop_integration: Some(true),
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: None,
+            sync_interval: None,
+        });
+        assert!(config.has_desktop_integration("test_repo"));
+    }
+
+    #[test]
+    fn test_get_nests_sync_interval() {
+        let mut config = Config::default_config::<&str>(false, &[]);
+
+        config.nests_sync_interval = Some("always".to_string());
+        assert_eq!(config.get_nests_sync_interval(), 0);
+
+        config.nests_sync_interval = Some("never".to_string());
+        assert_eq!(config.get_nests_sync_interval(), u128::MAX);
+
+        config.nests_sync_interval = Some("auto".to_string());
+        assert_eq!(config.get_nests_sync_interval(), 3 * 3_600_000);
+
+        config.nests_sync_interval = Some("1h".to_string());
+        assert_eq!(config.get_nests_sync_interval(), 3_600_000);
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config::default_config::<&str>(false, &[]);
+        let serialized = toml::to_string(&config);
+        assert!(serialized.is_ok());
+
+        let deserialized: std::result::Result<Config, _> = toml::from_str(&serialized.unwrap());
+        assert!(deserialized.is_ok());
+    }
+
+    #[test]
+    fn test_config_path_env_override() {
+        with_env(vec![("SOAR_BIN", "/custom/bin")], || {
+            let config = Config::default_config::<&str>(false, &[]);
+            let bin_path = config.get_bin_path().unwrap();
+            assert_eq!(bin_path, PathBuf::from("/custom/bin"));
+        });
+    }
+}

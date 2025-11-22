@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/soar-config",
+members = [
+  "crates/soar-config",
   "crates/soar-db",
   "crates/soar-dl",
   "crates/soar-utils",
