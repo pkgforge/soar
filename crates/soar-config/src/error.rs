@@ -47,11 +47,11 @@ pub enum ConfigError {
     MissingProfile(String),
 
     #[error("Invalid repository name: {0}")]
-    #[diagnostic(code(soar_config_invalid_repository))]
+    #[diagnostic(code(soar_config::invalid_repository))]
     InvalidRepository(String),
 
     #[error("Invalid repository URL: {0}")]
-    #[diagnostic(code(soar_config_invalid_repository_url))]
+    #[diagnostic(code(soar_config::invalid_repository_url))]
     InvalidRepositoryUrl(String),
 
     #[error("Reserved repository name 'local' cannot be used")]
