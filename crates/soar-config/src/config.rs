@@ -48,7 +48,7 @@ pub struct Config {
     pub bin_path: Option<String>,
 
     /// Path to the local clone of all repositories.
-    /// Default: $SOAR_ROOT/packages
+    /// Default: $SOAR_ROOT/repos
     pub repositories_path: Option<String>,
 
     /// Portable dirs path

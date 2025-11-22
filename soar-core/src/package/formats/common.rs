@@ -110,6 +110,8 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         .with_context(|| format!("reading content of desktop file: {}", real_path.display()))?;
     let file_name = real_path.file_stem().unwrap();
 
+    let bin_path = get_config().get_bin_path()?;
+
     let final_content = {
         let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
 
@@ -118,7 +120,6 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
                 "Icon" => format!("Icon={}-soar", file_name.to_string_lossy()),
                 "Exec" | "TryExec" => {
                     let value = &caps[0];
-                    let bin_path = get_config().get_bin_path().unwrap();
                     let new_value = format!("{}/{}", &bin_path.display(), pkg_name);
 
                     if value.contains("{{pkg_path}}") {
