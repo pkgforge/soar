@@ -72,17 +72,11 @@ pub enum SoarError {
     #[error("Invalid checksum detected")]
     InvalidChecksum,
 
-    #[error("Configuration file already exists")]
-    ConfigAlreadyExists,
-
     #[error("Invalid package query: {0}")]
     InvalidPackageQuery(String),
 
     #[error("{0}")]
     Custom(String),
-
-    #[error("Invalid profile: {0}")]
-    InvalidProfile(String),
 
     #[error("{0}")]
     Warning(String),

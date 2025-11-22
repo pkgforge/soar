@@ -79,7 +79,7 @@ pub enum ConfigError {
     #[diagnostic(code(soar_config::io))]
     IoError(#[from] std::io::Error),
 
-    #[error("{0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_config::utils))]
     Utils(#[from] soar_utils::error::UtilsError),
 

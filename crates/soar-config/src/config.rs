@@ -384,7 +384,7 @@ impl Config {
     }
 
     pub fn get_nests_sync_interval(&self) -> u128 {
-        match get_config().nests_sync_interval.as_deref().unwrap_or("3h") {
+        match self.nests_sync_interval.as_deref().unwrap_or("3h") {
             "always" => 0,
             "never" => u128::MAX,
             "auto" => 3 * 3_600_000,

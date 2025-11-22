@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use documented::{Documented, DocumentedFields};
 use serde::{Deserialize, Serialize};
-use soar_utils::{error::UtilsError, path::resolve_path};
+use soar_utils::path::resolve_path;
 
 use crate::error::Result;
 
@@ -31,7 +31,7 @@ impl Profile {
 
     pub fn get_packages_path(&self) -> Result<PathBuf> {
         if let Some(ref packages_path) = self.packages_path {
-            Ok(resolve_path(packages_path).map_err(UtilsError::from)?)
+            Ok(resolve_path(packages_path)?)
         } else {
             Ok(self.get_root_path()?.join("packages"))
         }
@@ -51,8 +51,8 @@ impl Profile {
 
     pub fn get_root_path(&self) -> Result<PathBuf> {
         if let Ok(env_path) = std::env::var("SOAR_ROOT") {
-            return Ok(resolve_path(&env_path).map_err(UtilsError::from)?);
+            return Ok(resolve_path(&env_path)?);
         }
-        Ok(resolve_path(&self.root_path).map_err(UtilsError::from)?)
+        Ok(resolve_path(&self.root_path)?)
     }
 }
