@@ -155,7 +155,7 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
 /// use soar_utils::fs::walk_dir;
 ///
 /// fn main() -> FileSystemResult<()> {
-///     let _ = walk_dir("/tmp/dir", &mut |path: &Path| {
+///     let _ = walk_dir("/tmp/dir", &mut |path: &Path| -> FileSystemResult<()> {
 ///         println!("Found file or directory: {}", path.display());
 ///         Ok(())
 ///     })?;
@@ -249,13 +249,9 @@ pub fn read_file_signature<P: AsRef<Path>>(path: P, bytes: usize) -> FileSystemR
 ///
 /// ```
 /// use soar_utils::fs::dir_size;
-/// use soar_utils::error::FileSystemResult;
 ///
-/// fn main() -> FileSystemResult<()> {
-///     let size = dir_size("/tmp/dir")?;
-///     println!("Directory size: {}", size);
-///     Ok(())
-/// }
+/// let size = dir_size("/tmp/dir").unwrap_or(0);
+/// println!("Directory size: {}", size);
 /// ```
 pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
     let path = path.as_ref();
@@ -291,6 +287,7 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
 /// use std::fs::File;
 /// use std::io::Write;
 /// use tempfile::tempdir;
+/// use soar_utils::fs::is_elf;
 ///
 /// let dir = tempdir().unwrap();
 /// let path = dir.path().join("example_elf");
