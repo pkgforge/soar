@@ -8,8 +8,8 @@ use std::{
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use regex::Regex;
+use soar_config::config::get_config;
 use soar_utils::{
-    error::FileSystemResult,
     fs::{create_symlink, walk_dir},
     path::{desktop_dir, icons_dir},
 };
@@ -18,7 +18,6 @@ use super::{
     appimage::integrate_appimage, get_file_type, wrappe::setup_wrappe_portable_dir, PackageFormat,
 };
 use crate::{
-    config::get_config,
     database::models::PackageExt,
     error::{ErrorContext, SoarError},
     SoarResult,
@@ -92,6 +91,11 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> SoarResult<PathBuf> {
             ext.unwrap_or_default().to_string_lossy()
         ));
 
+    if final_path.is_symlink() {
+        fs::remove_file(&final_path)
+            .with_context(|| format!("removing existing symlink at {}", final_path.display()))?;
+    }
+
     create_symlink(real_path, &final_path)?;
     Ok(final_path)
 }
@@ -106,6 +110,8 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         .with_context(|| format!("reading content of desktop file: {}", real_path.display()))?;
     let file_name = real_path.file_stem().unwrap();
 
+    let bin_path = get_config().get_bin_path()?;
+
     let final_content = {
         let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
 
@@ -114,7 +120,6 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
                 "Icon" => format!("Icon={}-soar", file_name.to_string_lossy()),
                 "Exec" | "TryExec" => {
                     let value = &caps[0];
-                    let bin_path = get_config().get_bin_path().unwrap();
                     let new_value = format!("{}/{}", &bin_path.display(), pkg_name);
 
                     if value.contains("{{pkg_path}}") {
@@ -138,6 +143,11 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         .with_context(|| format!("writing desktop file to {}", real_path.display()))?;
 
     let final_path = desktop_dir().join(format!("{}-soar.desktop", file_name.to_string_lossy()));
+
+    if final_path.is_symlink() {
+        fs::remove_file(&final_path)
+            .with_context(|| format!("removing existing symlink at {}", final_path.display()))?;
+    }
 
     create_symlink(real_path, &final_path)?;
     Ok(final_path)
@@ -238,23 +248,21 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
 
     let mut has_desktop = false;
     let mut has_icon = false;
-    let mut symlink_action = |path: &Path| -> FileSystemResult<()> {
+    let mut symlink_action = |path: &Path| -> SoarResult<()> {
         let ext = path.extension();
         if ext == Some(OsStr::new("desktop")) {
             has_desktop = true;
-            // FIXME: handle error
-            symlink_desktop(path, package).unwrap();
+            symlink_desktop(path, package)?;
         }
         Ok(())
     };
     walk_dir(install_dir, &mut symlink_action)?;
 
-    let mut symlink_action = |path: &Path| -> FileSystemResult<()> {
+    let mut symlink_action = |path: &Path| -> SoarResult<()> {
         let ext = path.extension();
         if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
             has_icon = true;
-            // FIXME: handle error
-            symlink_icon(path).unwrap();
+            symlink_icon(path)?;
         }
         Ok(())
     };

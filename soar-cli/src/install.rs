@@ -14,8 +14,8 @@ use minisign_verify::{PublicKey, Signature};
 use nu_ansi_term::Color::{Blue, Green};
 use rand::{distr::Alphanumeric, Rng};
 use rusqlite::Connection;
+use soar_config::{config::get_config, utils::default_install_patterns};
 use soar_core::{
-    config::get_config,
     database::{
         models::{InstalledPackage, Package},
         packages::{FilterCondition, PackageQueryBuilder, PaginatedResponse},
@@ -26,7 +26,6 @@ use soar_core::{
         install::{InstallTarget, PackageInstaller},
         query::PackageQuery,
     },
-    utils::default_install_patterns,
     SoarResult,
 };
 use soar_dl::types::Progress;

@@ -12,8 +12,10 @@ use nest::{add_nest, list_nests, remove_nest};
 use progress::create_progress_bar;
 use remove::remove_packages;
 use run::run_package;
+use soar_config::config::{
+    self, generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH,
+};
 use soar_core::{
-    config::{self, generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH},
     error::{ErrorContext, SoarError},
     utils::{cleanup_cache, remove_broken_symlinks, setup_required_paths},
     SoarResult,
