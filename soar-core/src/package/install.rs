@@ -7,6 +7,7 @@ use std::{
 };
 
 use rusqlite::{params, prepare_and_bind, Connection};
+use soar_config::config::get_config;
 use soar_dl::{
     download::Download,
     error::DownloadError,
@@ -22,7 +23,6 @@ use soar_utils::{
 };
 
 use crate::{
-    config::get_config,
     database::{
         models::{InstalledPackage, Package},
         packages::{FilterCondition, PackageQueryBuilder, ProvideStrategy},

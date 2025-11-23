@@ -155,26 +155,32 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
 /// use soar_utils::fs::walk_dir;
 ///
 /// fn main() -> FileSystemResult<()> {
-///     let _ = walk_dir("/tmp/dir", &mut |path: &Path| {
+///     let _ = walk_dir("/tmp/dir", &mut |path: &Path| -> FileSystemResult<()> {
 ///         println!("Found file or directory: {}", path.display());
 ///         Ok(())
 ///     })?;
 ///     Ok(())
 /// }
 /// ```
-pub fn walk_dir<P: AsRef<Path>, F>(dir: P, action: &mut F) -> FileSystemResult<()>
+pub fn walk_dir<P, F, E>(dir: P, action: &mut F) -> Result<(), E>
 where
-    F: FnMut(&Path) -> FileSystemResult<()>,
+    P: AsRef<Path>,
+    F: FnMut(&Path) -> Result<(), E>,
+    FileSystemError: Into<E>,
 {
     let dir = dir.as_ref();
 
     if !dir.is_dir() {
         return Err(FileSystemError::NotADirectory {
             path: dir.to_path_buf(),
-        });
+        }
+        .into());
     }
 
-    for entry in fs::read_dir(dir).with_path(dir, IoOperation::ReadDirectory)? {
+    for entry in fs::read_dir(dir)
+        .with_path(dir, IoOperation::ReadDirectory)
+        .map_err(|e| e.into())?
+    {
         let Ok(entry) = entry else {
             continue;
         };
@@ -243,13 +249,9 @@ pub fn read_file_signature<P: AsRef<Path>>(path: P, bytes: usize) -> FileSystemR
 ///
 /// ```
 /// use soar_utils::fs::dir_size;
-/// use soar_utils::error::FileSystemResult;
 ///
-/// fn main() -> FileSystemResult<()> {
-///     let size = dir_size("/tmp/dir")?;
-///     println!("Directory size: {}", size);
-///     Ok(())
-/// }
+/// let size = dir_size("/tmp/dir").unwrap_or(0);
+/// println!("Directory size: {}", size);
 /// ```
 pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
     let path = path.as_ref();
@@ -285,6 +287,7 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
 /// use std::fs::File;
 /// use std::io::Write;
 /// use tempfile::tempdir;
+/// use soar_utils::fs::is_elf;
 ///
 /// let dir = tempdir().unwrap();
 /// let path = dir.path().join("example_elf");
@@ -474,7 +477,7 @@ mod tests {
         fs::File::create(&file).unwrap();
 
         let mut results = Vec::new();
-        walk_dir(&dir, &mut |path| {
+        walk_dir(&dir, &mut |path| -> FileSystemResult<()> {
             results.push(path.to_path_buf());
             Ok(())
         })
@@ -489,7 +492,7 @@ mod tests {
         let file = tempdir.path().join("file");
         fs::File::create(&file).unwrap();
 
-        let result = walk_dir(&file, &mut |_| Ok(()));
+        let result = walk_dir(&file, &mut |_| -> FileSystemResult<()> { Ok(()) });
         assert!(result.is_err());
     }
 
@@ -507,7 +510,7 @@ mod tests {
         File::create(&nested_file).unwrap();
 
         let mut results = Vec::new();
-        walk_dir(&dir, &mut |path| {
+        walk_dir(&dir, &mut |path| -> FileSystemResult<()> {
             results.push(path.to_path_buf());
             Ok(())
         })
@@ -539,7 +542,9 @@ mod tests {
 
     #[test]
     fn test_walk_invalid_dir() {
-        let result = walk_dir("/this/path/does/not/exist", &mut |_| Ok(()));
+        let result = walk_dir("/this/path/does/not/exist", &mut |_| -> FileSystemResult<
+            (),
+        > { Ok(()) });
         assert!(result.is_err());
     }
 
@@ -550,7 +555,7 @@ mod tests {
 
         fs::set_permissions(dir, Permissions::from_mode(0o000)).unwrap();
 
-        let result = walk_dir(dir, &mut |_| Ok(()));
+        let result = walk_dir(dir, &mut |_| -> FileSystemResult<()> { Ok(()) });
 
         fs::set_permissions(dir, Permissions::from_mode(0o755)).unwrap();
         assert!(result.is_err());
@@ -565,7 +570,7 @@ mod tests {
 
         fs::set_permissions(&nested_dir, Permissions::from_mode(0o000)).unwrap();
 
-        let result = walk_dir(dir, &mut |_| Ok(()));
+        let result = walk_dir(dir, &mut |_| -> FileSystemResult<()> { Ok(()) });
 
         fs::set_permissions(nested_dir, Permissions::from_mode(0o755)).unwrap();
         assert!(result.is_err());

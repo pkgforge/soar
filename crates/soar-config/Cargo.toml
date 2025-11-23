@@ -1,0 +1,21 @@
+[package]
+name = "soar-config"
+version = "0.1.0"
+description = "Configuration management for soar package manager"
+authors.workspace = true
+edition.workspace = true
+readme.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+documented = { workspace = true }
+miette = { workspace = true }
+serde = { workspace = true }
+soar-utils = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
+tracing = { workspace = true }
