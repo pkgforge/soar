@@ -2237,10 +2237,8 @@ dependencies = [
 name = "soar-core"
 version = "0.8.1"
 dependencies = [
- "documented",
  "image",
  "include_dir",
- "miette",
  "nix",
  "regex",
  "rusqlite",
@@ -2252,7 +2250,6 @@ dependencies = [
  "squishy",
  "thiserror 2.0.17",
  "toml",
- "toml_edit 0.23.7",
  "tracing",
  "ureq",
  "url",
