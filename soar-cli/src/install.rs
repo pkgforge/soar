@@ -22,13 +22,13 @@ use soar_core::{
     },
     error::{ErrorContext, SoarError},
     package::{
-        formats::common::integrate_package,
         install::{InstallTarget, PackageInstaller},
         query::PackageQuery,
     },
     SoarResult,
 };
 use soar_dl::types::Progress;
+use soar_package::integrate_package;
 use soar_utils::{hash::calculate_checksum, pattern::apply_sig_variants};
 use tokio::sync::Semaphore;
 use tracing::{error, info, warn};

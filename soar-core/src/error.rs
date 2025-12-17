@@ -48,11 +48,8 @@ pub enum SoarError {
     #[error("Download failed: {0}")]
     DownloadError(#[from] soar_dl::error::DownloadError),
 
-    #[error("Squashy Error: {0}")]
-    SquishyError(#[from] squishy::error::SquishyError),
-
-    #[error("Image Error: {0}")]
-    ImageError(#[from] image::error::ImageError),
+    #[error("Package error: {0}")]
+    PackageError(#[from] soar_package::PackageError),
 
     #[error("Package integration failed: {0}")]
     PackageIntegrationFailed(String),

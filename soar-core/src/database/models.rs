@@ -17,12 +17,7 @@ impl Display for Maintainer {
     }
 }
 
-pub trait PackageExt {
-    fn pkg_name(&self) -> &str;
-    fn pkg_id(&self) -> &str;
-    fn version(&self) -> &str;
-    fn repo_name(&self) -> &str;
-}
+pub use soar_package::PackageExt;
 
 pub trait FromRow: Sized {
     fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self>;

@@ -1,0 +1,20 @@
+[package]
+name = "soar-package"
+version = "0.1.0"
+description = "Package format handling for soar package manager"
+authors.workspace = true
+edition.workspace = true
+readme.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+image = { version = "0.25.8", default-features = false, features = ["png"] }
+miette = { workspace = true }
+regex = { workspace = true }
+soar-config = { workspace = true }
+soar-utils = { workspace = true }
+squishy = { version = "0.3.2", features = ["appimage"] }
+thiserror = { workspace = true }

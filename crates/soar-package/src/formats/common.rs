@@ -1,3 +1,8 @@
+//! Common package integration utilities.
+//!
+//! This module provides functions for desktop integration including
+//! icon handling, desktop file creation, and portable directory setup.
+
 use std::{
     env,
     ffi::OsStr,
@@ -18,11 +23,11 @@ use super::{
     appimage::integrate_appimage, get_file_type, wrappe::setup_wrappe_portable_dir, PackageFormat,
 };
 use crate::{
-    database::models::PackageExt,
-    error::{ErrorContext, SoarError},
-    SoarResult,
+    error::{ErrorContext, PackageError, Result},
+    traits::PackageExt,
 };
 
+/// Supported icon dimensions for desktop integration.
 const SUPPORTED_DIMENSIONS: &[(u32, u32)] = &[
     (16, 16),
     (24, 24),
@@ -61,7 +66,23 @@ fn normalize_image(image: DynamicImage) -> DynamicImage {
     }
 }
 
-pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> SoarResult<PathBuf> {
+/// Creates a symlink for an icon in the appropriate icons directory.
+///
+/// The icon is normalized to a supported dimension and symlinked to
+/// `~/.local/share/icons/{WxH}/apps/{name}-soar.{ext}`.
+///
+/// # Arguments
+///
+/// * `real_path` - Path to the actual icon file
+///
+/// # Returns
+///
+/// The path to the created symlink.
+///
+/// # Errors
+///
+/// Returns [`PackageError`] if image processing or symlink creation fails.
+pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
     let real_path = real_path.as_ref();
     let icon_name = real_path.file_stem().unwrap();
     let ext = real_path.extension();
@@ -100,10 +121,28 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> SoarResult<PathBuf> {
     Ok(final_path)
 }
 
+/// Creates a symlink for a desktop file with modified fields.
+///
+/// Updates the Icon, Exec, and TryExec fields in the desktop file to point
+/// to the installed package, then creates a symlink in the applications
+/// directory.
+///
+/// # Arguments
+///
+/// * `real_path` - Path to the desktop file
+/// * `package` - Package metadata
+///
+/// # Returns
+///
+/// The path to the created symlink.
+///
+/// # Errors
+///
+/// Returns [`PackageError`] if file operations fail.
 pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     real_path: P,
     package: &T,
-) -> SoarResult<PathBuf> {
+) -> Result<PathBuf> {
     let pkg_name = package.pkg_name();
     let real_path = real_path.as_ref();
     let content = fs::read_to_string(real_path)
@@ -153,14 +192,26 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     Ok(final_path)
 }
 
+/// Creates a portable link for package data directories.
+///
+/// # Arguments
+///
+/// * `portable_path` - Base path for portable data
+/// * `real_path` - Path to link to
+/// * `pkg_name` - Package name
+/// * `extension` - Extension for the portable directory (e.g., "home", "config")
+///
+/// # Errors
+///
+/// Returns [`PackageError`] if directory creation or symlink fails.
 pub fn create_portable_link<P: AsRef<Path>>(
     portable_path: P,
     real_path: P,
     pkg_name: &str,
     extension: &str,
-) -> SoarResult<()> {
+) -> Result<()> {
     let base_dir = env::current_dir()
-        .map_err(|_| SoarError::Custom("Error retrieving current directory".into()))?;
+        .map_err(|_| PackageError::Custom("Error retrieving current directory".into()))?;
     let portable_path = portable_path.as_ref();
     let portable_path = if portable_path.is_absolute() {
         portable_path
@@ -175,6 +226,24 @@ pub fn create_portable_link<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Sets up portable directories for a package.
+///
+/// Creates symlinks for home, config, share, and cache directories based
+/// on the provided portable path options.
+///
+/// # Arguments
+///
+/// * `bin_path` - Path to the package binary
+/// * `package` - Package metadata
+/// * `portable` - Base portable path (overrides all individual paths)
+/// * `portable_home` - Path for home directory
+/// * `portable_config` - Path for config directory
+/// * `portable_share` - Path for share directory
+/// * `portable_cache` - Path for cache directory
+///
+/// # Errors
+///
+/// Returns [`PackageError`] if directory creation or symlink fails.
 pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     bin_path: P,
     package: &T,
@@ -183,7 +252,7 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     portable_config: Option<&str>,
     portable_share: Option<&str>,
     portable_cache: Option<&str>,
-) -> SoarResult<()> {
+) -> Result<()> {
     let portable_dir_base = get_config().get_portable_dirs()?.join(format!(
         "{}-{}",
         package.pkg_name(),
@@ -233,6 +302,27 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     Ok(())
 }
 
+/// Integrates a package with the desktop environment.
+///
+/// This function handles format-specific integration including:
+/// - Desktop file symlinking
+/// - Icon symlinking with dimension normalization
+/// - AppImage resource extraction
+/// - Portable directory setup
+///
+/// # Arguments
+///
+/// * `install_dir` - Directory where the package is installed
+/// * `package` - Package metadata
+/// * `portable` - Base portable path
+/// * `portable_home` - Path for home directory
+/// * `portable_config` - Path for config directory
+/// * `portable_share` - Path for share directory
+/// * `portable_cache` - Path for cache directory
+///
+/// # Errors
+///
+/// Returns [`PackageError`] if integration fails.
 pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
     package: &T,
@@ -241,14 +331,14 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     portable_config: Option<&str>,
     portable_share: Option<&str>,
     portable_cache: Option<&str>,
-) -> SoarResult<()> {
+) -> Result<()> {
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
     let bin_path = install_dir.join(pkg_name);
 
     let mut has_desktop = false;
     let mut has_icon = false;
-    let mut symlink_action = |path: &Path| -> SoarResult<()> {
+    let mut symlink_action = |path: &Path| -> Result<()> {
         let ext = path.extension();
         if ext == Some(OsStr::new("desktop")) {
             has_desktop = true;
@@ -258,7 +348,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     };
     walk_dir(install_dir, &mut symlink_action)?;
 
-    let mut symlink_action = |path: &Path| -> SoarResult<()> {
+    let mut symlink_action = |path: &Path| -> Result<()> {
         let ext = path.extension();
         if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
             has_icon = true;

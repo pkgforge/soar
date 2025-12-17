@@ -4,6 +4,7 @@ members = [
   "crates/soar-config",
   "crates/soar-db",
   "crates/soar-dl",
+  "crates/soar-package",
   "crates/soar-registry",
   "crates/soar-utils",
   "soar-cli",
@@ -44,6 +45,7 @@ serial_test = "3.2.0"
 soar-config = { path = "crates/soar-config" }
 soar-core = { path = "soar-core" }
 soar-dl = { path = "crates/soar-dl" }
+soar-package = { path = "crates/soar-package" }
 soar-registry = { path = "crates/soar-registry" }
 soar-utils = { path = "crates/soar-utils" }
 tempfile = "3.10.1"

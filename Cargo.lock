@@ -2211,6 +2211,7 @@ dependencies = [
  "soar-config",
  "soar-core",
  "soar-dl",
+ "soar-package",
  "soar-registry",
  "soar-utils",
  "tokio",
@@ -2238,7 +2239,6 @@ dependencies = [
 name = "soar-core"
 version = "0.8.1"
 dependencies = [
- "image",
  "include_dir",
  "nix",
  "regex",
@@ -2247,9 +2247,9 @@ dependencies = [
  "serde_json",
  "soar-config",
  "soar-dl",
+ "soar-package",
  "soar-registry",
  "soar-utils",
- "squishy",
  "thiserror 2.0.17",
  "toml",
  "tracing",
@@ -2283,6 +2283,19 @@ dependencies = [
  "ureq",
  "url",
  "xattr",
+]
+
+[[package]]
+name = "soar-package"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "miette",
+ "regex",
+ "soar-config",
+ "soar-utils",
+ "squishy",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
