@@ -9,9 +9,9 @@ use soar_core::{
         models::{InstalledPackage, Package},
         packages::{FilterCondition, PackageQueryBuilder, SortDirection},
     },
-    package::formats::common::integrate_package,
     SoarResult,
 };
+use soar_package::integrate_package;
 use tracing::info;
 
 use crate::{

@@ -1,20 +1,42 @@
+//! AppImage format handling.
+
 use std::{fs, path::Path};
 
 use soar_utils::fs::read_file_signature;
 use squishy::{appimage::AppImage, EntryKind};
 
-use super::common::{symlink_desktop, symlink_icon};
+use super::{
+    common::{symlink_desktop, symlink_icon},
+    PNG_MAGIC_BYTES,
+};
 use crate::{
-    constants::PNG_MAGIC_BYTES, database::models::PackageExt, error::ErrorContext, SoarResult,
+    error::{ErrorContext, Result},
+    traits::PackageExt,
 };
 
+/// Integrates an AppImage by extracting its embedded resources.
+///
+/// This function extracts icons, desktop files, and AppStream metadata from
+/// an AppImage and sets up the appropriate symlinks for desktop integration.
+///
+/// # Arguments
+///
+/// * `install_dir` - Directory where the package is installed
+/// * `file_path` - Path to the AppImage file
+/// * `package` - Package metadata
+/// * `has_icon` - Whether an icon was already found in the install directory
+/// * `has_desktop` - Whether a desktop file was already found
+///
+/// # Errors
+///
+/// Returns [`PackageError`] if extraction or symlink creation fails.
 pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
     file_path: P,
     package: &T,
     has_icon: bool,
     has_desktop: bool,
-) -> SoarResult<()> {
+) -> Result<()> {
     if has_icon && has_desktop {
         return Ok(());
     }
