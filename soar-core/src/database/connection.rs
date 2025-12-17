@@ -4,7 +4,6 @@ use std::{
 };
 
 use rusqlite::Connection;
-
 use soar_registry::RemotePackage;
 
 use super::{repository::PackageRepository, statements::DbStatements};

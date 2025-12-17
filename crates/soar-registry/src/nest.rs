@@ -35,6 +35,10 @@ impl Nest {
     /// * `name` - Display name for the nest
     /// * `url` - Metadata URL (can be `github:owner/repo` or a direct URL)
     pub fn new(id: i64, name: String, url: String) -> Self {
-        Self { id, name, url }
+        Self {
+            id,
+            name,
+            url,
+        }
     }
 }

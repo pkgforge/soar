@@ -82,7 +82,7 @@ impl AppState {
     }
 
     async fn sync_nests(&self, force: bool) -> SoarResult<()> {
-        let mut nests_db = get_nests_db_conn(&self.config())?;
+        let mut nests_db = get_nests_db_conn(self.config())?;
         let tx = nests_db.transaction()?;
         let nests = nests::repository::list(&tx)?;
         tx.commit()?;
@@ -93,9 +93,8 @@ impl AppState {
 
         for nest in nests {
             let nest_clone = nest.clone();
-            let task = tokio::task::spawn(async move {
-                fetch_nest_metadata(&nest_clone, force).await
-            });
+            let task =
+                tokio::task::spawn(async move { fetch_nest_metadata(&nest_clone, force).await });
             tasks.push((task, nest));
         }
 
@@ -261,7 +260,7 @@ impl AppState {
             })
             .collect();
 
-        let mut nests_db = get_nests_db_conn(&self.config())?;
+        let mut nests_db = get_nests_db_conn(self.config())?;
         let tx = nests_db.transaction()?;
         let nests = nests::repository::list(&tx)?;
         tx.commit()?;

@@ -1,6 +1,5 @@
 use regex::Regex;
 use rusqlite::{params, Result, Transaction};
-
 use soar_registry::RemotePackage;
 
 use super::{packages::PackageProvide, statements::DbStatements};

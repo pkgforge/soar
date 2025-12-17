@@ -28,7 +28,7 @@ pub fn apply_migrations(
             Err(e) if e.to_string().contains("already exists") => {
                 mark_first_pending(conn)?;
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(e),
         }
     }
 
