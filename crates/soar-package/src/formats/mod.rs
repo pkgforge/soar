@@ -81,21 +81,28 @@ where
         return Ok(PackageFormat::RunImage);
     }
 
-    let start = file
+    // Check for Wrappe format - magic bytes are at offset (file_size - 801)
+    let file_size = file
         .seek(SeekFrom::End(0))
-        .map_err(|_| PackageError::SeekError)?
-        .wrapping_sub(801);
-    file.rewind().map_err(|_| PackageError::SeekError)?;
+        .map_err(|_| PackageError::SeekError)?;
 
-    if file.seek(SeekFrom::Start(start)).is_ok() {
-        let mut magic_bytes = [0u8; 8];
-        file.read_exact(&mut magic_bytes)
+    // Wrappe magic bytes require at least 801 bytes (offset from end) + 8 bytes (magic)
+    if file_size >= 801 {
+        let start = file_size - 801;
+        file.seek(SeekFrom::Start(start))
+            .map_err(|_| PackageError::SeekError)?;
+
+        let mut wrappe_magic = [0u8; 8];
+        file.read_exact(&mut wrappe_magic)
             .map_err(|_| PackageError::MagicBytesError)?;
-        file.rewind().map_err(|_| PackageError::SeekError)?;
-        if magic_bytes[0..8] == WRAPPE_MAGIC_BYTES {
+
+        if wrappe_magic == WRAPPE_MAGIC_BYTES {
+            file.rewind().map_err(|_| PackageError::SeekError)?;
             return Ok(PackageFormat::Wrappe);
         }
     }
+
+    file.rewind().map_err(|_| PackageError::SeekError)?;
 
     if magic_bytes[..4] == ELF_MAGIC_BYTES {
         return Ok(PackageFormat::ELF);

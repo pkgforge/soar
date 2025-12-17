@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::common::create_portable_link;
-use crate::error::Result;
+use crate::error::{PackageError, Result};
 
 /// Sets up portable directory for a Wrappe package.
 ///
@@ -25,7 +25,12 @@ pub fn setup_wrappe_portable_dir<P: AsRef<Path>>(
     portable: Option<&str>,
 ) -> Result<()> {
     let bin_path = bin_path.as_ref();
-    let package_path = &bin_path.parent().unwrap();
+    let package_path = bin_path.parent().ok_or_else(|| {
+        PackageError::Custom(format!(
+            "cannot determine parent directory for path: {}",
+            bin_path.display()
+        ))
+    })?;
     let real_path = package_path.join(format!(".{pkg_name}.wrappe"));
 
     if let Some(portable) = portable {

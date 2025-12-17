@@ -2292,12 +2292,10 @@ dependencies = [
  "image",
  "miette",
  "regex",
- "serde",
  "soar-config",
  "soar-utils",
  "squishy",
  "thiserror 2.0.17",
- "tracing",
 ]
 
 [[package]]

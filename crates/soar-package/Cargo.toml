@@ -14,9 +14,7 @@ categories.workspace = true
 image = { version = "0.25.8", default-features = false, features = ["png"] }
 miette = { workspace = true }
 regex = { workspace = true }
-serde = { workspace = true }
 soar-config = { workspace = true }
 soar-utils = { workspace = true }
 squishy = { version = "0.3.2", features = ["appimage"] }
 thiserror = { workspace = true }
-tracing = { workspace = true }
