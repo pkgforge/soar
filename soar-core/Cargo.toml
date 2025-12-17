@@ -27,5 +27,3 @@ thiserror = "2.0.16"
 toml = "0.9.6"
 tracing = { workspace = true }
 ureq = { workspace = true }
-url = { workspace = true }
-zstd = "0.13.3"

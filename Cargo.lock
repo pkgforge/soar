@@ -2254,8 +2254,6 @@ dependencies = [
  "toml",
  "tracing",
  "ureq",
- "url",
- "zstd",
 ]
 
 [[package]]
@@ -2291,7 +2289,6 @@ dependencies = [
 name = "soar-registry"
 version = "0.1.0"
 dependencies = [
- "documented",
  "miette",
  "serde",
  "serde_json",
