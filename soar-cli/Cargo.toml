@@ -34,6 +34,7 @@ serde_json = { workspace = true }
 soar-config = { workspace = true }
 soar-core = { workspace = true }
 soar-dl = { workspace = true }
+soar-registry = { workspace = true }
 soar-utils = { workspace = true }
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 toml = "0.9.6"

@@ -1,6 +1,6 @@
 use rusqlite::{params, Result};
+use soar_registry::Nest;
 
-use super::models::Nest;
 use crate::{database::models::FromRow, error::SoarError, SoarResult};
 
 pub fn add(tx: &rusqlite::Transaction, nest: &Nest) -> Result<()> {

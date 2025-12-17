@@ -20,6 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 soar-config = { workspace = true }
 soar-dl = { workspace = true }
+soar-registry = { workspace = true }
 soar-utils = { workspace = true }
 squishy = { version = "0.3.2", features = ["appimage"] }
 thiserror = "2.0.16"

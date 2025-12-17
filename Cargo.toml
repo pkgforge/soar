@@ -4,6 +4,7 @@ members = [
   "crates/soar-config",
   "crates/soar-db",
   "crates/soar-dl",
+  "crates/soar-registry",
   "crates/soar-utils",
   "soar-cli",
   "soar-core"
@@ -43,6 +44,7 @@ serial_test = "3.2.0"
 soar-config = { path = "crates/soar-config" }
 soar-core = { path = "soar-core" }
 soar-dl = { path = "crates/soar-dl" }
+soar-registry = { path = "crates/soar-registry" }
 soar-utils = { path = "crates/soar-utils" }
 tempfile = "3.10.1"
 thiserror = "2.0.17"
@@ -52,6 +54,7 @@ tracing = { version = "0.1.41", default-features = false }
 ureq = { version = "3.1.2", features = ["json"] }
 url = "2.5.7"
 xattr = "1.6.1"
+zstd = "0.13.3"
 
 [profile.release]
 opt-level = 3

@@ -3,7 +3,6 @@ use error::SoarError;
 pub mod constants;
 pub mod database;
 pub mod error;
-pub mod metadata;
 pub mod package;
 pub mod utils;
 

@@ -1,6 +1,6 @@
 use std::{
-    fs::File,
-    path::PathBuf,
+    fs::{self, File},
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -12,7 +12,7 @@ use soar_config::{
     repository::Repository,
 };
 use soar_core::{
-    constants::CORE_MIGRATIONS,
+    constants::{CORE_MIGRATIONS, METADATA_MIGRATIONS},
     database::{
         connection::Database,
         migration::{DbKind, MigrationManager},
@@ -21,13 +21,36 @@ use soar_core::{
         packages::{FilterCondition, PackageQueryBuilder},
     },
     error::{ErrorContext, SoarError},
-    metadata::{fetch_metadata, fetch_nest_metadata},
     utils::get_nests_db_conn,
     SoarResult,
+};
+use soar_registry::{
+    fetch_metadata, fetch_nest_metadata, write_metadata_db, MetadataContent, RemotePackage,
 };
 use tracing::{error, info};
 
 use crate::utils::Colored;
+
+fn handle_json_metadata<P: AsRef<Path>>(
+    metadata: &[RemotePackage],
+    metadata_db: P,
+    repo_name: &str,
+) -> SoarResult<()> {
+    let metadata_db = metadata_db.as_ref();
+    if metadata_db.exists() {
+        fs::remove_file(metadata_db)
+            .with_context(|| format!("removing metadata file {}", metadata_db.display()))?;
+    }
+
+    let conn = Connection::open(metadata_db)?;
+    let mut manager = MigrationManager::new(conn)?;
+    manager.migrate_from_dir(METADATA_MIGRATIONS, DbKind::Metadata)?;
+
+    let db = Database::new(metadata_db)?;
+    db.from_remote_metadata(metadata, repo_name)?;
+
+    Ok(())
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -70,9 +93,8 @@ impl AppState {
 
         for nest in nests {
             let nest_clone = nest.clone();
-            let repo_path_clone = nests_repo_path.clone();
             let task = tokio::task::spawn(async move {
-                fetch_nest_metadata(&nest_clone, force, &repo_path_clone).await
+                fetch_nest_metadata(&nest_clone, force).await
             });
             tasks.push((task, nest));
         }
@@ -82,13 +104,25 @@ impl AppState {
                 .await
                 .map_err(|err| SoarError::Custom(format!("Join handle error: {err}")))?
             {
-                Ok(Some(etag)) => {
+                Ok(Some((etag, content))) => {
                     let nest_path = nests_repo_path.join(&nest.name);
                     let metadata_db_path = nest_path.join("metadata.db");
-                    let conn = Connection::open(metadata_db_path)?;
+                    let nest_name = format!("nest-{}", nest.name);
+
+                    match content {
+                        MetadataContent::SqliteDb(db_bytes) => {
+                            write_metadata_db(&db_bytes, &metadata_db_path)
+                                .map_err(|e| SoarError::Custom(e.to_string()))?;
+                        }
+                        MetadataContent::Json(packages) => {
+                            handle_json_metadata(&packages, &metadata_db_path, &nest_name)?;
+                        }
+                    }
+
+                    let conn = Connection::open(&metadata_db_path)?;
                     conn.execute(
                         "UPDATE repository SET name = ?, etag = ?",
-                        params![format!("nest-{}", nest.name), etag],
+                        params![nest_name, etag],
                     )?;
                     info!("[{}] Nest synced", Colored(Magenta, &nest.name))
                 }
@@ -105,7 +139,7 @@ impl AppState {
 
         for repo in &self.inner.config.repositories {
             let repo_clone = repo.clone();
-            let task = tokio::task::spawn(async move { fetch_metadata(repo_clone, force).await });
+            let task = tokio::task::spawn(async move { fetch_metadata(&repo_clone, force).await });
             tasks.push((task, repo));
         }
 
@@ -114,7 +148,20 @@ impl AppState {
                 .await
                 .map_err(|err| SoarError::Custom(format!("Join handle error: {err}")))?
             {
-                Ok(Some(etag)) => {
+                Ok(Some((etag, content))) => {
+                    let repo_path = repo.get_path()?;
+                    let metadata_db_path = repo_path.join("metadata.db");
+
+                    match content {
+                        MetadataContent::SqliteDb(db_bytes) => {
+                            write_metadata_db(&db_bytes, &metadata_db_path)
+                                .map_err(|e| SoarError::Custom(e.to_string()))?;
+                        }
+                        MetadataContent::Json(packages) => {
+                            handle_json_metadata(&packages, &metadata_db_path, &repo.name)?;
+                        }
+                    }
+
                     self.validate_packages(repo, &etag).await?;
                     info!("[{}] Repository synced", Colored(Magenta, &repo.name));
                 }

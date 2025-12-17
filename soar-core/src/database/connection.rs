@@ -5,7 +5,9 @@ use std::{
 
 use rusqlite::Connection;
 
-use super::{models::RemotePackage, repository::PackageRepository, statements::DbStatements};
+use soar_registry::RemotePackage;
+
+use super::{repository::PackageRepository, statements::DbStatements};
 use crate::error::SoarError;
 
 type Result<T> = std::result::Result<T, SoarError>;

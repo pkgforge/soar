@@ -1,9 +1,10 @@
 use soar_config::config::get_config;
 use soar_core::{
-    database::nests::{models::Nest, repository},
+    database::nests::repository,
     utils::get_nests_db_conn,
     SoarResult,
 };
+use soar_registry::Nest;
 
 pub async fn add_nest(name: &str, url: &str) -> SoarResult<()> {
     let name = format!("nest-{name}");
