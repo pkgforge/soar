@@ -1,13 +1,6 @@
-use serde::{Deserialize, Serialize};
+use soar_registry::Nest;
 
 use crate::database::models::FromRow;
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Nest {
-    pub id: i64,
-    pub name: String,
-    pub url: String,
-}
 
 impl FromRow for Nest {
     fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {

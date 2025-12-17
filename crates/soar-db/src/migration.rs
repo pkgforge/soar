@@ -13,22 +13,25 @@ pub enum DbType {
     Nest,
 }
 
+fn get_migrations(db_type: &DbType) -> EmbeddedMigrations {
+    match db_type {
+        DbType::Core => CORE_MIGRATIONS,
+        DbType::Metadata => METADATA_MIGRATIONS,
+        DbType::Nest => NEST_MIGRATIONS,
+    }
+}
+
 pub fn apply_migrations(
     conn: &mut SqliteConnection,
     db_type: DbType,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     loop {
-        let source = match db_type {
-            DbType::Core => CORE_MIGRATIONS,
-            DbType::Metadata => METADATA_MIGRATIONS,
-            DbType::Nest => NEST_MIGRATIONS,
-        };
-        match conn.run_pending_migrations(source) {
+        match conn.run_pending_migrations(get_migrations(&db_type)) {
             Ok(_) => break,
             Err(e) if e.to_string().contains("already exists") => {
-                mark_first_pending(conn)?;
+                mark_first_pending(conn, &db_type)?;
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(e),
         }
     }
 
@@ -37,8 +40,9 @@ pub fn apply_migrations(
 
 fn mark_first_pending(
     conn: &mut SqliteConnection,
+    db_type: &DbType,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-    let pending = conn.pending_migrations(CORE_MIGRATIONS)?;
+    let pending = conn.pending_migrations(get_migrations(db_type))?;
     if let Some(first) = pending.first() {
         sql_query("INSERT INTO __diesel_schema_migrations (version) VALUES (?1)")
             .bind::<diesel::sql_types::Text, _>(first.name().version())

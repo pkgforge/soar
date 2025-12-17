@@ -1,0 +1,24 @@
+[package]
+name = "soar-registry"
+version = "0.1.0"
+description = "Registry management for soar package manager"
+authors.workspace = true
+edition.workspace = true
+readme.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+miette = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+soar-config = { workspace = true }
+soar-dl = { workspace = true }
+soar-utils = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+ureq = { workspace = true }
+url = { workspace = true }
+zstd = { workspace = true }

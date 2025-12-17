@@ -1,7 +1,8 @@
 use regex::Regex;
 use rusqlite::{params, Result, Transaction};
+use soar_registry::RemotePackage;
 
-use super::{models::RemotePackage, packages::PackageProvide, statements::DbStatements};
+use super::{packages::PackageProvide, statements::DbStatements};
 
 pub struct PackageRepository<'a> {
     tx: &'a Transaction<'a>,

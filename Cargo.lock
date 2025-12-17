@@ -2211,6 +2211,7 @@ dependencies = [
  "soar-config",
  "soar-core",
  "soar-dl",
+ "soar-registry",
  "soar-utils",
  "tokio",
  "toml",
@@ -2246,14 +2247,13 @@ dependencies = [
  "serde_json",
  "soar-config",
  "soar-dl",
+ "soar-registry",
  "soar-utils",
  "squishy",
  "thiserror 2.0.17",
  "toml",
  "tracing",
  "ureq",
- "url",
- "zstd",
 ]
 
 [[package]]
@@ -2283,6 +2283,23 @@ dependencies = [
  "ureq",
  "url",
  "xattr",
+]
+
+[[package]]
+name = "soar-registry"
+version = "0.1.0"
+dependencies = [
+ "miette",
+ "serde",
+ "serde_json",
+ "soar-config",
+ "soar-dl",
+ "soar-utils",
+ "thiserror 2.0.17",
+ "tracing",
+ "ureq",
+ "url",
+ "zstd",
 ]
 
 [[package]]
