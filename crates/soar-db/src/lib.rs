@@ -19,7 +19,8 @@
 //!
 //! ```ignore
 //! use soar_db::connection::DatabaseManager;
-//! use soar_db::repository::{CoreRepository, MetadataRepository};
+//! use soar_db::repository::core::CoreRepository;
+//! use soar_db::repository::metadata::MetadataRepository;
 //!
 //! // Create database manager
 //! let mut manager = DatabaseManager::new("/path/to/db")?;
@@ -27,12 +28,12 @@
 //! // Add repository metadata
 //! manager.add_metadata_db("pkgforge", "/path/to/pkgforge.db")?;
 //!
-//! // Query installed packages
-//! let installed = CoreRepository::list_all(manager.core().conn())?;
+//! // Query installed packages (DbConnection derefs to SqliteConnection)
+//! let installed = CoreRepository::list_all(manager.core())?;
 //!
 //! // Search for packages
 //! if let Some(metadata) = manager.metadata("pkgforge") {
-//!     let packages = MetadataRepository::search(metadata.conn(), "firefox")?;
+//!     let packages = MetadataRepository::search(metadata, "firefox")?;
 //! }
 //! ```
 
@@ -43,6 +44,7 @@ pub mod models;
 pub mod repository;
 pub mod schema;
 
+/// Helper macro to convert `Option<serde_json::Value>` to `Option<Vec<T>>`.
 #[macro_export]
 macro_rules! json_vec {
     ($val:expr) => {

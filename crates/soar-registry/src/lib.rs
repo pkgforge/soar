@@ -19,8 +19,8 @@
 //! use soar_registry::{fetch_metadata, MetadataContent};
 //! use soar_config::repository::Repository;
 //!
-//! async fn sync_repo(repo: &Repository) -> soar_registry::Result<()> {
-//!     if let Some((etag, content)) = fetch_metadata(repo, false).await? {
+//! async fn sync_repo(repo: &Repository, existing_etag: Option<String>) -> soar_registry::Result<()> {
+//!     if let Some((etag, content)) = fetch_metadata(repo, false, existing_etag).await? {
 //!         match content {
 //!             MetadataContent::SqliteDb(bytes) => {
 //!                 // Write SQLite database to disk
@@ -41,9 +41,8 @@ pub mod package;
 
 pub use error::{ErrorContext, RegistryError, Result};
 pub use metadata::{
-    fetch_metadata, fetch_metadata_with_etag, fetch_nest_metadata, fetch_nest_metadata_with_etag,
-    fetch_public_key, process_metadata_content, write_metadata_db, MetadataContent,
-    SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES,
+    fetch_metadata, fetch_nest_metadata, fetch_public_key, process_metadata_content,
+    write_metadata_db, MetadataContent, SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES,
 };
 pub use nest::Nest;
 pub use package::RemotePackage;

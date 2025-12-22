@@ -379,9 +379,7 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
 
     let packages: Vec<Package> = if let Some(ref repo_name) = repo_name {
         metadata_mgr
-            .query_repo(repo_name, |conn| {
-                MetadataRepository::list_paginated(conn, 1, 3000)
-            })?
+            .query_repo(repo_name, |conn| MetadataRepository::list_all(conn))?
             .unwrap_or_default()
             .into_iter()
             .map(|p| {
@@ -392,7 +390,7 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
             .collect()
     } else {
         metadata_mgr.query_all_flat(|repo_name, conn| {
-            let pkgs = MetadataRepository::list_paginated(conn, 1, 3000)?;
+            let pkgs = MetadataRepository::list_all(conn)?;
             Ok(pkgs
                 .into_iter()
                 .map(|p| {

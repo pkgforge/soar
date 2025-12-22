@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
       - uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921
         with:
-          toolchain: stable
+          toolchain: nightly
           components: rustfmt,clippy
 
       - name: Format

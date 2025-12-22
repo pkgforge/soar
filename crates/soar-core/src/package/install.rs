@@ -252,7 +252,6 @@ impl PackageInstaller {
                 pkg_name,
                 pkg_id,
                 version,
-                version,
                 size,
                 provides,
                 with_pkg_id,
@@ -261,7 +260,12 @@ impl PackageInstaller {
             )
         })?;
 
-        let record_id = record_id.unwrap_or(0);
+        let record_id = record_id.ok_or_else(|| {
+            SoarError::Custom(format!(
+                "Failed to record installation for {}#{}: package not found in database",
+                pkg_name, pkg_id
+            ))
+        })?;
 
         if portable.is_some()
             || portable_home.is_some()

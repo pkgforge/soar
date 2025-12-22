@@ -372,7 +372,6 @@ impl CoreRepository {
         pkg_name: &str,
         pkg_id: &str,
         version: &str,
-        new_version: &str,
         size: i64,
         provides: Option<Vec<PackageProvide>>,
         with_pkg_id: bool,
@@ -389,7 +388,6 @@ impl CoreRepository {
                 .filter(packages::version.eq(version)),
         )
         .set((
-            packages::version.eq(new_version),
             packages::size.eq(size),
             packages::installed_date.eq(installed_date),
             packages::is_installed.eq(true),

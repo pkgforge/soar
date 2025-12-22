@@ -22,8 +22,7 @@ use soar_db::{
     repository::{core::CoreRepository, metadata::MetadataRepository, nest::NestRepository},
 };
 use soar_registry::{
-    fetch_metadata_with_etag, fetch_nest_metadata_with_etag, write_metadata_db, MetadataContent,
-    RemotePackage,
+    fetch_metadata, fetch_nest_metadata, write_metadata_db, MetadataContent, RemotePackage,
 };
 use tracing::{error, info};
 
@@ -95,7 +94,7 @@ impl AppState {
                 url: nest.url.clone(),
             };
             let task = tokio::task::spawn(async move {
-                fetch_nest_metadata_with_etag(&registry_nest, force, etag).await
+                fetch_nest_metadata(&registry_nest, force, etag).await
             });
             tasks.push((task, nest));
         }
@@ -141,7 +140,7 @@ impl AppState {
             let repo_clone = repo.clone();
             let etag = self.read_repo_etag(&repo_clone);
             let task = tokio::task::spawn(async move {
-                fetch_metadata_with_etag(&repo_clone, force, etag).await
+                fetch_metadata(&repo_clone, force, etag).await
             });
             tasks.push((task, repo));
         }

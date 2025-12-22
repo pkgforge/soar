@@ -1,7 +1,7 @@
 use diesel::{prelude::*, sqlite::Sqlite};
 use serde_json::Value;
 
-use crate::{models::types::PackageProvide, schema::core::*};
+use crate::{json_vec, models::types::PackageProvide, schema::core::*};
 
 #[derive(Debug, Selectable)]
 pub struct Package {
@@ -65,12 +65,8 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
             with_pkg_id: row.13,
             detached: row.14,
             unlinked: row.15,
-            provides: row
-                .16
-                .map(|v| serde_json::from_value(v).unwrap_or_default()),
-            install_patterns: row
-                .17
-                .map(|v| serde_json::from_value(v).unwrap_or_default()),
+            provides: json_vec!(row.16),
+            install_patterns: json_vec!(row.17),
         })
     }
 }

@@ -1,9 +1,14 @@
 //! Metadata database repository for package queries.
 
+use std::sync::OnceLock;
+
 use diesel::{dsl::sql, prelude::*, sql_types::Text};
 use regex::Regex;
 use serde_json::json;
 use soar_registry::RemotePackage;
+
+/// Regex for extracting name and contact from maintainer string format "Name (contact)".
+static MAINTAINER_RE: OnceLock<Regex> = OnceLock::new();
 
 use super::core::SortDirection;
 use crate::{
@@ -479,7 +484,7 @@ impl MetadataRepository {
 
     /// Extracts name and contact from maintainer string format "Name (contact)".
     fn extract_name_and_contact(input: &str) -> Option<(String, String)> {
-        let re = Regex::new(r"^([^()]+) \(([^)]+)\)$").unwrap();
+        let re = MAINTAINER_RE.get_or_init(|| Regex::new(r"^([^()]+) \(([^)]+)\)$").unwrap());
 
         if let Some(captures) = re.captures(input) {
             let name = captures.get(1).map_or("", |m| m.as_str()).to_string();

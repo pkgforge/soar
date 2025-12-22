@@ -61,7 +61,7 @@ xattr = "1.6.1"
 zstd = "0.13.3"
 
 [profile.release]
-opt-level = 3
+opt-level = "z"
 strip = true
 lto = true
 panic = "abort"

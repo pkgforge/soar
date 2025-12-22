@@ -28,9 +28,9 @@ impl DieselDatabase {
         })
     }
 
-    /// Opens a metadata database connection with migrations.
+    /// Opens a metadata database connection.
     pub fn open_metadata<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let conn = DbConnection::open(path, DbType::Metadata)
+        let conn = DbConnection::open_metadata(path)
             .map_err(|e| SoarError::Custom(format!("opening metadata database: {}", e)))?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -48,8 +48,8 @@ impl DieselDatabase {
 
     /// Gets a mutable reference to the underlying connection.
     /// Locks the mutex and returns a guard.
-    pub fn conn(&self) -> std::sync::MutexGuard<'_, DbConnection> {
-        self.conn.lock().unwrap()
+    pub fn conn(&self) -> Result<std::sync::MutexGuard<'_, DbConnection>> {
+        self.conn.lock().map_err(|_| SoarError::PoisonError)
     }
 
     /// Executes a function with the connection.
@@ -165,7 +165,10 @@ impl MetadataManager {
 
     /// Returns the list of repository names.
     pub fn repo_names(&self) -> Vec<&str> {
-        self.databases.iter().map(|(name, _)| name.as_str()).collect()
+        self.databases
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect()
     }
 }
 

@@ -118,7 +118,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         || installed_pkg.portable_share.is_some()
         || installed_pkg.portable_cache.is_some();
 
-    if pkg.iter().all(has_desktop_integration) {
+    if !pkg.is_empty() && pkg.iter().all(has_desktop_integration) {
         integrate_package(
             &install_dir,
             &installed_pkg,
