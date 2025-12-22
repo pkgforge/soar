@@ -90,6 +90,7 @@ impl CoreRepository {
     }
 
     /// Lists installed packages with flexible filtering.
+    #[allow(clippy::too_many_arguments)]
     pub fn list_filtered(
         conn: &mut SqliteConnection,
         repo_name: Option<&str>,
@@ -246,7 +247,7 @@ impl CoreRepository {
 
         query
             .select(sql::<diesel::sql_types::BigInt>(
-                "COUNT(DISTINCT pkg_id || pkg_name)",
+                "COUNT(DISTINCT pkg_id || '\x00' || pkg_name)",
             ))
             .first(conn)
     }
