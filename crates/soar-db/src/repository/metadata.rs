@@ -356,7 +356,7 @@ impl MetadataRepository {
             .filter(
                 sql::<diesel::sql_types::Bool>("version > ")
                     .bind::<Text, _>(current_version)
-                    .sql(" OR (version LIKE 'HEAD-%' AND substr(version, 14) > ")
+                    .sql(" OR (version LIKE 'HEAD-%' AND substr(version, 15) > ")
                     .bind::<Text, _>(&head_version)
                     .sql(")"),
             )
