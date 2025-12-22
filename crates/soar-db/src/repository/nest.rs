@@ -2,8 +2,10 @@
 
 use diesel::prelude::*;
 
-use crate::models::nest::{Nest, NewNest};
-use crate::schema::nest::nests;
+use crate::{
+    models::nest::{Nest, NewNest},
+    schema::nest::nests,
+};
 
 /// Repository for nest operations.
 pub struct NestRepository;
@@ -43,9 +45,7 @@ impl NestRepository {
 
     /// Inserts a new nest.
     pub fn insert(conn: &mut SqliteConnection, nest: &NewNest) -> QueryResult<usize> {
-        diesel::insert_into(nests::table)
-            .values(nest)
-            .execute(conn)
+        diesel::insert_into(nests::table).values(nest).execute(conn)
     }
 
     /// Deletes a nest by name.

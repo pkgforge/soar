@@ -6,7 +6,10 @@ use soar_config::display::ProgressStyle as ConfigProgressStyle;
 use soar_core::database::models::Package;
 use soar_dl::types::Progress;
 
-use crate::{install::InstallContext, utils::{display_settings, Colored}};
+use crate::{
+    install::InstallContext,
+    utils::{display_settings, Colored},
+};
 
 const SPINNER_CHARS: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 
@@ -56,7 +59,7 @@ pub fn create_spinner(message: &str) -> ProgressBar {
         spinner.set_style(
             ProgressStyle::with_template("{spinner:.cyan} {msg}")
                 .unwrap()
-                .tick_chars(SPINNER_CHARS)
+                .tick_chars(SPINNER_CHARS),
         );
         spinner.enable_steady_tick(std::time::Duration::from_millis(80));
     } else {

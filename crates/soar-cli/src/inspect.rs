@@ -7,7 +7,10 @@ use soar_core::{
     package::query::PackageQuery,
     SoarResult,
 };
-use soar_db::repository::{core::{CoreRepository, SortDirection}, metadata::MetadataRepository};
+use soar_db::repository::{
+    core::{CoreRepository, SortDirection},
+    metadata::MetadataRepository,
+};
 use soar_dl::http_client::SHARED_AGENT;
 use tracing::{error, info};
 use ureq::http::header::CONTENT_LENGTH;
@@ -32,7 +35,10 @@ impl Display for InspectType {
     }
 }
 
-fn get_installed_path(diesel_db: &DieselDatabase, package: &Package) -> SoarResult<Option<PathBuf>> {
+fn get_installed_path(
+    diesel_db: &DieselDatabase,
+    package: &Package,
+) -> SoarResult<Option<PathBuf>> {
     let installed_pkg = diesel_db.with_conn(|conn| {
         CoreRepository::find_exact(
             conn,

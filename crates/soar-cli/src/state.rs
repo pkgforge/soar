@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File},
     path::Path,
+    sync::Arc,
 };
 
 use nu_ansi_term::Color::{Blue, Green, Magenta, Red};
@@ -15,7 +16,6 @@ use soar_core::{
     utils::get_nests_db_conn,
     SoarResult,
 };
-use std::sync::Arc;
 use soar_db::{
     connection::DbConnection,
     migration::DbType,
@@ -139,9 +139,8 @@ impl AppState {
         for repo in &self.inner.config.repositories {
             let repo_clone = repo.clone();
             let etag = self.read_repo_etag(&repo_clone);
-            let task = tokio::task::spawn(async move {
-                fetch_metadata(&repo_clone, force, etag).await
-            });
+            let task =
+                tokio::task::spawn(async move { fetch_metadata(&repo_clone, force, etag).await });
             tasks.push((task, repo));
         }
 
@@ -199,9 +198,8 @@ impl AppState {
         })?;
 
         for pkg in installed_packages {
-            let exists = metadata_db.with_conn(|conn| {
-                MetadataRepository::exists_by_pkg_id(conn, &pkg.pkg_id)
-            })?;
+            let exists = metadata_db
+                .with_conn(|conn| MetadataRepository::exists_by_pkg_id(conn, &pkg.pkg_id))?;
 
             if !exists {
                 let replacement = metadata_db.with_conn(|conn| {
@@ -224,9 +222,8 @@ impl AppState {
             }
         }
 
-        metadata_db.with_conn(|conn| {
-            MetadataRepository::update_repo_metadata(conn, &repo.name, etag)
-        })?;
+        metadata_db
+            .with_conn(|conn| MetadataRepository::update_repo_metadata(conn, &repo.name, etag))?;
 
         Ok(())
     }
@@ -287,7 +284,9 @@ impl AppState {
         }
 
         let mut conn = DbConnection::open(&metadata_db, DbType::Metadata).ok()?;
-        MetadataRepository::get_repo_etag(conn.conn()).ok().flatten()
+        MetadataRepository::get_repo_etag(conn.conn())
+            .ok()
+            .flatten()
     }
 
     /// Reads the etag from an existing nest metadata database.
@@ -301,7 +300,9 @@ impl AppState {
         }
 
         let mut conn = DbConnection::open(&metadata_db, DbType::Metadata).ok()?;
-        MetadataRepository::get_repo_etag(conn.conn()).ok().flatten()
+        MetadataRepository::get_repo_etag(conn.conn())
+            .ok()
+            .flatten()
     }
 
     /// Returns the diesel-based core database connection.

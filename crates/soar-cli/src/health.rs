@@ -9,10 +9,16 @@ use soar_utils::{
     fs::walk_dir,
     path::{desktop_dir, icons_dir},
 };
-use tabled::{builder::Builder, settings::{Panel, Style, Width, peaker::PriorityMax, themes::BorderCorrection}};
+use tabled::{
+    builder::Builder,
+    settings::{peaker::PriorityMax, themes::BorderCorrection, Panel, Style, Width},
+};
 use tracing::info;
 
-use crate::{state::AppState, utils::{icon_or, term_width, Colored, Icons}};
+use crate::{
+    state::AppState,
+    utils::{icon_or, term_width, Colored, Icons},
+};
 
 pub async fn display_health() -> SoarResult<()> {
     let path_env = env::var("PATH")?;
@@ -57,7 +63,8 @@ pub async fn display_health() -> SoarResult<()> {
     };
     builder.push_record(["Broken Symlinks".to_string(), sym_status]);
 
-    let table = builder.build()
+    let table = builder
+        .build()
         .with(Panel::header("System Health Check"))
         .with(Style::rounded())
         .with(BorderCorrection {})
@@ -77,10 +84,7 @@ pub async fn display_health() -> SoarResult<()> {
                 Colored(Yellow, &pkg.2)
             );
         }
-        info!(
-            "Run {} to remove",
-            Colored(Green, "soar clean --broken")
-        );
+        info!("Run {} to remove", Colored(Green, "soar clean --broken"));
     }
 
     if !broken_syms.is_empty() {

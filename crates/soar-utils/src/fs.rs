@@ -36,7 +36,12 @@ pub fn safe_remove<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(FileSystemError::RemoveFile { path: path.to_path_buf(), source: e }),
+        Err(e) => {
+            return Err(FileSystemError::RemoveFile {
+                path: path.to_path_buf(),
+                source: e,
+            })
+        }
     };
 
     let result = if metadata.is_dir() {

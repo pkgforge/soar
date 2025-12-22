@@ -23,11 +23,17 @@ use soar_core::{
     },
     SoarResult,
 };
-use soar_db::repository::{core::{CoreRepository, SortDirection}, metadata::MetadataRepository};
+use soar_db::repository::{
+    core::{CoreRepository, SortDirection},
+    metadata::MetadataRepository,
+};
 use soar_dl::types::Progress;
 use soar_package::integrate_package;
 use soar_utils::{hash::calculate_checksum, pattern::apply_sig_variants};
-use tabled::{builder::Builder, settings::{Panel, Style, themes::BorderCorrection}};
+use tabled::{
+    builder::Builder,
+    settings::{themes::BorderCorrection, Panel, Style},
+};
 use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
 
@@ -221,8 +227,11 @@ fn resolve_packages(
                 }
 
                 let pkg = if repo_pkgs.len() > 1 {
-                    &select_package_interactively(repo_pkgs, &query.name.unwrap_or(package.clone()))?
-                        .unwrap()
+                    &select_package_interactively(
+                        repo_pkgs,
+                        &query.name.unwrap_or(package.clone()),
+                    )?
+                    .unwrap()
                 } else {
                     repo_pkgs.first().unwrap()
                 };
@@ -528,7 +537,11 @@ pub async fn perform_installation(
         if installed_count > 0 {
             builder.push_record([
                 format!("{} Installed", icon_or(Icons::CHECK, "+")),
-                format!("{}/{}", Colored(Green, installed_count), Colored(Cyan, ctx.total_packages)),
+                format!(
+                    "{}/{}",
+                    Colored(Green, installed_count),
+                    Colored(Cyan, ctx.total_packages)
+                ),
             ]);
         }
         if failed_count > 0 {
@@ -544,7 +557,8 @@ pub async fn perform_installation(
             ]);
         }
 
-        let table = builder.build()
+        let table = builder
+            .build()
             .with(Panel::header("Installation Summary"))
             .with(Style::rounded())
             .with(BorderCorrection {})

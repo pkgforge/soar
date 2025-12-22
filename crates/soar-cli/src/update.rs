@@ -1,5 +1,6 @@
 use std::sync::{atomic::Ordering, Arc};
 
+use nu_ansi_term::Color::{Cyan, Green, Red};
 use soar_core::{
     database::{
         connection::DieselDatabase,
@@ -9,9 +10,14 @@ use soar_core::{
     package::{install::InstallTarget, query::PackageQuery, update::remove_old_versions},
     SoarResult,
 };
-use soar_db::repository::{core::{CoreRepository, SortDirection}, metadata::MetadataRepository};
-use nu_ansi_term::Color::{Cyan, Green, Red};
-use tabled::{builder::Builder, settings::{Panel, Style, themes::BorderCorrection}};
+use soar_db::repository::{
+    core::{CoreRepository, SortDirection},
+    metadata::MetadataRepository,
+};
+use tabled::{
+    builder::Builder,
+    settings::{themes::BorderCorrection, Panel, Style},
+};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -238,7 +244,11 @@ async fn perform_update(
         if updated_count > 0 {
             builder.push_record([
                 format!("{} Updated", icon_or(Icons::CHECK, "+")),
-                format!("{}/{}", Colored(Green, updated_count), Colored(Cyan, ctx.total_packages)),
+                format!(
+                    "{}/{}",
+                    Colored(Green, updated_count),
+                    Colored(Cyan, ctx.total_packages)
+                ),
             ]);
         }
         if failed_count > 0 {
@@ -254,7 +264,8 @@ async fn perform_update(
             ]);
         }
 
-        let table = builder.build()
+        let table = builder
+            .build()
             .with(Panel::header("Update Summary"))
             .with(Style::rounded())
             .with(BorderCorrection {})
@@ -347,4 +358,3 @@ async fn spawn_update_task(
         drop(permit);
     })
 }
-

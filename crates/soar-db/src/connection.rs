@@ -7,8 +7,7 @@
 //! - **Metadata databases**: One per repository, contains package metadata
 //! - **Nests database**: Tracks nest configurations
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use diesel::{sql_query, Connection, ConnectionError, RunQueryDsl, SqliteConnection};
 
@@ -49,7 +48,9 @@ impl DbConnection {
                 .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
         }
 
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+        })
     }
 
     /// Opens a database connection without running migrations.
@@ -58,7 +59,9 @@ impl DbConnection {
     pub fn open_without_migrations<P: AsRef<Path>>(path: P) -> Result<Self, ConnectionError> {
         let path_str = path.as_ref().to_string_lossy();
         let conn = SqliteConnection::establish(&path_str)?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+        })
     }
 
     /// Opens a metadata database and migrates JSON text columns to JSONB.
@@ -75,7 +78,9 @@ impl DbConnection {
         migrate_json_to_jsonb(&mut conn, DbType::Metadata)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
 
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+        })
     }
 
     /// Gets a mutable reference to the underlying connection.

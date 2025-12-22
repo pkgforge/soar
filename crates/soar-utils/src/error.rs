@@ -45,10 +45,7 @@ pub enum PathError {
     },
 
     #[error("Path is empty")]
-    #[diagnostic(
-        code(soar_utils::path::empty),
-        help("Provide a non-empty path")
-    )]
+    #[diagnostic(code(soar_utils::path::empty), help("Provide a non-empty path"))]
     Empty,
 
     #[error("Environment variable '{var}' not set in '{input}'")]
@@ -181,24 +178,15 @@ pub enum FileSystemError {
     },
 
     #[error("Path '{path}' not found")]
-    #[diagnostic(
-        code(soar_utils::fs::not_found),
-        help("Check if the path exists")
-    )]
+    #[diagnostic(code(soar_utils::fs::not_found), help("Check if the path exists"))]
     NotFound { path: PathBuf },
 
     #[error("'{path}' is not a directory")]
-    #[diagnostic(
-        code(soar_utils::fs::not_a_dir),
-        help("Provide a path to a directory")
-    )]
+    #[diagnostic(code(soar_utils::fs::not_a_dir), help("Provide a path to a directory"))]
     NotADirectory { path: PathBuf },
 
     #[error("'{path}' is not a file")]
-    #[diagnostic(
-        code(soar_utils::fs::not_a_file),
-        help("Provide a path to a file")
-    )]
+    #[diagnostic(code(soar_utils::fs::not_a_file), help("Provide a path to a file"))]
     NotAFile { path: PathBuf },
 }
 
@@ -225,7 +213,10 @@ pub enum IoOperation {
 
 impl IoContext {
     pub fn new(path: PathBuf, operation: IoOperation) -> Self {
-        Self { path, operation }
+        Self {
+            path,
+            operation,
+        }
     }
 
     pub fn read_file<P: Into<PathBuf>>(path: P) -> Self {
@@ -281,47 +272,69 @@ impl IoContext {
 impl From<(IoContext, std::io::Error)> for FileSystemError {
     fn from((ctx, source): (IoContext, std::io::Error)) -> Self {
         match ctx.operation {
-            IoOperation::ReadFile => FileSystemError::ReadFile {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::WriteFile => FileSystemError::WriteFile {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::CreateFile => FileSystemError::CreateFile {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::RemoveFile => FileSystemError::RemoveFile {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::CreateDirectory => FileSystemError::CreateDirectory {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::RemoveDirectory => FileSystemError::RemoveDirectory {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::ReadDirectory => FileSystemError::ReadDirectory {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::CreateSymlink { target } => FileSystemError::CreateSymlink {
-                from: ctx.path,
+            IoOperation::ReadFile => {
+                FileSystemError::ReadFile {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::WriteFile => {
+                FileSystemError::WriteFile {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::CreateFile => {
+                FileSystemError::CreateFile {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::RemoveFile => {
+                FileSystemError::RemoveFile {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::CreateDirectory => {
+                FileSystemError::CreateDirectory {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::RemoveDirectory => {
+                FileSystemError::RemoveDirectory {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::ReadDirectory => {
+                FileSystemError::ReadDirectory {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::CreateSymlink {
                 target,
-                source,
-            },
-            IoOperation::RemoveSymlink => FileSystemError::RemoveSymlink {
-                path: ctx.path,
-                source,
-            },
-            IoOperation::ReadSymlink => FileSystemError::ReadSymlink {
-                path: ctx.path,
-                source,
-            },
+            } => {
+                FileSystemError::CreateSymlink {
+                    from: ctx.path,
+                    target,
+                    source,
+                }
+            }
+            IoOperation::RemoveSymlink => {
+                FileSystemError::RemoveSymlink {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::ReadSymlink => {
+                FileSystemError::ReadSymlink {
+                    path: ctx.path,
+                    source,
+                }
+            }
         }
     }
 }

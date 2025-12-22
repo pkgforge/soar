@@ -15,10 +15,7 @@ pub enum SoarError {
     Config(#[from] ConfigError),
 
     #[error("System error: {0}")]
-    #[diagnostic(
-        code(soar::system),
-        help("Check system permissions and resources")
-    )]
+    #[diagnostic(code(soar::system), help("Check system permissions and resources"))]
     Errno(#[from] nix::errno::Errno),
 
     #[error("Environment variable '{0}' not set")]
@@ -41,10 +38,7 @@ pub enum SoarError {
     PathError(#[from] PathError),
 
     #[error("IO error while {action}")]
-    #[diagnostic(
-        code(soar::io),
-        help("Check file permissions and disk space")
-    )]
+    #[diagnostic(code(soar::io), help("Check file permissions and disk space"))]
     IoError {
         action: String,
         #[source]
@@ -56,10 +50,7 @@ pub enum SoarError {
     SystemTimeError(#[from] std::time::SystemTimeError),
 
     #[error("TOML serialization error: {0}")]
-    #[diagnostic(
-        code(soar::toml),
-        help("Check your configuration syntax")
-    )]
+    #[diagnostic(code(soar::toml), help("Check your configuration syntax"))]
     TomlError(#[from] toml::ser::Error),
 
     #[error("Database operation failed: {0}")]
@@ -142,10 +133,7 @@ pub enum SoarError {
     Warning(String),
 
     #[error("Regex compilation error: {0}")]
-    #[diagnostic(
-        code(soar::regex),
-        help("Check your regex pattern syntax")
-    )]
+    #[diagnostic(code(soar::regex), help("Check your regex pattern syntax"))]
     RegexError(#[from] regex::Error),
 }
 
@@ -187,9 +175,11 @@ impl<T> ErrorContext<T> for std::io::Result<T> {
     where
         C: FnOnce() -> String,
     {
-        self.map_err(|err| SoarError::IoError {
-            action: context(),
-            source: err,
+        self.map_err(|err| {
+            SoarError::IoError {
+                action: context(),
+                source: err,
+            }
         })
     }
 }

@@ -4,7 +4,10 @@ use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Magenta, Red};
 use soar_config::config::get_config;
 use soar_core::{database::models::Package, SoarResult};
-use soar_db::repository::{core::{CoreRepository, SortDirection}, metadata::MetadataRepository};
+use soar_db::repository::{
+    core::{CoreRepository, SortDirection},
+    metadata::MetadataRepository,
+};
 use soar_package::{formats::common::setup_portable_dir, integrate_package};
 use tracing::info;
 
@@ -82,12 +85,8 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
     let bin_dir = get_config().get_bin_path()?;
     let install_dir = PathBuf::from(&selected_package.installed_path);
 
-    let _ = mangle_package_symlinks(
-        &install_dir,
-        &bin_dir,
-        selected_package.provides.as_deref(),
-    )
-    .await?;
+    let _ = mangle_package_symlinks(&install_dir, &bin_dir, selected_package.provides.as_deref())
+        .await?;
 
     let metadata_mgr = state.metadata_manager().await?;
     let pkg: Vec<Package> = metadata_mgr
@@ -143,10 +142,18 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
     }
 
     diesel_db.transaction(|conn| {
-        CoreRepository::link_by_checksum(conn, &installed_pkg.pkg_name, &installed_pkg.pkg_id, installed_pkg.checksum.as_deref())
+        CoreRepository::link_by_checksum(
+            conn,
+            &installed_pkg.pkg_name,
+            &installed_pkg.pkg_id,
+            installed_pkg.checksum.as_deref(),
+        )
     })?;
 
-    info!("Switched to {}#{}", installed_pkg.pkg_name, installed_pkg.pkg_id);
+    info!(
+        "Switched to {}#{}",
+        installed_pkg.pkg_name, installed_pkg.pkg_id
+    );
 
     Ok(())
 }

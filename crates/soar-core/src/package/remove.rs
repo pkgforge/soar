@@ -5,10 +5,7 @@ use std::{
 };
 
 use soar_config::config::get_config;
-use soar_db::{
-    models::types::ProvideStrategy,
-    repository::core::CoreRepository,
-};
+use soar_db::{models::types::ProvideStrategy, repository::core::CoreRepository};
 use soar_utils::{error::FileSystemResult, fs::walk_dir, path::desktop_dir};
 
 use crate::{
@@ -24,7 +21,10 @@ pub struct PackageRemover {
 
 impl PackageRemover {
     pub async fn new(package: InstalledPackage, db: DieselDatabase) -> Self {
-        Self { package, db }
+        Self {
+            package,
+            db,
+        }
     }
 
     pub async fn remove(&self) -> SoarResult<()> {

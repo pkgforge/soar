@@ -20,8 +20,9 @@ pub fn remove_old_versions(package: &Package, db: &DieselDatabase) -> SoarResult
         ..
     } = package;
 
-    let old_packages =
-        db.with_conn(|conn| CoreRepository::get_old_package_paths(conn, pkg_id, pkg_name, repo_name))?;
+    let old_packages = db.with_conn(|conn| {
+        CoreRepository::get_old_package_paths(conn, pkg_id, pkg_name, repo_name)
+    })?;
 
     for (_id, installed_path) in &old_packages {
         let path = Path::new(installed_path);

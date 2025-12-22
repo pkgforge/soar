@@ -11,7 +11,9 @@ use std::{
 use indicatif::HumanBytes;
 use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta, Red};
 use serde::Serialize;
-use soar_config::{config::get_config, display::DisplaySettings, repository::get_platform_repositories};
+use soar_config::{
+    config::get_config, display::DisplaySettings, repository::get_platform_repositories,
+};
 use soar_core::{
     database::models::Package,
     error::{ErrorContext, SoarError},
@@ -26,16 +28,16 @@ use tracing::{error, info};
 pub struct Icons;
 
 impl Icons {
-    pub const PACKAGE: &str = "📦";
-    pub const INSTALLED: &str = "✓";
-    pub const NOT_INSTALLED: &str = "○";
-    pub const BROKEN: &str = "✗";
     pub const ARROW: &str = "→";
-    pub const WARNING: &str = "⚠";
-    pub const SIZE: &str = "💾";
-    pub const VERSION: &str = "🏷";
+    pub const BROKEN: &str = "✗";
     pub const CHECK: &str = "✓";
     pub const CROSS: &str = "✗";
+    pub const INSTALLED: &str = "✓";
+    pub const NOT_INSTALLED: &str = "○";
+    pub const PACKAGE: &str = "📦";
+    pub const SIZE: &str = "💾";
+    pub const VERSION: &str = "🏷";
+    pub const WARNING: &str = "⚠";
 }
 
 pub fn icon_or<'a>(icon: &'a str, fallback: &'a str) -> &'a str {
