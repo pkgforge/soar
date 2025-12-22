@@ -226,12 +226,10 @@ mod tests {
             "description": "test",
             "version": "1.0.0",
             "download_url": "https://example.com",
-            "disabled": "true",
-            "bundle": false
+            "disabled": "true"
         }"#;
 
         let pkg: RemotePackage = serde_json::from_str(json).unwrap();
         assert_eq!(pkg.disabled, Some(true));
-        assert_eq!(pkg.bundle, Some(false));
     }
 }

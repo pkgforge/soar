@@ -523,7 +523,10 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(results, vec![file, nested_file]);
+        results.sort();
+        let mut expected = vec![file, nested_file];
+        expected.sort();
+        assert_eq!(results, expected);
     }
 
     #[test]
