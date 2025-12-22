@@ -13,7 +13,6 @@
 [![Discord][discord-shield]][discord-url]
 [![Documentation][doc-shield]][doc-url]
 [![License: MIT][license-shield]][license-url]
-[![Packages][packages-shield]][packages-url]
 
 </div>
 
