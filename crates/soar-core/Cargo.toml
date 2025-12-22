@@ -22,7 +22,6 @@ soar-config = { workspace = true }
 soar-db = { workspace = true }
 soar-dl = { workspace = true }
 soar-package = { workspace = true }
-soar-registry = { workspace = true }
 soar-utils = { workspace = true }
 thiserror = { workspace = true }
 toml = "0.9.6"

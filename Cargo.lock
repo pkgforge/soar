@@ -2240,7 +2240,6 @@ dependencies = [
  "soar-db",
  "soar-dl",
  "soar-package",
- "soar-registry",
  "soar-utils",
  "thiserror 2.0.17",
  "toml",

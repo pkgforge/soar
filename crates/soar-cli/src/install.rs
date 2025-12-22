@@ -317,6 +317,7 @@ fn resolve_packages(
                     package: pkg,
                     existing_install,
                     with_pkg_id: true,
+                    pinned: query.version.is_some(),
                     profile: None,
                     ..Default::default()
                 });
@@ -353,6 +354,7 @@ fn resolve_packages(
                     package: db_pkg,
                     existing_install,
                     with_pkg_id: false,
+                    pinned: query.version.is_some(),
                     profile: None,
                     ..Default::default()
                 });
