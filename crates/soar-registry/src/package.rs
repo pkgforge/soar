@@ -147,9 +147,6 @@ pub struct RemotePackage {
     pub bsum: Option<String>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
-    pub shasum: Option<String>,
-
-    #[serde(default, deserialize_with = "empty_is_none")]
     pub build_id: Option<String>,
 
     #[serde(default, deserialize_with = "empty_is_none")]

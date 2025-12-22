@@ -246,15 +246,11 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
             pretty_package_size(package.ghcr_size, package.size),
         ]);
 
-        if package.bsum.is_some() || package.shasum.is_some() {
-            let mut checksums = Vec::new();
-            if let Some(ref cs) = package.bsum {
-                checksums.push(format!("{} (blake3)", Colored(Blue, cs)));
-            }
-            if let Some(ref cs) = package.shasum {
-                checksums.push(format!("{} (sha256)", Colored(Blue, cs)));
-            }
-            builder.push_record(["Checksums".to_string(), checksums.join("\n")]);
+        if let Some(ref cs) = package.bsum {
+            builder.push_record([
+                "Checksum".to_string(),
+                format!("{} (blake3)", Colored(Blue, cs)),
+            ]);
         }
 
         if let Some(ref homepages) = package.homepages {
@@ -348,7 +344,6 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
             version = package.version,
             version_upstream = package.version_upstream,
             bsum = package.bsum,
-            shasum = package.shasum,
             homepages = vec_string(package.homepages),
             source_urls = vec_string(package.source_urls),
             licenses = vec_string(package.licenses),
