@@ -17,6 +17,7 @@ use tracing::{info, warn};
 
 use crate::{
     annotations::{annotate_toml_array_of_tables, annotate_toml_table},
+    display::DisplaySettings,
     error::{ConfigError, Result},
     profile::Profile,
     repository::{get_platform_repositories, Repository},
@@ -90,6 +91,9 @@ pub struct Config {
 
     /// Sync interval for nests
     pub nests_sync_interval: Option<String>,
+
+    /// Display settings for output formatting
+    pub display: Option<DisplaySettings>,
 }
 
 pub static CONFIG: LazyLock<RwLock<Option<Config>>> = LazyLock::new(|| RwLock::new(None));
@@ -225,6 +229,7 @@ impl Config {
             desktop_integration: None,
             sync_interval: None,
             nests_sync_interval: None,
+            display: None,
         }
     }
 
@@ -287,9 +292,7 @@ impl Config {
             if repo.desktop_integration.is_none() {
                 match repo.name.as_str() {
                     "bincache" => repo.desktop_integration = Some(false),
-                    "pkgcache" | "ivan-hc-am" | "appimage.github.io" => {
-                        repo.desktop_integration = Some(true)
-                    }
+                    "pkgcache" => repo.desktop_integration = Some(true),
                     _ => {}
                 }
             }
@@ -406,6 +409,10 @@ impl Config {
             .is_some_and(|repo| repo.desktop_integration.unwrap_or(false))
     }
 
+    pub fn display(&self) -> DisplaySettings {
+        self.display.clone().unwrap_or_default()
+    }
+
     pub fn save(&self) -> Result<()> {
         let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
         let serialized = toml::to_string_pretty(self)?;
@@ -491,17 +498,6 @@ mod tests {
 
         assert!(!config.repositories.is_empty());
         assert!(config.repositories.iter().any(|r| r.name == "bincache"));
-    }
-
-    #[test]
-    fn test_default_config_external_repos() {
-        let config = Config::default_config::<&str>(true, &[]);
-
-        let has_external = config
-            .repositories
-            .iter()
-            .any(|r| r.name == "ivan-hc-am" || r.name == "appimage-github-io");
-        assert!(has_external || config.repositories.is_empty()); // depends on platform
     }
 
     #[test]

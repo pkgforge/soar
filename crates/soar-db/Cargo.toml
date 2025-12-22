@@ -13,5 +13,9 @@ categories.workspace = true
 [dependencies]
 diesel = { workspace = true }
 diesel_migrations = { workspace = true }
+miette = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+soar-registry = { workspace = true }
+thiserror = { workspace = true }

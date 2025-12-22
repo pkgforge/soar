@@ -1,17 +1,12 @@
-use diesel::prelude::*;
+use diesel::{prelude::*, sqlite::Sqlite};
+use serde_json::Value;
 
-use crate::{
-    models::types::{JsonValue, PackageProvide},
-    schema::core::*,
-};
+use crate::{json_vec, models::types::PackageProvide, schema::core::*};
 
-#[derive(Debug, Queryable, Selectable)]
-#[diesel(table_name = packages)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[derive(Debug, Selectable)]
 pub struct Package {
     pub id: i32,
     pub repo_name: String,
-    pub pkg: Option<String>,
     pub pkg_id: String,
     pub pkg_name: String,
     pub pkg_type: Option<String>,
@@ -26,8 +21,54 @@ pub struct Package {
     pub with_pkg_id: bool,
     pub detached: bool,
     pub unlinked: bool,
-    pub provides: Option<JsonValue<Vec<PackageProvide>>>,
-    pub install_patterns: Option<JsonValue<Vec<String>>>,
+    pub provides: Option<Vec<PackageProvide>>,
+    pub install_patterns: Option<Vec<String>>,
+}
+
+impl Queryable<packages::SqlType, Sqlite> for Package {
+    type Row = (
+        i32,
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        i64,
+        Option<String>,
+        String,
+        String,
+        String,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        Option<Value>,
+        Option<Value>,
+    );
+
+    fn build(row: Self::Row) -> diesel::deserialize::Result<Self> {
+        Ok(Self {
+            id: row.0,
+            repo_name: row.1,
+            pkg_id: row.2,
+            pkg_name: row.3,
+            pkg_type: row.4,
+            version: row.5,
+            size: row.6,
+            checksum: row.7,
+            installed_path: row.8,
+            installed_date: row.9,
+            profile: row.10,
+            pinned: row.11,
+            is_installed: row.12,
+            with_pkg_id: row.13,
+            detached: row.14,
+            unlinked: row.15,
+            provides: json_vec!(row.16),
+            install_patterns: json_vec!(row.17),
+        })
+    }
 }
 
 #[derive(Debug, Queryable, Selectable)]
@@ -46,7 +87,6 @@ pub struct PortablePackage {
 #[diesel(table_name = packages)]
 pub struct NewPackage<'a> {
     pub repo_name: &'a str,
-    pub pkg: Option<&'a str>,
     pub pkg_id: &'a str,
     pub pkg_name: &'a str,
     pub pkg_type: Option<&'a str>,
@@ -61,8 +101,8 @@ pub struct NewPackage<'a> {
     pub with_pkg_id: bool,
     pub detached: bool,
     pub unlinked: bool,
-    pub provides: Option<JsonValue<Vec<PackageProvide>>>,
-    pub install_patterns: Option<JsonValue<Vec<String>>>,
+    pub provides: Option<Value>,
+    pub install_patterns: Option<Value>,
 }
 
 #[derive(Default, Insertable)]

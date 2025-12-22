@@ -17,8 +17,6 @@ diesel::table! {
 diesel::table! {
     packages (id) {
         id -> Integer,
-        rank -> Nullable<Integer>,
-        pkg -> Nullable<Text>,
         pkg_id -> Text,
         pkg_name -> Text,
         pkg_type -> Nullable<Text>,
@@ -34,7 +32,7 @@ diesel::table! {
         ghcr_size -> Nullable<BigInt>,
         ghcr_blob -> Nullable<Text>,
         ghcr_url -> Nullable<Text>,
-        checksum -> Nullable<Text>,
+        bsum -> Nullable<Text>,
         icon -> Nullable<Text>,
         desktop -> Nullable<Text>,
         appstream -> Nullable<Text>,

@@ -8,8 +8,6 @@
 [doc-url]: https://soar.qaidvoid.dev
 [license-shield]: https://img.shields.io/github/license/pkgforge/soar.svg
 [license-url]: https://github.com/pkgforge/soar/blob/main/LICENSE
-[packages-shield]: https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/pkgforge/metadata/refs/heads/main/TOTAL_INSTALLABLE.json&query=$[6].total&label=packages&labelColor=grey&style=flat&link=https://pkgs.pkgforge.dev
-[packages-url]: https://pkgs.pkgforge.dev
 
 [![Crates.io][crates-shield]][crates-url]
 [![Discord][discord-shield]][discord-url]
@@ -29,6 +27,16 @@
     Supports <a href="https://docs.pkgforge.dev/formats/binaries/static">Static Binaries</a>, <a href="https://docs.pkgforge.dev/formats/packages/appimage">AppImages</a>, and other <a href="https://docs.pkgforge.dev/formats/packages">Portable formats</a> on any <a href="https://docs.pkgforge.dev/repositories/soarpkgs/faq#portability"><i>*Unix-based</i> distro</a>
 </p>
 
+## 📦 What is Soar?
+
+Soar is a **package manager** - it doesn't build or host packages itself. Instead, it consumes package metadata from repositories and handles downloading, installing, and managing packages on your system.
+
+**How it works:**
+- **Repositories** (like [pkgforge](https://docs.pkgforge.dev/repositories)) build and host packages, providing metadata in a [standard format](https://docs.pkgforge.dev/repositories/bincache/metadata)
+- **Soar** fetches this metadata, lets you search/install packages, and manages your local installations
+- **You** can use the default pkgforge repositories, add third-party ones, or even create your own
+
+This separation means Soar works with any compatible repository - it's not tied to a specific package source.
 
 ## 🪄 Quickstart
 
@@ -37,10 +45,10 @@
 > - The [install script](https://github.com/pkgforge/soar/blob/main/install.sh) does this & more automatically for you.
 
 ```bash
-❯ cURL
+# cURL
 curl -fsSL "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 
-❯ wget
+# wget
 wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 ```
 
@@ -48,31 +56,32 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 > - Please read & verify what's inside the script before running it
 > - The script is also available through https://soar.qaidvoid.dev/install.sh & https://soar.pkgforge.dev/install.sh
 > - Additionally, if you want to customize your installation, please read the docs @ https://soar.qaidvoid.dev/installation.html
-> - For, extra Guide & Information on infra backends & adding more repos: https://docs.pkgforge.dev
-> - Next, Check [Configuration](https://soar.qaidvoid.dev/configuration) & [Usage](https://soar.qaidvoid.dev/package-management)
+> - For extra guide & information on infra backends & adding more repos: https://docs.pkgforge.dev
+> - Next, check [Configuration](https://soar.qaidvoid.dev/configuration) & [Usage](https://soar.qaidvoid.dev/package-management)
 
 ## 🌟 Key Features
 
 | Feature | Description |
 |:--:|:--|
-| **Universal** | Single binary, no dependencies, works on any Unix-like system with no superuser privileges. |
-| **Portable Formats** | Install static [static binaries](https://docs.pkgforge.dev/formats/binaries/static), [AppImages](https://docs.pkgforge.dev/formats/packages/appimage), and other [self-contained archives](https://docs.pkgforge.dev/formats/packages/archive) with ease. |
-| **System Integration** | Automatically adds desktop entries and system integration for a native feel. |
-| **Flexible Repository System** | Use [official](https://docs.pkgforge.dev/repositories), or [custom](https://soar.qaidvoid.dev/configuration#custom-repository-support) repositories with simple metadata. No special build format is needed. |
-| **Security First** | Enforces security through checksums and signing verification for package installations. |
-| **Fast Package Operations** | Efficient package searching, installation, and management with minimal overhead. |
+| **Universal** | Single binary, no dependencies, works on any Unix-like system without superuser privileges. |
+| **Portable Formats** | Install [static binaries](https://docs.pkgforge.dev/formats/binaries/static), [AppImages](https://docs.pkgforge.dev/formats/packages/appimage), and other [self-contained archives](https://docs.pkgforge.dev/formats/packages/archive) with ease. |
+| **System Integration** | Automatically adds desktop entries and icons for a native feel. |
+| **Repository Agnostic** | Works with any repository that provides compatible metadata. Use [official pkgforge repos](https://docs.pkgforge.dev/repositories), third-party sources, or [create your own](https://soar.qaidvoid.dev/configuration#custom-repository-support). |
+| **Security First** | Enforces security through checksums and signature verification for package installations. |
+| **Fast & Efficient** | Minimal overhead with parallel downloads and efficient package operations. |
 
 
-### 📀 Default Hosts
+## 📀 Default Repositories
+
+Soar comes pre-configured with `pkgforge` repositories. These are the default package sources, but you can add or replace them with any compatible repository.
 
 > **Note:** _✅ --> Enabled by Default_
 
-| 🏆 Tier | 🤖 Host | 📦 Repos | ℹ️ Status |
+| 🏆 Tier | 🤖 Architecture | 📦 Repositories | ℹ️ Status |
 |---------|---------|---------------------------|-------------------|
-| **Tier 1** | **`aarch64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache), [pkgforge-cargo<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [pkgforge-go<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go), [cargo-bins](https://docs.pkgforge.dev/repositories/external/cargo-bins), [appimage-github-io](https://docs.pkgforge.dev/repositories/external/appimage-github-io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) | Almost as many packages as `x86_64-Linux`, fully supported |
-| **Tier 1** | **`x86_64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache), [pkgforge-cargo<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [pkgforge-go<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go), [cargo-bins](https://docs.pkgforge.dev/repositories/external/cargo-bins), [ivan-hc-am](https://docs.pkgforge.dev/repositories/external/ivan-hc-am), [appimage-github-io](https://docs.pkgforge.dev/repositories/external/appimage-github-io), [appimagehub](https://docs.pkgforge.dev/repositories/external/appimagehub) | Primary target & most supported |
-| **Tier 2** | **`loongarch64-Linux`** | [pkgforge-cargo<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [pkgforge-go<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go) | Experimental & least supported |
-| **Tier 2** | **`riscv64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache), [pkgforge-cargo<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-cargo), [pkgforge-go<sup>✅</sup>](https://docs.pkgforge.dev/repositories/external/pkgforge-go) | Experimental, with [gradual progress](https://github.com/pkgforge/soarpkgs/issues/198) |
+| **Tier 1** | **`aarch64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache) | Almost as many packages as `x86_64-Linux`, fully supported |
+| **Tier 1** | **`x86_64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache) | Primary target & most supported |
+| **Tier 2** | **`riscv64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache) | Experimental, with [gradual progress](https://github.com/pkgforge/soarpkgs/issues/198) |
 
 
 ## 🤝 Contributing

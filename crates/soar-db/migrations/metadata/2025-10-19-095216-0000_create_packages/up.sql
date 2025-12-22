@@ -1,6 +1,5 @@
 CREATE TABLE packages (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  rank INT,
   pkg_id TEXT NOT NULL COLLATE NOCASE,
   pkg_name TEXT NOT NULL COLLATE NOCASE,
   pkg_type TEXT COLLATE NOCASE,
@@ -16,7 +15,7 @@ CREATE TABLE packages (
   ghcr_size BIGINT,
   ghcr_blob TEXT,
   ghcr_url TEXT,
-  checksum TEXT,
+  bsum TEXT,
   icon TEXT,
   desktop TEXT,
   appstream TEXT,

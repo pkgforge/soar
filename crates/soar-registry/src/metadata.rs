@@ -70,6 +70,7 @@ fn construct_nest_url(url: &str) -> Result<String> {
 ///
 /// * `nest` - The nest configuration containing the name and URL
 /// * `force` - If `true`, bypasses cache validation and fetches fresh metadata
+/// * `existing_etag` - Optional etag from a previous fetch, read from the database
 ///
 /// # Returns
 ///
@@ -88,6 +89,7 @@ fn construct_nest_url(url: &str) -> Result<String> {
 pub async fn fetch_nest_metadata(
     nest: &Nest,
     force: bool,
+    existing_etag: Option<String>,
 ) -> Result<Option<(String, MetadataContent)>> {
     let config = get_config();
     let nests_repo_path = config
@@ -108,7 +110,7 @@ pub async fn fetch_nest_metadata(
     }
 
     let etag = if metadata_db.exists() {
-        let etag = read_etag_from_db(&metadata_db)?;
+        let etag = existing_etag.unwrap_or_default();
 
         if !force && !etag.is_empty() {
             let file_info = metadata_db
@@ -207,6 +209,7 @@ pub async fn fetch_public_key<P: AsRef<Path>>(repo_path: P, pubkey_url: &str) ->
 ///
 /// * `repo` - The repository configuration
 /// * `force` - If `true`, bypasses cache validation and fetches fresh metadata
+/// * `existing_etag` - Optional etag from a previous fetch, read from the database
 ///
 /// # Returns
 ///
@@ -230,8 +233,8 @@ pub async fn fetch_public_key<P: AsRef<Path>>(repo_path: P, pubkey_url: &str) ->
 /// use soar_registry::{fetch_metadata, MetadataContent, write_metadata_db};
 /// use soar_config::repository::Repository;
 ///
-/// async fn sync(repo: &Repository) -> soar_registry::Result<()> {
-///     if let Some((etag, content)) = fetch_metadata(repo, false).await? {
+/// async fn sync(repo: &Repository, etag: Option<String>) -> soar_registry::Result<()> {
+///     if let Some((new_etag, content)) = fetch_metadata(repo, false, etag).await? {
 ///         let db_path = repo.get_path().unwrap().join("metadata.db");
 ///         if let MetadataContent::SqliteDb(bytes) = content {
 ///             write_metadata_db(&bytes, &db_path)?;
@@ -243,6 +246,7 @@ pub async fn fetch_public_key<P: AsRef<Path>>(repo_path: P, pubkey_url: &str) ->
 pub async fn fetch_metadata(
     repo: &Repository,
     force: bool,
+    existing_etag: Option<String>,
 ) -> Result<Option<(String, MetadataContent)>> {
     let repo_path = repo.get_path().map_err(|e| {
         RegistryError::IoError {
@@ -260,7 +264,7 @@ pub async fn fetch_metadata(
     let sync_interval = repo.sync_interval();
 
     let etag = if metadata_db.exists() {
-        let etag = read_etag_from_db(&metadata_db)?;
+        let etag = existing_etag.unwrap_or_default();
 
         if !force && !etag.is_empty() {
             let file_info = metadata_db
@@ -318,24 +322,6 @@ pub async fn fetch_metadata(
     let metadata_content = process_metadata_content(content, &metadata_db)?;
 
     Ok(Some((etag, metadata_content)))
-}
-
-/// Read ETag from an existing metadata database
-fn read_etag_from_db(db_path: &Path) -> Result<String> {
-    let signature = soar_utils::fs::read_file_signature(db_path, 4).map_err(|e| {
-        RegistryError::IoError {
-            action: format!("reading signature from {}", db_path.display()),
-            source: io::Error::other(e.to_string()),
-        }
-    })?;
-
-    if signature == SQLITE_MAGIC_BYTES {
-        // Return empty string - the caller should read the actual ETag from the database
-        // This is a simplified version; in practice the caller handles this
-        Ok(String::new())
-    } else {
-        Ok(String::new())
-    }
 }
 
 /// Processes raw metadata content and determines its format.

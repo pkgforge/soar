@@ -19,8 +19,8 @@
 //! use soar_registry::{fetch_metadata, MetadataContent};
 //! use soar_config::repository::Repository;
 //!
-//! async fn sync_repo(repo: &Repository) -> soar_registry::Result<()> {
-//!     if let Some((etag, content)) = fetch_metadata(repo, false).await? {
+//! async fn sync_repo(repo: &Repository, existing_etag: Option<String>) -> soar_registry::Result<()> {
+//!     if let Some((etag, content)) = fetch_metadata(repo, false, existing_etag).await? {
 //!         match content {
 //!             MetadataContent::SqliteDb(bytes) => {
 //!                 // Write SQLite database to disk
