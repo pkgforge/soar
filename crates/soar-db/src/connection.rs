@@ -33,7 +33,6 @@ impl DbConnection {
         let path_str = path.as_ref().to_string_lossy();
         let mut conn = SqliteConnection::establish(&path_str)?;
 
-        // WAL mode for better concurrent access
         sql_query("PRAGMA journal_mode = WAL;")
             .execute(&mut conn)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
@@ -58,7 +57,13 @@ impl DbConnection {
     /// Use this when you know the database is already migrated.
     pub fn open_without_migrations<P: AsRef<Path>>(path: P) -> Result<Self, ConnectionError> {
         let path_str = path.as_ref().to_string_lossy();
-        let conn = SqliteConnection::establish(&path_str)?;
+        let mut conn = SqliteConnection::establish(&path_str)?;
+
+        // WAL mode for better concurrent access
+        sql_query("PRAGMA journal_mode = WAL;")
+            .execute(&mut conn)
+            .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+
         Ok(Self {
             conn,
         })
@@ -73,6 +78,11 @@ impl DbConnection {
     pub fn open_metadata<P: AsRef<Path>>(path: P) -> Result<Self, ConnectionError> {
         let path_str = path.as_ref().to_string_lossy();
         let mut conn = SqliteConnection::establish(&path_str)?;
+
+        // WAL mode for better concurrent access
+        sql_query("PRAGMA journal_mode = WAL;")
+            .execute(&mut conn)
+            .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
 
         // Migrate text JSON to JSONB binary format
         migrate_json_to_jsonb(&mut conn, DbType::Metadata)

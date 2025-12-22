@@ -24,6 +24,7 @@ use soar_db::{
 use soar_registry::{
     fetch_metadata, fetch_nest_metadata, write_metadata_db, MetadataContent, RemotePackage,
 };
+use tokio::sync::OnceCell as AsyncOnceCell;
 use tracing::{error, info};
 
 use crate::utils::Colored;
@@ -56,7 +57,7 @@ pub struct AppState {
 struct AppStateInner {
     config: Config,
     diesel_core_db: OnceCell<DieselDatabase>,
-    metadata_manager: OnceCell<MetadataManager>,
+    metadata_manager: AsyncOnceCell<MetadataManager>,
 }
 
 impl AppState {
@@ -67,7 +68,7 @@ impl AppState {
             inner: Arc::new(AppStateInner {
                 config,
                 diesel_core_db: OnceCell::new(),
-                metadata_manager: OnceCell::new(),
+                metadata_manager: AsyncOnceCell::new(),
             }),
         }
     }
@@ -314,10 +315,15 @@ impl AppState {
 
     /// Returns the metadata manager for querying package metadata across all repos.
     pub async fn metadata_manager(&self) -> SoarResult<&MetadataManager> {
-        self.init_repo_dbs(false).await?;
-        self.sync_nests(false).await?;
         self.inner
             .metadata_manager
-            .get_or_try_init(|| self.create_metadata_manager())
+            .get_or_try_init(|| {
+                async {
+                    self.init_repo_dbs(false).await?;
+                    self.sync_nests(false).await?;
+                    self.create_metadata_manager()
+                }
+            })
+            .await
     }
 }
