@@ -367,6 +367,10 @@ pub enum UtilsError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     FileSystem(#[from] FileSystemError),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Hash(#[from] HashError),
 }
 
 pub type BytesResult<T> = std::result::Result<T, BytesError>;

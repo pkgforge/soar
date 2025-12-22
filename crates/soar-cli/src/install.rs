@@ -72,6 +72,7 @@ pub struct InstallContext {
     pub no_verify: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_install_context(
     total_packages: usize,
     parallel_limit: u32,

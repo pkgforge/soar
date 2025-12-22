@@ -123,7 +123,7 @@ pub async fn update_packages(
         }
     } else {
         let installed_packages: Vec<InstalledPackage> = diesel_db
-            .with_conn(|conn| CoreRepository::list_updatable(conn))?
+            .with_conn(CoreRepository::list_updatable)?
             .into_iter()
             .map(Into::into)
             .collect();

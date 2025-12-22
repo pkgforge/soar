@@ -105,7 +105,7 @@ async fn get_broken_packages() -> SoarResult<Vec<(String, String, String)>> {
     let state = AppState::new();
     let diesel_db = state.diesel_core_db()?;
 
-    let broken_packages = diesel_db.with_conn(|conn| CoreRepository::list_broken(conn))?;
+    let broken_packages = diesel_db.with_conn(CoreRepository::list_broken)?;
 
     Ok(broken_packages
         .into_iter()
@@ -146,7 +146,7 @@ pub async fn remove_broken_packages() -> SoarResult<()> {
     let state = AppState::new();
     let diesel_db = state.diesel_core_db()?.clone();
 
-    let broken_packages = diesel_db.with_conn(|conn| CoreRepository::list_broken(conn))?;
+    let broken_packages = diesel_db.with_conn(CoreRepository::list_broken)?;
 
     if broken_packages.is_empty() {
         info!("No broken packages found.");

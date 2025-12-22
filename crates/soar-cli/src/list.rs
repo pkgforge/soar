@@ -379,7 +379,7 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
 
     let packages: Vec<Package> = if let Some(ref repo_name) = repo_name {
         metadata_mgr
-            .query_repo(repo_name, |conn| MetadataRepository::list_all(conn))?
+            .query_repo(repo_name, MetadataRepository::list_all)?
             .unwrap_or_default()
             .into_iter()
             .map(|p| {
