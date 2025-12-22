@@ -292,9 +292,7 @@ impl Config {
             if repo.desktop_integration.is_none() {
                 match repo.name.as_str() {
                     "bincache" => repo.desktop_integration = Some(false),
-                    "pkgcache" | "ivan-hc-am" | "appimage.github.io" => {
-                        repo.desktop_integration = Some(true)
-                    }
+                    "pkgcache" => repo.desktop_integration = Some(true),
                     _ => {}
                 }
             }
@@ -500,17 +498,6 @@ mod tests {
 
         assert!(!config.repositories.is_empty());
         assert!(config.repositories.iter().any(|r| r.name == "bincache"));
-    }
-
-    #[test]
-    fn test_default_config_external_repos() {
-        let config = Config::default_config::<&str>(true, &[]);
-
-        let has_external = config
-            .repositories
-            .iter()
-            .any(|r| r.name == "ivan-hc-am" || r.name == "appimage-github-io");
-        assert!(has_external || config.repositories.is_empty()); // depends on platform
     }
 
     #[test]

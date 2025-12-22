@@ -106,48 +106,6 @@ pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
             is_core: true,
             ..DefaultRepositoryInfo::default()
         },
-        DefaultRepositoryInfo {
-            name: "pkgforge-cargo",
-            url_template: "https://meta.pkgforge.dev/external/pkgforge-cargo/{}.sdb.zstd",
-            desktop_integration: Some(false),
-            platforms: vec![
-                "aarch64-Linux",
-                "loongarch64-Linux",
-                "riscv64-Linux",
-                "x86_64-Linux",
-            ],
-            is_core: true,
-            ..DefaultRepositoryInfo::default()
-        },
-        DefaultRepositoryInfo {
-            name: "pkgforge-go",
-            url_template: "https://meta.pkgforge.dev/external/pkgforge-go/{}.sdb.zstd",
-            desktop_integration: Some(false),
-            platforms: vec![
-                "aarch64-Linux",
-                "loongarch64-Linux",
-                "riscv64-Linux",
-                "x86_64-Linux",
-            ],
-            is_core: true,
-            ..DefaultRepositoryInfo::default()
-        },
-        DefaultRepositoryInfo {
-            name: "ivan-hc-am",
-            url_template: "https://meta.pkgforge.dev/external/am/{}.sdb.zstd",
-            desktop_integration: Some(true),
-            platforms: vec!["x86_64-Linux"],
-            is_core: false,
-            ..DefaultRepositoryInfo::default()
-        },
-        DefaultRepositoryInfo {
-            name: "appimage-github-io",
-            url_template: "https://meta.pkgforge.dev/external/appimage.github.io/{}.sdb.zstd",
-            desktop_integration: Some(true),
-            platforms: vec!["aarch64-Linux", "x86_64-Linux"],
-            is_core: false,
-            ..DefaultRepositoryInfo::default()
-        },
     ]
 }
 
