@@ -12,8 +12,10 @@ categories.workspace = true
 
 [dependencies]
 blake3 = { version = "1.8.2", features = ["mmap"] }
+miette = { workspace = true }
 nix = { version = "0.30.1", features = ["ioctl", "term", "user"] }
 serial_test = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

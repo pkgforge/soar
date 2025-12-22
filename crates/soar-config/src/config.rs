@@ -17,6 +17,7 @@ use tracing::{info, warn};
 
 use crate::{
     annotations::{annotate_toml_array_of_tables, annotate_toml_table},
+    display::DisplaySettings,
     error::{ConfigError, Result},
     profile::Profile,
     repository::{get_platform_repositories, Repository},
@@ -90,6 +91,9 @@ pub struct Config {
 
     /// Sync interval for nests
     pub nests_sync_interval: Option<String>,
+
+    /// Display settings for output formatting
+    pub display: Option<DisplaySettings>,
 }
 
 pub static CONFIG: LazyLock<RwLock<Option<Config>>> = LazyLock::new(|| RwLock::new(None));
@@ -225,6 +229,7 @@ impl Config {
             desktop_integration: None,
             sync_interval: None,
             nests_sync_interval: None,
+            display: None,
         }
     }
 
@@ -404,6 +409,10 @@ impl Config {
         }
         self.get_repository(repo_name)
             .is_some_and(|repo| repo.desktop_integration.unwrap_or(false))
+    }
+
+    pub fn display(&self) -> DisplaySettings {
+        self.display.clone().unwrap_or_default()
     }
 
     pub fn save(&self) -> Result<()> {

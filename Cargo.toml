@@ -1,14 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/soar-cli",
   "crates/soar-config",
+  "crates/soar-core",
   "crates/soar-db",
   "crates/soar-dl",
   "crates/soar-package",
   "crates/soar-registry",
   "crates/soar-utils",
-  "soar-cli",
-  "soar-core"
 ]
 
 [workspace.package]
@@ -25,6 +25,7 @@ compak = "0.1.0"
 diesel = { version = "2.3.2", features = [
   "64-column-tables",
   "returning_clauses_for_sqlite_3_35",
+  "serde_json",
   "sqlite"
 ] }
 diesel_migrations = { version = "2.3.0", features = ["sqlite"] }
@@ -38,12 +39,13 @@ regex = { version = "1.11.2", default-features = false, features = [
   "unicode-case",
   "unicode-perl"
 ] }
-rusqlite = { version = "0.37.0", features = ["bundled", "rusqlite-macros"] }
 serde = { version = "1.0.225", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["indexmap"] }
 serial_test = "3.2.0"
+soar-cli = { path = "crates/soar-cli" }
 soar-config = { path = "crates/soar-config" }
-soar-core = { path = "soar-core" }
+soar-core = { path = "crates/soar-core" }
+soar-db = { path = "crates/soar-db" }
 soar-dl = { path = "crates/soar-dl" }
 soar-package = { path = "crates/soar-package" }
 soar-registry = { path = "crates/soar-registry" }

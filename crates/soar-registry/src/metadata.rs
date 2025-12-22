@@ -165,6 +165,92 @@ pub async fn fetch_nest_metadata(
     Ok(Some((etag, metadata_content)))
 }
 
+/// Fetches nest metadata with a pre-provided etag.
+///
+/// This function is similar to [`fetch_nest_metadata`] but accepts an optional etag
+/// that was previously read from the database. This is useful when the caller
+/// has already read the etag using soar-db.
+pub async fn fetch_nest_metadata_with_etag(
+    nest: &Nest,
+    force: bool,
+    existing_etag: Option<String>,
+) -> Result<Option<(String, MetadataContent)>> {
+    let config = get_config();
+    let nests_repo_path = config
+        .get_repositories_path()
+        .map_err(|e| {
+            RegistryError::IoError {
+                action: "getting repositories path".to_string(),
+                source: io::Error::other(e.to_string()),
+            }
+        })?
+        .join("nests");
+    let nest_path = nests_repo_path.join(&nest.name);
+    let metadata_db = nest_path.join("metadata.db");
+
+    if !metadata_db.exists() {
+        fs::create_dir_all(&nest_path)
+            .with_context(|| format!("creating directory {}", nest_path.display()))?;
+    }
+
+    let etag = if metadata_db.exists() {
+        let etag = existing_etag.unwrap_or_default();
+
+        if !force && !etag.is_empty() {
+            let file_info = metadata_db
+                .metadata()
+                .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
+            let sync_interval = config.get_nests_sync_interval();
+            if let Ok(created) = file_info.created() {
+                if sync_interval >= created.elapsed()?.as_millis() {
+                    return Ok(None);
+                }
+            }
+        }
+        etag
+    } else {
+        String::new()
+    };
+
+    let url = construct_nest_url(&nest.url)?;
+
+    let mut req = SHARED_AGENT
+        .get(&url)
+        .header(CACHE_CONTROL, "no-cache")
+        .header(PRAGMA, "no-cache");
+
+    if !etag.is_empty() {
+        req = req.header(IF_NONE_MATCH, etag);
+    }
+
+    let resp = req
+        .call()
+        .map_err(|err| RegistryError::FailedToFetchRemote(err.to_string()))?;
+
+    if resp.status() == StatusCode::NOT_MODIFIED {
+        return Ok(None);
+    }
+
+    if !resp.status().is_success() {
+        let msg = format!("{} [{}]", url, resp.status());
+        return Err(RegistryError::FailedToFetchRemote(msg));
+    }
+
+    let etag = resp
+        .headers()
+        .get(ETAG)
+        .and_then(|h| h.to_str().ok())
+        .map(String::from)
+        .ok_or(RegistryError::MissingEtag)?;
+
+    info!("Fetching nest from {}", url);
+
+    let content = resp.into_body().read_to_vec()?;
+    let metadata_content = process_metadata_content(content, &metadata_db)?;
+
+    Ok(Some((etag, metadata_content)))
+}
+
 /// Fetches the public key for package signature verification.
 ///
 /// Downloads the minisign public key from the specified URL and saves it
@@ -320,22 +406,103 @@ pub async fn fetch_metadata(
     Ok(Some((etag, metadata_content)))
 }
 
-/// Read ETag from an existing metadata database
-fn read_etag_from_db(db_path: &Path) -> Result<String> {
-    let signature = soar_utils::fs::read_file_signature(db_path, 4).map_err(|e| {
+/// Read ETag from an existing metadata database.
+/// Note: This always returns empty string due to cyclic dependency issues with soar-db.
+/// Callers should use `fetch_metadata_with_etag` with an etag read using soar-db.
+fn read_etag_from_db(_db_path: &Path) -> Result<String> {
+    Ok(String::new())
+}
+
+/// Fetches repository metadata with a pre-provided etag.
+///
+/// This function is similar to [`fetch_metadata`] but accepts an optional etag
+/// that was previously read from the database. This is useful when the caller
+/// has already read the etag using soar-db.
+///
+/// # Arguments
+///
+/// * `repo` - The repository configuration
+/// * `force` - If `true`, bypasses cache validation and fetches fresh metadata
+/// * `existing_etag` - Optional etag from a previous fetch, read from the database
+pub async fn fetch_metadata_with_etag(
+    repo: &Repository,
+    force: bool,
+    existing_etag: Option<String>,
+) -> Result<Option<(String, MetadataContent)>> {
+    let repo_path = repo.get_path().map_err(|e| {
         RegistryError::IoError {
-            action: format!("reading signature from {}", db_path.display()),
+            action: "getting repository path".to_string(),
             source: io::Error::other(e.to_string()),
         }
     })?;
+    let metadata_db = repo_path.join("metadata.db");
 
-    if signature == SQLITE_MAGIC_BYTES {
-        // Return empty string - the caller should read the actual ETag from the database
-        // This is a simplified version; in practice the caller handles this
-        Ok(String::new())
-    } else {
-        Ok(String::new())
+    if !metadata_db.exists() {
+        fs::create_dir_all(&repo_path)
+            .with_context(|| format!("creating directory {}", repo_path.display()))?;
     }
+
+    let sync_interval = repo.sync_interval();
+
+    let etag = if metadata_db.exists() {
+        let etag = existing_etag.unwrap_or_default();
+
+        if !force && !etag.is_empty() {
+            let file_info = metadata_db
+                .metadata()
+                .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
+            if let Ok(created) = file_info.created() {
+                if sync_interval >= created.elapsed()?.as_millis() {
+                    return Ok(None);
+                }
+            }
+        }
+        etag
+    } else {
+        String::new()
+    };
+
+    Url::parse(&repo.url).map_err(|err| RegistryError::InvalidUrl(err.to_string()))?;
+
+    if let Some(ref pubkey_url) = repo.pubkey {
+        fetch_public_key(&repo_path, pubkey_url).await?;
+    }
+
+    let mut req = SHARED_AGENT
+        .get(&repo.url)
+        .header(CACHE_CONTROL, "no-cache")
+        .header(PRAGMA, "no-cache");
+
+    if !etag.is_empty() {
+        req = req.header(IF_NONE_MATCH, etag);
+    }
+
+    let resp = req
+        .call()
+        .map_err(|err| RegistryError::FailedToFetchRemote(err.to_string()))?;
+
+    if resp.status() == StatusCode::NOT_MODIFIED {
+        return Ok(None);
+    }
+
+    if !resp.status().is_success() {
+        let msg = format!("{} [{}]", repo.url, resp.status());
+        return Err(RegistryError::FailedToFetchRemote(msg));
+    }
+
+    let etag = resp
+        .headers()
+        .get(ETAG)
+        .and_then(|h| h.to_str().ok())
+        .map(String::from)
+        .ok_or(RegistryError::MissingEtag)?;
+
+    info!("Fetching metadata from {}", repo.url);
+
+    let content = resp.into_body().read_to_vec()?;
+    let metadata_content = process_metadata_content(content, &metadata_db)?;
+
+    Ok(Some((etag, metadata_content)))
 }
 
 /// Processes raw metadata content and determines its format.

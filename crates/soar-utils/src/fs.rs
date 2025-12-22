@@ -33,11 +33,13 @@ use crate::error::{FileSystemError, FileSystemResult, IoOperation, IoResultExt};
 pub fn safe_remove<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
     let path = path.as_ref();
 
-    if !path.exists() {
-        return Ok(());
-    }
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(FileSystemError::RemoveFile { path: path.to_path_buf(), source: e }),
+    };
 
-    let result = if path.is_dir() {
+    let result = if metadata.is_dir() {
         fs::remove_dir_all(path)
     } else {
         fs::remove_file(path)

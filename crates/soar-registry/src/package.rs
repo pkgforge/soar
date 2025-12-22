@@ -181,15 +181,6 @@ pub struct RemotePackage {
     #[serde(default, deserialize_with = "empty_is_none")]
     pub app_id: Option<String>,
 
-    #[serde(default, deserialize_with = "optional_number")]
-    pub download_count: Option<u64>,
-
-    #[serde(default, deserialize_with = "optional_number")]
-    pub download_count_month: Option<u64>,
-
-    #[serde(default, deserialize_with = "optional_number")]
-    pub download_count_week: Option<u64>,
-
     #[serde(default, deserialize_with = "flexible_bool")]
     pub bundle: Option<bool>,
 
