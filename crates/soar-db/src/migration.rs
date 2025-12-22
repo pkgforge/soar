@@ -68,7 +68,7 @@ fn mark_first_pending(
 /// successful migration. The WHERE clause only matches rows with text-based JSON,
 /// so once all rows are converted to JSONB binary format, no rows will be updated.
 ///
-/// TODO: Remove this migration in a future version (v0.9 or v1.0) once users
+/// TODO: Remove this migration in a future version (v0.10 or v1.0) once users
 /// have had sufficient time to migrate their databases.
 pub fn migrate_json_to_jsonb(
     conn: &mut SqliteConnection,

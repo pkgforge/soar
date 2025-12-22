@@ -11,7 +11,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-image = { version = "0.25.8", default-features = false, features = ["png"] }
+image = { version = "0.25.9", default-features = false, features = ["png"] }
 miette = { workspace = true }
 regex = { workspace = true }
 soar-config = { workspace = true }
