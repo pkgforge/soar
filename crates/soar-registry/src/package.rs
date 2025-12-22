@@ -179,12 +179,6 @@ pub struct RemotePackage {
     pub app_id: Option<String>,
 
     #[serde(default, deserialize_with = "flexible_bool")]
-    pub bundle: Option<bool>,
-
-    #[serde(default, deserialize_with = "empty_is_none")]
-    pub bundle_type: Option<String>,
-
-    #[serde(default, deserialize_with = "flexible_bool")]
     pub soar_syms: Option<bool>,
 
     #[serde(default, deserialize_with = "flexible_bool")]
@@ -194,25 +188,10 @@ pub struct RemotePackage {
     pub desktop_integration: Option<bool>,
 
     #[serde(default, deserialize_with = "flexible_bool")]
-    pub external: Option<bool>,
-
-    #[serde(default, deserialize_with = "flexible_bool")]
-    pub installable: Option<bool>,
-
-    #[serde(default, deserialize_with = "flexible_bool")]
     pub portable: Option<bool>,
 
     #[serde(default, deserialize_with = "flexible_bool")]
     pub recurse_provides: Option<bool>,
-
-    #[serde(default, deserialize_with = "flexible_bool")]
-    pub trusted: Option<bool>,
-
-    #[serde(default, deserialize_with = "empty_is_none")]
-    pub version_latest: Option<String>,
-
-    #[serde(default, deserialize_with = "flexible_bool")]
-    pub version_outdated: Option<bool>,
 
     pub repology: Option<Vec<String>>,
     pub snapshots: Option<Vec<String>>,
