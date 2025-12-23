@@ -150,6 +150,22 @@ pub enum Commands {
         /// Skip checksum verification
         #[arg(required = false, long)]
         no_verify: bool,
+
+        /// Override package name (for URL installs)
+        #[arg(required = false, long)]
+        name: Option<String>,
+
+        /// Override version (for URL installs)
+        #[arg(required = false, long)]
+        version: Option<String>,
+
+        /// Override package type (for URL installs, e.g., appimage, flatimage, archive)
+        #[arg(required = false, long)]
+        pkg_type: Option<String>,
+
+        /// Override package ID (for URL installs)
+        #[arg(required = false, long)]
+        pkg_id: Option<String>,
     },
 
     /// Search package

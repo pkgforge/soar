@@ -8,7 +8,7 @@ use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
 use soar_config::packages::{PackagesConfig, ResolvedPackage};
 use soar_core::{
     database::models::{InstalledPackage, Package},
-    package::{install::InstallTarget, remove::PackageRemover},
+    package::{install::InstallTarget, remove::PackageRemover, url::UrlPackage},
     SoarResult,
 };
 use soar_db::repository::{
@@ -104,6 +104,58 @@ async fn compute_diff(
     for pkg in resolved {
         // Track declared package
         declared_keys.insert((pkg.name.clone(), pkg.pkg_id.clone(), pkg.repo.clone()));
+
+        // Handle URL packages
+        if let Some(ref url) = pkg.url {
+            let url_pkg = UrlPackage::from_url(
+                url,
+                Some(&pkg.name),
+                pkg.version.as_deref(),
+                pkg.pkg_type.as_deref(),
+                pkg.pkg_id.as_deref(),
+            )?;
+
+            // Check if installed in core DB with repo_name="local"
+            let installed_packages: Vec<InstalledPackage> = diesel_db
+                .with_conn(|conn| {
+                    CoreRepository::list_filtered(
+                        conn,
+                        Some("local"),
+                        Some(&url_pkg.pkg_name),
+                        Some(&url_pkg.pkg_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(SortDirection::Asc),
+                    )
+                })?
+                .into_iter()
+                .map(Into::into)
+                .collect();
+
+            let is_already_installed = installed_packages.iter().any(|ip| ip.is_installed);
+
+            if !is_already_installed {
+                let existing_install = installed_packages.into_iter().next();
+                let target = InstallTarget {
+                    package: url_pkg.to_package(),
+                    existing_install,
+                    with_pkg_id: url_pkg.pkg_type.is_some(),
+                    pinned: true,
+                    profile: pkg.profile.clone(),
+                    portable: pkg.portable.as_ref().and_then(|p| p.path.clone()),
+                    portable_home: pkg.portable.as_ref().and_then(|p| p.home.clone()),
+                    portable_config: pkg.portable.as_ref().and_then(|p| p.config.clone()),
+                    portable_share: pkg.portable.as_ref().and_then(|p| p.share.clone()),
+                    portable_cache: pkg.portable.as_ref().and_then(|p| p.cache.clone()),
+                };
+                diff.to_install.push((pkg.clone(), target));
+            } else {
+                diff.in_sync.push(format!("{} (local)", pkg.name));
+            }
+            continue;
+        }
 
         // Find package in metadata
         let found_packages: Vec<Package> = if let Some(ref repo_name) = pkg.repo {

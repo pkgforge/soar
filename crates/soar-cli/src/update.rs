@@ -80,6 +80,15 @@ pub async fn update_packages(
                 .collect();
 
             for pkg in installed_pkgs {
+                // Skip local packages (installed from URLs) - no version tracking
+                if pkg.repo_name == "local" {
+                    info!(
+                        "Skipping {}#{} (local package - no version tracking)",
+                        pkg.pkg_name, pkg.pkg_id
+                    );
+                    continue;
+                }
+
                 let new_pkg: Option<Package> = metadata_mgr
                     .query_repo(&pkg.repo_name, |conn| {
                         MetadataRepository::find_newer_version(
@@ -129,6 +138,11 @@ pub async fn update_packages(
             .collect();
 
         for pkg in installed_packages {
+            // Skip local packages (installed from URLs) - no version tracking
+            if pkg.repo_name == "local" {
+                continue;
+            }
+
             let new_pkg: Option<Package> = metadata_mgr
                 .query_repo(&pkg.repo_name, |conn| {
                     MetadataRepository::find_newer_version(

@@ -79,6 +79,12 @@ pub struct PackageOptions {
     /// Repository to install from.
     pub repo: Option<String>,
 
+    /// Direct URL to download the package from (makes it a "local" package).
+    pub url: Option<String>,
+
+    /// Package type for URL installs (e.g., appimage, flatimage, archive).
+    pub pkg_type: Option<String>,
+
     /// Whether to pin this package (prevents automatic updates).
     #[serde(default)]
     pub pinned: bool,
@@ -122,6 +128,8 @@ pub struct ResolvedPackage {
     pub pkg_id: Option<String>,
     pub version: Option<String>,
     pub repo: Option<String>,
+    pub url: Option<String>,
+    pub pkg_type: Option<String>,
     pub pinned: bool,
     pub profile: Option<String>,
     pub portable: Option<PortableConfig>,
@@ -145,6 +153,8 @@ impl PackageSpec {
                     pkg_id: None,
                     version,
                     repo: None,
+                    url: None,
+                    pkg_type: None,
                     pinned,
                     profile: defaults.and_then(|d| d.profile.clone()),
                     portable: None,
@@ -155,12 +165,15 @@ impl PackageSpec {
             PackageSpec::Detailed(opts) => {
                 // Treat "*" as None (latest version)
                 let version = opts.version.as_ref().filter(|v| v.as_str() != "*").cloned();
-                let pinned = opts.pinned || version.is_some();
+                // URL packages are always pinned
+                let pinned = opts.pinned || version.is_some() || opts.url.is_some();
                 ResolvedPackage {
                     name: name.to_string(),
                     pkg_id: opts.pkg_id.clone(),
                     version,
                     repo: opts.repo.clone(),
+                    url: opts.url.clone(),
+                    pkg_type: opts.pkg_type.clone(),
                     pinned,
                     profile: opts
                         .profile

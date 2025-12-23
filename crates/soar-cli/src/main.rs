@@ -151,6 +151,10 @@ async fn handle_cli() -> SoarResult<()> {
                     binary_only,
                     ask,
                     no_verify,
+                    name,
+                    version,
+                    pkg_type,
+                    pkg_id,
                 } => {
                     let portable = portable.map(|p| p.unwrap_or_default());
                     let portable_home = portable_home.map(|p| p.unwrap_or_default());
@@ -171,6 +175,10 @@ async fn handle_cli() -> SoarResult<()> {
                         binary_only,
                         ask,
                         no_verify,
+                        name,
+                        version,
+                        pkg_type,
+                        pkg_id,
                     )
                     .await?;
                 }

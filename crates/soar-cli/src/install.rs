@@ -20,6 +20,7 @@ use soar_core::{
     package::{
         install::{InstallTarget, PackageInstaller},
         query::PackageQuery,
+        url::UrlPackage,
     },
     SoarResult,
 };
@@ -133,12 +134,27 @@ pub async fn install_packages(
     binary_only: bool,
     ask: bool,
     no_verify: bool,
+    name_override: Option<String>,
+    version_override: Option<String>,
+    pkg_type_override: Option<String>,
+    pkg_id_override: Option<String>,
 ) -> SoarResult<()> {
     let state = AppState::new();
     let metadata_mgr = state.metadata_manager().await?;
     let diesel_db = state.diesel_core_db()?.clone();
 
-    let install_targets = resolve_packages(&state, metadata_mgr, &diesel_db, packages, yes, force)?;
+    let install_targets = resolve_packages(
+        &state,
+        metadata_mgr,
+        &diesel_db,
+        packages,
+        yes,
+        force,
+        name_override.as_deref(),
+        version_override.as_deref(),
+        pkg_type_override.as_deref(),
+        pkg_id_override.as_deref(),
+    )?;
 
     if install_targets.is_empty() {
         info!("No packages to install");
@@ -171,12 +187,68 @@ fn resolve_packages(
     packages: &[String],
     yes: bool,
     force: bool,
+    name_override: Option<&str>,
+    version_override: Option<&str>,
+    pkg_type_override: Option<&str>,
+    pkg_id_override: Option<&str>,
 ) -> SoarResult<Vec<InstallTarget>> {
     use soar_core::database::models::InstalledPackage;
 
     let mut install_targets = Vec::new();
 
     for package in packages {
+        // Check if input is a URL
+        if UrlPackage::is_url(package) {
+            let url_pkg = UrlPackage::from_url(
+                package,
+                name_override,
+                version_override,
+                pkg_type_override,
+                pkg_id_override,
+            )?;
+
+            // Check if already installed in core DB (repo_name="local")
+            let installed_packages: Vec<InstalledPackage> = diesel_db
+                .with_conn(|conn| {
+                    CoreRepository::list_filtered(
+                        conn,
+                        Some("local"),
+                        Some(&url_pkg.pkg_name),
+                        Some(&url_pkg.pkg_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(SortDirection::Asc),
+                    )
+                })?
+                .into_iter()
+                .map(Into::into)
+                .collect();
+
+            let is_already_installed = installed_packages.iter().any(|ip| ip.is_installed);
+
+            if is_already_installed && !force {
+                warn!(
+                    "{}#{} is already installed - skipping",
+                    url_pkg.pkg_name, url_pkg.pkg_id
+                );
+                continue;
+            }
+
+            let existing_install = installed_packages.into_iter().next();
+
+            install_targets.push(InstallTarget {
+                package: url_pkg.to_package(),
+                existing_install,
+                with_pkg_id: url_pkg.pkg_type.is_some(),
+                pinned: true, // URL packages are always pinned
+                profile: None,
+                ..Default::default()
+            });
+            continue;
+        }
+
         let mut query = PackageQuery::try_from(package.as_str())?;
 
         if let Some(ref pkg_id) = query.pkg_id {

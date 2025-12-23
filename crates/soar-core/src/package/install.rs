@@ -144,12 +144,18 @@ impl PackageInstaller {
             }
 
             let mut retries = 0;
+            let mut last_error: Option<DownloadError> = None;
             loop {
                 if retries > 5 {
                     if let Some(ref callback) = self.progress_callback {
                         callback(Progress::Aborted);
                     }
-                    break;
+                    // Return error after max retries
+                    return Err(last_error.unwrap_or_else(|| {
+                        DownloadError::Multiple {
+                            errors: vec!["Download failed after 5 retries".into()],
+                        }
+                    }))?;
                 }
                 match dl.clone().execute() {
                     Ok(_) => break,
@@ -168,6 +174,7 @@ impl PackageInstaller {
                                     callback(Progress::Error);
                                 }
                             }
+                            last_error = Some(err);
                         } else {
                             return Err(err)?;
                         }
@@ -179,10 +186,17 @@ impl PackageInstaller {
         } else {
             let extract_dir = get_extract_dir(&self.install_dir);
 
+            // Only extract if it's an archive type
+            let should_extract = self
+                .package
+                .pkg_type
+                .as_deref()
+                .is_some_and(|t| t == "archive");
+
             let mut dl = Download::new(url.as_str())
                 .output(output_path.to_string_lossy())
                 .overwrite(OverwriteMode::Skip)
-                .extract(true)
+                .extract(should_extract)
                 .extract_to(&extract_dir);
 
             if let Some(ref cb) = self.progress_callback {
