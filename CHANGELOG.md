@@ -1,4 +1,18 @@
 
+## [0.8.2](https://github.com/pkgforge/soar/compare/v0.8.1...v0.8.2) - 2025-12-23
+
+### ⛰️  Features
+
+- *(packages)* Add declarative installation - ([cfd0860](https://github.com/pkgforge/soar/commit/cfd0860e7b3bfdc2b14360baf7ac02ddbf061a90))
+
+### 🚜 Refactor
+
+- *(integration)* Integrate soar with modular crates ([#123](https://github.com/pkgforge/soar/pull/123)) - ([2d340e5](https://github.com/pkgforge/soar/commit/2d340e54ac79fd31087370712f4e189b3391bd16))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(docs)* Fix readme - ([90d8abb](https://github.com/pkgforge/soar/commit/90d8abb9206a304be4c3d8cd5d11ae40584242d6))
+
 ## [0.8.1](https://github.com/pkgforge/soar/compare/v0.8.0...v0.8.1) - 2025-09-19
 
 ### 🐛 Bug Fixes
