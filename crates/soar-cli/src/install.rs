@@ -42,8 +42,9 @@ use crate::{
     progress::handle_install_progress,
     state::AppState,
     utils::{
-        ask_target_action, display_settings, has_desktop_integration, icon_or,
-        mangle_package_symlinks, select_package_interactively, Colored, Icons,
+        ask_target_action, confirm_action, display_settings, has_desktop_integration, icon_or,
+        mangle_package_symlinks, select_package_interactively,
+        select_package_interactively_with_installed, Colored, Icons,
     },
 };
 
@@ -138,6 +139,7 @@ pub async fn install_packages(
     version_override: Option<String>,
     pkg_type_override: Option<String>,
     pkg_id_override: Option<String>,
+    show: bool,
 ) -> SoarResult<()> {
     let state = AppState::new();
     let metadata_mgr = state.metadata_manager().await?;
@@ -154,6 +156,7 @@ pub async fn install_packages(
         version_override.as_deref(),
         pkg_type_override.as_deref(),
         pkg_id_override.as_deref(),
+        show,
     )?;
 
     if install_targets.is_empty() {
@@ -191,6 +194,7 @@ fn resolve_packages(
     version_override: Option<&str>,
     pkg_type_override: Option<&str>,
     pkg_id_override: Option<&str>,
+    show: bool,
 ) -> SoarResult<Vec<InstallTarget>> {
     use soar_core::database::models::InstalledPackage;
 
@@ -226,14 +230,19 @@ fn resolve_packages(
                 .map(Into::into)
                 .collect();
 
-            let is_already_installed = installed_packages.iter().any(|ip| ip.is_installed);
+            let installed_pkg = installed_packages.iter().find(|ip| ip.is_installed);
 
-            if is_already_installed && !force {
-                warn!(
-                    "{}#{} is already installed - skipping",
-                    url_pkg.pkg_name, url_pkg.pkg_id
-                );
-                continue;
+            if let Some(installed) = installed_pkg {
+                if !force {
+                    warn!(
+                        "{}#{}:{} ({}) is already installed - skipping",
+                        installed.pkg_name,
+                        installed.pkg_id,
+                        installed.repo_name,
+                        installed.version,
+                    );
+                    continue;
+                }
             }
 
             let existing_install = installed_packages.into_iter().next();
@@ -249,18 +258,144 @@ fn resolve_packages(
             continue;
         }
 
-        let mut query = PackageQuery::try_from(package.as_str())?;
+        let query = PackageQuery::try_from(package.as_str())?;
+
+        if show && query.pkg_id.is_none() && query.name.is_some() {
+            let repo_pkgs: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
+                metadata_mgr
+                    .query_repo(repo_name, |conn| {
+                        MetadataRepository::find_filtered(
+                            conn,
+                            query.name.as_deref(),
+                            None,
+                            query.version.as_deref(),
+                            None,
+                            Some(SortDirection::Asc),
+                        )
+                    })?
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|p| {
+                        let mut pkg: Package = p.into();
+                        pkg.repo_name = repo_name.clone();
+                        pkg
+                    })
+                    .collect()
+            } else {
+                metadata_mgr.query_all_flat(|repo_name, conn| {
+                    let pkgs = MetadataRepository::find_filtered(
+                        conn,
+                        query.name.as_deref(),
+                        None,
+                        query.version.as_deref(),
+                        None,
+                        Some(SortDirection::Asc),
+                    )?;
+                    Ok(pkgs
+                        .into_iter()
+                        .map(|p| {
+                            let mut pkg: Package = p.into();
+                            pkg.repo_name = repo_name.to_string();
+                            pkg
+                        })
+                        .collect())
+                })?
+            };
+
+            if repo_pkgs.is_empty() {
+                error!("Package {} not found", query.name.as_ref().unwrap());
+                continue;
+            }
+
+            // Get installed packages to show [installed] marker
+            let installed_packages: Vec<(String, String, String)> = diesel_db
+                .with_conn(|conn| {
+                    CoreRepository::list_filtered(
+                        conn,
+                        query.repo_name.as_deref(),
+                        query.name.as_deref(),
+                        None,
+                        None,
+                        Some(true),
+                        None,
+                        None,
+                        None,
+                    )
+                })?
+                .into_iter()
+                .map(|p| (p.pkg_id, p.repo_name, p.version))
+                .collect();
+
+            let pkg = if repo_pkgs.len() > 1 {
+                select_package_interactively_with_installed(
+                    repo_pkgs,
+                    &query.name.clone().unwrap_or(package.clone()),
+                    &installed_packages,
+                )?
+                .unwrap()
+            } else {
+                repo_pkgs.into_iter().next().unwrap()
+            };
+
+            // Check if this specific package is already installed
+            let existing_install = diesel_db
+                .with_conn(|conn| {
+                    CoreRepository::list_filtered(
+                        conn,
+                        Some(&pkg.repo_name),
+                        Some(&pkg.pkg_name),
+                        Some(&pkg.pkg_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(SortDirection::Asc),
+                    )
+                })?
+                .into_iter()
+                .map(Into::into)
+                .next();
+
+            if let Some(ref existing) = existing_install {
+                let existing: &InstalledPackage = existing;
+                if existing.is_installed {
+                    warn!(
+                        "{}#{}:{} ({}) is already installed - {}",
+                        existing.pkg_name,
+                        existing.pkg_id,
+                        existing.repo_name,
+                        existing.version,
+                        if force { "reinstalling" } else { "skipping" }
+                    );
+                    if !force {
+                        info!("Hint: Use --force to reinstall, or --show to see other variants");
+                        continue;
+                    }
+                }
+            }
+
+            install_targets.push(InstallTarget {
+                package: pkg,
+                existing_install,
+                with_pkg_id: true,
+                pinned: query.version.is_some(),
+                profile: None,
+                ..Default::default()
+            });
+            continue;
+        }
 
         if let Some(ref pkg_id) = query.pkg_id {
             if pkg_id == "all" {
-                let repo_pkgs: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
+                // Find all variants of this package
+                let variants: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
                     metadata_mgr
                         .query_repo(repo_name, |conn| {
                             MetadataRepository::find_filtered(
                                 conn,
                                 query.name.as_deref(),
-                                None, // no pkg_id filter for "all"
-                                query.version.as_deref(),
+                                None,
+                                None,
                                 None,
                                 Some(SortDirection::Asc),
                             )
@@ -279,7 +414,7 @@ fn resolve_packages(
                             conn,
                             query.name.as_deref(),
                             None,
-                            query.version.as_deref(),
+                            None,
                             None,
                             Some(SortDirection::Asc),
                         )?;
@@ -294,22 +429,138 @@ fn resolve_packages(
                     })?
                 };
 
-                if repo_pkgs.is_empty() {
+                if variants.is_empty() {
                     error!("Package {} not found", query.name.as_ref().unwrap());
                     continue;
                 }
 
-                let pkg = if repo_pkgs.len() > 1 {
-                    &select_package_interactively(
-                        repo_pkgs,
-                        &query.name.unwrap_or(package.clone()),
-                    )?
-                    .unwrap()
+                let selected_pkg = if variants.len() > 1 {
+                    if yes {
+                        variants.into_iter().next().unwrap()
+                    } else {
+                        select_package_interactively(variants, query.name.as_ref().unwrap())?
+                            .unwrap()
+                    }
                 } else {
-                    repo_pkgs.first().unwrap()
+                    variants.into_iter().next().unwrap()
                 };
-                query.pkg_id = Some(pkg.pkg_id.clone());
-                query.name = None;
+
+                let target_pkg_id = selected_pkg.pkg_id.clone();
+
+                // Find all packages with this pkg_id
+                let all_pkgs: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
+                    metadata_mgr
+                        .query_repo(repo_name, |conn| {
+                            MetadataRepository::find_filtered(
+                                conn,
+                                None,
+                                Some(&target_pkg_id),
+                                None,
+                                None,
+                                Some(SortDirection::Asc),
+                            )
+                        })?
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|p| {
+                            let mut pkg: Package = p.into();
+                            pkg.repo_name = repo_name.clone();
+                            pkg
+                        })
+                        .collect()
+                } else {
+                    metadata_mgr.query_all_flat(|repo_name, conn| {
+                        let pkgs = MetadataRepository::find_filtered(
+                            conn,
+                            None,
+                            Some(&target_pkg_id),
+                            None,
+                            None,
+                            Some(SortDirection::Asc),
+                        )?;
+                        Ok(pkgs
+                            .into_iter()
+                            .map(|p| {
+                                let mut pkg: Package = p.into();
+                                pkg.repo_name = repo_name.to_string();
+                                pkg
+                            })
+                            .collect())
+                    })?
+                };
+
+                // Get installed packages for this pkg_id
+                let installed_packages: Vec<InstalledPackage> = diesel_db
+                    .with_conn(|conn| {
+                        CoreRepository::list_filtered(
+                            conn,
+                            query.repo_name.as_deref(),
+                            None,
+                            Some(&target_pkg_id),
+                            None,
+                            None,
+                            None,
+                            None,
+                            Some(SortDirection::Asc),
+                        )
+                    })?
+                    .into_iter()
+                    .map(Into::into)
+                    .collect();
+
+                // Show confirmation for bulk install
+                if all_pkgs.len() > 1 && !yes {
+                    use nu_ansi_term::Color::{Blue, Cyan, Green};
+                    info!(
+                        "The following {} packages will be installed:",
+                        Colored(Cyan, all_pkgs.len())
+                    );
+                    for pkg in &all_pkgs {
+                        info!(
+                            "  - {}#{}:{}",
+                            Colored(Blue, &pkg.pkg_name),
+                            Colored(Cyan, &pkg.pkg_id),
+                            Colored(Green, &pkg.repo_name)
+                        );
+                    }
+                    if !confirm_action("Proceed with installation?")? {
+                        info!("Installation cancelled");
+                        continue;
+                    }
+                }
+
+                for pkg in all_pkgs {
+                    let existing_install = installed_packages
+                        .iter()
+                        .find(|ip| ip.pkg_name == pkg.pkg_name)
+                        .cloned();
+
+                    if let Some(ref existing) = existing_install {
+                        if existing.is_installed {
+                            warn!(
+                                "{}#{}:{} ({}) is already installed - {}",
+                                existing.pkg_name,
+                                existing.pkg_id,
+                                existing.repo_name,
+                                existing.version,
+                                if force { "reinstalling" } else { "skipping" }
+                            );
+                            if !force {
+                                continue;
+                            }
+                        }
+                    }
+
+                    install_targets.push(InstallTarget {
+                        package: pkg,
+                        existing_install,
+                        with_pkg_id: true,
+                        pinned: query.version.is_some(),
+                        profile: None,
+                        ..Default::default()
+                    });
+                }
+                continue;
             }
         }
 
@@ -384,9 +635,11 @@ fn resolve_packages(
                     }
                     if existing.is_installed {
                         warn!(
-                            "{}#{} is already installed - {}",
+                            "{}#{}:{} ({}) is already installed - {}",
                             existing.pkg_name,
                             existing.pkg_id,
+                            existing.repo_name,
+                            existing.version,
                             if force { "reinstalling" } else { "skipping" }
                         );
                         if !force {
@@ -414,15 +667,19 @@ fn resolve_packages(
             if let Some(db_pkg) =
                 select_package(state, metadata_mgr, package, &query, yes, &maybe_existing)?
             {
-                let is_installed = installed_packages.iter().any(|ip| ip.is_installed);
+                let installed_pkg = installed_packages.iter().find(|ip| ip.is_installed);
 
-                if is_installed {
+                if let Some(installed) = installed_pkg {
                     warn!(
-                        "{} is already installed - {}",
-                        package,
+                        "{}#{}:{} ({}) is already installed - {}",
+                        installed.pkg_name,
+                        installed.pkg_id,
+                        installed.repo_name,
+                        installed.version,
                         if force { "reinstalling" } else { "skipping" }
                     );
                     if !force {
+                        info!("Hint: Use --force to reinstall, or --show to see other variants");
                         continue;
                     }
                 }

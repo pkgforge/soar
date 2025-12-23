@@ -104,19 +104,41 @@ pub fn get_valid_selection(max: usize) -> SoarResult<usize> {
     }
 }
 
+pub fn confirm_action(message: &str) -> SoarResult<bool> {
+    let response = interactive_ask(&format!("{} [y/N]: ", message))?;
+    Ok(matches!(response.to_lowercase().as_str(), "y" | "yes"))
+}
+
 pub fn select_package_interactively<T: PackageExt>(
     pkgs: Vec<T>,
     package_name: &str,
 ) -> SoarResult<Option<T>> {
+    select_package_interactively_with_installed(pkgs, package_name, &[])
+}
+
+pub fn select_package_interactively_with_installed<T: PackageExt>(
+    pkgs: Vec<T>,
+    package_name: &str,
+    installed: &[(String, String, String)], // (pkg_id, repo_name, version)
+) -> SoarResult<Option<T>> {
     info!("Multiple packages found for {package_name}");
     for (idx, pkg) in pkgs.iter().enumerate() {
+        let is_installed = installed.iter().any(|(pkg_id, repo_name, _version)| {
+            pkg.pkg_id() == pkg_id && pkg.repo_name() == repo_name
+        });
+        let installed_marker = if is_installed {
+            format!(" {}", Colored(Color::Yellow, "[installed]"))
+        } else {
+            String::new()
+        };
         info!(
-            "[{}] {}#{}:{} | {}",
+            "[{}] {}#{}:{} | {}{}",
             idx + 1,
             Colored(Blue, &pkg.pkg_name()),
             Colored(Cyan, &pkg.pkg_id()),
             Colored(Green, pkg.repo_name()),
-            Colored(LightRed, pkg.version())
+            Colored(LightRed, pkg.version()),
+            installed_marker
         );
     }
 

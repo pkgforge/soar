@@ -155,6 +155,7 @@ async fn handle_cli() -> SoarResult<()> {
                     version,
                     pkg_type,
                     pkg_id,
+                    show,
                 } => {
                     let portable = portable.map(|p| p.unwrap_or_default());
                     let portable_home = portable_home.map(|p| p.unwrap_or_default());
@@ -179,6 +180,7 @@ async fn handle_cli() -> SoarResult<()> {
                         version,
                         pkg_type,
                         pkg_id,
+                        show,
                     )
                     .await?;
                 }
@@ -196,8 +198,10 @@ async fn handle_cli() -> SoarResult<()> {
                 }
                 cli::Commands::Remove {
                     packages,
+                    yes,
+                    all,
                 } => {
-                    remove_packages(&packages).await?;
+                    remove_packages(&packages, yes, all).await?;
                 }
                 cli::Commands::Sync => {
                     let state = AppState::new();

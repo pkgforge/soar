@@ -166,6 +166,10 @@ pub enum Commands {
         /// Override package ID (for URL installs)
         #[arg(required = false, long)]
         pkg_id: Option<String>,
+
+        /// Show all available variants for interactive selection
+        #[arg(required = false, long)]
+        show: bool,
     },
 
     /// Search package
@@ -201,6 +205,14 @@ pub enum Commands {
         /// Packages to remove
         #[arg(required = true)]
         packages: Vec<String>,
+
+        /// Skip prompts and use first match
+        #[arg(required = false, short, long)]
+        yes: bool,
+
+        /// Remove all installed variants
+        #[arg(required = false, long)]
+        all: bool,
     },
 
     /// Sync with remote metadata
