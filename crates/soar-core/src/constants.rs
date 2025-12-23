@@ -8,3 +8,6 @@ pub const CAP_SYS_ADMIN: i32 = 21;
 
 /// Linux capability for CAP_MKNOD.
 pub const CAP_MKNOD: i32 = 27;
+
+/// Marker file stored in install directory to track partial installs
+pub const INSTALL_MARKER_FILE: &str = ".soar_install";

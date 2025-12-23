@@ -18,7 +18,7 @@ use soar_core::{
     database::{connection::DieselDatabase, models::Package},
     error::{ErrorContext, SoarError},
     package::{
-        install::{InstallTarget, PackageInstaller},
+        install::{InstallMarker, InstallTarget, PackageInstaller},
         query::PackageQuery,
         url::UrlPackage,
     },
@@ -183,6 +183,7 @@ pub async fn install_packages(
     perform_installation(install_context, install_targets, diesel_db, no_notes).await
 }
 
+#[allow(clippy::too_many_arguments)]
 fn resolve_packages(
     state: &AppState,
     metadata_mgr: &soar_core::database::connection::MetadataManager,
@@ -1032,7 +1033,20 @@ pub async fn install_single_package(
         )
     };
 
-    if install_dir.exists() {
+    let should_cleanup = if let Some(ref existing) = target.existing_install {
+        if existing.is_installed {
+            true
+        } else {
+            match InstallMarker::read_from_dir(&install_dir) {
+                Some(marker) => !marker.matches_package(&target.package),
+                None => true,
+            }
+        }
+    } else {
+        false
+    };
+
+    if should_cleanup && install_dir.exists() {
         if let Err(err) = std::fs::remove_dir_all(&install_dir) {
             return Err(SoarError::Custom(format!(
                 "Failed to clean up install directory {}: {}",

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy)]
 pub enum Progress {
     Starting { total: u64 },
+    Resuming { current: u64, total: u64 },
     Chunk { current: u64, total: u64 },
     Complete { total: u64 },
     Error,

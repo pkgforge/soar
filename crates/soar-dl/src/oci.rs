@@ -449,6 +449,22 @@ impl OciDownload {
             let filename = layer.title().unwrap();
             let path = output_dir.join(filename);
 
+            if path.is_file() {
+                if let Ok(metadata) = path.metadata() {
+                    if metadata.len() == layer.size {
+                        downloaded += layer.size;
+                        if let Some(ref cb) = self.on_progress {
+                            cb(Progress::Chunk {
+                                current: downloaded,
+                                total: total_size,
+                            });
+                        }
+                        paths.push(path);
+                        continue;
+                    }
+                }
+            }
+
             self.download_layer(layer, &path, &mut downloaded, total_size)?;
 
             if self.extract {
@@ -533,6 +549,26 @@ impl OciDownload {
                             None => continue,
                         };
                         let path = output_dir.join(filename);
+
+                        if path.is_file() {
+                            if let Ok(metadata) = path.metadata() {
+                                if metadata.len() == layer.size {
+                                    {
+                                        let mut shared = downloaded.lock().unwrap();
+                                        *shared += layer.size;
+                                        let current = *shared;
+                                        if let Some(ref cb) = on_progress {
+                                            cb(Progress::Chunk {
+                                                current,
+                                                total: total_size,
+                                            });
+                                        }
+                                    }
+                                    paths.lock().unwrap().push(path);
+                                    continue;
+                                }
+                            }
+                        }
 
                         let mut local_downloaded = 0u64;
                         let result = download_layer_impl(
@@ -786,7 +822,14 @@ fn download_layer_impl(
         });
     }
 
-    let mut file = if resume_from.is_some() && resp.status() == 206 {
+    let is_resuming = resume_from.is_some() && resp.status() == 206;
+    let mut file = if is_resuming {
+        if let Some(cb) = on_progress {
+            cb(Progress::Resuming {
+                current: resume_from.unwrap(),
+                total: total_size,
+            });
+        }
         OpenOptions::new().append(true).open(path)?
     } else {
         File::create(path)?

@@ -87,6 +87,13 @@ pub fn handle_progress(state: Progress, progress_bar: &ProgressBar) {
         } => {
             progress_bar.set_length(total);
         }
+        Progress::Resuming {
+            current,
+            total,
+        } => {
+            progress_bar.set_length(total);
+            progress_bar.set_position(current);
+        }
         Progress::Chunk {
             current, ..
         } => {
@@ -135,6 +142,15 @@ pub fn handle_install_progress(
         } => {
             if let Some(pb) = progress_bar {
                 pb.set_length(total);
+            }
+        }
+        Progress::Resuming {
+            current,
+            total,
+        } => {
+            if let Some(pb) = progress_bar {
+                pb.set_length(total);
+                pb.set_position(current);
             }
         }
         Progress::Chunk {

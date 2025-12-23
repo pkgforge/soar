@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    io::Write,
     path::{Path, PathBuf},
     thread::sleep,
     time::Duration,
@@ -27,11 +28,34 @@ use soar_utils::{
 };
 
 use crate::{
+    constants::INSTALL_MARKER_FILE,
     database::{connection::DieselDatabase, models::Package},
     error::{ErrorContext, SoarError},
     utils::get_extract_dir,
     SoarResult,
 };
+
+/// Marker content to verify partial install matches current package
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct InstallMarker {
+    pub pkg_id: String,
+    pub version: String,
+    pub bsum: Option<String>,
+}
+
+impl InstallMarker {
+    pub fn read_from_dir(install_dir: &Path) -> Option<Self> {
+        let marker_path = install_dir.join(INSTALL_MARKER_FILE);
+        let content = fs::read_to_string(&marker_path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
+
+    pub fn matches_package(&self, package: &Package) -> bool {
+        self.pkg_id == package.pkg_id
+            && self.version == package.version
+            && self.bsum == package.bsum
+    }
+}
 
 pub struct PackageInstaller {
     package: Package,
@@ -112,7 +136,40 @@ impl PackageInstaller {
         })
     }
 
+    fn write_marker(&self) -> SoarResult<()> {
+        fs::create_dir_all(&self.install_dir).with_context(|| {
+            format!("creating install directory {}", self.install_dir.display())
+        })?;
+
+        let marker = InstallMarker {
+            pkg_id: self.package.pkg_id.clone(),
+            version: self.package.version.clone(),
+            bsum: self.package.bsum.clone(),
+        };
+
+        let marker_path = self.install_dir.join(INSTALL_MARKER_FILE);
+        let mut file = fs::File::create(&marker_path)
+            .with_context(|| format!("creating marker file {}", marker_path.display()))?;
+        let content = serde_json::to_string(&marker)
+            .map_err(|e| SoarError::Custom(format!("Failed to serialize marker: {e}")))?;
+        file.write_all(content.as_bytes())
+            .with_context(|| format!("writing marker file {}", marker_path.display()))?;
+
+        Ok(())
+    }
+
+    fn remove_marker(&self) -> SoarResult<()> {
+        let marker_path = self.install_dir.join(INSTALL_MARKER_FILE);
+        if marker_path.exists() {
+            fs::remove_file(&marker_path)
+                .with_context(|| format!("removing marker file {}", marker_path.display()))?;
+        }
+        Ok(())
+    }
+
     pub async fn download_package(&self) -> SoarResult<Option<String>> {
+        self.write_marker()?;
+
         let package = &self.package;
         let output_path = self.install_dir.join(&package.pkg_name);
 
@@ -378,6 +435,8 @@ impl PackageInstaller {
                 }
             }
         }
+
+        self.remove_marker()?;
 
         Ok(())
     }

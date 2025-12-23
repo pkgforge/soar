@@ -354,13 +354,21 @@ impl Download {
             .and_then(|h| h.to_str().ok())
             .map(String::from);
 
+        let is_resuming = resume_from.is_some();
         if let Some(ref cb) = self.on_progress {
-            cb(Progress::Starting {
-                total,
-            });
+            if is_resuming {
+                cb(Progress::Resuming {
+                    current: resume_from.unwrap(),
+                    total,
+                });
+            } else {
+                cb(Progress::Starting {
+                    total,
+                });
+            }
         }
 
-        let mut file = if resume_from.is_some() {
+        let mut file = if is_resuming {
             OpenOptions::new().append(true).open(path)?
         } else {
             File::create(path)?
