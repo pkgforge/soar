@@ -400,6 +400,34 @@ pub enum Commands {
     /// Manage nests
     #[clap(subcommand, name = "nest")]
     Nest(NestCommands),
+
+    /// Apply declarative package configuration
+    #[clap(name = "apply")]
+    Apply {
+        /// Remove packages not declared in packages.toml
+        #[arg(required = false, long)]
+        prune: bool,
+
+        /// Show what would be done without making changes
+        #[arg(required = false, long)]
+        dry_run: bool,
+
+        /// Skip confirmation prompts
+        #[arg(required = false, short, long)]
+        yes: bool,
+
+        /// Path to packages.toml (default: ~/.config/soar/packages.toml)
+        #[arg(required = false, long = "packages", value_hint = ValueHint::FilePath)]
+        packages_config: Option<String>,
+
+        /// Skip checksum verification
+        #[arg(required = false, long)]
+        no_verify: bool,
+    },
+
+    /// Generate default packages configuration
+    #[clap(name = "defpackages")]
+    DefPackages,
 }
 
 #[derive(Subcommand)]

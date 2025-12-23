@@ -385,7 +385,6 @@ impl CoreRepository {
                 .filter(packages::repo_name.eq(repo_name))
                 .filter(packages::pkg_name.eq(pkg_name))
                 .filter(packages::pkg_id.eq(pkg_id))
-                .filter(packages::pinned.eq(false))
                 .filter(packages::version.eq(version)),
         )
         .set((

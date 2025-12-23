@@ -1,5 +1,6 @@
 use std::{env, fs, io::Read, process::Command, sync::Arc};
 
+use apply::apply_packages;
 use clap::Parser;
 use cli::Args;
 use download::{create_regex_patterns, download, DownloadContext};
@@ -29,6 +30,7 @@ use ureq::Proxy;
 use use_package::use_alternate_package;
 use utils::COLOR;
 
+mod apply;
 mod cli;
 mod download;
 mod health;
@@ -376,6 +378,18 @@ async fn handle_cli() -> SoarResult<()> {
                             list_nests().await?;
                         }
                     }
+                }
+                cli::Commands::Apply {
+                    prune,
+                    dry_run,
+                    yes,
+                    packages_config,
+                    no_verify,
+                } => {
+                    apply_packages(prune, dry_run, yes, packages_config, no_verify).await?;
+                }
+                cli::Commands::DefPackages => {
+                    soar_config::packages::generate_default_packages_config()?;
                 }
                 _ => unreachable!(),
             }
