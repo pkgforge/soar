@@ -1280,6 +1280,7 @@ version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -2200,6 +2201,7 @@ version = "0.8.1"
 dependencies = [
  "chrono",
  "diesel",
+ "libsqlite3-sys",
  "miette",
  "nix",
  "regex",
@@ -2222,6 +2224,7 @@ version = "0.1.0"
 dependencies = [
  "diesel",
  "diesel_migrations",
+ "libsqlite3-sys",
  "miette",
  "regex",
  "serde",
