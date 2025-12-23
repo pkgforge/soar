@@ -10,6 +10,9 @@ keywords.workspace = true
 readme.workspace = true
 categories.workspace = true
 
+[package.metadata.cargo-machete]
+ignored = ["libsqlite3-sys"]
+
 [dependencies]
 chrono = { workspace = true }
 diesel = { workspace = true }
