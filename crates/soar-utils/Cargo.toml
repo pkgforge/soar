@@ -11,9 +11,9 @@ readme.workspace = true
 categories.workspace = true
 
 [dependencies]
-blake3 = { version = "1.8.2", features = ["mmap"] }
+blake3 = { workspace = true }
 miette = { workspace = true }
-nix = { version = "0.30.1", features = ["ioctl", "term", "user"] }
+nix = { workspace = true }
 serial_test = { workspace = true }
 thiserror = { workspace = true }
 

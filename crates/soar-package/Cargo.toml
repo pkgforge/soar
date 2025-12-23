@@ -11,10 +11,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-image = { version = "0.25.9", default-features = false, features = ["png"] }
+image = { workspace = true }
 miette = { workspace = true }
 regex = { workspace = true }
 soar-config = { workspace = true }
 soar-utils = { workspace = true }
-squishy = { version = "0.3.2", features = ["appimage"] }
+squishy = { workspace = true }
 thiserror = { workspace = true }
