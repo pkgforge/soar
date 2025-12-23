@@ -25,6 +25,20 @@ pub enum ConfigError {
     )]
     ConfigAlreadyExists,
 
+    #[error("Packages configuration file not found: {0}")]
+    #[diagnostic(
+        code(soar_config::packages_not_found),
+        help("Create a packages.toml file or run `soar defpackages` to generate one")
+    )]
+    PackagesConfigNotFound(String),
+
+    #[error("Packages configuration file already exists")]
+    #[diagnostic(
+        code(soar_config::packages_already_exists),
+        help("Remove the existing packages.toml file or use a different location")
+    )]
+    PackagesConfigAlreadyExists,
+
     #[error("Invalid profile: {0}")]
     #[diagnostic(
         code(soar_config::invalid_profile),
