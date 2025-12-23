@@ -74,13 +74,11 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 
 Soar comes pre-configured with `pkgforge` repositories. These are the default package sources, but you can add or replace them with any compatible repository.
 
-> **Note:** _✅ --> Enabled by Default_
-
-| 🏆 Tier | 🤖 Architecture | 📦 Repositories | ℹ️ Status |
-|---------|---------|---------------------------|-------------------|
-| **Tier 1** | **`aarch64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache) | Almost as many packages as `x86_64-Linux`, fully supported |
-| **Tier 1** | **`x86_64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache) | Primary target & most supported |
-| **Tier 2** | **`riscv64-Linux`** | [bincache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/bincache), [pkgcache<sup>✅</sup>](https://docs.pkgforge.dev/repositories/pkgcache) | Experimental, with [gradual progress](https://github.com/pkgforge/soarpkgs/issues/198) |
+| 🏆 Tier | 🤖 Architecture | 📦 Repositories |
+|---------|---------|---------------------------|
+| **Tier 1** | **`aarch64-Linux`** | [bincache](https://docs.pkgforge.dev/repositories/bincache), [pkgcache](https://docs.pkgforge.dev/repositories/pkgcache) |
+| **Tier 1** | **`x86_64-Linux`** | [bincache](https://docs.pkgforge.dev/repositories/bincache), [pkgcache](https://docs.pkgforge.dev/repositories/pkgcache) |
+| **Tier 2** | **`riscv64-Linux`** | [bincache](https://docs.pkgforge.dev/repositories/bincache), [pkgcache](https://docs.pkgforge.dev/repositories/pkgcache) |
 
 
 ## 🤝 Contributing
@@ -97,8 +95,8 @@ We have a growing community on discord to discuss not only Soar/Pkgforge but als
 
 - CICD run on free [Github Runners](https://docs.github.com/actions/using-github-hosted-runners/about-github-hosted-runners), Container Registry & [Package Storage](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) on [ghcr.io](https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-container-registry). These & much more are all generously provided by [GitHub](https://github.com/) [<img src="https://github.com/github.png?size=64" width="30" height="30">](https://github.com/)
 
-- [`riscv64`](https://riscv.org/) [<img src="https://github.com/user-attachments/assets/cf5b988d-657a-47eb-889d-a1bdb014857a" width="30" height="30">](https://riscv.org/) CICD test machines are provided by [10x Engineer's](https://10xengineers.ai/) [<img src="https://github.com/user-attachments/assets/a2cceb62-9045-43b9-b5b2-384565f27ca5" width="30" height="30">](https://cloud-v.co/) [Cloud-V](https://cloud-v.co/) [<img src="https://github.com/user-attachments/assets/74d0fd73-4439-45d4-a756-b1c0c74d1816" width="30" height="30">](https://cloud-v.co/)
+- [`riscv64`](https://riscv.org/) CICD test machines are provided by [10x Engineer's](https://10xengineers.ai/) [Cloud-V](https://cloud-v.co/)
 
 ## Minimum Supported Rust Version (MSRV)
 
-v1.82.0
+v1.88.0
