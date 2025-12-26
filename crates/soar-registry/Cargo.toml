@@ -1,6 +1,6 @@
 [package]
 name = "soar-registry"
-version = "0.0.1"
+version = "0.1.0"
 description = "Registry management for soar package manager"
 authors.workspace = true
 edition.workspace = true
