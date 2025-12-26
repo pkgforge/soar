@@ -2183,7 +2183,7 @@ dependencies = [
 
 [[package]]
 name = "soar-config"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "documented",
  "miette",
@@ -2220,7 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "soar-db"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "diesel",
  "diesel_migrations",
@@ -2236,7 +2236,7 @@ dependencies = [
 
 [[package]]
 name = "soar-dl"
-version = "0.7.0"
+version = "0.6.3"
 dependencies = [
  "compak",
  "fast-glob",
@@ -2256,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "soar-package"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "image",
  "miette",
@@ -2270,7 +2270,7 @@ dependencies = [
 
 [[package]]
 name = "soar-registry"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "miette",
  "serde",
@@ -2287,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "soar-utils"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "blake3",
  "miette",
