@@ -26,6 +26,7 @@ use soar_utils::{
     hash::calculate_checksum,
     path::{desktop_dir, icons_dir},
 };
+use tracing::{debug, trace, warn};
 
 use crate::{
     constants::INSTALL_MARKER_FILE,
@@ -91,9 +92,16 @@ impl PackageInstaller {
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
+        trace!(
+            pkg_name = package.pkg_name,
+            pkg_id = package.pkg_id,
+            install_dir = %install_dir.display(),
+            "creating package installer"
+        );
         let profile = get_config().default_profile.clone();
 
         if target.existing_install.is_none() {
+            trace!("no existing install, creating new record");
             let repo_name = &package.repo_name;
             let pkg_id = &package.pkg_id;
             let pkg_name = &package.pkg_name;
@@ -168,6 +176,11 @@ impl PackageInstaller {
     }
 
     pub async fn download_package(&self) -> SoarResult<Option<String>> {
+        debug!(
+            pkg_name = self.package.pkg_name,
+            pkg_id = self.package.pkg_id,
+            "starting package download"
+        );
         self.write_marker()?;
 
         let package = &self.package;
@@ -181,6 +194,7 @@ impl PackageInstaller {
         };
 
         if self.package.ghcr_pkg.is_some() {
+            trace!(url = url.as_str(), "using OCI/GHCR download");
             let mut dl = OciDownload::new(url.as_str())
                 .output(output_path.to_string_lossy())
                 .parallel(get_config().ghcr_concurrency.unwrap_or(8))
@@ -215,7 +229,10 @@ impl PackageInstaller {
                     }))?;
                 }
                 match dl.clone().execute() {
-                    Ok(_) => break,
+                    Ok(_) => {
+                        debug!("OCI download completed successfully");
+                        break;
+                    }
                     Err(err) => {
                         if matches!(
                             err,
@@ -224,6 +241,7 @@ impl PackageInstaller {
                                 ..
                             } | DownloadError::Network(_)
                         ) {
+                            warn!(retry = retries, "download failed, retrying after delay");
                             sleep(Duration::from_secs(5));
                             retries += 1;
                             if retries > 1 {
@@ -241,6 +259,7 @@ impl PackageInstaller {
 
             Ok(None)
         } else {
+            trace!(url = url.as_str(), "using direct download");
             let extract_dir = get_extract_dir(&self.install_dir);
 
             // Only extract if it's an archive type
@@ -304,6 +323,12 @@ impl PackageInstaller {
         portable_share: Option<&str>,
         portable_cache: Option<&str>,
     ) -> SoarResult<()> {
+        debug!(
+            pkg_name = self.package.pkg_name,
+            pkg_id = self.package.pkg_id,
+            unlinked = unlinked,
+            "recording installation"
+        );
         let package = &self.package;
         let repo_name = &package.repo_name;
         let pkg_name = &package.pkg_name;

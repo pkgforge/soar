@@ -25,7 +25,7 @@ use soar_registry::{
     fetch_metadata, fetch_nest_metadata, write_metadata_db, MetadataContent, RemotePackage,
 };
 use tokio::sync::OnceCell as AsyncOnceCell;
-use tracing::{error, info};
+use tracing::{debug, error, info, trace};
 
 use crate::utils::Colored;
 
@@ -62,6 +62,7 @@ struct AppStateInner {
 
 impl AppState {
     pub fn new() -> Self {
+        trace!("creating new AppState");
         let config = get_config();
 
         Self {
@@ -74,14 +75,17 @@ impl AppState {
     }
 
     pub async fn sync(&self) -> SoarResult<()> {
+        debug!("starting sync");
         self.init_repo_dbs(true).await?;
         self.sync_nests(true).await
     }
 
     async fn sync_nests(&self, force: bool) -> SoarResult<()> {
+        debug!(force = force, "syncing nests");
         let mut nests_db = get_nests_db_conn()?;
         let nests = NestRepository::list_all(nests_db.conn())
             .map_err(|e| SoarError::Custom(format!("listing nests: {}", e)))?;
+        trace!(count = nests.len(), "found nests to sync");
 
         let nests_repo_path = self.config().get_repositories_path()?.join("nests");
 
@@ -135,9 +139,15 @@ impl AppState {
     }
 
     async fn init_repo_dbs(&self, force: bool) -> SoarResult<()> {
+        debug!(
+            force = force,
+            repos = self.inner.config.repositories.len(),
+            "initializing repository databases"
+        );
         let mut tasks = Vec::new();
 
         for repo in &self.inner.config.repositories {
+            trace!(repo_name = repo.name, "scheduling repository sync");
             let repo_clone = repo.clone();
             let etag = self.read_repo_etag(&repo_clone);
             let task =
@@ -176,6 +186,10 @@ impl AppState {
     }
 
     async fn validate_packages(&self, repo: &Repository, etag: &str) -> SoarResult<()> {
+        trace!(
+            repo_name = repo.name,
+            "validating installed packages against repository"
+        );
         let diesel_core_db = self.diesel_core_db()?;
         let repo_name = repo.name.clone();
 
@@ -240,12 +254,17 @@ impl AppState {
     }
 
     fn create_metadata_manager(&self) -> SoarResult<MetadataManager> {
+        debug!("creating metadata manager");
         let mut manager = MetadataManager::new();
 
         for repo in &self.inner.config.repositories {
             if let Ok(repo_path) = repo.get_path() {
                 let metadata_db = repo_path.join("metadata.db");
                 if metadata_db.is_file() {
+                    trace!(
+                        repo_name = repo.name,
+                        "adding repository to metadata manager"
+                    );
                     manager.add_repo(&repo.name, metadata_db)?;
                 }
             }
@@ -260,6 +279,7 @@ impl AppState {
                         let metadata_db = nest_path.join("metadata.db");
                         if metadata_db.is_file() {
                             let nest_name = format!("nest-{}", nest.name);
+                            trace!(nest_name = nest_name, "adding nest to metadata manager");
                             manager.add_repo(&nest_name, metadata_db)?;
                         }
                     }
@@ -267,6 +287,7 @@ impl AppState {
             }
         }
 
+        debug!(repos = manager.repo_count(), "metadata manager created");
         Ok(manager)
     }
 

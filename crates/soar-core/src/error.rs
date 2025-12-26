@@ -49,7 +49,7 @@ pub enum SoarError {
     #[diagnostic(code(soar::time))]
     SystemTimeError(#[from] std::time::SystemTimeError),
 
-    #[error("TOML serialization error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar::toml), help("Check your configuration syntax"))]
     TomlError(#[from] toml::ser::Error),
 

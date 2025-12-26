@@ -2231,6 +2231,7 @@ dependencies = [
  "serde_json",
  "soar-registry",
  "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]
@@ -2247,6 +2248,7 @@ dependencies = [
  "soar-utils",
  "tempfile",
  "thiserror 2.0.17",
+ "tracing",
  "ureq",
  "url",
  "xattr",
@@ -2263,6 +2265,7 @@ dependencies = [
  "soar-utils",
  "squishy",
  "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]

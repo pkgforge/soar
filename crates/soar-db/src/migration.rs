@@ -7,7 +7,7 @@ pub const CORE_MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/co
 pub const METADATA_MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/metadata");
 pub const NEST_MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/nest");
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum DbType {
     Core,
     Metadata,

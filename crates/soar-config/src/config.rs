@@ -13,7 +13,7 @@ use soar_utils::{
     time::parse_duration,
 };
 use toml_edit::DocumentMut;
-use tracing::{info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     annotations::{annotate_toml_array_of_tables, annotate_toml_table},
@@ -153,8 +153,10 @@ pub fn set_current_profile(name: &str) -> Result<()> {
 
 impl Config {
     pub fn default_config<T: AsRef<str>>(external: bool, selected_repos: &[T]) -> Self {
+        trace!(external = external, "creating default configuration");
         let soar_root = std::env::var("SOAR_ROOT")
             .unwrap_or_else(|_| format!("{}/soar", xdg_data_home().display()));
+        trace!(soar_root = soar_root, "resolved SOAR_ROOT");
 
         let default_profile = Profile {
             root_path: soar_root.clone(),
@@ -237,25 +239,37 @@ impl Config {
     /// If the configuration file is not found, it uses the default configuration.
     pub fn new() -> Result<Self> {
         if std::env::var("SOAR_STEALTH").is_ok() {
+            trace!("SOAR_STEALTH set, using default config");
             return Ok(Self::default_config::<&str>(false, &[]));
         }
 
         let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
+        debug!(path = %config_path.display(), "loading configuration");
 
         let mut config = match fs::read_to_string(&config_path) {
-            Ok(content) => toml::from_str(&content)?,
+            Ok(content) => {
+                trace!("parsing configuration file");
+                toml::from_str(&content)?
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                debug!("config file not found, using defaults");
                 Self::default_config::<&str>(false, &[])
             }
             Err(err) => return Err(ConfigError::IoError(err)),
         };
 
         config.resolve()?;
+        debug!(
+            profile = config.default_profile,
+            repos = config.repositories.len(),
+            "configuration loaded"
+        );
 
         Ok(config)
     }
 
     pub fn resolve(&mut self) -> Result<()> {
+        trace!("resolving configuration");
         if !self.profile.contains_key(&self.default_profile) {
             return Err(ConfigError::MissingDefaultProfile(
                 self.default_profile.clone(),

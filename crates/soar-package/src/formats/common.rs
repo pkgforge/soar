@@ -18,6 +18,7 @@ use soar_utils::{
     fs::{create_symlink, walk_dir},
     path::{desktop_dir, icons_dir},
 };
+use tracing::{debug, trace};
 
 use super::{
     appimage::integrate_appimage, get_file_type, wrappe::setup_wrappe_portable_dir, PackageFormat,
@@ -84,6 +85,7 @@ fn normalize_image(image: DynamicImage) -> DynamicImage {
 /// Returns [`PackageError`] if image processing or symlink creation fails.
 pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
     let real_path = real_path.as_ref();
+    trace!(path = %real_path.display(), "creating icon symlink");
     let icon_name = real_path.file_stem().unwrap();
     let ext = real_path.extension();
 
@@ -118,6 +120,7 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
     }
 
     create_symlink(real_path, &final_path)?;
+    debug!(icon = %final_path.display(), "icon symlink created");
     Ok(final_path)
 }
 
@@ -145,6 +148,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
 ) -> Result<PathBuf> {
     let pkg_name = package.pkg_name();
     let real_path = real_path.as_ref();
+    trace!(path = %real_path.display(), pkg_name = pkg_name, "creating desktop file symlink");
     let content = fs::read_to_string(real_path)
         .with_context(|| format!("reading content of desktop file: {}", real_path.display()))?;
     let file_name = real_path.file_stem().unwrap();
@@ -189,6 +193,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     }
 
     create_symlink(real_path, &final_path)?;
+    debug!(desktop = %final_path.display(), "desktop file symlink created");
     Ok(final_path)
 }
 
@@ -334,6 +339,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
 ) -> Result<()> {
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
+    debug!(pkg_name = pkg_name, install_dir = %install_dir.display(), "integrating package with desktop environment");
     let bin_path = install_dir.join(pkg_name);
 
     let mut has_desktop = false;
@@ -363,12 +369,15 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     );
     let file_type = get_file_type(&mut reader)?;
 
+    trace!(file_type = ?file_type, "detected package format");
     match file_type {
         PackageFormat::AppImage | PackageFormat::RunImage => {
             if matches!(file_type, PackageFormat::AppImage) {
+                trace!("integrating AppImage resources");
                 let _ = integrate_appimage(install_dir, &bin_path, package, has_icon, has_desktop)
                     .await;
             }
+            trace!("setting up portable directories");
             setup_portable_dir(
                 bin_path,
                 package,
@@ -380,6 +389,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
             )?;
         }
         PackageFormat::FlatImage => {
+            trace!("setting up FlatImage portable config");
             setup_portable_dir(
                 format!("{}/.{}", bin_path.parent().unwrap().display(), pkg_name),
                 package,
@@ -391,10 +401,17 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
             )?;
         }
         PackageFormat::Wrappe => {
+            trace!("setting up Wrappe portable directory");
             setup_wrappe_portable_dir(&bin_path, pkg_name, portable)?;
         }
         _ => {}
     }
 
+    debug!(
+        pkg_name = pkg_name,
+        has_desktop = has_desktop,
+        has_icon = has_icon,
+        "package integration completed"
+    );
     Ok(())
 }

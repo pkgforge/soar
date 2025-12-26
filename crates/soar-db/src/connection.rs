@@ -10,6 +10,7 @@
 use std::{collections::HashMap, path::Path};
 
 use diesel::{sql_query, Connection, ConnectionError, RunQueryDsl, SqliteConnection};
+use tracing::{debug, trace};
 
 use crate::migration::{apply_migrations, migrate_json_to_jsonb, DbType};
 
@@ -31,22 +32,29 @@ impl DbConnection {
     /// Returns an error if the connection fails or migrations fail.
     pub fn open<P: AsRef<Path>>(path: P, db_type: DbType) -> Result<Self, ConnectionError> {
         let path_str = path.as_ref().to_string_lossy();
+        debug!(path = %path_str, db_type = ?db_type, "opening database connection");
+
         let mut conn = SqliteConnection::establish(&path_str)?;
+        trace!("database connection established");
 
         sql_query("PRAGMA journal_mode = WAL;")
             .execute(&mut conn)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+        trace!("WAL journal mode enabled");
 
         apply_migrations(&mut conn, &db_type)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+        trace!("migrations applied");
 
         // Migrate text JSON to JSONB for databases we manage (Core, Nest)
         // Metadata databases are generated externally and migrated on fetch
         if matches!(db_type, DbType::Core | DbType::Nest) {
             migrate_json_to_jsonb(&mut conn, db_type)
                 .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+            trace!("JSON to JSONB migration completed");
         }
 
+        debug!(path = %path_str, "database opened successfully");
         Ok(Self {
             conn,
         })
@@ -57,13 +65,18 @@ impl DbConnection {
     /// Use this when you know the database is already migrated.
     pub fn open_without_migrations<P: AsRef<Path>>(path: P) -> Result<Self, ConnectionError> {
         let path_str = path.as_ref().to_string_lossy();
+        debug!(path = %path_str, "opening database without migrations");
+
         let mut conn = SqliteConnection::establish(&path_str)?;
+        trace!("database connection established");
 
         // WAL mode for better concurrent access
         sql_query("PRAGMA journal_mode = WAL;")
             .execute(&mut conn)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+        trace!("WAL journal mode enabled");
 
+        debug!(path = %path_str, "database opened successfully");
         Ok(Self {
             conn,
         })
@@ -77,17 +90,23 @@ impl DbConnection {
     /// Does NOT run schema migrations since the schema is managed externally.
     pub fn open_metadata<P: AsRef<Path>>(path: P) -> Result<Self, ConnectionError> {
         let path_str = path.as_ref().to_string_lossy();
+        debug!(path = %path_str, "opening metadata database");
+
         let mut conn = SqliteConnection::establish(&path_str)?;
+        trace!("metadata database connection established");
 
         // WAL mode for better concurrent access
         sql_query("PRAGMA journal_mode = WAL;")
             .execute(&mut conn)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+        trace!("WAL journal mode enabled");
 
         // Migrate text JSON to JSONB binary format
         migrate_json_to_jsonb(&mut conn, DbType::Metadata)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+        trace!("JSON to JSONB migration completed");
 
+        debug!(path = %path_str, "metadata database opened successfully");
         Ok(Self {
             conn,
         })
@@ -158,6 +177,7 @@ impl DatabaseManager {
     /// Metadata databases are added separately via `add_metadata_db`.
     pub fn new<P: AsRef<Path>>(base_dir: P) -> Result<Self, ConnectionError> {
         let base = base_dir.as_ref();
+        debug!(base_dir = %base.display(), "initializing database manager");
 
         let core_path = base.join("core.db");
         let nests_path = base.join("nests.db");
@@ -165,6 +185,7 @@ impl DatabaseManager {
         let core = DbConnection::open(&core_path, DbType::Core)?;
         let nests = DbConnection::open(&nests_path, DbType::Nest)?;
 
+        debug!("database manager initialized with core and nests databases");
         Ok(Self {
             core,
             metadata: HashMap::new(),
@@ -187,8 +208,10 @@ impl DatabaseManager {
         repo_name: &str,
         path: P,
     ) -> Result<(), ConnectionError> {
+        debug!(repo_name = repo_name, "adding metadata database");
         let conn = DbConnection::open_metadata(path)?;
         self.metadata.insert(repo_name.to_string(), conn);
+        trace!(repo_name = repo_name, "metadata database added to manager");
         Ok(())
     }
 
@@ -221,6 +244,7 @@ impl DatabaseManager {
 
     /// Removes a metadata database connection.
     pub fn remove_metadata_db(&mut self, repo_name: &str) -> Option<DbConnection> {
+        debug!(repo_name = repo_name, "removing metadata database");
         self.metadata.remove(repo_name)
     }
 }

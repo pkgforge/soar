@@ -7,6 +7,7 @@ use std::{
 use soar_config::config::get_config;
 use soar_db::{models::types::ProvideStrategy, repository::core::CoreRepository};
 use soar_utils::{error::FileSystemResult, fs::walk_dir, path::desktop_dir};
+use tracing::{debug, trace};
 
 use crate::{
     database::{connection::DieselDatabase, models::InstalledPackage},
@@ -21,6 +22,11 @@ pub struct PackageRemover {
 
 impl PackageRemover {
     pub async fn new(package: InstalledPackage, db: DieselDatabase) -> Self {
+        trace!(
+            pkg_name = package.pkg_name,
+            pkg_id = package.pkg_id,
+            "creating package remover"
+        );
         Self {
             package,
             db,
@@ -28,9 +34,16 @@ impl PackageRemover {
     }
 
     pub async fn remove(&self) -> SoarResult<()> {
+        debug!(
+            pkg_name = self.package.pkg_name,
+            pkg_id = self.package.pkg_id,
+            installed_path = self.package.installed_path,
+            "removing package"
+        );
         // to prevent accidentally removing required files by other package,
         // remove only if the installation was successful
         if self.package.is_installed {
+            trace!("package was installed, removing binaries and links");
             let bin_path = get_config().get_bin_path()?;
             let def_bin = bin_path.join(&self.package.pkg_name);
             if def_bin.is_symlink() && def_bin.is_file() {
@@ -82,6 +95,10 @@ impl PackageRemover {
             walk_dir(desktop_dir(), &mut remove_action)?;
         }
 
+        trace!(
+            path = self.package.installed_path,
+            "removing package directory"
+        );
         if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {
             // if not found, the package is already removed.
             if err.kind() != std::io::ErrorKind::NotFound {
@@ -91,12 +108,18 @@ impl PackageRemover {
             }
         };
 
+        trace!("removing package from database");
         let package_id = self.package.id as i32;
         self.db.transaction(|conn| {
             CoreRepository::delete_portable(conn, package_id)?;
             CoreRepository::delete(conn, package_id)
         })?;
 
+        debug!(
+            pkg_name = self.package.pkg_name,
+            pkg_id = self.package.pkg_id,
+            "package removal completed"
+        );
         Ok(())
     }
 }

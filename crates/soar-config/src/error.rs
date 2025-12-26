@@ -4,14 +4,14 @@ use thiserror::Error;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum ConfigError {
-    #[error("TOML serialization error: {0}")]
+    #[error(transparent)]
     #[diagnostic(
         code(soar_config::toml_serialize),
         help("Check your configuration structure for invalid values")
     )]
     TomlSerError(#[from] toml::ser::Error),
 
-    #[error("TOML deserialization error: {0}")]
+    #[error(transparent)]
     #[diagnostic(
         code(soar_config::toml_deserialize),
         help("Check your config.toml syntax and structure")
@@ -89,7 +89,7 @@ pub enum ConfigError {
     )]
     InvalidRepositoryNameStartsWithNest,
 
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_config::io))]
     IoError(#[from] std::io::Error),
 
@@ -97,7 +97,7 @@ pub enum ConfigError {
     #[diagnostic(code(soar_config::utils))]
     Utils(#[from] soar_utils::error::UtilsError),
 
-    #[error("Failed to parse TOML: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_config::toml))]
     Toml(#[from] toml_edit::TomlError),
 

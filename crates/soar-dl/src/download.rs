@@ -7,6 +7,7 @@ use std::{
 };
 
 use soar_utils::fs::is_elf;
+use tracing::{debug, trace, warn};
 use ureq::{
     http::{
         header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, ETAG},
@@ -212,7 +213,10 @@ impl Download {
     /// assert!(path.ends_with("archive.tar.gz"));
     /// ```
     pub fn execute(self) -> Result<PathBuf, DownloadError> {
+        debug!(url = self.url, "starting download");
+
         if self.output.as_deref() == Some("-") {
+            trace!("output is stdout");
             return self.download_to_stdout();
         }
 
@@ -226,6 +230,7 @@ impl Download {
         };
 
         let (header_filename, url_filename) = if needs_head {
+            trace!("performing HEAD request for filename");
             let resp = Http::head(&self.url)?;
             (
                 resp.headers()
@@ -239,21 +244,28 @@ impl Download {
 
         let output_path =
             resolve_output_path(self.output.as_deref(), url_filename, header_filename)?;
+        debug!(path = %output_path.display(), "resolved output path");
 
         let mut resume_info = read_resume(&output_path);
+        if resume_info.is_some() {
+            trace!("found resume information from previous download");
+        }
 
         if output_path.is_file() {
             match self.overwrite {
                 OverwriteMode::Skip => {
+                    debug!(path = %output_path.display(), "file exists, skipping download");
                     return Ok(output_path);
                 }
                 OverwriteMode::Force => {
+                    debug!(path = %output_path.display(), "file exists, forcing overwrite");
                     fs::remove_file(&output_path)?;
                     resume_info = None;
                 }
                 OverwriteMode::Prompt => {
                     if resume_info.is_none() {
                         if !prompt_overwrite(&output_path)? {
+                            debug!(path = %output_path.display(), "user declined overwrite");
                             return Ok(output_path);
                         }
                         fs::remove_file(&output_path)?;
@@ -264,12 +276,14 @@ impl Download {
         };
 
         if let Some(parent) = output_path.parent() {
+            trace!(path = %parent.display(), "creating parent directories");
             std::fs::create_dir_all(parent)?;
         }
 
         self.download_to_file(&output_path, resume_info)?;
 
         if is_elf(&output_path) {
+            trace!(path = %output_path.display(), "detected ELF binary, setting executable permissions");
             std::fs::set_permissions(&output_path, Permissions::from_mode(0o755))?;
         }
 
@@ -282,10 +296,12 @@ impl Download {
                     .map(PathBuf::from)
                     .unwrap_or_else(|| PathBuf::from("."))
             });
+            debug!(archive = %output_path.display(), dest = %extract_dir.display(), "extracting archive");
 
             compak::extract_archive(&output_path, &extract_dir)?;
         }
 
+        debug!(path = %output_path.display(), "download completed successfully");
         Ok(output_path)
     }
 
@@ -339,11 +355,20 @@ impl Download {
             .map(|r| (Some(r.downloaded), r.etag.as_deref()))
             .unwrap_or((None, None));
 
+        if let Some(offset) = resume_from {
+            debug!(offset = offset, "attempting to resume download");
+        }
+
         let resp = Http::fetch(&self.url, resume_from, etag, self.ghcr_blob)?;
 
         let status = resp.status();
+        trace!(status = status.as_u16(), "received HTTP response");
+
         if resume_from.is_some() && status != 206 {
-            // Server doesn't support resume, start from the beginning
+            warn!(
+                "server doesn't support resume (status {}), restarting download",
+                status
+            );
             return self.download_to_file(path, None);
         }
 
@@ -353,6 +378,7 @@ impl Download {
             .get(ETAG)
             .and_then(|h| h.to_str().ok())
             .map(String::from);
+        trace!(total = total, etag = ?new_etag, "parsed response headers");
 
         let is_resuming = resume_from.is_some();
         if let Some(ref cb) = self.on_progress {
@@ -369,8 +395,10 @@ impl Download {
         }
 
         let mut file = if is_resuming {
+            trace!(path = %path.display(), "opening file for append (resume)");
             OpenOptions::new().append(true).open(path)?
         } else {
+            trace!(path = %path.display(), "creating new file");
             File::create(path)?
         };
 
@@ -391,6 +419,7 @@ impl Download {
             let checkpoint = downloaded / (1024 * 1024);
             if checkpoint > last_checkpoint {
                 last_checkpoint = checkpoint;
+                trace!(downloaded = downloaded, "saving resume checkpoint");
                 write_resume(
                     path,
                     &ResumeInfo {
@@ -409,6 +438,8 @@ impl Download {
                 });
             }
         }
+
+        debug!(downloaded = downloaded, "download transfer completed");
 
         if let Some(ref cb) = self.on_progress {
             cb(Progress::Complete {

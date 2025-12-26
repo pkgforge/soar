@@ -1,3 +1,4 @@
+use tracing::{debug, trace};
 use ureq::{http::Response, Body};
 
 use crate::{error::DownloadError, http_client::SHARED_AGENT};
@@ -6,7 +7,12 @@ pub struct Http;
 
 impl Http {
     pub fn head(url: &str) -> Result<Response<Body>, DownloadError> {
-        SHARED_AGENT.head(url).call().map_err(DownloadError::from)
+        trace!(url = url, "sending HEAD request");
+        let result = SHARED_AGENT.head(url).call().map_err(DownloadError::from);
+        if let Ok(ref resp) = result {
+            trace!(status = resp.status().as_u16(), "HEAD response received");
+        }
+        result
     }
 
     /// Fetches a GET response for the given URL, optionally requesting a byte range and using an ETag for conditional requests.
@@ -37,20 +43,28 @@ impl Http {
         etag: Option<&str>,
         ghcr_blob: bool,
     ) -> Result<Response<Body>, DownloadError> {
+        debug!(url = url, resume_from = ?resume_from, ghcr_blob = ghcr_blob, "sending GET request");
         let mut req = SHARED_AGENT.get(url);
 
         if ghcr_blob {
+            trace!("adding GHCR authorization header");
             req = req.header("Authorization", "Bearer QQ==");
         }
 
         if let Some(pos) = resume_from {
+            trace!(range_start = pos, "adding Range header for resume");
             req = req.header("Range", &format!("bytes={}-", pos));
             if let Some(tag) = etag {
+                trace!(etag = tag, "adding If-Range header");
                 req = req.header("If-Range", tag);
             }
         }
 
-        req.call().map_err(DownloadError::from)
+        let result = req.call().map_err(DownloadError::from);
+        if let Ok(ref resp) = result {
+            debug!(status = resp.status().as_u16(), "GET response received");
+        }
+        result
     }
 
     /// Fetches JSON from the given URL and deserializes it into `T`.
@@ -70,11 +84,16 @@ impl Http {
     /// let json: Value = Http::json("https://example.com/data.json").unwrap();
     /// ```
     pub fn json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T, DownloadError> {
-        SHARED_AGENT
+        debug!(url = url, "fetching JSON");
+        let result = SHARED_AGENT
             .get(url)
             .call()?
             .body_mut()
             .read_json()
-            .map_err(|_| DownloadError::InvalidResponse)
+            .map_err(|_| DownloadError::InvalidResponse);
+        if result.is_ok() {
+            trace!(url = url, "JSON parsed successfully");
+        }
+        result
     }
 }

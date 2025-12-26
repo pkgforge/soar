@@ -1,5 +1,9 @@
 //! Error types for soar-utils.
 
+// https://github.com/zkat/miette/issues/458
+// https://github.com/rust-lang/rust/issues/147648
+#![expect(unused_assignments)]
+
 use std::path::PathBuf;
 
 use miette::Diagnostic;
@@ -185,8 +189,8 @@ pub enum FileSystemError {
     #[diagnostic(code(soar_utils::fs::not_a_dir), help("Provide a path to a directory"))]
     NotADirectory { path: PathBuf },
 
-    #[error("'{path}' is not a file")]
     #[diagnostic(code(soar_utils::fs::not_a_file), help("Provide a path to a file"))]
+    #[error("'{path}' is not a file")]
     NotAFile { path: PathBuf },
 }
 

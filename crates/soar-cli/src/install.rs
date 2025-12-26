@@ -36,7 +36,7 @@ use tabled::{
     settings::{themes::BorderCorrection, Panel, Style},
 };
 use tokio::sync::Semaphore;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     progress::handle_install_progress,
@@ -141,6 +141,11 @@ pub async fn install_packages(
     pkg_id_override: Option<String>,
     show: bool,
 ) -> SoarResult<()> {
+    debug!(
+        count = packages.len(),
+        force = force,
+        "starting package installation"
+    );
     let state = AppState::new();
     let metadata_mgr = state.metadata_manager().await?;
     let diesel_db = state.diesel_core_db()?.clone();
@@ -163,6 +168,8 @@ pub async fn install_packages(
         info!("No packages to install");
         return Ok(());
     }
+
+    debug!(targets = install_targets.len(), "resolved install targets");
 
     if ask {
         ask_target_action(&install_targets, "install")?;
@@ -991,6 +998,13 @@ pub async fn install_single_package(
     progress_callback: Arc<dyn Fn(Progress) + Send + Sync>,
     core_db: DieselDatabase,
 ) -> SoarResult<(PathBuf, Vec<(PathBuf, PathBuf)>)> {
+    debug!(
+        pkg_name = target.package.pkg_name,
+        pkg_id = target.package.pkg_id,
+        version = target.package.version,
+        repo_name = target.package.repo_name,
+        "installing package"
+    );
     let bin_dir = get_config().get_bin_path()?;
 
     let (
@@ -1061,6 +1075,7 @@ pub async fn install_single_package(
     };
 
     if should_cleanup && install_dir.exists() {
+        debug!(path = %install_dir.display(), "cleaning up existing installation directory");
         if let Err(err) = std::fs::remove_dir_all(&install_dir) {
             return Err(SoarError::Custom(format!(
                 "Failed to clean up install directory {}: {}",
@@ -1085,6 +1100,7 @@ pub async fn install_single_package(
     });
     let install_patterns = apply_sig_variants(install_patterns);
 
+    trace!(install_dir = %install_dir.display(), patterns = ?install_patterns, "creating package installer");
     let installer = PackageInstaller::new(
         target,
         &install_dir,
@@ -1095,13 +1111,20 @@ pub async fn install_single_package(
     )
     .await?;
 
+    debug!(pkg_name = target.package.pkg_name, "downloading package");
     let downloaded_checksum = installer.download_package().await?;
+    trace!(checksum = ?downloaded_checksum, "package downloaded");
 
     if let Some(repository) = get_config().get_repository(&target.package.repo_name) {
         if repository.signature_verification() {
+            debug!(
+                repo_name = target.package.repo_name,
+                "performing signature verification"
+            );
             let repository_path = repository.get_path()?;
             let pubkey_file = repository_path.join("minisign.pub");
             if pubkey_file.exists() {
+                trace!(pubkey = %pubkey_file.display(), "loading public key");
                 let pubkey = PublicKey::from_base64(
                     fs::read_to_string(&pubkey_file)
                         .with_context(|| {
@@ -1169,6 +1192,7 @@ pub async fn install_single_package(
                                 original_file.display()
                             ))
                         })?;
+                        trace!(file = %original_file.display(), "signature verified");
 
                         // we can safely remove the signature file
                         fs::remove_file(&path).with_context(|| {
@@ -1176,6 +1200,7 @@ pub async fn install_single_package(
                         })?;
                     }
                 }
+                debug!("signature verification completed successfully");
             } else {
                 ctx.warnings.lock().unwrap().push(format!(
                     "{}#{} - Signature verification skipped as no pubkey was found.",
@@ -1186,6 +1211,7 @@ pub async fn install_single_package(
     }
 
     if target.package.provides.is_some() {
+        trace!("calculating final checksum for verification");
         let final_checksum = if target.package.ghcr_pkg.is_some() {
             if real_bin.exists() {
                 Some(calculate_checksum(&real_bin)?)
@@ -1210,15 +1236,21 @@ pub async fn install_single_package(
                         target.package.pkg_name, target.package.pkg_id
                     ));
                 }
+                (Some(ref calculated), Some(expected)) if calculated == expected => {
+                    trace!("checksum verification passed");
+                }
                 _ => {}
             }
         }
     }
 
+    trace!("creating symlinks for package binaries");
     let symlinks =
         mangle_package_symlinks(&install_dir, &bin_dir, target.package.provides.as_deref()).await?;
+    debug!(symlink_count = symlinks.len(), "symlinks created");
 
     if !unlinked || has_desktop_integration(&target.package) {
+        trace!("integrating package (desktop files, icons, etc.)");
         integrate_package(
             &install_dir,
             &target.package,
@@ -1231,6 +1263,7 @@ pub async fn install_single_package(
         .await?;
     }
 
+    trace!("recording installation to database");
     installer
         .record(
             unlinked,
@@ -1242,5 +1275,11 @@ pub async fn install_single_package(
         )
         .await?;
 
+    debug!(
+        pkg_name = target.package.pkg_name,
+        pkg_id = target.package.pkg_id,
+        install_dir = %install_dir.display(),
+        "package installation completed"
+    );
     Ok((install_dir, symlinks))
 }

@@ -18,3 +18,4 @@ soar-config = { workspace = true }
 soar-utils = { workspace = true }
 squishy = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }

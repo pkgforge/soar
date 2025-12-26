@@ -6,6 +6,7 @@ use diesel::{dsl::sql, prelude::*, sql_types::Text};
 use regex::Regex;
 use serde_json::json;
 use soar_registry::RemotePackage;
+use tracing::{debug, trace};
 
 /// Regex for extracting name and contact from maintainer string format "Name (contact)".
 static MAINTAINER_RE: OnceLock<Regex> = OnceLock::new();
@@ -35,19 +36,29 @@ pub struct MetadataRepository;
 impl MetadataRepository {
     /// Lists all packages using Diesel DSL.
     pub fn list_all(conn: &mut SqliteConnection) -> QueryResult<Vec<Package>> {
-        packages::table
+        trace!("listing all packages");
+        let result = packages::table
             .order(packages::pkg_name.asc())
             .select(Package::as_select())
-            .load(conn)
+            .load(conn);
+        if let Ok(ref packages) = result {
+            debug!(count = packages.len(), "listed all packages");
+        }
+        result
     }
 
     /// Lists all packages with only the fields needed for display.
     /// This is much more memory-efficient than list_all for large package lists.
     pub fn list_all_minimal(conn: &mut SqliteConnection) -> QueryResult<Vec<PackageListing>> {
-        packages::table
+        trace!("listing all packages (minimal fields)");
+        let result = packages::table
             .order(packages::pkg_name.asc())
             .select(PackageListing::as_select())
-            .load(conn)
+            .load(conn);
+        if let Ok(ref packages) = result {
+            debug!(count = packages.len(), "listed all packages (minimal)");
+        }
+        result
     }
 
     /// Lists packages with pagination and sorting using Diesel DSL.
@@ -57,13 +68,27 @@ impl MetadataRepository {
         per_page: i64,
     ) -> QueryResult<Vec<Package>> {
         let offset = (page - 1) * per_page;
+        trace!(
+            page = page,
+            per_page = per_page,
+            offset = offset,
+            "listing paginated packages"
+        );
 
-        packages::table
+        let result = packages::table
             .order(packages::pkg_name.asc())
             .limit(per_page)
             .offset(offset)
             .select(Package::as_select())
-            .load(conn)
+            .load(conn);
+        if let Ok(ref packages) = result {
+            debug!(
+                count = packages.len(),
+                page = page,
+                "fetched paginated packages"
+            );
+        }
+        result
     }
 
     /// Gets the repository name from the database.
@@ -95,19 +120,37 @@ impl MetadataRepository {
 
     /// Finds a package by ID using Diesel DSL.
     pub fn find_by_id(conn: &mut SqliteConnection, id: i32) -> QueryResult<Option<Package>> {
-        packages::table
+        trace!(id = id, "finding package by id");
+        let result = packages::table
             .filter(packages::id.eq(id))
             .select(Package::as_select())
             .first(conn)
-            .optional()
+            .optional();
+        if let Ok(ref pkg) = result {
+            if pkg.is_some() {
+                debug!(id = id, "found package by id");
+            } else {
+                trace!(id = id, "package not found by id");
+            }
+        }
+        result
     }
 
     /// Finds packages by name (exact match) using Diesel DSL.
     pub fn find_by_name(conn: &mut SqliteConnection, name: &str) -> QueryResult<Vec<Package>> {
-        packages::table
+        trace!(name = name, "finding packages by name");
+        let result = packages::table
             .filter(packages::pkg_name.eq(name))
             .select(Package::as_select())
-            .load(conn)
+            .load(conn);
+        if let Ok(ref packages) = result {
+            debug!(
+                name = name,
+                count = packages.len(),
+                "found packages by name"
+            );
+        }
+        result
     }
 
     /// Finds a package by pkg_id using Diesel DSL.
@@ -115,11 +158,20 @@ impl MetadataRepository {
         conn: &mut SqliteConnection,
         pkg_id: &str,
     ) -> QueryResult<Option<Package>> {
-        packages::table
+        trace!(pkg_id = pkg_id, "finding package by pkg_id");
+        let result = packages::table
             .filter(packages::pkg_id.eq(pkg_id))
             .select(Package::as_select())
             .first(conn)
-            .optional()
+            .optional();
+        if let Ok(ref pkg) = result {
+            if pkg.is_some() {
+                debug!(pkg_id = pkg_id, "found package by pkg_id");
+            } else {
+                trace!(pkg_id = pkg_id, "package not found by pkg_id");
+            }
+        }
+        result
     }
 
     /// Finds packages that match pkg_name and optionally pkg_id and version using Diesel DSL.
@@ -153,6 +205,7 @@ impl MetadataRepository {
         pattern: &str,
         limit: Option<i64>,
     ) -> QueryResult<Vec<Package>> {
+        debug!(pattern = pattern, limit = ?limit, "searching packages");
         let like_pattern = format!("%{}%", pattern.to_lowercase());
 
         let mut query = packages::table
@@ -169,7 +222,15 @@ impl MetadataRepository {
             query = query.limit(lim);
         }
 
-        query.select(Package::as_select()).load(conn)
+        let result = query.select(Package::as_select()).load(conn);
+        if let Ok(ref packages) = result {
+            debug!(
+                pattern = pattern,
+                count = packages.len(),
+                "search completed"
+            );
+        }
+        result
     }
 
     /// Searches packages (case-sensitive LIKE query) using Diesel DSL.
@@ -353,6 +414,12 @@ impl MetadataRepository {
         pkg_id: &str,
         current_version: &str,
     ) -> QueryResult<Option<Package>> {
+        trace!(
+            pkg_name = pkg_name,
+            pkg_id = pkg_id,
+            current_version = current_version,
+            "checking for newer version"
+        );
         // Handle both regular versions and HEAD- versions
         let head_version = if current_version.starts_with("HEAD-") && current_version.len() > 14 {
             current_version[14..].to_string()
@@ -360,7 +427,7 @@ impl MetadataRepository {
             String::new()
         };
 
-        packages::table
+        let result = packages::table
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::pkg_id.eq(pkg_id))
             .filter(
@@ -373,7 +440,19 @@ impl MetadataRepository {
             .order(packages::version.desc())
             .select(Package::as_select())
             .first(conn)
-            .optional()
+            .optional();
+        if let Ok(ref pkg) = result {
+            if let Some(p) = pkg {
+                debug!(
+                    pkg_id = pkg_id,
+                    new_version = p.version,
+                    "newer version found"
+                );
+            } else {
+                trace!(pkg_id = pkg_id, "no newer version available");
+            }
+        }
+        result
     }
 
     /// Checks if a package with the given pkg_id exists.
@@ -390,6 +469,11 @@ impl MetadataRepository {
         metadata: &[RemotePackage],
         repo_name: &str,
     ) -> QueryResult<()> {
+        debug!(
+            repo_name = repo_name,
+            count = metadata.len(),
+            "importing packages from remote metadata"
+        );
         conn.transaction(|conn| {
             diesel::insert_into(repository::table)
                 .values(NewRepository {
@@ -400,10 +484,16 @@ impl MetadataRepository {
                 .do_update()
                 .set(repository::etag.eq(""))
                 .execute(conn)?;
+            trace!(repo_name = repo_name, "repository record upserted");
 
             for package in metadata {
                 Self::insert_remote_package(conn, package)?;
             }
+            debug!(
+                repo_name = repo_name,
+                count = metadata.len(),
+                "package import completed"
+            );
             Ok(())
         })
     }
@@ -413,6 +503,12 @@ impl MetadataRepository {
         conn: &mut SqliteConnection,
         package: &RemotePackage,
     ) -> QueryResult<()> {
+        trace!(
+            pkg_id = package.pkg_id,
+            pkg_name = package.pkg_name,
+            version = package.version,
+            "inserting remote package"
+        );
         const PROVIDES_DELIMITERS: &[&str] = &["==", "=>", ":"];
 
         let provides = package.provides.as_ref().map(|vec| {
@@ -475,6 +571,7 @@ impl MetadataRepository {
             .execute(conn)?;
 
         if inserted == 0 {
+            trace!(pkg_id = package.pkg_id, "package already exists, skipping");
             return Ok(());
         }
 

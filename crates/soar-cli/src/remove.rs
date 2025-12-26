@@ -4,7 +4,7 @@ use soar_core::{
     SoarResult,
 };
 use soar_db::repository::core::{CoreRepository, SortDirection};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     state::AppState,
@@ -12,10 +12,16 @@ use crate::{
 };
 
 pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarResult<()> {
+    debug!(
+        count = packages.len(),
+        all = all,
+        "starting package removal"
+    );
     let state = AppState::new();
     let diesel_db = state.diesel_core_db()?.clone();
 
     for package in packages {
+        trace!(package = package, "processing package for removal");
         let query = PackageQuery::try_from(package.as_str())?;
 
         // --all flag: remove all installed variants of the package
@@ -44,6 +50,11 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
             }
 
             for pkg in installed {
+                debug!(
+                    pkg_name = pkg.pkg_name,
+                    pkg_id = pkg.pkg_id,
+                    "removing package variant"
+                );
                 let remover = PackageRemover::new(pkg.clone(), diesel_db.clone()).await;
                 remover.remove().await?;
 
@@ -138,6 +149,11 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
                 }
 
                 for pkg in all_installed {
+                    debug!(
+                        pkg_name = pkg.pkg_name,
+                        pkg_id = pkg.pkg_id,
+                        "removing package"
+                    );
                     let remover = PackageRemover::new(pkg.clone(), diesel_db.clone()).await;
                     remover.remove().await?;
 
@@ -194,7 +210,14 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
                     .collect()
             };
 
+        debug!(count = pkgs_to_remove.len(), "packages to remove");
         for installed_pkg in pkgs_to_remove {
+            debug!(
+                pkg_name = installed_pkg.pkg_name,
+                pkg_id = installed_pkg.pkg_id,
+                installed_path = installed_pkg.installed_path,
+                "removing package"
+            );
             let remover = PackageRemover::new(installed_pkg.clone(), diesel_db.clone()).await;
             remover.remove().await?;
 
@@ -208,5 +231,6 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
         }
     }
 
+    debug!("package removal completed");
     Ok(())
 }
