@@ -154,7 +154,10 @@ impl PackageRemover {
                     format!("removing package directory {}", self.package.installed_path)
                 })?;
             } else {
-                warn!("package directory already removed: {}", self.package.installed_path);
+                warn!(
+                    "package directory already removed: {}",
+                    self.package.installed_path
+                );
             }
         };
 

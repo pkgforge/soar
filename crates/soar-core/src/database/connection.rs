@@ -105,7 +105,11 @@ impl MetadataManager {
         debug!(repo_name = repo_name, path = %path.as_ref().display(), "adding metadata database to manager");
         let db = DieselDatabase::open_metadata(path)?;
         self.databases.push((repo_name.to_string(), db));
-        trace!(repo_name = repo_name, total_repos = self.databases.len(), "metadata database added");
+        trace!(
+            repo_name = repo_name,
+            total_repos = self.databases.len(),
+            "metadata database added"
+        );
         Ok(())
     }
 
@@ -114,7 +118,10 @@ impl MetadataManager {
     where
         F: Fn(&str, &mut diesel::SqliteConnection) -> diesel::QueryResult<T>,
     {
-        trace!(repo_count = self.databases.len(), "querying all repositories");
+        trace!(
+            repo_count = self.databases.len(),
+            "querying all repositories"
+        );
         let mut results = Vec::new();
         for (repo_name, db) in &self.databases {
             trace!(repo_name = repo_name, "querying repository");
@@ -129,7 +136,10 @@ impl MetadataManager {
     where
         F: Fn(&str, &mut diesel::SqliteConnection) -> diesel::QueryResult<Vec<T>>,
     {
-        trace!(repo_count = self.databases.len(), "querying all repositories (flat)");
+        trace!(
+            repo_count = self.databases.len(),
+            "querying all repositories (flat)"
+        );
         let mut results = Vec::new();
         for (repo_name, db) in &self.databases {
             trace!(repo_name = repo_name, "querying repository");

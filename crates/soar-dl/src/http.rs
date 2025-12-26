@@ -26,7 +26,12 @@ impl Http {
         let status = resp.status();
         let headers = resp.headers();
 
-        debug!("{} {} {}", method, status.as_u16(), status.canonical_reason().unwrap_or(""));
+        debug!(
+            "{} {} {}",
+            method,
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("")
+        );
 
         if let Some(content_length) = headers.get(CONTENT_LENGTH) {
             if let Ok(len) = content_length.to_str() {

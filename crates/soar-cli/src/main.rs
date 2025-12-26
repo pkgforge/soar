@@ -83,6 +83,11 @@ async fn handle_cli() -> SoarResult<()> {
         *color = false;
     }
 
+    if args.no_progress {
+        let mut progress = utils::PROGRESS.write().unwrap();
+        *progress = false;
+    }
+
     if let Some(ref c) = args.config {
         {
             let mut config_path = CONFIG_PATH.write().unwrap();

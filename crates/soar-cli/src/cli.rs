@@ -31,6 +31,10 @@ pub struct Args {
     #[arg(long, global = true)]
     pub no_color: bool,
 
+    /// Disable progress bar
+    #[arg(long, global = true)]
+    pub no_progress: bool,
+
     /// Set current profile
     #[arg(short, long, global = true)]
     pub profile: Option<String>,

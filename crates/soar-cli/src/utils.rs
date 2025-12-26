@@ -59,6 +59,11 @@ pub fn term_width() -> usize {
 }
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
+pub static PROGRESS: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
+
+pub fn progress_enabled() -> bool {
+    *PROGRESS.read().unwrap()
+}
 
 pub fn interactive_ask(ques: &str) -> SoarResult<String> {
     print!("{ques}");

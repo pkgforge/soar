@@ -673,7 +673,10 @@ impl OciDownload {
             .header(AUTHORIZATION, "Bearer QQ==")
             .call()?;
 
-        trace!(status = resp.status().as_u16(), "manifest response received");
+        trace!(
+            status = resp.status().as_u16(),
+            "manifest response received"
+        );
 
         if !resp.status().is_success() {
             debug!(status = resp.status().as_u16(), "manifest fetch failed");

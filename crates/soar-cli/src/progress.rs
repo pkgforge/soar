@@ -7,13 +7,17 @@ use soar_dl::types::Progress;
 
 use crate::{
     install::InstallContext,
-    utils::{display_settings, Colored},
+    utils::{display_settings, progress_enabled, Colored},
 };
 
 const SPINNER_CHARS: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 
 pub fn create_progress_bar() -> ProgressBar {
     let progress_bar = ProgressBar::new(0);
+    if !progress_enabled() {
+        progress_bar.set_draw_target(indicatif::ProgressDrawTarget::hidden());
+        return progress_bar;
+    }
     let style = get_progress_style();
     progress_bar.set_style(style);
     progress_bar
@@ -51,9 +55,14 @@ fn get_progress_style() -> ProgressStyle {
 }
 
 pub fn create_spinner(message: &str) -> ProgressBar {
-    let settings = display_settings();
     let spinner = ProgressBar::new_spinner();
 
+    if !progress_enabled() {
+        spinner.set_draw_target(indicatif::ProgressDrawTarget::hidden());
+        return spinner;
+    }
+
+    let settings = display_settings();
     if settings.spinners() {
         spinner.set_style(
             ProgressStyle::with_template("{spinner:.cyan} {msg}")
