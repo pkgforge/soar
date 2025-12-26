@@ -1,5 +1,11 @@
 use tracing::{debug, trace};
-use ureq::{http::Response, Body};
+use ureq::{
+    http::{
+        header::{CONTENT_LENGTH, CONTENT_TYPE, LOCATION},
+        Response,
+    },
+    Body,
+};
 
 use crate::{error::DownloadError, http_client::SHARED_AGENT};
 
@@ -11,8 +17,32 @@ impl Http {
         let result = SHARED_AGENT.head(url).call().map_err(DownloadError::from);
         if let Ok(ref resp) = result {
             trace!(status = resp.status().as_u16(), "HEAD response received");
+            Self::log_response_headers(resp, "HEAD");
         }
         result
+    }
+
+    fn log_response_headers(resp: &Response<Body>, method: &str) {
+        let status = resp.status();
+        let headers = resp.headers();
+
+        debug!("{} {} {}", method, status.as_u16(), status.canonical_reason().unwrap_or(""));
+
+        if let Some(content_length) = headers.get(CONTENT_LENGTH) {
+            if let Ok(len) = content_length.to_str() {
+                trace!("  Content-Length: {}", len);
+            }
+        }
+        if let Some(content_type) = headers.get(CONTENT_TYPE) {
+            if let Ok(ct) = content_type.to_str() {
+                trace!("  Content-Type: {}", ct);
+            }
+        }
+        if let Some(location) = headers.get(LOCATION) {
+            if let Ok(loc) = location.to_str() {
+                debug!("  Location: {}", loc);
+            }
+        }
     }
 
     /// Fetches a GET response for the given URL, optionally requesting a byte range and using an ETag for conditional requests.
@@ -43,7 +73,8 @@ impl Http {
         etag: Option<&str>,
         ghcr_blob: bool,
     ) -> Result<Response<Body>, DownloadError> {
-        debug!(url = url, resume_from = ?resume_from, ghcr_blob = ghcr_blob, "sending GET request");
+        debug!("GET {}", url);
+        trace!(resume_from = ?resume_from, ghcr_blob = ghcr_blob, "request details");
         let mut req = SHARED_AGENT.get(url);
 
         if ghcr_blob {
@@ -52,7 +83,7 @@ impl Http {
         }
 
         if let Some(pos) = resume_from {
-            trace!(range_start = pos, "adding Range header for resume");
+            debug!("  Range: bytes={}-", pos);
             req = req.header("Range", &format!("bytes={}-", pos));
             if let Some(tag) = etag {
                 trace!(etag = tag, "adding If-Range header");
@@ -62,7 +93,7 @@ impl Http {
 
         let result = req.call().map_err(DownloadError::from);
         if let Ok(ref resp) = result {
-            debug!(status = resp.status().as_u16(), "GET response received");
+            Self::log_response_headers(resp, "GET");
         }
         result
     }

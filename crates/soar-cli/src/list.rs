@@ -24,7 +24,7 @@ use tabled::{
     builder::Builder,
     settings::{peaker::PriorityMax, themes::BorderCorrection, Panel, Style, Width},
 };
-use tracing::info;
+use tracing::{debug, info, trace};
 
 use crate::{
     state::AppState,
@@ -38,11 +38,18 @@ pub async fn search_packages(
     case_sensitive: bool,
     limit: Option<usize>,
 ) -> SoarResult<()> {
+    debug!(
+        query = query,
+        case_sensitive = case_sensitive,
+        limit = ?limit,
+        "searching packages"
+    );
     let state = AppState::new();
     let metadata_mgr = state.metadata_manager().await?;
     let diesel_db = state.diesel_core_db()?;
 
     let search_limit = limit.or(get_config().search_limit).unwrap_or(20) as i64;
+    trace!(search_limit = search_limit, "using search limit");
 
     let packages: Vec<Package> = metadata_mgr.query_all_flat(|repo_name, conn| {
         let pkgs = if case_sensitive {
@@ -171,10 +178,18 @@ pub async fn search_packages(
 }
 
 pub async fn query_package(query_str: String) -> SoarResult<()> {
+    debug!(query = query_str, "querying package info");
     let state = AppState::new();
     let metadata_mgr = state.metadata_manager().await?;
 
     let query = PackageQuery::try_from(query_str.as_str())?;
+    trace!(
+        name = ?query.name,
+        pkg_id = ?query.pkg_id,
+        version = ?query.version,
+        repo = ?query.repo_name,
+        "parsed query"
+    );
 
     let packages: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
         metadata_mgr
@@ -377,6 +392,7 @@ struct PackageListingWithRepo {
 }
 
 pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
+    debug!(repo = ?repo_name, "listing packages");
     let state = AppState::new();
     let metadata_mgr = state.metadata_manager().await?;
     let diesel_db = state.diesel_core_db()?;
@@ -505,6 +521,7 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
 }
 
 pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> SoarResult<()> {
+    debug!(repo = ?repo_name, count_only = count, "listing installed packages");
     let state = AppState::new();
     let diesel_db = state.diesel_core_db()?;
 
@@ -534,6 +551,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
         .into_iter()
         .map(Into::into)
         .collect();
+    trace!(count = packages.len(), "fetched installed packages");
 
     let mut unique_pkgs = HashSet::new();
     let settings = display_settings();

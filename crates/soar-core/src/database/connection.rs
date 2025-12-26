@@ -7,6 +7,7 @@ use std::{
 
 use diesel::Connection as DieselConnection;
 use soar_db::{connection::DbConnection, migration::DbType};
+use tracing::{debug, trace};
 
 use crate::error::SoarError;
 
@@ -101,8 +102,10 @@ impl MetadataManager {
 
     /// Adds a metadata database for a repository.
     pub fn add_repo<P: AsRef<Path>>(&mut self, repo_name: &str, path: P) -> Result<()> {
+        debug!(repo_name = repo_name, path = %path.as_ref().display(), "adding metadata database to manager");
         let db = DieselDatabase::open_metadata(path)?;
         self.databases.push((repo_name.to_string(), db));
+        trace!(repo_name = repo_name, total_repos = self.databases.len(), "metadata database added");
         Ok(())
     }
 
@@ -111,8 +114,10 @@ impl MetadataManager {
     where
         F: Fn(&str, &mut diesel::SqliteConnection) -> diesel::QueryResult<T>,
     {
+        trace!(repo_count = self.databases.len(), "querying all repositories");
         let mut results = Vec::new();
         for (repo_name, db) in &self.databases {
+            trace!(repo_name = repo_name, "querying repository");
             let result = db.with_conn(|conn| f(repo_name, conn))?;
             results.push((repo_name.clone(), result));
         }
@@ -124,11 +129,14 @@ impl MetadataManager {
     where
         F: Fn(&str, &mut diesel::SqliteConnection) -> diesel::QueryResult<Vec<T>>,
     {
+        trace!(repo_count = self.databases.len(), "querying all repositories (flat)");
         let mut results = Vec::new();
         for (repo_name, db) in &self.databases {
+            trace!(repo_name = repo_name, "querying repository");
             let items = db.with_conn(|conn| f(repo_name, conn))?;
             results.extend(items);
         }
+        trace!(total_results = results.len(), "query complete");
         Ok(results)
     }
 
@@ -137,11 +145,13 @@ impl MetadataManager {
     where
         F: FnOnce(&mut diesel::SqliteConnection) -> diesel::QueryResult<T>,
     {
+        trace!(repo_name = repo_name, "querying specific repository");
         for (name, db) in &self.databases {
             if name == repo_name {
                 return db.with_conn(f).map(Some);
             }
         }
+        trace!(repo_name = repo_name, "repository not found");
         Ok(None)
     }
 

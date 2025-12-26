@@ -188,8 +188,10 @@ impl PackageInstaller {
 
         // fallback to download_url for repositories without ghcr
         let (url, output_path) = if let Some(ref ghcr_pkg) = self.package.ghcr_pkg {
+            debug!("source: {} (OCI)", ghcr_pkg);
             (ghcr_pkg, &self.install_dir)
         } else {
+            debug!("source: {}", self.package.download_url);
             (&self.package.download_url, &output_path.to_path_buf())
         };
 

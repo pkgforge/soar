@@ -9,6 +9,7 @@ use std::{
 
 use serde::Deserialize;
 use soar_utils::fs::is_elf;
+use tracing::{debug, trace};
 use ureq::http::header::{ACCEPT, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
 
 use crate::{
@@ -364,8 +365,16 @@ impl OciDownload {
     /// assert!(!paths.is_empty());
     /// ```
     pub fn execute(self) -> Result<Vec<PathBuf>, DownloadError> {
+        debug!(
+            registry = self.reference.registry,
+            package = self.reference.package,
+            tag = self.reference.tag,
+            "starting OCI download"
+        );
+
         // If it's a blob digest, download directly
         if self.reference.tag.starts_with("sha256:") {
+            trace!("tag is digest, downloading blob directly");
             return self.download_blob();
         }
 
@@ -383,10 +392,16 @@ impl OciDownload {
             .collect();
 
         if layers.is_empty() {
+            debug!("no matching layers found in manifest");
             return Err(DownloadError::LayerNotFound);
         }
 
         let total_size: u64 = layers.iter().map(|l| l.size).sum();
+        debug!(
+            layer_count = layers.len(),
+            total_size = total_size,
+            "downloading layers"
+        );
 
         if let Some(cb) = &self.on_progress {
             cb(Progress::Starting {
@@ -644,6 +659,7 @@ impl OciDownload {
             self.reference.package,
             self.reference.tag
         );
+        debug!(url = url, "fetching OCI manifest");
 
         let mut resp = SHARED_AGENT
             .get(&url)
@@ -657,16 +673,28 @@ impl OciDownload {
             .header(AUTHORIZATION, "Bearer QQ==")
             .call()?;
 
+        trace!(status = resp.status().as_u16(), "manifest response received");
+
         if !resp.status().is_success() {
+            debug!(status = resp.status().as_u16(), "manifest fetch failed");
             return Err(DownloadError::HttpError {
                 status: resp.status().as_u16(),
                 url,
             });
         }
 
-        resp.body_mut()
+        let manifest: OciManifest = resp
+            .body_mut()
             .read_json()
-            .map_err(|_| DownloadError::InvalidResponse)
+            .map_err(|_| DownloadError::InvalidResponse)?;
+
+        trace!(
+            layers = manifest.layers.len(),
+            media_type = manifest.media_type,
+            "manifest parsed successfully"
+        );
+
+        Ok(manifest)
     }
 
     /// Downloads the single blob identified by the downloader's reference into the configured output location.
@@ -798,6 +826,13 @@ fn download_layer_impl(
         layer.digest
     );
 
+    trace!(
+        digest = layer.digest,
+        size = layer.size,
+        path = %path.display(),
+        "downloading layer"
+    );
+
     let resume_info = read_resume(path);
     let (resume_from, etag) = resume_info
         .as_ref()
@@ -807,6 +842,7 @@ fn download_layer_impl(
     let mut req = SHARED_AGENT.get(&url).header(AUTHORIZATION, "Bearer QQ==");
 
     if let Some(pos) = resume_from {
+        trace!(resume_from = pos, "attempting to resume download");
         req = req.header(RANGE, &format!("bytes={}-", pos));
         if let Some(tag) = etag {
             req = req.header(IF_RANGE, tag);
@@ -816,6 +852,11 @@ fn download_layer_impl(
     let resp = req.call()?;
 
     if !resp.status().is_success() {
+        debug!(
+            status = resp.status().as_u16(),
+            digest = layer.digest,
+            "layer download failed"
+        );
         return Err(DownloadError::HttpError {
             status: resp.status().as_u16(),
             url,
@@ -823,6 +864,9 @@ fn download_layer_impl(
     }
 
     let is_resuming = resume_from.is_some() && resp.status() == 206;
+    if is_resuming {
+        trace!(resumed_from = resume_from.unwrap(), "resuming download");
+    }
     let mut file = if is_resuming {
         if let Some(cb) = on_progress {
             cb(Progress::Resuming {
@@ -883,10 +927,16 @@ fn download_layer_impl(
     }
 
     if is_elf(path) {
+        trace!(path = %path.display(), "setting executable permissions on ELF binary");
         std::fs::set_permissions(path, Permissions::from_mode(0o755))?;
     }
 
     remove_resume(path)?;
+    trace!(
+        path = %path.display(),
+        bytes = *local_downloaded,
+        "layer download complete"
+    );
     Ok(())
 }
 
