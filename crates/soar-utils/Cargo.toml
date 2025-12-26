@@ -1,6 +1,6 @@
 [package]
 name = "soar-utils"
-version = "0.0.0"
+version = "0.0.1"
 description = "Utilities for soar package manager"
 authors.workspace = true
 license.workspace = true

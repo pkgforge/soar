@@ -1,4 +1,28 @@
 
+## [0.9.0](https://github.com/pkgforge/soar/compare/soar-core-v0.8.1...soar-core-v0.9.0) - 2025-12-26
+
+### ⛰️  Features
+
+- *(install)* Allow remote package install - ([e060033](https://github.com/pkgforge/soar/commit/e060033ed1da14a9370650c5eddce6fc1f771c8d))
+- *(progress)* Allow disabling progress bar - ([29e04ff](https://github.com/pkgforge/soar/commit/29e04ff5c41cad2aa55140a5ea938c278debb69d))
+
+### 🐛 Bug Fixes
+
+- *(install)* Handle resume on package install - ([f92350f](https://github.com/pkgforge/soar/commit/f92350fb2f57dc84ee4df06881e17a9d59a28eee))
+- *(update)* Resolve random package install on update - ([eaa0058](https://github.com/pkgforge/soar/commit/eaa0058548462f987e290e5f883927691ff9fb3c))
+
+### 🚜 Refactor
+
+- *(integration)* Integrate soar with modular crates ([#123](https://github.com/pkgforge/soar/pull/123)) - ([2d340e5](https://github.com/pkgforge/soar/commit/2d340e54ac79fd31087370712f4e189b3391bd16))
+- *(log)* Add more debug logs - ([96f5ac9](https://github.com/pkgforge/soar/commit/96f5ac927f7eefdebead243841dc71efd9825c65))
+- *(log)* Add debug logs - ([cdbf808](https://github.com/pkgforge/soar/commit/cdbf8085f78d31518686b7be65772d70eb0108dc))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Ignore libsqlite-sys from machete - ([ca0f988](https://github.com/pkgforge/soar/commit/ca0f988df9973df521e73f50fb5ef1745f2295ea))
+- *(docs)* Update readme, bump msrv - ([5158af0](https://github.com/pkgforge/soar/commit/5158af067ecf3981585aad4f3097d675f65331d1))
+- *(docs)* Fix readme - ([90d8abb](https://github.com/pkgforge/soar/commit/90d8abb9206a304be4c3d8cd5d11ae40584242d6))
+
 ## [0.8.1](https://github.com/pkgforge/soar/compare/soar-core-v0.8.0...soar-core-v0.8.1) - 2025-09-19
 
 ### 🐛 Bug Fixes
