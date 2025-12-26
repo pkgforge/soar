@@ -15,6 +15,7 @@ use crate::{
     models::{
         metadata::{
             Maintainer, NewMaintainer, NewPackage, NewPackageMaintainer, NewRepository, Package,
+            PackageListing,
         },
         types::PackageProvide,
     },
@@ -37,6 +38,15 @@ impl MetadataRepository {
         packages::table
             .order(packages::pkg_name.asc())
             .select(Package::as_select())
+            .load(conn)
+    }
+
+    /// Lists all packages with only the fields needed for display.
+    /// This is much more memory-efficient than list_all for large package lists.
+    pub fn list_all_minimal(conn: &mut SqliteConnection) -> QueryResult<Vec<PackageListing>> {
+        packages::table
+            .order(packages::pkg_name.asc())
+            .select(PackageListing::as_select())
             .load(conn)
     }
 

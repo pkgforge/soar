@@ -128,6 +128,19 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
     }
 }
 
+/// Lightweight package struct for listing operations.
+/// Contains only the fields needed for display, reducing memory usage significantly.
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = packages)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct PackageListing {
+    pub pkg_id: String,
+    pub pkg_name: String,
+    pub pkg_type: Option<String>,
+    pub version: String,
+    pub version_upstream: Option<String>,
+}
+
 /// Package with repository name attached.
 /// This is used when querying across multiple repositories.
 #[derive(Debug, Clone)]

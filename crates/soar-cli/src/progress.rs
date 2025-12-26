@@ -3,7 +3,6 @@ use std::sync::atomic::Ordering;
 use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
 use nu_ansi_term::Color::Red;
 use soar_config::display::ProgressStyle as ConfigProgressStyle;
-use soar_core::database::models::Package;
 use soar_dl::types::Progress;
 
 use crate::{
@@ -110,29 +109,13 @@ pub fn handle_install_progress(
     state: Progress,
     progress_bar: &mut Option<ProgressBar>,
     ctx: &InstallContext,
-    package: &Package,
-    idx: usize,
-    fixed_width: usize,
+    prefix: &str,
 ) {
     if progress_bar.is_none() {
         let pb = ctx
             .multi_progress
             .insert_from_back(1, create_progress_bar());
-
-        let prefix = format!(
-            "[{}/{}] {}#{}",
-            idx + 1,
-            ctx.total_packages,
-            package.pkg_name,
-            package.pkg_id
-        );
-        let prefix = if prefix.len() > fixed_width {
-            format!("{prefix:.fixed_width$}")
-        } else {
-            format!("{prefix:<fixed_width$}")
-        };
-        pb.set_prefix(prefix);
-
+        pb.set_prefix(prefix.to_string());
         *progress_bar = Some(pb);
     }
 
@@ -183,15 +166,8 @@ pub fn handle_install_progress(
         Progress::Aborted => {
             let failed_count = ctx.failed.fetch_add(1, Ordering::Relaxed);
             if let Some(pb) = progress_bar {
-                let prefix = format!(
-                    "[{}/{}] {}#{}",
-                    idx + 1,
-                    ctx.total_packages,
-                    package.pkg_name,
-                    package.pkg_id
-                );
                 pb.set_style(ProgressStyle::with_template("{prefix} {msg}").unwrap());
-                pb.set_prefix(prefix);
+                pb.set_prefix(prefix.to_string());
                 pb.finish_with_message(format!(
                     "\n  {}",
                     Colored(Red, "└── Error: Too many failures. Aborted.")

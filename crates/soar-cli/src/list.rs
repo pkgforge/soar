@@ -12,9 +12,12 @@ use soar_core::{
     package::query::PackageQuery,
     SoarResult,
 };
-use soar_db::repository::{
-    core::{CoreRepository, SortDirection},
-    metadata::MetadataRepository,
+use soar_db::{
+    models::metadata::PackageListing,
+    repository::{
+        core::{CoreRepository, SortDirection},
+        metadata::MetadataRepository,
+    },
 };
 use soar_utils::fs::dir_size;
 use tabled::{
@@ -367,31 +370,39 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
     Ok(())
 }
 
+/// Lightweight struct for listing with repo name attached
+struct PackageListingWithRepo {
+    repo_name: String,
+    pkg: PackageListing,
+}
+
 pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
     let state = AppState::new();
     let metadata_mgr = state.metadata_manager().await?;
     let diesel_db = state.diesel_core_db()?;
 
-    let packages: Vec<Package> = if let Some(ref repo_name) = repo_name {
+    let packages: Vec<PackageListingWithRepo> = if let Some(ref repo_name) = repo_name {
         metadata_mgr
-            .query_repo(repo_name, MetadataRepository::list_all)?
+            .query_repo(repo_name, MetadataRepository::list_all_minimal)?
             .unwrap_or_default()
             .into_iter()
-            .map(|p| {
-                let mut pkg: Package = p.into();
-                pkg.repo_name = repo_name.clone();
-                pkg
+            .map(|pkg| {
+                PackageListingWithRepo {
+                    repo_name: repo_name.clone(),
+                    pkg,
+                }
             })
             .collect()
     } else {
         metadata_mgr.query_all_flat(|repo_name, conn| {
-            let pkgs = MetadataRepository::list_all(conn)?;
+            let pkgs = MetadataRepository::list_all_minimal(conn)?;
             Ok(pkgs
                 .into_iter()
-                .map(|p| {
-                    let mut pkg: Package = p.into();
-                    pkg.repo_name = repo_name.to_string();
-                    pkg
+                .map(|pkg| {
+                    PackageListingWithRepo {
+                        repo_name: repo_name.to_string(),
+                        pkg,
+                    }
                 })
                 .collect())
         })?
@@ -409,11 +420,11 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
     let mut installed_count = 0;
     let mut available_count = 0;
 
-    for package in &packages {
+    for entry in &packages {
         let key = (
-            package.repo_name.clone(),
-            package.pkg_id.clone(),
-            package.pkg_name.clone(),
+            entry.repo_name.clone(),
+            entry.pkg.pkg_id.clone(),
+            entry.pkg.pkg_name.clone(),
         );
         let state_icon = match installed_pkgs.get(&key) {
             Some(is_installed) => {
@@ -431,25 +442,27 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
         };
 
         info!(
-            pkg_name = package.pkg_name,
-            pkg_id = package.pkg_id,
-            repo_name = package.repo_name,
-            pkg_type = package.pkg_type,
-            version = package.version,
-            version_upstream = package.version_upstream,
+            pkg_name = entry.pkg.pkg_name,
+            pkg_id = entry.pkg.pkg_id,
+            repo_name = entry.repo_name,
+            pkg_type = entry.pkg.pkg_type,
+            version = entry.pkg.version,
+            version_upstream = entry.pkg.version_upstream,
             "[{}] {}#{}:{} | {}{} | {}",
             state_icon,
-            Colored(Blue, &package.pkg_name),
-            Colored(Cyan, &package.pkg_id),
-            Colored(Cyan, &package.repo_name),
-            Colored(LightRed, &package.version),
-            package
+            Colored(Blue, &entry.pkg.pkg_name),
+            Colored(Cyan, &entry.pkg.pkg_id),
+            Colored(Cyan, &entry.repo_name),
+            Colored(LightRed, &entry.pkg.version),
+            entry
+                .pkg
                 .version_upstream
                 .as_ref()
-                .filter(|_| package.version.starts_with("HEAD"))
+                .filter(|_| entry.pkg.version.starts_with("HEAD"))
                 .map(|upstream| format!(":{}", Colored(Yellow, &upstream)))
                 .unwrap_or_default(),
-            package
+            entry
+                .pkg
                 .pkg_type
                 .as_ref()
                 .map(|pkg_type| format!("{}", Colored(Magenta, &pkg_type)))

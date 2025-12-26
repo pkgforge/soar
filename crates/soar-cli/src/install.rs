@@ -924,15 +924,29 @@ async fn spawn_installation_task(
     let permit = ctx.semaphore.clone().acquire_owned().await.unwrap();
     let progress_bar = Arc::new(Mutex::new(None));
 
+    // Pre-compute the prefix string to avoid cloning the entire Package struct
+    let prefix = {
+        let prefix = format!(
+            "[{}/{}] {}#{}",
+            idx + 1,
+            ctx.total_packages,
+            target.package.pkg_name,
+            target.package.pkg_id
+        );
+        if prefix.len() > fixed_width {
+            format!("{prefix:.fixed_width$}")
+        } else {
+            format!("{prefix:<fixed_width$}")
+        }
+    };
+
     let progress_callback = {
         let ctx = ctx.clone();
         let progress_bar = progress_bar.clone();
-        let package = target.package.clone();
 
         Arc::new(move |state| {
             let mut pb_lock = progress_bar.lock().unwrap();
-
-            handle_install_progress(state, &mut pb_lock, &ctx, &package, idx, fixed_width);
+            handle_install_progress(state, &mut pb_lock, &ctx, &prefix);
         })
     };
 
