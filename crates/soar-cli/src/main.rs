@@ -5,10 +5,11 @@ use clap::Parser;
 use cli::Args;
 use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};
+use indicatif::MultiProgress;
 use inspect::{inspect_log, InspectType};
 use install::install_packages;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
-use logging::setup_logging;
+use logging::{clear_multi_progress, set_multi_progress, setup_logging};
 use nest::{add_nest, list_nests, remove_nest};
 use progress::create_progress_bar;
 use remove::remove_packages;
@@ -274,7 +275,8 @@ async fn handle_cli() -> SoarResult<()> {
                     skip_existing,
                     force_overwrite,
                 } => {
-                    let progress_bar = create_progress_bar();
+                    let multi_progress = Arc::new(MultiProgress::new());
+                    let progress_bar = multi_progress.add(create_progress_bar());
                     let progress_callback =
                         Arc::new(move |state| progress::handle_progress(state, &progress_bar));
                     let regexes = create_regex_patterns(regexes)?;
@@ -297,7 +299,9 @@ async fn handle_cli() -> SoarResult<()> {
                         force_overwrite,
                     };
 
+                    set_multi_progress(&multi_progress);
                     download(context, links, github, gitlab, ghcr).await?;
+                    clear_multi_progress();
                 }
                 cli::Commands::Health => display_health().await?,
                 cli::Commands::Env => {

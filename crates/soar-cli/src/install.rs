@@ -1026,9 +1026,30 @@ pub async fn install_single_package(
     );
     let bin_dir = get_config().get_bin_path()?;
 
+    let dir_suffix: String = target
+        .package
+        .bsum
+        .as_ref()
+        .filter(|s| s.len() >= 12)
+        .map(|s| s[..12].to_string())
+        .unwrap_or_else(|| {
+            rand::rng()
+                .sample_iter(&Alphanumeric)
+                .take(12)
+                .map(char::from)
+                .collect()
+        });
+
+    let install_dir = get_config()
+        .get_packages_path(target.profile.clone())
+        .unwrap()
+        .join(format!(
+            "{}-{}-{}",
+            target.package.pkg_name, target.package.pkg_id, dir_suffix
+        ));
+    let real_bin = install_dir.join(&target.package.pkg_name);
+
     let (
-        install_dir,
-        real_bin,
         unlinked,
         portable,
         portable_home,
@@ -1037,12 +1058,7 @@ pub async fn install_single_package(
         portable_cache,
         excludes,
     ) = if let Some(ref existing) = target.existing_install {
-        let install_dir = PathBuf::from(&existing.installed_path);
-        let real_bin = install_dir.join(&target.package.pkg_name);
-
         (
-            install_dir,
-            real_bin,
             existing.unlinked,
             existing.portable_path.as_deref(),
             existing.portable_home.as_deref(),
@@ -1052,24 +1068,7 @@ pub async fn install_single_package(
             existing.install_patterns.as_deref(),
         )
     } else {
-        let rand_str: String = rand::rng()
-            .sample_iter(&Alphanumeric)
-            .take(12)
-            .map(char::from)
-            .collect();
-
-        let install_dir = get_config()
-            .get_packages_path(target.profile.clone())
-            .unwrap()
-            .join(format!(
-                "{}-{}-{}",
-                target.package.pkg_name, target.package.pkg_id, rand_str
-            ));
-        let real_bin = install_dir.join(&target.package.pkg_name);
-
         (
-            install_dir,
-            real_bin,
             false,
             ctx.portable.as_deref(),
             ctx.portable_home.as_deref(),

@@ -22,6 +22,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     install::{create_install_context, install_single_package, InstallContext},
+    logging::{clear_multi_progress, set_multi_progress},
     progress::{self, create_progress_bar},
     state::AppState,
     utils::{ask_target_action, display_settings, icon_or, Colored, Icons},
@@ -108,24 +109,25 @@ pub async fn update_packages(
                 if let Some(package) = new_pkg {
                     let with_pkg_id = pkg.with_pkg_id;
 
-                    let existing_install = get_existing(&package, &diesel_db)?;
-                    if let Some(ref existing_install) = existing_install {
-                        if existing_install.is_installed {
+                    // Check if the new version is already installed (skip if so)
+                    let new_version_installed = get_existing(&package, &diesel_db)?;
+                    if let Some(ref installed) = new_version_installed {
+                        if installed.is_installed {
                             continue;
                         }
                     }
 
                     update_targets.push(InstallTarget {
                         package,
-                        existing_install,
+                        existing_install: Some(pkg.clone()),
                         with_pkg_id,
                         pinned: pkg.pinned,
-                        profile: Some(pkg.profile),
-                        portable: pkg.portable_path,
-                        portable_home: pkg.portable_home,
-                        portable_config: pkg.portable_config,
-                        portable_share: pkg.portable_share,
-                        portable_cache: pkg.portable_cache,
+                        profile: Some(pkg.profile.clone()),
+                        portable: pkg.portable_path.clone(),
+                        portable_home: pkg.portable_home.clone(),
+                        portable_config: pkg.portable_config.clone(),
+                        portable_share: pkg.portable_share.clone(),
+                        portable_cache: pkg.portable_cache.clone(),
                     })
                 }
             }
@@ -162,24 +164,27 @@ pub async fn update_packages(
             if let Some(package) = new_pkg {
                 let with_pkg_id = pkg.with_pkg_id;
 
-                let existing_install = get_existing(&package, &diesel_db)?;
-                if let Some(ref existing_install) = existing_install {
-                    if existing_install.is_installed {
+                // Check if the new version is already installed (skip if so)
+                let new_version_installed = get_existing(&package, &diesel_db)?;
+                if let Some(ref installed) = new_version_installed {
+                    if installed.is_installed {
                         continue;
                     }
                 }
 
+                // Keep existing_install to preserve portable settings.
+                // Install always creates a new directory based on bsum.
                 update_targets.push(InstallTarget {
                     package,
-                    existing_install,
+                    existing_install: Some(pkg.clone()),
                     with_pkg_id,
                     pinned: pkg.pinned,
-                    profile: Some(pkg.profile),
-                    portable: pkg.portable_path,
-                    portable_home: pkg.portable_home,
-                    portable_config: pkg.portable_config,
-                    portable_share: pkg.portable_share,
-                    portable_cache: pkg.portable_cache,
+                    profile: Some(pkg.profile.clone()),
+                    portable: pkg.portable_path.clone(),
+                    portable_home: pkg.portable_home.clone(),
+                    portable_config: pkg.portable_config.clone(),
+                    portable_share: pkg.portable_share.clone(),
+                    portable_cache: pkg.portable_cache.clone(),
                 })
             }
         }
@@ -217,6 +222,7 @@ async fn perform_update(
     diesel_db: DieselDatabase,
     keep: bool,
 ) -> SoarResult<()> {
+    set_multi_progress(&ctx.multi_progress);
     let mut handles = Vec::new();
     let fixed_width = 40;
 
@@ -240,6 +246,8 @@ async fn perform_update(
     }
 
     ctx.total_progress_bar.finish_and_clear();
+    clear_multi_progress();
+
     for warn in ctx.warnings.lock().unwrap().iter() {
         warn!("{warn}");
     }

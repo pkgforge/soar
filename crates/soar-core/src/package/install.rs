@@ -100,8 +100,16 @@ impl PackageInstaller {
         );
         let profile = get_config().default_profile.clone();
 
-        if target.existing_install.is_none() {
-            trace!("no existing install, creating new record");
+        let needs_new_record = match &target.existing_install {
+            None => true,
+            Some(existing) => existing.version != package.version,
+        };
+
+        if needs_new_record {
+            trace!(
+                "inserting new package record for version {}",
+                package.version
+            );
             let repo_name = &package.repo_name;
             let pkg_id = &package.pkg_id;
             let pkg_name = &package.pkg_name;

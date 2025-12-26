@@ -431,26 +431,21 @@ impl MetadataRepository {
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::pkg_id.eq(pkg_id))
             .filter(
-                sql::<diesel::sql_types::Bool>("version > ")
+                sql::<diesel::sql_types::Bool>("(version > ")
                     .bind::<Text, _>(current_version)
                     .sql(" OR (version LIKE 'HEAD-%' AND substr(version, 15) > ")
                     .bind::<Text, _>(&head_version)
-                    .sql(")"),
+                    .sql("))"),
             )
             .order(packages::version.desc())
             .select(Package::as_select())
             .first(conn)
             .optional();
-        if let Ok(ref pkg) = result {
-            if let Some(p) = pkg {
-                debug!(
-                    pkg_id = pkg_id,
-                    new_version = p.version,
-                    "newer version found"
-                );
-            } else {
-                trace!(pkg_id = pkg_id, "no newer version available");
-            }
+        if let Ok(Some(ref p)) = result {
+            debug!(
+                "newer version available: {}#{} -> {}",
+                pkg_name, pkg_id, p.version
+            );
         }
         result
     }

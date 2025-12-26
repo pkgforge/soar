@@ -533,16 +533,16 @@ impl CoreRepository {
         pkg_name: &str,
         repo_name: &str,
     ) -> QueryResult<Vec<(i32, String)>> {
-        let latest_id: Option<i32> = packages::table
+        let latest: Option<(i32, String)> = packages::table
             .filter(packages::pkg_id.eq(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
             .order(packages::id.desc())
-            .select(packages::id)
+            .select((packages::id, packages::installed_path))
             .first(conn)
             .optional()?;
 
-        let Some(latest_id) = latest_id else {
+        let Some((latest_id, latest_path)) = latest else {
             return Ok(Vec::new());
         };
 
@@ -552,6 +552,7 @@ impl CoreRepository {
             .filter(packages::repo_name.eq(repo_name))
             .filter(packages::pinned.eq(false))
             .filter(packages::id.ne(latest_id))
+            .filter(packages::installed_path.ne(&latest_path))
             .select((packages::id, packages::installed_path))
             .load(conn)
     }
