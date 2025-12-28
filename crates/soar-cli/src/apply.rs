@@ -100,11 +100,11 @@ async fn compute_diff(
     let diesel_db = state.diesel_core_db()?.clone();
 
     let mut diff = ApplyDiff::default();
-    let mut declared_keys: HashSet<(String, Option<String>, Option<String>, Option<String>)> = HashSet::new();
+    let mut declared_keys: HashSet<(String, Option<String>, Option<String>)> = HashSet::new();
 
     for pkg in resolved {
         // Track declared package
-        declared_keys.insert((pkg.name.clone(), pkg.pkg_id.clone(), pkg.repo.clone(), pkg.version.clone()));
+        declared_keys.insert((pkg.name.clone(), pkg.pkg_id.clone(), pkg.repo.clone()));
 
         // Handle URL packages
         if let Some(ref url) = pkg.url {
@@ -153,7 +153,7 @@ async fn compute_diff(
 
             if !is_already_installed {
                 diff.to_install.push((pkg.clone(), target));
-            } else if pkg.version != Some(existing_install.unwrap().version) {
+            } else if url_pkg.version != existing_install.unwrap().version {
                 diff.to_update.push((pkg.clone(), target));
             } else {
                 diff.in_sync.push(format!("{} (local)", pkg.name));
@@ -276,12 +276,11 @@ async fn compute_diff(
             .collect();
 
         for installed in all_installed {
-            let is_declared = declared_keys.iter().any(|(name, pkg_id, repo, version)| {
+            let is_declared = declared_keys.iter().any(|(name, pkg_id, repo)| {
                 let name_matches = *name == installed.pkg_name;
                 let pkg_id_matches = pkg_id.as_ref().map_or(true, |id| *id == installed.pkg_id);
                 let repo_matches = repo.as_ref().map_or(true, |r| *r == installed.repo_name);
-                let version_matches = version.as_ref().map_or(true, |v| *v == installed.version);
-                name_matches && pkg_id_matches && repo_matches && version_matches
+                name_matches && pkg_id_matches && repo_matches
             });
 
             if !is_declared {
@@ -512,7 +511,7 @@ async fn execute_apply(state: &AppState, diff: ApplyDiff, no_verify: bool) -> So
             no_verify,
         );
 
-        perform_update(ctx.clone(), targets, diesel_db.clone(), true).await?;
+        perform_update(ctx.clone(), targets, diesel_db.clone(), false).await?;
         updated_count = ctx.installed_count.load(Ordering::Relaxed) as usize;
         failed_count += ctx.failed.load(Ordering::Relaxed) as usize;
     }

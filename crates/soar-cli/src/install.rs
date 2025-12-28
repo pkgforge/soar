@@ -266,7 +266,7 @@ fn resolve_packages(
                 package: url_pkg.to_package(),
                 existing_install,
                 with_pkg_id: url_pkg.pkg_type.is_some(),
-                pinned: true, // URL packages are always pinned
+                pinned: false,
                 profile: None,
                 ..Default::default()
             });
