@@ -1,4 +1,10 @@
 
+## [0.2.0](https://github.com/pkgforge/soar/compare/soar-db-v0.1.0...soar-db-v0.2.0) - 2025-12-28
+
+### 🐛 Bug Fixes
+
+- *(install)* Fix force reinstall cleanup and resume file corruption - ([c6150f7](https://github.com/pkgforge/soar/commit/c6150f72855249bd048194514dd3bdbca1beb21c))
+
 ## [0.1.0] - 2025-12-26
 
 ### ⛰️  Features
