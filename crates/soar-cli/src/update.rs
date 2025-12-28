@@ -216,7 +216,7 @@ pub async fn update_packages(
     Ok(())
 }
 
-async fn perform_update(
+pub async fn perform_update(
     ctx: InstallContext,
     targets: Vec<InstallTarget>,
     diesel_db: DieselDatabase,
