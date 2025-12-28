@@ -3,7 +3,7 @@
 use std::{fs, path::Path};
 
 use soar_utils::fs::read_file_signature;
-use squishy::{appimage::AppImage, EntryKind};
+use squishy::appimage::{AppImage, AppImageEntryKind};
 
 use super::{
     common::{symlink_desktop, symlink_icon},
@@ -43,14 +43,13 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
 
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
-    let appimage = AppImage::new(None, &file_path, None)?;
-    let squashfs = &appimage.squashfs;
+    let mut appimage = AppImage::new(None, &file_path, None)?;
 
     if !has_icon {
         if let Some(entry) = appimage.find_icon() {
-            if let EntryKind::File(basic_file) = entry.kind {
+            if entry.kind == AppImageEntryKind::File {
                 let dest = format!("{}/{}.DirIcon", install_dir.display(), pkg_name);
-                let _ = squashfs.write_file(basic_file, &dest);
+                let _ = appimage.write_entry(&entry, &dest);
 
                 let magic_bytes = read_file_signature(&dest, 8)?;
                 let ext = if magic_bytes == PNG_MAGIC_BYTES {
@@ -69,16 +68,16 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
 
     if !has_desktop {
         if let Some(entry) = appimage.find_desktop() {
-            if let EntryKind::File(basic_file) = entry.kind {
+            if entry.kind == AppImageEntryKind::File {
                 let dest = format!("{}/{}.desktop", install_dir.display(), pkg_name);
-                let _ = squashfs.write_file(basic_file, &dest);
+                let _ = appimage.write_entry(&entry, &dest);
                 symlink_desktop(dest, package)?;
             }
         }
     }
 
     if let Some(entry) = appimage.find_appstream() {
-        if let EntryKind::File(basic_file) = entry.kind {
+        if entry.kind == AppImageEntryKind::File {
             let file_name = if entry
                 .path
                 .file_name()
@@ -91,7 +90,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
                 "metainfo"
             };
             let dest = format!("{}/{}.{file_name}.xml", install_dir.display(), pkg_name);
-            let _ = squashfs.write_file(basic_file, &dest);
+            let _ = appimage.write_entry(&entry, &dest);
         }
     }
     Ok(())
