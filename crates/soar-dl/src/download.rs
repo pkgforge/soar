@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions, Permissions},
-    io::{Read as _, Write as _},
+    io::{Read as _, Seek as _, SeekFrom, Write as _},
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     sync::Arc,
@@ -254,8 +254,13 @@ impl Download {
         if output_path.is_file() {
             match self.overwrite {
                 OverwriteMode::Skip => {
-                    debug!(path = %output_path.display(), "file exists, skipping download");
-                    return Ok(output_path);
+                    // Only skip if there's no resume info (complete download)
+                    // If resume info exists, it's a partial download that should continue
+                    if resume_info.is_none() {
+                        debug!(path = %output_path.display(), "file exists, skipping download");
+                        return Ok(output_path);
+                    }
+                    debug!(path = %output_path.display(), "file exists but is partial, resuming download");
                 }
                 OverwriteMode::Force => {
                     debug!(path = %output_path.display(), "file exists, forcing overwrite");
@@ -273,7 +278,7 @@ impl Download {
                     }
                 }
             }
-        };
+        }
 
         if let Some(parent) = output_path.parent() {
             trace!(path = %parent.display(), "creating parent directories");
@@ -395,8 +400,14 @@ impl Download {
         }
 
         let mut file = if is_resuming {
-            trace!(path = %path.display(), "opening file for append (resume)");
-            OpenOptions::new().append(true).open(path)?
+            let resume_pos = resume_from.unwrap();
+            trace!(path = %path.display(), resume_pos = resume_pos, "opening file for resume");
+            // Truncate file to resume position to avoid duplicated bytes
+            // (file may have more bytes than last checkpoint due to writes between checkpoints)
+            let mut file = OpenOptions::new().write(true).open(path)?;
+            file.set_len(resume_pos)?;
+            file.seek(SeekFrom::End(0))?;
+            file
         } else {
             trace!(path = %path.display(), "creating new file");
             File::create(path)?

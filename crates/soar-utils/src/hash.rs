@@ -72,6 +72,28 @@ pub fn verify_checksum<P: AsRef<Path>>(file_path: P, expected: &str) -> HashResu
     Ok(actual.eq_ignore_ascii_case(expected))
 }
 
+/// Calculates a hash from a string input.
+///
+/// Returns a hex-encoded blake3 hash string.
+///
+/// # Arguments
+///
+/// * `input` - The string to hash.
+///
+/// # Example
+///
+/// ```
+/// use soar_utils::hash::hash_string;
+///
+/// let hash = hash_string("hello world");
+/// assert_eq!(hash.len(), 64);
+/// ```
+pub fn hash_string(input: &str) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(input.as_bytes());
+    hasher.finalize().to_hex().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;

@@ -12,7 +12,6 @@ use std::{
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use minisign_verify::{PublicKey, Signature};
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
-use rand::{distr::Alphanumeric, Rng};
 use soar_config::{config::get_config, utils::default_install_patterns};
 use soar_core::{
     database::{connection::DieselDatabase, models::Package},
@@ -31,7 +30,7 @@ use soar_db::repository::{
 };
 use soar_dl::types::Progress;
 use soar_package::integrate_package;
-use soar_utils::{hash::calculate_checksum, pattern::apply_sig_variants};
+use soar_utils::{hash::{calculate_checksum, hash_string}, pattern::apply_sig_variants};
 use tabled::{
     builder::Builder,
     settings::{themes::BorderCorrection, Panel, Style},
@@ -1066,11 +1065,11 @@ pub async fn install_single_package(
         .filter(|s| s.len() >= 12)
         .map(|s| s[..12].to_string())
         .unwrap_or_else(|| {
-            rand::rng()
-                .sample_iter(&Alphanumeric)
-                .take(12)
-                .map(char::from)
-                .collect()
+            let input = format!(
+                "{}:{}:{}",
+                target.package.pkg_id, target.package.pkg_name, target.package.version
+            );
+            hash_string(&input)[..12].to_string()
         });
 
     let install_dir = get_config()
