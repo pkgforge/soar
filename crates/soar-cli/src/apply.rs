@@ -136,21 +136,24 @@ async fn compute_diff(
 
             let is_already_installed = installed_packages.iter().any(|ip| ip.is_installed);
 
+            let existing_install = installed_packages.into_iter().next();
+            let target = InstallTarget {
+                package: url_pkg.to_package(),
+                existing_install: existing_install.clone(),
+                with_pkg_id: url_pkg.pkg_type.is_some(),
+                pinned: true,
+                profile: pkg.profile.clone(),
+                portable: pkg.portable.as_ref().and_then(|p| p.path.clone()),
+                portable_home: pkg.portable.as_ref().and_then(|p| p.home.clone()),
+                portable_config: pkg.portable.as_ref().and_then(|p| p.config.clone()),
+                portable_share: pkg.portable.as_ref().and_then(|p| p.share.clone()),
+                portable_cache: pkg.portable.as_ref().and_then(|p| p.cache.clone()),
+            };
+
             if !is_already_installed {
-                let existing_install = installed_packages.into_iter().next();
-                let target = InstallTarget {
-                    package: url_pkg.to_package(),
-                    existing_install,
-                    with_pkg_id: url_pkg.pkg_type.is_some(),
-                    pinned: true,
-                    profile: pkg.profile.clone(),
-                    portable: pkg.portable.as_ref().and_then(|p| p.path.clone()),
-                    portable_home: pkg.portable.as_ref().and_then(|p| p.home.clone()),
-                    portable_config: pkg.portable.as_ref().and_then(|p| p.config.clone()),
-                    portable_share: pkg.portable.as_ref().and_then(|p| p.share.clone()),
-                    portable_cache: pkg.portable.as_ref().and_then(|p| p.cache.clone()),
-                };
                 diff.to_install.push((pkg.clone(), target));
+            } else if pkg.version != Some(existing_install.unwrap().version) {
+                diff.to_update.push((pkg.clone(), target));
             } else {
                 diff.in_sync.push(format!("{} (local)", pkg.name));
             }
