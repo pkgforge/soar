@@ -344,15 +344,15 @@ fn resolve_packages(
                 .map(|p| (p.pkg_id, p.repo_name, p.version))
                 .collect();
 
-            let pkg = if repo_pkgs.len() > 1 {
-                select_package_interactively_with_installed(
-                    repo_pkgs,
-                    &query.name.clone().unwrap_or(package.clone()),
-                    &installed_packages,
-                )?
-                .unwrap()
-            } else {
-                repo_pkgs.into_iter().next().unwrap()
+            // Always show interactive selection when --show is used
+            let pkg = select_package_interactively_with_installed(
+                repo_pkgs,
+                &query.name.clone().unwrap_or(package.clone()),
+                &installed_packages,
+            )?;
+
+            let Some(pkg) = pkg else {
+                continue;
             };
 
             // Check if this specific package is already installed
@@ -730,9 +730,9 @@ fn select_package(
     yes: bool,
     existing_install: &Option<soar_core::database::models::InstalledPackage>,
 ) -> SoarResult<Option<Package>> {
-    // If we have an existing install, use its details to find the package
+    // If we have an existing install, try to find it in its original repo first
     let packages: Vec<Package> = if let Some(existing) = existing_install {
-        metadata_mgr
+        let existing_pkgs: Vec<Package> = metadata_mgr
             .query_repo(&existing.repo_name, |conn| {
                 MetadataRepository::find_filtered(
                     conn,
@@ -750,7 +750,32 @@ fn select_package(
                 pkg.repo_name = existing.repo_name.clone();
                 pkg
             })
-            .collect()
+            .collect();
+
+        // If package not found in original repo (repo removed or package removed),
+        // fall back to searching all repos by package name
+        if existing_pkgs.is_empty() {
+            metadata_mgr.query_all_flat(|repo_name, conn| {
+                let pkgs = MetadataRepository::find_filtered(
+                    conn,
+                    query.name.as_deref(),
+                    query.pkg_id.as_deref(),
+                    query.version.as_deref(),
+                    None,
+                    None,
+                )?;
+                Ok(pkgs
+                    .into_iter()
+                    .map(|p| {
+                        let mut pkg: Package = p.into();
+                        pkg.repo_name = repo_name.to_string();
+                        pkg
+                    })
+                    .collect())
+            })?
+        } else {
+            existing_pkgs
+        }
     } else if let Some(ref repo_name) = query.repo_name {
         metadata_mgr
             .query_repo(repo_name, |conn| {
