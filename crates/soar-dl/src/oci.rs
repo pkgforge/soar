@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions, Permissions},
-    io::{Read as _, Write as _},
+    io::{Read as _, Seek as _, SeekFrom, Write as _},
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -871,13 +871,19 @@ fn download_layer_impl(
         trace!(resumed_from = resume_from.unwrap(), "resuming download");
     }
     let mut file = if is_resuming {
+        let resume_pos = resume_from.unwrap();
         if let Some(cb) = on_progress {
             cb(Progress::Resuming {
-                current: resume_from.unwrap(),
+                current: resume_pos,
                 total: total_size,
             });
         }
-        OpenOptions::new().append(true).open(path)?
+        // Truncate file to resume position to avoid duplicated bytes
+        // (file may have more bytes than last checkpoint due to writes between checkpoints)
+        let mut file = OpenOptions::new().write(true).open(path)?;
+        file.set_len(resume_pos)?;
+        file.seek(SeekFrom::End(0))?;
+        file
     } else {
         File::create(path)?
     };
@@ -889,8 +895,15 @@ fn download_layer_impl(
         .map(String::from);
     let mut reader = resp.into_body().into_reader();
     let mut buffer = [0u8; 8192];
-    *local_downloaded = resume_from.unwrap_or(0);
+    let resume_offset = resume_from.unwrap_or(0);
+    *local_downloaded = resume_offset;
     let mut last_checkpoint = *local_downloaded / (1024 * 1024);
+
+    // Add resume offset to shared counter so progress shows correct cumulative total
+    if is_resuming {
+        let mut shared = shared_downloaded.lock().unwrap();
+        *shared += resume_offset;
+    }
 
     loop {
         let n = reader.read(&mut buffer)?;

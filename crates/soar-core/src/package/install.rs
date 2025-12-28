@@ -67,7 +67,7 @@ pub struct PackageInstaller {
     globs: Vec<String>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct InstallTarget {
     pub package: Package,
     pub existing_install: Option<crate::database::models::InstalledPackage>,
@@ -100,9 +100,34 @@ impl PackageInstaller {
         );
         let profile = get_config().default_profile.clone();
 
-        let needs_new_record = match &target.existing_install {
-            None => true,
-            Some(existing) => existing.version != package.version,
+        // Check if there's a pending install for this exact version we can resume
+        let has_pending = db.with_conn(|conn| {
+            CoreRepository::has_pending_install(
+                conn,
+                &package.pkg_id,
+                &package.pkg_name,
+                &package.repo_name,
+                &package.version,
+            )
+        })?;
+
+        trace!(
+            pkg_id = package.pkg_id,
+            pkg_name = package.pkg_name,
+            repo_name = package.repo_name,
+            version = package.version,
+            has_pending = has_pending,
+            "checking for pending install"
+        );
+
+        let needs_new_record = if has_pending {
+            trace!("resuming existing pending install");
+            false
+        } else {
+            match &target.existing_install {
+                None => true,
+                Some(existing) => existing.version != package.version || existing.is_installed,
+            }
         };
 
         if needs_new_record {
@@ -118,6 +143,17 @@ impl PackageInstaller {
             let size = package.ghcr_size.unwrap_or(package.size.unwrap_or(0)) as i64;
             let installed_path = install_dir.to_string_lossy();
             let installed_date = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+            // Clean up any orphaned pending installs (different versions) before creating new record
+            let orphaned_paths = db.with_conn(|conn| {
+                CoreRepository::delete_pending_installs(conn, pkg_id, pkg_name, repo_name)
+            })?;
+            for path in orphaned_paths {
+                let path = std::path::Path::new(&path);
+                if path.exists() {
+                    fs::remove_dir_all(path).ok();
+                }
+            }
 
             let new_package = NewInstalledPackage {
                 repo_name,
@@ -351,6 +387,7 @@ impl PackageInstaller {
         let with_pkg_id = self.with_pkg_id;
         let installed_date = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
+        let installed_path = self.install_dir.to_string_lossy();
         let record_id: Option<i32> = self.db.with_conn(|conn| {
             CoreRepository::record_installation(
                 conn,
@@ -363,6 +400,7 @@ impl PackageInstaller {
                 with_pkg_id,
                 checksum,
                 &installed_date,
+                &installed_path,
             )
         })?;
 

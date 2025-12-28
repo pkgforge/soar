@@ -1,6 +1,6 @@
 //! Core database repository for installed packages.
 
-use diesel::prelude::*;
+use diesel::{prelude::*, sql_types::Bool, sqlite::Sqlite};
 
 use crate::{
     models::{
@@ -366,6 +366,7 @@ impl CoreRepository {
     }
 
     /// Updates an installed package after successful installation.
+    /// Only updates the record with is_installed=false (the newly created one).
     #[allow(clippy::too_many_arguments)]
     pub fn record_installation(
         conn: &mut SqliteConnection,
@@ -378,6 +379,7 @@ impl CoreRepository {
         with_pkg_id: bool,
         checksum: Option<&str>,
         installed_date: &str,
+        installed_path: &str,
     ) -> QueryResult<Option<i32>> {
         let provides = provides.map(|v| serde_json::to_value(v).unwrap_or_default());
         diesel::update(
@@ -385,7 +387,8 @@ impl CoreRepository {
                 .filter(packages::repo_name.eq(repo_name))
                 .filter(packages::pkg_name.eq(pkg_name))
                 .filter(packages::pkg_id.eq(pkg_id))
-                .filter(packages::version.eq(version)),
+                .filter(packages::version.eq(version))
+                .filter(packages::is_installed.eq(false)),
         )
         .set((
             packages::size.eq(size),
@@ -394,6 +397,7 @@ impl CoreRepository {
             packages::provides.eq(provides),
             packages::with_pkg_id.eq(with_pkg_id),
             packages::checksum.eq(checksum),
+            packages::installed_path.eq(installed_path),
         ))
         .returning(packages::id)
         .get_result(conn)
@@ -457,6 +461,54 @@ impl CoreRepository {
     /// Deletes an installed package by ID.
     pub fn delete(conn: &mut SqliteConnection, id: i32) -> QueryResult<usize> {
         diesel::delete(packages::table.filter(packages::id.eq(id))).execute(conn)
+    }
+
+    /// Checks if a pending install (is_installed=false) exists for a specific package version.
+    /// Used to check if we can resume a partial install.
+    pub fn has_pending_install(
+        conn: &mut SqliteConnection,
+        pkg_id: &str,
+        pkg_name: &str,
+        repo_name: &str,
+        version: &str,
+    ) -> QueryResult<bool> {
+        let count: i64 = packages::table
+            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(packages::pkg_name.eq(pkg_name))
+            .filter(packages::repo_name.eq(repo_name))
+            .filter(packages::version.eq(version))
+            .filter(packages::is_installed.eq(false))
+            .count()
+            .get_result(conn)?;
+        Ok(count > 0)
+    }
+
+    /// Deletes pending (is_installed=false) records for a package and returns their paths.
+    /// Used to clean up orphaned partial installs before starting a new install.
+    pub fn delete_pending_installs(
+        conn: &mut SqliteConnection,
+        pkg_id: &str,
+        pkg_name: &str,
+        repo_name: &str,
+    ) -> QueryResult<Vec<String>> {
+        let paths: Vec<String> = packages::table
+            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(packages::pkg_name.eq(pkg_name))
+            .filter(packages::repo_name.eq(repo_name))
+            .filter(packages::is_installed.eq(false))
+            .select(packages::installed_path)
+            .load(conn)?;
+
+        diesel::delete(
+            packages::table
+                .filter(packages::pkg_id.eq(pkg_id))
+                .filter(packages::pkg_name.eq(pkg_name))
+                .filter(packages::repo_name.eq(repo_name))
+                .filter(packages::is_installed.eq(false)),
+        )
+        .execute(conn)?;
+
+        Ok(paths)
     }
 
     /// Gets the portable package configuration for a package.
@@ -525,13 +577,15 @@ impl CoreRepository {
             .execute(conn)
     }
 
-    /// Gets old package versions (all except the newest unpinned one) for cleanup.
+    /// Gets old package versions (all except the newest one) for cleanup.
     /// Returns the installed paths of packages to remove.
+    /// If `force` is true, includes pinned packages. Otherwise only unpinned packages.
     pub fn get_old_package_paths(
         conn: &mut SqliteConnection,
         pkg_id: &str,
         pkg_name: &str,
         repo_name: &str,
+        force: bool,
     ) -> QueryResult<Vec<(i32, String)>> {
         let latest: Option<(i32, String)> = packages::table
             .filter(packages::pkg_id.eq(pkg_id))
@@ -546,23 +600,33 @@ impl CoreRepository {
             return Ok(Vec::new());
         };
 
-        packages::table
+        let query = packages::table
             .filter(packages::pkg_id.eq(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
-            .filter(packages::pinned.eq(false))
             .filter(packages::id.ne(latest_id))
             .filter(packages::installed_path.ne(&latest_path))
+            .into_boxed();
+
+        let query = if force {
+            query
+        } else {
+            query.filter(packages::pinned.eq(false))
+        };
+
+        query
             .select((packages::id, packages::installed_path))
             .load(conn)
     }
 
-    /// Deletes old package versions (all except the newest unpinned one).
+    /// Deletes old package versions (all except the newest one).
+    /// If `force` is true, deletes pinned packages too. Otherwise only unpinned packages.
     pub fn delete_old_packages(
         conn: &mut SqliteConnection,
         pkg_id: &str,
         pkg_name: &str,
         repo_name: &str,
+        force: bool,
     ) -> QueryResult<usize> {
         let latest_id: Option<i32> = packages::table
             .filter(packages::pkg_id.eq(pkg_id))
@@ -577,15 +641,21 @@ impl CoreRepository {
             return Ok(0);
         };
 
-        diesel::delete(
-            packages::table
-                .filter(packages::pkg_id.eq(pkg_id))
-                .filter(packages::pkg_name.eq(pkg_name))
-                .filter(packages::repo_name.eq(repo_name))
-                .filter(packages::pinned.eq(false))
-                .filter(packages::id.ne(latest_id)),
-        )
-        .execute(conn)
+        let pinned_filter: Box<dyn BoxableExpression<packages::table, Sqlite, SqlType = Bool>> =
+            if force {
+                Box::new(diesel::dsl::sql::<Bool>("TRUE"))
+            } else {
+                Box::new(packages::pinned.eq(false))
+            };
+
+        let query = packages::table
+            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(packages::pkg_name.eq(pkg_name))
+            .filter(packages::repo_name.eq(repo_name))
+            .filter(packages::id.ne(latest_id))
+            .filter(pinned_filter);
+
+        diesel::delete(query).execute(conn)
     }
 
     /// Unlinks all packages with a given name except those matching pkg_id and checksum.

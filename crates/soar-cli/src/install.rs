@@ -20,6 +20,7 @@ use soar_core::{
     package::{
         install::{InstallMarker, InstallTarget, PackageInstaller},
         query::PackageQuery,
+        update::remove_old_versions,
         url::UrlPackage,
     },
     SoarResult,
@@ -260,7 +261,9 @@ fn resolve_packages(
                 }
             }
 
-            let existing_install = installed_packages.into_iter().next();
+            let existing_install = installed_pkg
+                .cloned()
+                .or_else(|| installed_packages.into_iter().next());
 
             install_targets.push(InstallTarget {
                 package: url_pkg.to_package(),
@@ -977,7 +980,8 @@ async fn spawn_installation_task(
     let ctx = ctx.clone();
 
     tokio::spawn(async move {
-        let result = install_single_package(&ctx, &target, progress_callback, core_db).await;
+        let result =
+            install_single_package(&ctx, &target, progress_callback, core_db.clone()).await;
 
         match result {
             Ok((install_dir, symlinks)) => {
@@ -987,12 +991,16 @@ async fn spawn_installation_task(
                     .insert(idx, (install_dir, symlinks));
                 installed_count.fetch_add(1, Ordering::Relaxed);
                 total_pb.inc(1);
+
+                let _ = remove_old_versions(&target.package, &core_db, false);
             }
             Err(err) => {
                 match err {
                     SoarError::Warning(err) => {
                         let mut warnings = ctx.warnings.lock().unwrap();
                         warnings.push(err);
+
+                        let _ = remove_old_versions(&target.package, &core_db, false);
                     }
                     _ => {
                         let mut errors = ctx.errors.lock().unwrap();

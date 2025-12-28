@@ -360,7 +360,7 @@ async fn spawn_update_task(
                     warnings.push(err);
 
                     if !keep {
-                        let _ = remove_old_versions(&target.package, &diesel_db);
+                        let _ = remove_old_versions(&target.package, &diesel_db, false);
                     }
                 }
                 _ => {
@@ -373,7 +373,7 @@ async fn spawn_update_task(
             total_pb.inc(1);
 
             if !keep {
-                let _ = remove_old_versions(&target.package, &diesel_db);
+                let _ = remove_old_versions(&target.package, &diesel_db, false);
             }
         }
 

@@ -12,7 +12,8 @@ use crate::{
 ///
 /// This function finds all installed versions of the package (by pkg_id, pkg_name, repo_name)
 /// that are older than the current version and removes them from disk and database.
-pub fn remove_old_versions(package: &Package, db: &DieselDatabase) -> SoarResult<()> {
+/// If `force` is true, removes pinned packages too. Otherwise only unpinned packages.
+pub fn remove_old_versions(package: &Package, db: &DieselDatabase, force: bool) -> SoarResult<()> {
     let Package {
         pkg_id,
         pkg_name,
@@ -21,7 +22,7 @@ pub fn remove_old_versions(package: &Package, db: &DieselDatabase) -> SoarResult
     } = package;
 
     let old_packages = db.with_conn(|conn| {
-        CoreRepository::get_old_package_paths(conn, pkg_id, pkg_name, repo_name)
+        CoreRepository::get_old_package_paths(conn, pkg_id, pkg_name, repo_name, force)
     })?;
 
     for (_id, installed_path) in &old_packages {
@@ -32,7 +33,9 @@ pub fn remove_old_versions(package: &Package, db: &DieselDatabase) -> SoarResult
         }
     }
 
-    db.with_conn(|conn| CoreRepository::delete_old_packages(conn, pkg_id, pkg_name, repo_name))?;
+    db.with_conn(|conn| {
+        CoreRepository::delete_old_packages(conn, pkg_id, pkg_name, repo_name, force)
+    })?;
 
     Ok(())
 }
