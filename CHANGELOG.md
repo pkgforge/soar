@@ -1,4 +1,13 @@
 
+## [0.9.1](https://github.com/pkgforge/soar/compare/v0.9.0...v0.9.1) - 2025-12-28
+
+### 🐛 Bug Fixes
+
+- *(apply)* Allow tracking versioning with URL packages ([#129](https://github.com/pkgforge/soar/pull/129)) - ([0b7deb6](https://github.com/pkgforge/soar/commit/0b7deb6733cbfe390cf7f3b5de670fc2010dc260))
+- *(install)* Use deterministic hash for package without checksum - ([7a7a060](https://github.com/pkgforge/soar/commit/7a7a06049c61ba38a52921c51cb90b57aee4b809))
+- *(install)* Handle removed packages, always show selection with --show - ([2b72975](https://github.com/pkgforge/soar/commit/2b72975c3f1dfc10d1e991cae73c267a8d5580cb))
+- *(install)* Fix force reinstall cleanup and resume file corruption - ([c6150f7](https://github.com/pkgforge/soar/commit/c6150f72855249bd048194514dd3bdbca1beb21c))
+
 ## [0.9.0](https://github.com/pkgforge/soar/compare/v0.8.1...v0.9.0) - 2025-12-26
 
 ### ⛰️  Features
