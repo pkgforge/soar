@@ -23,8 +23,8 @@ use tracing::{error, info, warn};
 
 use crate::{
     install::{create_install_context, perform_installation},
-    update::perform_update,
     state::AppState,
+    update::perform_update,
     utils::{display_settings, icon_or, Colored, Icons},
 };
 
