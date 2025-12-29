@@ -1,4 +1,10 @@
 
+## [0.1.2](https://github.com/pkgforge/soar/compare/soar-package-v0.1.1...soar-package-v0.1.2) - 2025-12-29
+
+### 🚜 Refactor
+
+- *(error)* Don't override error messages - ([e44342f](https://github.com/pkgforge/soar/commit/e44342f3c23b9cdbe23df2739bcf04bde4138025))
+
 ## [0.1.1](https://github.com/pkgforge/soar/compare/soar-package-v0.1.0...soar-package-v0.1.1) - 2025-12-28
 
 ### ⛰️  Features
