@@ -14,11 +14,11 @@ pub enum SoarError {
     #[diagnostic(transparent)]
     Config(#[from] ConfigError),
 
-    #[error("System error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar::system), help("Check system permissions and resources"))]
     Errno(#[from] nix::errno::Errno),
 
-    #[error("Environment variable '{0}' not set")]
+    #[error(transparent)]
     #[diagnostic(
         code(soar::env_var),
         help("Set the required environment variable before running")
@@ -37,7 +37,7 @@ pub enum SoarError {
     #[diagnostic(transparent)]
     PathError(#[from] PathError),
 
-    #[error("IO error while {action}")]
+    #[error("Error while {action}")]
     #[diagnostic(code(soar::io), help("Check file permissions and disk space"))]
     IoError {
         action: String,
@@ -45,7 +45,7 @@ pub enum SoarError {
         source: std::io::Error,
     },
 
-    #[error("System time error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar::time))]
     SystemTimeError(#[from] std::time::SystemTimeError),
 
@@ -60,7 +60,7 @@ pub enum SoarError {
     )]
     DatabaseError(String),
 
-    #[error("HTTP request failed")]
+    #[error(transparent)]
     #[diagnostic(
         code(soar::network),
         help("Check your internet connection and try again")
@@ -132,7 +132,7 @@ pub enum SoarError {
     #[diagnostic(code(soar::warning), severity(warning))]
     Warning(String),
 
-    #[error("Regex compilation error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar::regex), help("Check your regex pattern syntax"))]
     RegexError(#[from] regex::Error),
 }

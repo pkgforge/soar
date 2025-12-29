@@ -21,11 +21,11 @@ pub enum PackageError {
     #[diagnostic(code(soar_package::seek))]
     SeekError,
 
-    #[error("Image processing error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_package::image))]
     ImageError(#[from] image::ImageError),
 
-    #[error("AppImage error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_package::appimage))]
     AppImageError(#[from] squishy::error::SquishyError),
 

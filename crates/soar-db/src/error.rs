@@ -48,7 +48,7 @@ pub enum DbError {
     )]
     IntegrityError(String),
 
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_db::io), help("Check file permissions and disk space"))]
     IoError(#[from] std::io::Error),
 }

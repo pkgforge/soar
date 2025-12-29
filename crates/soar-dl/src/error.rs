@@ -11,11 +11,11 @@ pub enum DownloadError {
         source: url::ParseError,
     },
 
-    #[error("Error extracting archive")]
+    #[error(transparent)]
     #[diagnostic(code(soar_dl::extract_error))]
     ExtractError(#[from] compak::error::ArchiveError),
 
-    #[error("Network request failed")]
+    #[error(transparent)]
     #[diagnostic(
         code(soar_dl::network),
         help("Check your internet connection or try again later")
@@ -26,7 +26,7 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::http_error))]
     HttpError { status: u16, url: String },
 
-    #[error("I/O error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_dl::io))]
     Io(#[from] std::io::Error),
 

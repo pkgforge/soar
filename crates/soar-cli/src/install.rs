@@ -30,7 +30,10 @@ use soar_db::repository::{
 };
 use soar_dl::types::Progress;
 use soar_package::integrate_package;
-use soar_utils::{hash::{calculate_checksum, hash_string}, pattern::apply_sig_variants};
+use soar_utils::{
+    hash::{calculate_checksum, hash_string},
+    pattern::apply_sig_variants,
+};
 use tabled::{
     builder::Builder,
     settings::{themes::BorderCorrection, Panel, Style},

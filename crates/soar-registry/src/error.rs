@@ -19,18 +19,18 @@ pub enum RegistryError {
         source: std::io::Error,
     },
 
-    #[error("System time error: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_registry::system_time))]
     SystemTimeError(#[from] std::time::SystemTimeError),
 
-    #[error("HTTP request error: {0:?}")]
+    #[error(transparent)]
     #[diagnostic(
         code(soar_registry::http),
         help("Check your network connection and the repository URL")
     )]
     UreqError(#[from] ureq::Error),
 
-    #[error("Download failed: {0}")]
+    #[error(transparent)]
     #[diagnostic(code(soar_registry::download))]
     DownloadError(#[from] soar_dl::error::DownloadError),
 
@@ -41,7 +41,7 @@ pub enum RegistryError {
     )]
     FailedToFetchRemote(String),
 
-    #[error("JSON parse error: {0}")]
+    #[error(transparent)]
     #[diagnostic(
         code(soar_registry::json),
         help("The metadata file may be corrupted or in an invalid format")
