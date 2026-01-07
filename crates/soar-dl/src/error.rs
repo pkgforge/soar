@@ -161,7 +161,7 @@ mod tests {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let err = DownloadError::Io(io_err);
         let msg = format!("{}", err);
-        assert!(msg.contains("I/O error"));
+        assert!(msg.contains("file not found"));
     }
 
     #[test]
@@ -184,8 +184,10 @@ mod tests {
 
     #[test]
     fn test_error_source_chain() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let err = DownloadError::Io(io_err);
+        let err = DownloadError::InvalidUrl {
+            url: "invalid".to_string(),
+            source: url::ParseError::RelativeUrlWithoutBase,
+        };
 
         // Check that we can get the source
         assert!(std::error::Error::source(&err).is_some());

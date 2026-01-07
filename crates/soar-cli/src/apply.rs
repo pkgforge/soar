@@ -106,9 +106,8 @@ async fn compute_diff(
         // Track declared package
         declared_keys.insert((pkg.name.clone(), pkg.pkg_id.clone(), pkg.repo.clone()));
 
-        // Handle URL packages
         if let Some(ref url) = pkg.url {
-            let url_pkg = UrlPackage::from_url(
+            let url_pkg = UrlPackage::from_remote(
                 url,
                 Some(&pkg.name),
                 pkg.version.as_deref(),

@@ -6,7 +6,7 @@ use thiserror::Error;
 /// Errors that can occur during package operations.
 #[derive(Error, Diagnostic, Debug)]
 pub enum PackageError {
-    #[error("IO error while {action}: {source}")]
+    #[error("Error while {action}: {source}")]
     #[diagnostic(code(soar_package::io))]
     IoError {
         action: String,

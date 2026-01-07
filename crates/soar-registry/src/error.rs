@@ -12,7 +12,7 @@ use thiserror::Error;
 /// processing, or storing package metadata.
 #[derive(Error, Diagnostic, Debug)]
 pub enum RegistryError {
-    #[error("IO error while {action}: {source}")]
+    #[error("Error while {action}: {source}")]
     #[diagnostic(code(soar_registry::io))]
     IoError {
         action: String,

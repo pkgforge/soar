@@ -6,10 +6,10 @@ use regex::Regex;
 
 use crate::{database::models::Package, error::SoarError, SoarResult};
 
-/// Represents a package parsed from a URL.
+/// Represents a package parsed from a URL or GHCR reference.
 #[derive(Debug, Clone)]
 pub struct UrlPackage {
-    /// The original URL
+    /// The original URL or GHCR reference
     pub url: String,
     /// Extracted or overridden package name
     pub pkg_name: String,
@@ -19,6 +19,8 @@ pub struct UrlPackage {
     pub version: String,
     /// Detected package type from extension (e.g., "appimage")
     pub pkg_type: Option<String>,
+    /// Whether this is a GHCR package reference
+    pub is_ghcr: bool,
 }
 
 impl UrlPackage {
@@ -26,6 +28,102 @@ impl UrlPackage {
     pub fn is_url(input: &str) -> bool {
         let input = input.trim().to_lowercase();
         input.starts_with("http://") || input.starts_with("https://")
+    }
+
+    /// Check if a string is a GHCR (GitHub Container Registry) package reference.
+    ///
+    /// Recognizes formats like:
+    /// - `ghcr.io/org/repo:tag`
+    /// - `ghcr.io/org/repo@sha256:digest`
+    /// - `ghcr.io/org/repo` (implies :latest)
+    pub fn is_ghcr(input: &str) -> bool {
+        let input = input.trim().to_lowercase();
+        input.starts_with("ghcr.io/")
+    }
+
+    /// Check if input is either a URL or GHCR reference.
+    pub fn is_remote(input: &str) -> bool {
+        Self::is_url(input) || Self::is_ghcr(input)
+    }
+
+    /// Parse a remote reference (URL or GHCR) and extract package metadata.
+    pub fn from_remote(
+        input: &str,
+        name_override: Option<&str>,
+        version_override: Option<&str>,
+        pkg_type_override: Option<&str>,
+        pkg_id_override: Option<&str>,
+    ) -> SoarResult<Self> {
+        if Self::is_ghcr(input) {
+            Self::from_ghcr(input, name_override, version_override, pkg_type_override, pkg_id_override)
+        } else if Self::is_url(input) {
+            Self::from_url(input, name_override, version_override, pkg_type_override, pkg_id_override)
+        } else {
+            Err(SoarError::Custom(format!(
+                "Invalid remote reference: {}. Expected HTTP(S) URL or ghcr.io/... reference",
+                input
+            )))
+        }
+    }
+
+    /// Parse a GHCR reference and extract package metadata.
+    pub fn from_ghcr(
+        reference: &str,
+        name_override: Option<&str>,
+        version_override: Option<&str>,
+        pkg_type_override: Option<&str>,
+        pkg_id_override: Option<&str>,
+    ) -> SoarResult<Self> {
+        let reference = reference.trim();
+
+        if !Self::is_ghcr(reference) {
+            return Err(SoarError::Custom(format!(
+                "Invalid GHCR reference: {}",
+                reference
+            )));
+        }
+
+        let path = reference
+            .strip_prefix("ghcr.io/")
+            .or_else(|| reference.strip_prefix("GHCR.IO/"))
+            .unwrap_or(reference);
+
+        let (package, tag) = if let Some((pkg, digest)) = path.split_once('@') {
+            (pkg, digest.to_string())
+        } else if let Some((pkg, tag)) = path.split_once(':') {
+            (pkg, tag.to_string())
+        } else {
+            (path, "latest".to_string())
+        };
+
+        let pkg_name = name_override
+            .map(|s| s.to_lowercase())
+            .unwrap_or_else(|| {
+                package
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(package)
+                    .to_lowercase()
+            });
+
+        let version = version_override
+            .map(String::from)
+            .unwrap_or_else(|| tag.clone());
+
+        let pkg_id = pkg_id_override
+            .map(String::from)
+            .unwrap_or_else(|| format!("ghcr.io.{}", package.replace('/', ".")));
+
+        let pkg_type = pkg_type_override.map(|s| s.to_lowercase());
+
+        Ok(Self {
+            url: reference.to_string(),
+            pkg_name,
+            pkg_id,
+            version,
+            pkg_type,
+            is_ghcr: true,
+        })
     }
 
     /// Parse a URL and extract package metadata from filename.
@@ -100,22 +198,37 @@ impl UrlPackage {
             pkg_id,
             version,
             pkg_type,
+            is_ghcr: false,
         })
     }
 
     /// Convert to a Package struct for installation.
     pub fn to_package(&self) -> Package {
-        Package {
-            id: 0,
-            repo_name: "local".to_string(),
-            pkg_id: self.pkg_id.clone(),
-            pkg_name: self.pkg_name.clone(),
-            pkg_type: self.pkg_type.clone(),
-            version: self.version.clone(),
-            download_url: self.url.clone(),
-            description: format!("Installed from {}", self.url),
-            // All other fields default
-            ..Default::default()
+        if self.is_ghcr {
+            Package {
+                id: 0,
+                repo_name: "local".to_string(),
+                pkg_id: self.pkg_id.clone(),
+                pkg_name: self.pkg_name.clone(),
+                pkg_type: self.pkg_type.clone(),
+                version: self.version.clone(),
+                download_url: String::new(),
+                ghcr_pkg: Some(self.url.clone()),
+                description: format!("Installed from {}", self.url),
+                ..Default::default()
+            }
+        } else {
+            Package {
+                id: 0,
+                repo_name: "local".to_string(),
+                pkg_id: self.pkg_id.clone(),
+                pkg_name: self.pkg_name.clone(),
+                pkg_type: self.pkg_type.clone(),
+                version: self.version.clone(),
+                download_url: self.url.clone(),
+                description: format!("Installed from {}", self.url),
+                ..Default::default()
+            }
         }
     }
 }
@@ -358,5 +471,111 @@ mod tests {
         let (name, ver) = parse_filename("simple.AppImage");
         assert_eq!(name, "simple");
         assert_eq!(ver, "unknown");
+    }
+
+    #[test]
+    fn test_is_ghcr() {
+        assert!(UrlPackage::is_ghcr("ghcr.io/org/repo:tag"));
+        assert!(UrlPackage::is_ghcr("ghcr.io/org/repo@sha256:abc123"));
+        assert!(UrlPackage::is_ghcr("ghcr.io/org/repo"));
+        assert!(UrlPackage::is_ghcr("  GHCR.IO/org/repo:tag  "));
+        assert!(!UrlPackage::is_ghcr("docker.io/org/repo:tag"));
+        assert!(!UrlPackage::is_ghcr("https://ghcr.io/org/repo"));
+        assert!(!UrlPackage::is_ghcr("org/repo:tag"));
+    }
+
+    #[test]
+    fn test_is_remote() {
+        // HTTP URLs
+        assert!(UrlPackage::is_remote("https://example.com/file.AppImage"));
+        assert!(UrlPackage::is_remote("http://example.com/file.AppImage"));
+        // GHCR references
+        assert!(UrlPackage::is_remote("ghcr.io/org/repo:tag"));
+        assert!(UrlPackage::is_remote("ghcr.io/org/repo"));
+        // Not remote
+        assert!(!UrlPackage::is_remote("org/repo:tag"));
+        assert!(!UrlPackage::is_remote("curl"));
+    }
+
+    #[test]
+    fn test_ghcr_with_tag() {
+        let ghcr = "ghcr.io/pkgforge/soar:v0.8.1";
+        let pkg = UrlPackage::from_ghcr(ghcr, None, None, None, None).unwrap();
+
+        assert_eq!(pkg.pkg_name, "soar");
+        assert_eq!(pkg.version, "v0.8.1");
+        assert_eq!(pkg.pkg_id, "ghcr.io.pkgforge.soar");
+        assert!(pkg.is_ghcr);
+    }
+
+    #[test]
+    fn test_ghcr_with_digest() {
+        let ghcr = "ghcr.io/org/repo@sha256:deadbeef1234567890";
+        let pkg = UrlPackage::from_ghcr(ghcr, None, None, None, None).unwrap();
+
+        assert_eq!(pkg.pkg_name, "repo");
+        assert_eq!(pkg.version, "sha256:deadbeef1234567890");
+        assert_eq!(pkg.pkg_id, "ghcr.io.org.repo");
+        assert!(pkg.is_ghcr);
+    }
+
+    #[test]
+    fn test_ghcr_without_tag() {
+        let ghcr = "ghcr.io/org/package";
+        let pkg = UrlPackage::from_ghcr(ghcr, None, None, None, None).unwrap();
+
+        assert_eq!(pkg.pkg_name, "package");
+        assert_eq!(pkg.version, "latest");
+        assert_eq!(pkg.pkg_id, "ghcr.io.org.package");
+        assert!(pkg.is_ghcr);
+    }
+
+    #[test]
+    fn test_ghcr_nested_package() {
+        let ghcr = "ghcr.io/org/team/repo:1.0";
+        let pkg = UrlPackage::from_ghcr(ghcr, None, None, None, None).unwrap();
+
+        assert_eq!(pkg.pkg_name, "repo");
+        assert_eq!(pkg.version, "1.0");
+        assert_eq!(pkg.pkg_id, "ghcr.io.org.team.repo");
+        assert!(pkg.is_ghcr);
+    }
+
+    #[test]
+    fn test_ghcr_with_overrides() {
+        let ghcr = "ghcr.io/org/repo:v1.0";
+        let pkg =
+            UrlPackage::from_ghcr(ghcr, Some("myapp"), Some("2.0.0"), None, Some("custom-id"))
+                .unwrap();
+
+        assert_eq!(pkg.pkg_name, "myapp");
+        assert_eq!(pkg.version, "2.0.0");
+        assert_eq!(pkg.pkg_id, "custom-id");
+        assert!(pkg.is_ghcr);
+    }
+
+    #[test]
+    fn test_ghcr_to_package() {
+        let ghcr = "ghcr.io/pkgforge/soar:v0.8.1";
+        let url_pkg = UrlPackage::from_ghcr(ghcr, None, None, None, None).unwrap();
+        let pkg = url_pkg.to_package();
+
+        assert_eq!(pkg.repo_name, "local");
+        assert_eq!(pkg.pkg_name, "soar");
+        assert_eq!(pkg.version, "v0.8.1");
+        assert_eq!(pkg.pkg_id, "ghcr.io.pkgforge.soar");
+        assert_eq!(pkg.download_url, "");
+        assert_eq!(pkg.ghcr_pkg, Some("ghcr.io/pkgforge/soar:v0.8.1".to_string()));
+    }
+
+    #[test]
+    fn test_url_to_package_not_ghcr() {
+        let url = "https://github.com/user/repo/releases/app-1.0.AppImage";
+        let url_pkg = UrlPackage::from_url(url, None, None, None, None).unwrap();
+        let pkg = url_pkg.to_package();
+
+        assert!(!url_pkg.is_ghcr);
+        assert_eq!(pkg.download_url, url);
+        assert_eq!(pkg.ghcr_pkg, None);
     }
 }

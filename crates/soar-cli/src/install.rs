@@ -219,9 +219,8 @@ fn resolve_packages(
     let mut install_targets = Vec::new();
 
     for package in packages {
-        // Check if input is a URL
-        if UrlPackage::is_url(package) {
-            let url_pkg = UrlPackage::from_url(
+        if UrlPackage::is_remote(package) {
+            let url_pkg = UrlPackage::from_remote(
                 package,
                 name_override,
                 version_override,
