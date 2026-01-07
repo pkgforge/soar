@@ -5,7 +5,12 @@
 //! quirks in the metadata format, including flexible boolean parsing and
 //! optional number fields.
 
-use serde::{de, Deserialize, Deserializer, Serialize};
+use std::fmt;
+
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Deserializer, Serialize,
+};
 
 /// Internal enum for deserializing boolean values that may be strings.
 #[derive(Deserialize)]
@@ -27,11 +32,53 @@ fn optional_number<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: Option<String> = Option::deserialize(deserializer)?;
-    Ok(s.filter(|s| !s.is_empty())
-        .and_then(|s| s.parse::<i64>().ok())
-        .filter(|&n| n >= 0)
-        .map(|n| n as u64))
+    struct OptU64Visitor;
+
+    impl<'de> Visitor<'de> for OptU64Visitor {
+        type Value = Option<u64>;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a positive integer, string, or null")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(v))
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok((v >= 0).then_some(v as u64))
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if v.is_empty() {
+                return Ok(None);
+            }
+
+            v.parse::<i64>()
+                .ok()
+                .filter(|&n| n >= 0)
+                .map(|n| n as u64)
+                .ok_or_else(|| E::custom("invalid number"))
+                .map(Some)
+                .or(Ok(None))
+        }
+    }
+
+    deserializer.deserialize_any(OptU64Visitor)
 }
 
 fn flexible_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
@@ -83,11 +130,6 @@ pub struct RemotePackage {
     #[serde(alias = "_disabled_reason")]
     pub disabled_reason: Option<serde_json::Value>,
 
-    #[serde(default, deserialize_with = "optional_number")]
-    pub rank: Option<u64>,
-
-    #[serde(default, deserialize_with = "empty_is_none")]
-    pub pkg: Option<String>,
     pub pkg_id: String,
     pub pkg_name: String,
 
@@ -102,9 +144,6 @@ pub struct RemotePackage {
 
     pub description: String,
     pub version: String,
-
-    #[serde(default, deserialize_with = "empty_is_none")]
-    pub version_upstream: Option<String>,
 
     pub download_url: String,
 

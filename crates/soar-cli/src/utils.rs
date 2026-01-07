@@ -30,13 +30,25 @@ pub struct Icons;
 impl Icons {
     pub const ARROW: &str = "→";
     pub const BROKEN: &str = "✗";
+    pub const BUILD: &str = "🔨";
+    pub const CALENDAR: &str = "📅";
     pub const CHECK: &str = "✓";
+    pub const CHECKSUM: &str = "🔏";
     pub const CROSS: &str = "✗";
+    pub const DESCRIPTION: &str = "📝";
+    pub const HOME: &str = "🏠";
     pub const INSTALLED: &str = "✓";
+    pub const LICENSE: &str = "📜";
+    pub const LINK: &str = "🔗";
+    pub const LOG: &str = "📄";
+    pub const MAINTAINER: &str = "👤";
+    pub const NOTE: &str = "📌";
     pub const NOT_INSTALLED: &str = "○";
     pub const PACKAGE: &str = "📦";
+    pub const SCRIPT: &str = "📃";
     pub const SIZE: &str = "💾";
-    pub const VERSION: &str = "🏷";
+    pub const TYPE: &str = "📁";
+    pub const VERSION: &str = "🏁";
     pub const WARNING: &str = "⚠";
 }
 

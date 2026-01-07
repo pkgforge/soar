@@ -528,7 +528,6 @@ impl MetadataRepository {
             app_id: package.app_id.as_deref(),
             description: Some(&package.description),
             version: &package.version,
-            version_upstream: package.version_upstream.as_deref(),
             licenses: Some(json!(package.licenses)),
             download_url: &package.download_url,
             size: package.size_raw.map(|s| s as i64),

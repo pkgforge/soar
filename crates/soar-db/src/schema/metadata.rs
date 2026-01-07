@@ -24,7 +24,6 @@ diesel::table! {
         app_id -> Nullable<Text>,
         description -> Nullable<Text>,
         version -> Text,
-        version_upstream -> Nullable<Text>,
         licenses -> Nullable<Jsonb>,
         download_url -> Text,
         size -> Nullable<BigInt>,

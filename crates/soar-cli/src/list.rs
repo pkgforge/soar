@@ -108,21 +108,14 @@ pub async fn search_packages(
             repo_name = package.repo_name,
             pkg_type = package.pkg_type,
             version = package.version,
-            version_upstream = package.version_upstream,
             description = package.description,
             size = package.ghcr_size.or(package.size),
-            "[{}] {}#{}:{} | {}{} | {} - {} ({})",
+            "[{}] {}#{}:{} | {} | {} - {} ({})",
             state_icon,
             Colored(Blue, &package.pkg_name),
             Colored(Cyan, &package.pkg_id),
             Colored(Green, &package.repo_name),
             Colored(LightRed, &package.version),
-            package
-                .version_upstream
-                .as_ref()
-                .filter(|_| package.version.starts_with("HEAD"))
-                .map(|upstream| format!(":{}", Colored(Yellow, &upstream)))
-                .unwrap_or_default(),
             package
                 .pkg_type
                 .as_ref()
@@ -245,19 +238,15 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
             ),
         ]);
 
-        builder.push_record(["Description".to_string(), package.description.clone()]);
+        builder.push_record([
+            format!("{} Description", Icons::DESCRIPTION),
+            package.description.clone(),
+        ]);
 
-        let version = format!(
-            "{}{}",
-            Colored(Blue, &package.version),
-            package
-                .version_upstream
-                .as_ref()
-                .filter(|_| package.version.starts_with("HEAD"))
-                .map(|u| format!(" ({})", Colored(Yellow, u)))
-                .unwrap_or_default()
-        );
-        builder.push_record([format!("{} Version", Icons::VERSION), version]);
+        builder.push_record([
+            format!("{} Version", Icons::VERSION),
+            Colored(Blue, &package.version).to_string(),
+        ]);
 
         builder.push_record([
             format!("{} Size", Icons::SIZE),
@@ -266,14 +255,14 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
 
         if let Some(ref cs) = package.bsum {
             builder.push_record([
-                "Checksum".to_string(),
+                format!("{} Checksum", Icons::CHECKSUM),
                 format!("{} (blake3)", Colored(Blue, cs)),
             ]);
         }
 
         if let Some(ref homepages) = package.homepages {
             builder.push_record([
-                "Homepages".to_string(),
+                format!("{} Homepages", Icons::HOME),
                 homepages
                     .iter()
                     .map(|h| Colored(Blue, h).to_string())
@@ -283,20 +272,26 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
         }
 
         if let Some(ref licenses) = package.licenses {
-            builder.push_record(["Licenses".to_string(), licenses.join(", ")]);
+            builder.push_record([format!("{} Licenses", Icons::LICENSE), licenses.join(", ")]);
         }
 
         if let Some(ref maintainers) = package.maintainers {
             let maintainer_strs: Vec<String> = maintainers.iter().map(|m| m.to_string()).collect();
-            builder.push_record(["Maintainers".to_string(), maintainer_strs.join(", ")]);
+            builder.push_record([
+                format!("{} Maintainers", Icons::MAINTAINER),
+                maintainer_strs.join(", "),
+            ]);
         }
 
         if let Some(ref notes) = package.notes {
-            builder.push_record(["Notes".to_string(), notes.join("\n")]);
+            builder.push_record([format!("{} Notes", Icons::NOTE), notes.join("\n")]);
         }
 
         if let Some(ref pkg_type) = package.pkg_type {
-            builder.push_record(["Type".to_string(), Colored(Magenta, pkg_type).to_string()]);
+            builder.push_record([
+                format!("{} Type", Icons::TYPE),
+                Colored(Magenta, pkg_type).to_string(),
+            ]);
         }
 
         if let Some(ref action) = package.build_action {
@@ -309,42 +304,51 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
                     .map(|id| format!(" ({})", Colored(Yellow, id)))
                     .unwrap_or_default()
             );
-            builder.push_record(["Build CI".to_string(), build_info]);
+            builder.push_record([format!("{} Build CI", Icons::BUILD), build_info]);
         }
 
         if let Some(ref date) = package.build_date {
-            builder.push_record(["Build Date".to_string(), date.clone()]);
+            builder.push_record([format!("{} Build Date", Icons::CALENDAR), date.clone()]);
         }
 
         if let Some(ref log) = package.build_log {
-            builder.push_record(["Build Log".to_string(), Colored(Blue, log).to_string()]);
+            builder.push_record([
+                format!("{} Build Log", Icons::LOG),
+                Colored(Blue, log).to_string(),
+            ]);
         }
 
         if let Some(ref script) = package.build_script {
             builder.push_record([
-                "Build Script".to_string(),
+                format!("{} Build Script", Icons::SCRIPT),
                 Colored(Blue, script).to_string(),
             ]);
         }
 
         if let Some(ref blob) = package.ghcr_blob {
-            builder.push_record(["GHCR Blob".to_string(), Colored(Blue, blob).to_string()]);
+            builder.push_record([
+                format!("{} GHCR Blob", Icons::LINK),
+                Colored(Blue, blob).to_string(),
+            ]);
         } else {
             builder.push_record([
-                "Download URL".to_string(),
+                format!("{} Download URL", Icons::LINK),
                 Colored(Blue, &package.download_url).to_string(),
             ]);
         }
 
         if let Some(ref pkg) = package.ghcr_pkg {
             builder.push_record([
-                "GHCR Package".to_string(),
+                format!("{} GHCR Package", Icons::PACKAGE),
                 Colored(Blue, format!("https://{pkg}")).to_string(),
             ]);
         }
 
         if let Some(ref webindex) = package.pkg_webpage {
-            builder.push_record(["Index".to_string(), Colored(Blue, webindex).to_string()]);
+            builder.push_record([
+                format!("{} Index", Icons::LINK),
+                Colored(Blue, webindex).to_string(),
+            ]);
         }
 
         let table = builder
@@ -360,7 +364,6 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
             repo_name = package.repo_name,
             description = package.description,
             version = package.version,
-            version_upstream = package.version_upstream,
             bsum = package.bsum,
             homepages = vec_string(package.homepages),
             source_urls = vec_string(package.source_urls),
@@ -463,20 +466,12 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
             repo_name = entry.repo_name,
             pkg_type = entry.pkg.pkg_type,
             version = entry.pkg.version,
-            version_upstream = entry.pkg.version_upstream,
-            "[{}] {}#{}:{} | {}{} | {}",
+            "[{}] {}#{}:{} | {} | {}",
             state_icon,
             Colored(Blue, &entry.pkg.pkg_name),
             Colored(Cyan, &entry.pkg.pkg_id),
             Colored(Cyan, &entry.repo_name),
             Colored(LightRed, &entry.pkg.version),
-            entry
-                .pkg
-                .version_upstream
-                .as_ref()
-                .filter(|_| entry.pkg.version.starts_with("HEAD"))
-                .map(|upstream| format!(":{}", Colored(Yellow, &upstream)))
-                .unwrap_or_default(),
             entry
                 .pkg
                 .pkg_type
