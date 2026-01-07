@@ -319,6 +319,7 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
 ///
 /// * `install_dir` - Directory where the package is installed
 /// * `package` - Package metadata
+/// * `bin_path` - Optional path to the actual binary (if None, uses install_dir/pkg_name)
 /// * `portable` - Base portable path
 /// * `portable_home` - Path for home directory
 /// * `portable_config` - Path for config directory
@@ -331,6 +332,7 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
 pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
     package: &T,
+    bin_path: Option<&Path>,
     portable: Option<&str>,
     portable_home: Option<&str>,
     portable_config: Option<&str>,
@@ -340,7 +342,9 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
     debug!(pkg_name = pkg_name, install_dir = %install_dir.display(), "integrating package with desktop environment");
-    let bin_path = install_dir.join(pkg_name);
+    let bin_path = bin_path
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| install_dir.join(pkg_name));
 
     let mut has_desktop = false;
     let mut has_icon = false;

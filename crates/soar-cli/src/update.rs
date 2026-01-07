@@ -128,6 +128,7 @@ pub async fn update_packages(
                         portable_config: pkg.portable_config.clone(),
                         portable_share: pkg.portable_share.clone(),
                         portable_cache: pkg.portable_cache.clone(),
+                        entrypoint: None,
                     })
                 }
             }
@@ -185,6 +186,7 @@ pub async fn update_packages(
                     portable_config: pkg.portable_config.clone(),
                     portable_share: pkg.portable_share.clone(),
                     portable_cache: pkg.portable_cache.clone(),
+                    entrypoint: None,
                 })
             }
         }

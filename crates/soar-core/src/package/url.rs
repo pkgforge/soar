@@ -55,9 +55,21 @@ impl UrlPackage {
         pkg_id_override: Option<&str>,
     ) -> SoarResult<Self> {
         if Self::is_ghcr(input) {
-            Self::from_ghcr(input, name_override, version_override, pkg_type_override, pkg_id_override)
+            Self::from_ghcr(
+                input,
+                name_override,
+                version_override,
+                pkg_type_override,
+                pkg_id_override,
+            )
         } else if Self::is_url(input) {
-            Self::from_url(input, name_override, version_override, pkg_type_override, pkg_id_override)
+            Self::from_url(
+                input,
+                name_override,
+                version_override,
+                pkg_type_override,
+                pkg_id_override,
+            )
         } else {
             Err(SoarError::Custom(format!(
                 "Invalid remote reference: {}. Expected HTTP(S) URL or ghcr.io/... reference",
@@ -98,13 +110,7 @@ impl UrlPackage {
 
         let pkg_name = name_override
             .map(|s| s.to_lowercase())
-            .unwrap_or_else(|| {
-                package
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(package)
-                    .to_lowercase()
-            });
+            .unwrap_or_else(|| package.rsplit('/').next().unwrap_or(package).to_lowercase());
 
         let version = version_override
             .map(String::from)
@@ -565,7 +571,10 @@ mod tests {
         assert_eq!(pkg.version, "v0.8.1");
         assert_eq!(pkg.pkg_id, "ghcr.io.pkgforge.soar");
         assert_eq!(pkg.download_url, "");
-        assert_eq!(pkg.ghcr_pkg, Some("ghcr.io/pkgforge/soar:v0.8.1".to_string()));
+        assert_eq!(
+            pkg.ghcr_pkg,
+            Some("ghcr.io/pkgforge/soar:v0.8.1".to_string())
+        );
     }
 
     #[test]

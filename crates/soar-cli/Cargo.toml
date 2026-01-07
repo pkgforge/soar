@@ -19,7 +19,7 @@ path = "src/main.rs"
 self = []
 
 [dependencies]
-clap = { version = "4.5.53", features = ["cargo", "derive"] }
+clap = { version = "4.5.54", features = ["cargo", "derive"] }
 indicatif = "0.18.3"
 miette = { workspace = true }
 minisign-verify = "0.2.4"
@@ -39,7 +39,7 @@ soar-registry = { workspace = true }
 soar-utils = { workspace = true }
 tabled = { version = "0.20", features = ["ansi"] }
 terminal_size = "0.4"
-tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
 toml = "0.9.10"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["env-filter", "fmt", "json", "nu-ansi-term"] }

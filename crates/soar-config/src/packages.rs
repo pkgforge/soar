@@ -85,6 +85,9 @@ pub struct PackageOptions {
     /// Package type for URL installs (e.g., appimage, flatimage, archive).
     pub pkg_type: Option<String>,
 
+    /// Entrypoint executable name (for URL packages where the binary name differs from package name).
+    pub entrypoint: Option<String>,
+
     /// Whether to pin this package (prevents automatic updates).
     #[serde(default)]
     pub pinned: bool,
@@ -130,6 +133,7 @@ pub struct ResolvedPackage {
     pub repo: Option<String>,
     pub url: Option<String>,
     pub pkg_type: Option<String>,
+    pub entrypoint: Option<String>,
     pub pinned: bool,
     pub profile: Option<String>,
     pub portable: Option<PortableConfig>,
@@ -155,6 +159,7 @@ impl PackageSpec {
                     repo: None,
                     url: None,
                     pkg_type: None,
+                    entrypoint: None,
                     pinned,
                     profile: defaults.and_then(|d| d.profile.clone()),
                     portable: None,
@@ -174,6 +179,7 @@ impl PackageSpec {
                     repo: opts.repo.clone(),
                     url: opts.url.clone(),
                     pkg_type: opts.pkg_type.clone(),
+                    entrypoint: opts.entrypoint.clone(),
                     pinned,
                     profile: opts
                         .profile

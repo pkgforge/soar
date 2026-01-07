@@ -79,6 +79,7 @@ pub struct InstallTarget {
     pub portable_config: Option<String>,
     pub portable_share: Option<String>,
     pub portable_cache: Option<String>,
+    pub entrypoint: Option<String>,
 }
 
 impl PackageInstaller {

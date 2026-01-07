@@ -1274,6 +1274,16 @@ pub async fn install_single_package(
                 ))
             }
         }
+    } else {
+        // Clean up .sig files for packages without signature verification
+        if let Ok(entries) = fs::read_dir(&install_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "sig") && path.is_file() {
+                    fs::remove_file(&path).ok();
+                }
+            }
+        }
     }
 
     if target.package.provides.is_some() {
@@ -1311,15 +1321,23 @@ pub async fn install_single_package(
     }
 
     trace!("creating symlinks for package binaries");
-    let symlinks =
-        mangle_package_symlinks(&install_dir, &bin_dir, target.package.provides.as_deref()).await?;
+    let symlinks = mangle_package_symlinks(
+        &install_dir,
+        &bin_dir,
+        target.package.provides.as_deref(),
+        &target.package.pkg_name,
+        target.entrypoint.as_deref(),
+    )
+    .await?;
     debug!(symlink_count = symlinks.len(), "symlinks created");
 
     if !unlinked || has_desktop_integration(&target.package) {
         trace!("integrating package (desktop files, icons, etc.)");
+        let actual_bin = symlinks.first().map(|(src, _)| src.as_path());
         integrate_package(
             &install_dir,
             &target.package,
+            actual_bin,
             portable,
             portable_home,
             portable_config,

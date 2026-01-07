@@ -85,8 +85,16 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
     let bin_dir = get_config().get_bin_path()?;
     let install_dir = PathBuf::from(&selected_package.installed_path);
 
-    let _ = mangle_package_symlinks(&install_dir, &bin_dir, selected_package.provides.as_deref())
-        .await?;
+    let symlinks = mangle_package_symlinks(
+        &install_dir,
+        &bin_dir,
+        selected_package.provides.as_deref(),
+        &selected_package.pkg_name,
+        None,
+    )
+    .await?;
+
+    let actual_bin = symlinks.first().map(|(src, _)| src.as_path());
 
     let metadata_mgr = state.metadata_manager().await?;
     let pkg: Vec<Package> = metadata_mgr
@@ -121,6 +129,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         integrate_package(
             &install_dir,
             &installed_pkg,
+            actual_bin,
             installed_pkg.portable_path.as_deref(),
             installed_pkg.portable_home.as_deref(),
             installed_pkg.portable_config.as_deref(),
@@ -129,7 +138,9 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         )
         .await?;
     } else if has_portable {
-        let bin_path = install_dir.join(&installed_pkg.pkg_name);
+        let bin_path = actual_bin
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| install_dir.join(&installed_pkg.pkg_name));
         setup_portable_dir(
             &bin_path,
             &installed_pkg,

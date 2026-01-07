@@ -148,6 +148,7 @@ async fn compute_diff(
                 portable_config: pkg.portable.as_ref().and_then(|p| p.config.clone()),
                 portable_share: pkg.portable.as_ref().and_then(|p| p.share.clone()),
                 portable_cache: pkg.portable.as_ref().and_then(|p| p.cache.clone()),
+                entrypoint: pkg.entrypoint.clone(),
             };
 
             if !is_already_installed {
@@ -308,6 +309,7 @@ fn create_install_target(
         portable_config: resolved.portable.as_ref().and_then(|p| p.config.clone()),
         portable_share: resolved.portable.as_ref().and_then(|p| p.share.clone()),
         portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
+        entrypoint: resolved.entrypoint.clone(),
     }
 }
 
