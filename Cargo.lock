@@ -2229,10 +2229,12 @@ version = "0.10.0"
 dependencies = [
  "chrono",
  "diesel",
+ "fast-glob",
  "libsqlite3-sys",
  "miette",
  "nix",
  "regex",
+ "semver",
  "serde",
  "serde_json",
  "soar-config",
@@ -2244,6 +2246,7 @@ dependencies = [
  "toml",
  "tracing",
  "ureq",
+ "url",
 ]
 
 [[package]]

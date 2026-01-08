@@ -135,25 +135,13 @@ async fn compute_diff(
                 .collect();
 
             let is_already_installed = installed_packages.iter().any(|ip| ip.is_installed);
-
             let existing_install = installed_packages.into_iter().next();
-            let target = InstallTarget {
-                package: url_pkg.to_package(),
-                existing_install: existing_install.clone(),
-                with_pkg_id: url_pkg.pkg_type.is_some(),
-                pinned: false,
-                profile: pkg.profile.clone(),
-                portable: pkg.portable.as_ref().and_then(|p| p.path.clone()),
-                portable_home: pkg.portable.as_ref().and_then(|p| p.home.clone()),
-                portable_config: pkg.portable.as_ref().and_then(|p| p.config.clone()),
-                portable_share: pkg.portable.as_ref().and_then(|p| p.share.clone()),
-                portable_cache: pkg.portable.as_ref().and_then(|p| p.cache.clone()),
-                entrypoint: pkg.entrypoint.clone(),
-            };
 
             if !is_already_installed {
+                let target = create_url_install_target(&url_pkg, pkg, existing_install);
                 diff.to_install.push((pkg.clone(), target));
-            } else if url_pkg.version != existing_install.unwrap().version {
+            } else if url_pkg.version != existing_install.as_ref().unwrap().version {
+                let target = create_url_install_target(&url_pkg, pkg, existing_install);
                 diff.to_update.push((pkg.clone(), target));
             } else {
                 diff.in_sync.push(format!("{} (local)", pkg.name));
@@ -302,6 +290,27 @@ fn create_install_target(
         package,
         existing_install: existing,
         with_pkg_id: resolved.pkg_id.is_some(),
+        pinned: resolved.pinned,
+        profile: resolved.profile.clone(),
+        portable: resolved.portable.as_ref().and_then(|p| p.path.clone()),
+        portable_home: resolved.portable.as_ref().and_then(|p| p.home.clone()),
+        portable_config: resolved.portable.as_ref().and_then(|p| p.config.clone()),
+        portable_share: resolved.portable.as_ref().and_then(|p| p.share.clone()),
+        portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
+        entrypoint: resolved.entrypoint.clone(),
+    }
+}
+
+/// Create an InstallTarget for a URL package
+fn create_url_install_target(
+    url_pkg: &UrlPackage,
+    resolved: &ResolvedPackage,
+    existing: Option<InstalledPackage>,
+) -> InstallTarget {
+    InstallTarget {
+        package: url_pkg.to_package(),
+        existing_install: existing,
+        with_pkg_id: url_pkg.pkg_type.is_some(),
         pinned: resolved.pinned,
         profile: resolved.profile.clone(),
         portable: resolved.portable.as_ref().and_then(|p| p.path.clone()),

@@ -108,6 +108,10 @@ pub enum ConfigError {
     #[error("Failed to annotate first table in array: {0}")]
     #[diagnostic(code(soar_config::annotate_first_table))]
     AnnotateFirstTable(String),
+
+    #[error("{0}")]
+    #[diagnostic(code(soar_config::custom))]
+    Custom(String),
 }
 
 impl From<PathError> for ConfigError {
