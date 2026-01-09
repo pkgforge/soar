@@ -134,17 +134,22 @@ async fn compute_diff(
                 .map(Into::into)
                 .collect();
 
-            let is_already_installed = installed_packages.iter().any(|ip| ip.is_installed);
-            let existing_install = installed_packages.into_iter().next();
+            let installed = installed_packages
+                .iter()
+                .find(|ip| ip.is_installed)
+                .cloned();
 
-            if !is_already_installed {
+            if let Some(ref existing) = installed {
+                if url_pkg.version != existing.version {
+                    let target = create_url_install_target(&url_pkg, pkg, installed);
+                    diff.to_update.push((pkg.clone(), target));
+                } else {
+                    diff.in_sync.push(format!("{} (local)", pkg.name));
+                }
+            } else {
+                let existing_install = installed_packages.into_iter().next();
                 let target = create_url_install_target(&url_pkg, pkg, existing_install);
                 diff.to_install.push((pkg.clone(), target));
-            } else if url_pkg.version != existing_install.as_ref().unwrap().version {
-                let target = create_url_install_target(&url_pkg, pkg, existing_install);
-                diff.to_update.push((pkg.clone(), target));
-            } else {
-                diff.in_sync.push(format!("{} (local)", pkg.name));
             }
             continue;
         }
