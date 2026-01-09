@@ -366,10 +366,7 @@ impl PackagesConfig {
                 }
             }
             _ => {
-                // Package is a simple string (version), convert to detailed form
-                let mut table = toml_edit::InlineTable::new();
-                table.insert("url", new_url.into());
-                *package = toml_edit::Item::Value(toml_edit::Value::InlineTable(table));
+                unreachable!("Package is a simple string (version)");
             }
         }
 

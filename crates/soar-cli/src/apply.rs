@@ -310,7 +310,7 @@ fn create_url_install_target(
     InstallTarget {
         package: url_pkg.to_package(),
         existing_install: existing,
-        with_pkg_id: url_pkg.pkg_type.is_some(),
+        with_pkg_id: resolved.pkg_id.is_some(),
         pinned: resolved.pinned,
         profile: resolved.profile.clone(),
         portable: resolved.portable.as_ref().and_then(|p| p.path.clone()),
