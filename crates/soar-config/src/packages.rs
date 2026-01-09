@@ -103,6 +103,9 @@ pub struct PackageOptions {
 
     /// Whether to install binary only.
     pub binary_only: Option<bool>,
+
+    /// Update source configuration for remote packages.
+    pub update: Option<UpdateSource>,
 }
 
 /// Portable directory configuration for a package.
@@ -124,6 +127,49 @@ pub struct PortableConfig {
     pub cache: Option<String>,
 }
 
+/// Update source configuration for remote packages.
+/// Specifies how to check for newer versions.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
+pub enum UpdateSource {
+    /// GitHub releases (auto-detected from github.com URLs).
+    #[serde(rename = "github")]
+    GitHub {
+        /// Repository in "owner/repo" format.
+        repo: String,
+        /// Glob pattern to match asset filename (e.g., "*nvim*.appimage").
+        asset_pattern: Option<String>,
+        /// Whether to include pre-release versions.
+        include_prerelease: Option<bool>,
+    },
+    /// GitLab releases.
+    #[serde(rename = "gitlab")]
+    GitLab {
+        /// Repository in "owner/repo" format.
+        repo: String,
+        /// Glob pattern to match asset filename.
+        asset_pattern: Option<String>,
+        /// Whether to include pre-release versions.
+        include_prerelease: Option<bool>,
+    },
+    /// Custom URL endpoint that returns JSON with version/download info.
+    #[serde(rename = "url")]
+    Url {
+        /// URL that returns JSON response.
+        url: String,
+        /// JSON path to version field (e.g., "tag_name" or "version").
+        version_path: String,
+        /// JSON path to download URL field.
+        download_path: String,
+    },
+    /// Shell command that outputs version and download URL.
+    #[serde(rename = "command")]
+    Command {
+        /// Command to execute. Should output "version\\ndownload_url".
+        command: String,
+    },
+}
+
 /// Resolved package specification with name included.
 #[derive(Clone, Debug)]
 pub struct ResolvedPackage {
@@ -139,6 +185,7 @@ pub struct ResolvedPackage {
     pub portable: Option<PortableConfig>,
     pub install_patterns: Option<Vec<String>>,
     pub binary_only: bool,
+    pub update: Option<UpdateSource>,
 }
 
 impl PackageSpec {
@@ -165,13 +212,15 @@ impl PackageSpec {
                     portable: None,
                     install_patterns: defaults.and_then(|d| d.install_patterns.clone()),
                     binary_only: defaults.and_then(|d| d.binary_only).unwrap_or(false),
+                    update: None,
                 }
             }
             PackageSpec::Detailed(opts) => {
                 // Treat "*" as None (latest version)
                 let version = opts.version.as_ref().filter(|v| v.as_str() != "*").cloned();
-                // URL packages are always pinned
-                let pinned = opts.pinned || version.is_some() || opts.url.is_some();
+                // URL packages: only pinned if explicitly set
+                // Other packages: pinned if explicitly set or if a specific version is requested
+                let pinned = opts.pinned || (version.is_some() && opts.url.is_none());
                 ResolvedPackage {
                     name: name.to_string(),
                     pkg_id: opts.pkg_id.clone(),
@@ -194,6 +243,7 @@ impl PackageSpec {
                         .binary_only
                         .or_else(|| defaults.and_then(|d| d.binary_only))
                         .unwrap_or(false),
+                    update: opts.update.clone(),
                 }
             }
         }
@@ -267,6 +317,67 @@ impl PackagesConfig {
         }
 
         Ok(doc)
+    }
+
+    /// Update the URL and version for a specific package in the packages.toml file.
+    ///
+    /// This preserves comments and formatting in the file.
+    /// The version is only updated if a version field already exists in the config.
+    pub fn update_package_url(
+        package_name: &str,
+        new_url: &str,
+        new_version: &str,
+        config_path: Option<&str>,
+    ) -> Result<()> {
+        let config_path = match config_path {
+            Some(p) => PathBuf::from(p),
+            None => PACKAGES_CONFIG_PATH.read().unwrap().clone(),
+        };
+
+        if !config_path.exists() {
+            return Err(ConfigError::PackagesConfigNotFound(
+                config_path.display().to_string(),
+            ));
+        }
+
+        let content = fs::read_to_string(&config_path)?;
+        let mut doc = content.parse::<DocumentMut>()?;
+
+        let packages = doc
+            .get_mut("packages")
+            .and_then(|p| p.as_table_mut())
+            .ok_or_else(|| ConfigError::Custom("No [packages] section found".into()))?;
+
+        let package = packages.get_mut(package_name).ok_or_else(|| {
+            ConfigError::Custom(format!("Package '{}' not found in config", package_name))
+        })?;
+
+        match package {
+            toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
+                table.insert("url", new_url.into());
+                if table.contains_key("version") {
+                    table.insert("version", new_version.into());
+                }
+            }
+            toml_edit::Item::Table(table) => {
+                table.insert("url", toml_edit::value(new_url));
+                if table.contains_key("version") {
+                    table.insert("version", toml_edit::value(new_version));
+                }
+            }
+            _ => {
+                unreachable!("Package is a simple string (version)");
+            }
+        }
+
+        fs::write(&config_path, doc.to_string())?;
+        info!(
+            "Updated URL for '{}' in {}",
+            package_name,
+            config_path.display()
+        );
+
+        Ok(())
     }
 }
 

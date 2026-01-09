@@ -1,13 +1,17 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use nu_ansi_term::Color::{Cyan, Green, Red};
+use soar_config::packages::PackagesConfig;
 use soar_core::{
     database::{
         connection::DieselDatabase,
         models::{InstalledPackage, Package},
     },
     error::SoarError,
-    package::{install::InstallTarget, query::PackageQuery, update::remove_old_versions},
+    package::{
+        install::InstallTarget, query::PackageQuery, remote_update::check_for_update,
+        update::remove_old_versions, url::UrlPackage,
+    },
     SoarResult,
 };
 use soar_db::repository::{
@@ -45,6 +49,14 @@ fn get_existing(
     Ok(existing.map(Into::into))
 }
 
+/// Tracks URL packages that need their packages.toml updated after successful update
+#[derive(Clone)]
+struct UrlUpdateInfo {
+    pkg_name: String,
+    new_version: String,
+    new_url: String,
+}
+
 pub async fn update_packages(
     packages: Option<Vec<String>>,
     keep: bool,
@@ -56,7 +68,15 @@ pub async fn update_packages(
     let diesel_db = state.diesel_core_db()?.clone();
     let config = state.config();
 
+    // Load packages.toml to get update sources for local packages
+    let packages_config = PackagesConfig::load(None).ok();
+    let resolved_packages = packages_config
+        .as_ref()
+        .map(|c| c.resolved_packages())
+        .unwrap_or_default();
+
     let mut update_targets = Vec::new();
+    let mut url_updates: Vec<UrlUpdateInfo> = Vec::new();
 
     if let Some(packages) = packages {
         for package in packages {
@@ -81,12 +101,18 @@ pub async fn update_packages(
                 .collect();
 
             for pkg in installed_pkgs {
-                // Skip local packages (installed from URLs) - no version tracking
                 if pkg.repo_name == "local" {
-                    info!(
-                        "Skipping {}#{} (local package - no version tracking)",
-                        pkg.pkg_name, pkg.pkg_id
-                    );
+                    if let Some((target, url_info)) =
+                        check_local_package_update(&pkg, &resolved_packages)?
+                    {
+                        update_targets.push(target);
+                        url_updates.push(url_info);
+                    } else {
+                        info!(
+                            "Skipping {}#{} (no update source configured)",
+                            pkg.pkg_name, pkg.pkg_id
+                        );
+                    }
                     continue;
                 }
 
@@ -140,8 +166,36 @@ pub async fn update_packages(
             .map(Into::into)
             .collect();
 
+        // Get local packages for update checking
+        let local_packages: Vec<InstalledPackage> = diesel_db
+            .with_conn(|conn| {
+                CoreRepository::list_filtered(
+                    conn,
+                    Some("local"),
+                    None,
+                    None,
+                    None,
+                    Some(true),
+                    None,
+                    None,
+                    None,
+                )
+            })?
+            .into_iter()
+            .map(Into::into)
+            .collect();
+
+        // Check local packages for updates
+        for pkg in local_packages {
+            if let Some((target, url_info)) = check_local_package_update(&pkg, &resolved_packages)?
+            {
+                update_targets.push(target);
+                url_updates.push(url_info);
+            }
+        }
+
+        // Check repository packages for updates
         for pkg in installed_packages {
-            // Skip local packages (installed from URLs) - no version tracking
             if pkg.repo_name == "local" {
                 continue;
             }
@@ -213,9 +267,101 @@ pub async fn update_packages(
         no_verify,
     );
 
-    perform_update(ctx, update_targets, diesel_db, keep).await?;
+    perform_update(ctx, update_targets, diesel_db.clone(), keep).await?;
+
+    // Update URLs in packages.toml for successfully updated URL packages
+    for url_info in url_updates {
+        let is_installed = diesel_db
+            .with_conn(|conn| {
+                CoreRepository::list_filtered(
+                    conn,
+                    Some("local"),
+                    Some(&url_info.pkg_name),
+                    None,
+                    Some(&url_info.new_version),
+                    Some(true),
+                    None,
+                    Some(1),
+                    None,
+                )
+            })
+            .map(|pkgs| !pkgs.is_empty())
+            .unwrap_or(false);
+
+        if is_installed {
+            if let Err(e) = PackagesConfig::update_package_url(
+                &url_info.pkg_name,
+                &url_info.new_url,
+                &url_info.new_version,
+                None,
+            ) {
+                warn!(
+                    "Failed to update URL for '{}' in packages.toml: {}",
+                    url_info.pkg_name, e
+                );
+            }
+        }
+    }
 
     Ok(())
+}
+
+/// Check if a local package has an update available via its update source
+fn check_local_package_update(
+    pkg: &InstalledPackage,
+    resolved_packages: &[soar_config::packages::ResolvedPackage],
+) -> SoarResult<Option<(InstallTarget, UrlUpdateInfo)>> {
+    let resolved = resolved_packages
+        .iter()
+        .find(|r| r.name == pkg.pkg_name && r.update.is_some());
+
+    let Some(resolved) = resolved else {
+        return Ok(None);
+    };
+
+    let update_source = resolved.update.as_ref().unwrap();
+
+    let remote_update = match check_for_update(update_source, &pkg.version) {
+        Ok(update) => update,
+        Err(e) => {
+            warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
+            return Ok(None);
+        }
+    };
+
+    let Some(update) = remote_update else {
+        return Ok(None);
+    };
+
+    let updated_url_pkg = UrlPackage::from_remote(
+        &update.download_url,
+        Some(&pkg.pkg_name),
+        Some(&update.new_version),
+        pkg.pkg_type.as_deref(),
+        Some(&pkg.pkg_id),
+    )?;
+
+    let target = InstallTarget {
+        package: updated_url_pkg.to_package(),
+        existing_install: Some(pkg.clone()),
+        with_pkg_id: pkg.with_pkg_id,
+        pinned: resolved.pinned,
+        profile: resolved.profile.clone(),
+        portable: resolved.portable.as_ref().and_then(|p| p.path.clone()),
+        portable_home: resolved.portable.as_ref().and_then(|p| p.home.clone()),
+        portable_config: resolved.portable.as_ref().and_then(|p| p.config.clone()),
+        portable_share: resolved.portable.as_ref().and_then(|p| p.share.clone()),
+        portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
+        entrypoint: resolved.entrypoint.clone(),
+    };
+
+    let url_info = UrlUpdateInfo {
+        pkg_name: pkg.pkg_name.clone(),
+        new_version: updated_url_pkg.version.clone(),
+        new_url: update.download_url,
+    };
+
+    Ok(Some((target, url_info)))
 }
 
 pub async fn perform_update(

@@ -269,7 +269,7 @@ fn resolve_packages(
             install_targets.push(InstallTarget {
                 package: url_pkg.to_package(),
                 existing_install,
-                with_pkg_id: url_pkg.pkg_type.is_some(),
+                with_pkg_id: false,
                 pinned: false,
                 profile: None,
                 ..Default::default()
@@ -396,7 +396,7 @@ fn resolve_packages(
             install_targets.push(InstallTarget {
                 package: pkg,
                 existing_install,
-                with_pkg_id: true,
+                with_pkg_id: false,
                 pinned: query.version.is_some(),
                 profile: None,
                 ..Default::default()

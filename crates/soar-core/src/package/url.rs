@@ -26,8 +26,12 @@ pub struct UrlPackage {
 impl UrlPackage {
     /// Check if a string is a valid HTTP(S) URL.
     pub fn is_url(input: &str) -> bool {
-        let input = input.trim().to_lowercase();
-        input.starts_with("http://") || input.starts_with("https://")
+        let input = input.trim();
+        let lower = input.to_lowercase();
+        if !lower.starts_with("http://") && !lower.starts_with("https://") {
+            return false;
+        }
+        url::Url::parse(input).is_ok()
     }
 
     /// Check if a string is a GHCR (GitHub Container Registry) package reference.
@@ -182,8 +186,9 @@ impl UrlPackage {
             .map(|s| s.to_lowercase())
             .unwrap_or(extracted_name);
 
+        // Normalize version by stripping "v" prefix for consistency
         let version = version_override
-            .map(String::from)
+            .map(|v| v.strip_prefix('v').unwrap_or(v).to_string())
             .unwrap_or(extracted_version);
 
         // Generate pkg_id: use override, or extract from URL, or generate from name and type
