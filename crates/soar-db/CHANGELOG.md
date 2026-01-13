@@ -1,4 +1,11 @@
 
+## [0.3.0](https://github.com/pkgforge/soar/compare/soar-db-v0.2.0...soar-db-v0.3.0) - 2026-01-13
+
+### 🚜 Refactor
+
+- *(error)* Don't override error messages - ([e44342f](https://github.com/pkgforge/soar/commit/e44342f3c23b9cdbe23df2739bcf04bde4138025))
+- *(query)* Update query field icons - ([695a427](https://github.com/pkgforge/soar/commit/695a427ef6a4874cb212cdceed192f94150c5548))
+
 ## [0.2.0](https://github.com/pkgforge/soar/compare/soar-db-v0.1.0...soar-db-v0.2.0) - 2025-12-28
 
 ### 🐛 Bug Fixes
