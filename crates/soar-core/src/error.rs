@@ -135,6 +135,48 @@ pub enum SoarError {
     #[error(transparent)]
     #[diagnostic(code(soar::regex), help("Check your regex pattern syntax"))]
     RegexError(#[from] regex::Error),
+
+    #[error("Landlock is not supported on this system")]
+    #[diagnostic(
+        code(soar::sandbox::not_supported),
+        help("Landlock requires Linux kernel 5.13+. Hooks will run without sandboxing.")
+    )]
+    SandboxNotSupported,
+
+    #[error("Failed to create Landlock ruleset: {0}")]
+    #[diagnostic(
+        code(soar::sandbox::ruleset),
+        help("This may indicate a kernel or permission issue")
+    )]
+    SandboxRulesetCreation(String),
+
+    #[error("Failed to add sandbox rule for path '{path}': {reason}")]
+    #[diagnostic(
+        code(soar::sandbox::path_rule),
+        help("Check if the path exists and is accessible")
+    )]
+    SandboxPathRule { path: String, reason: String },
+
+    #[error("Failed to add sandbox network rule for port {port}: {reason}")]
+    #[diagnostic(
+        code(soar::sandbox::network_rule),
+        help("Network restrictions require Landlock V4+ (kernel 6.7+)")
+    )]
+    SandboxNetworkRule { port: u16, reason: String },
+
+    #[error("Failed to enforce Landlock sandbox: {0}")]
+    #[diagnostic(
+        code(soar::sandbox::enforcement),
+        help("This may indicate a kernel or permission issue")
+    )]
+    SandboxEnforcement(String),
+
+    #[error("Sandboxed command execution failed: {0}")]
+    #[diagnostic(
+        code(soar::sandbox::execution),
+        help("Check the command and sandbox configuration")
+    )]
+    SandboxExecution(String),
 }
 
 impl SoarError {
