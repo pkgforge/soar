@@ -48,13 +48,13 @@ regex = { version = "1.12.2", default-features = false, features = [
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149", features = ["indexmap"] }
 serial_test = "3.3.1"
-soar-config = { version = "0.1.1", path = "crates/soar-config" }
-soar-core = { version = "0.10.0", path = "crates/soar-core" }
-soar-db = { version = "0.2.0", path = "crates/soar-db" }
-soar-dl = { version = "0.7.1", path = "crates/soar-dl" }
-soar-package = { version = "0.1.1", path = "crates/soar-package" }
-soar-registry = { version = "0.1.1", path = "crates/soar-registry" }
-soar-utils = { version = "0.1.1", path = "crates/soar-utils" }
+soar-config = { version = "0.2.0", path = "crates/soar-config" }
+soar-core = { version = "0.10.1", path = "crates/soar-core" }
+soar-db = { version = "0.3.0", path = "crates/soar-db" }
+soar-dl = { version = "0.7.2", path = "crates/soar-dl" }
+soar-package = { version = "0.2.0", path = "crates/soar-package" }
+soar-registry = { version = "0.2.0", path = "crates/soar-registry" }
+soar-utils = { version = "0.1.2", path = "crates/soar-utils" }
 squishy = { version = "0.4.0", features = ["appimage", "dwarfs"] }
 tempfile = "3.24.0"
 thiserror = "2.0.17"

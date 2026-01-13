@@ -1,4 +1,14 @@
 
+## [0.7.2](https://github.com/pkgforge/soar/compare/soar-dl-v0.7.1...soar-dl-v0.7.2) - 2026-01-13
+
+### ⛰️  Features
+
+- *(apply)* Allow applying ghcr packages - ([06e2b73](https://github.com/pkgforge/soar/commit/06e2b73fce7f4189527b8868bb9adfe14d0600cc))
+
+### 🚜 Refactor
+
+- *(error)* Don't override error messages - ([e44342f](https://github.com/pkgforge/soar/commit/e44342f3c23b9cdbe23df2739bcf04bde4138025))
+
 ## [0.7.1](https://github.com/pkgforge/soar/compare/soar-dl-v0.7.0...soar-dl-v0.7.1) - 2025-12-28
 
 ### 🐛 Bug Fixes

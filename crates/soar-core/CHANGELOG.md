@@ -1,4 +1,18 @@
 
+## [0.10.1](https://github.com/pkgforge/soar/compare/soar-core-v0.10.0...soar-core-v0.10.1) - 2026-01-13
+
+### ⛰️  Features
+
+- *(apply)* Allow applying ghcr packages - ([06e2b73](https://github.com/pkgforge/soar/commit/06e2b73fce7f4189527b8868bb9adfe14d0600cc))
+- *(install)* Add entrypoint option and executable discovery fallbacks - ([b77cffd](https://github.com/pkgforge/soar/commit/b77cffdd6cbdfd66518c1613313d53e1c102a7a2))
+- *(sandbox)* Add landlock for sandboxing - ([bbd6597](https://github.com/pkgforge/soar/commit/bbd6597b308d65fac3781c02b41a9fd744a503fb))
+- *(update)* Allow updating remote URL packages ([#137](https://github.com/pkgforge/soar/pull/137)) - ([af13bb6](https://github.com/pkgforge/soar/commit/af13bb637c8c4c4a89cfdac451e39b105e7ee378))
+
+### 🚜 Refactor
+
+- *(error)* Don't override error messages - ([e44342f](https://github.com/pkgforge/soar/commit/e44342f3c23b9cdbe23df2739bcf04bde4138025))
+- *(query)* Update query field icons - ([695a427](https://github.com/pkgforge/soar/commit/695a427ef6a4874cb212cdceed192f94150c5548))
+
 ## [0.10.0](https://github.com/pkgforge/soar/compare/soar-core-v0.9.0...soar-core-v0.10.0) - 2025-12-28
 
 ### 🐛 Bug Fixes
