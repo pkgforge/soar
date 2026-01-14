@@ -12,7 +12,8 @@ use indicatif::HumanBytes;
 use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta, Red};
 use serde::Serialize;
 use soar_config::{
-    config::get_config, display::DisplaySettings, repository::get_platform_repositories,
+    config::get_config, display::DisplaySettings, packages::BinaryMapping,
+    repository::get_platform_repositories,
 };
 use soar_core::{
     database::models::Package,
@@ -236,8 +237,56 @@ pub async fn mangle_package_symlinks(
     provides: Option<&[PackageProvide]>,
     pkg_name: &str,
     entrypoint: Option<&str>,
+    binaries: Option<&[BinaryMapping]>,
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
     let mut symlinks = Vec::new();
+
+    // If binaries array is provided, use it for symlink creation
+    if let Some(bins) = binaries {
+        if !bins.is_empty() {
+            for mapping in bins {
+                let source_path = install_dir.join(&mapping.source);
+                let link_path = bin_dir.join(&mapping.link_as);
+
+                if !source_path.exists() {
+                    return Err(SoarError::Custom(format!(
+                        "Binary source '{}' not found in package",
+                        mapping.source
+                    )));
+                }
+
+                let metadata = fs::metadata(&source_path)
+                    .with_context(|| format!("reading metadata for {}", source_path.display()))?;
+                let mut perms = metadata.permissions();
+                let mode = perms.mode();
+                if mode & 0o111 == 0 {
+                    perms.set_mode(mode | 0o755);
+                    fs::set_permissions(&source_path, perms).with_context(|| {
+                        format!(
+                            "setting executable permissions on {}",
+                            source_path.display()
+                        )
+                    })?;
+                }
+
+                if link_path.is_symlink() || link_path.is_file() {
+                    std::fs::remove_file(&link_path).with_context(|| {
+                        format!("removing existing file/symlink at {}", link_path.display())
+                    })?;
+                }
+
+                unix::fs::symlink(&source_path, &link_path).with_context(|| {
+                    format!(
+                        "creating symlink {} -> {}",
+                        source_path.display(),
+                        link_path.display()
+                    )
+                })?;
+                symlinks.push((source_path, link_path));
+            }
+            return Ok(symlinks);
+        }
+    }
 
     let mut processed_paths = HashSet::new();
     let provides = provides.unwrap_or_default();

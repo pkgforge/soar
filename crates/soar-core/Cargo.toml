@@ -17,6 +17,7 @@ ignored = ["libsqlite3-sys"]
 chrono = { workspace = true }
 diesel = { workspace = true }
 fast-glob = { workspace = true }
+landlock = { workspace = true }
 libsqlite3-sys = { workspace = true }
 miette = { workspace = true }
 nix = { workspace = true }

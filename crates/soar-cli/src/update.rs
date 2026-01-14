@@ -155,6 +155,12 @@ pub async fn update_packages(
                         portable_share: pkg.portable_share.clone(),
                         portable_cache: pkg.portable_cache.clone(),
                         entrypoint: None,
+                        binaries: None,
+                        nested_extract: None,
+                        extract_root: None,
+                        hooks: None,
+                        build: None,
+                        sandbox: None,
                     })
                 }
             }
@@ -241,6 +247,12 @@ pub async fn update_packages(
                     portable_share: pkg.portable_share.clone(),
                     portable_cache: pkg.portable_cache.clone(),
                     entrypoint: None,
+                    binaries: None,
+                    nested_extract: None,
+                    extract_root: None,
+                    hooks: None,
+                    build: None,
+                    sandbox: None,
                 })
             }
         }
@@ -353,6 +365,12 @@ fn check_local_package_update(
         portable_share: resolved.portable.as_ref().and_then(|p| p.share.clone()),
         portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
         entrypoint: resolved.entrypoint.clone(),
+        binaries: resolved.binaries.clone(),
+        nested_extract: resolved.nested_extract.clone(),
+        extract_root: resolved.extract_root.clone(),
+        hooks: resolved.hooks.clone(),
+        build: resolved.build.clone(),
+        sandbox: resolved.sandbox.clone(),
     };
 
     let url_info = UrlUpdateInfo {

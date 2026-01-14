@@ -303,6 +303,12 @@ fn create_install_target(
         portable_share: resolved.portable.as_ref().and_then(|p| p.share.clone()),
         portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
         entrypoint: resolved.entrypoint.clone(),
+        binaries: resolved.binaries.clone(),
+        nested_extract: resolved.nested_extract.clone(),
+        extract_root: resolved.extract_root.clone(),
+        hooks: resolved.hooks.clone(),
+        build: resolved.build.clone(),
+        sandbox: resolved.sandbox.clone(),
     }
 }
 
@@ -324,6 +330,12 @@ fn create_url_install_target(
         portable_share: resolved.portable.as_ref().and_then(|p| p.share.clone()),
         portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
         entrypoint: resolved.entrypoint.clone(),
+        binaries: resolved.binaries.clone(),
+        nested_extract: resolved.nested_extract.clone(),
+        extract_root: resolved.extract_root.clone(),
+        hooks: resolved.hooks.clone(),
+        build: resolved.build.clone(),
+        sandbox: resolved.sandbox.clone(),
     }
 }
 

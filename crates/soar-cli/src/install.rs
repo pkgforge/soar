@@ -1327,6 +1327,7 @@ pub async fn install_single_package(
         target.package.provides.as_deref(),
         &target.package.pkg_name,
         target.entrypoint.as_deref(),
+        target.binaries.as_deref(),
     )
     .await?;
     debug!(symlink_count = symlinks.len(), "symlinks created");
@@ -1358,6 +1359,8 @@ pub async fn install_single_package(
             portable_cache,
         )
         .await?;
+
+    installer.run_post_install_hook()?;
 
     debug!(
         pkg_name = target.package.pkg_name,

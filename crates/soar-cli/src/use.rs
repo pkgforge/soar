@@ -91,6 +91,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         selected_package.provides.as_deref(),
         &selected_package.pkg_name,
         None,
+        None,
     )
     .await?;
 
