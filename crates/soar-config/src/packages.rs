@@ -113,6 +113,11 @@ pub struct BuildConfig {
 /// Uses Landlock (Linux 5.13+) to restrict filesystem access.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Documented, DocumentedFields)]
 pub struct SandboxConfig {
+    /// Require sandbox - fail if Landlock is not available instead of falling back
+    /// to unsandboxed execution. Use this for builds you don't trust to run unsandboxed.
+    #[serde(default)]
+    pub require: bool,
+
     /// Additional paths that can be read (beyond defaults like /usr, /lib, etc).
     #[serde(default)]
     pub fs_read: Vec<String>,

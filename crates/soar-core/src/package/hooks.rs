@@ -35,7 +35,9 @@ pub fn run_hook(
         ("PKG_VERSION", env.pkg_version),
     ];
 
-    let status = if sandbox::is_landlock_supported() {
+    let use_sandbox = sandbox::is_landlock_supported();
+
+    let status = if use_sandbox {
         debug!("running {} hook with Landlock sandbox", hook_name);
         let mut cmd = sandbox::SandboxedCommand::new(command)
             .working_dir(env.install_dir)
@@ -58,6 +60,14 @@ pub fn run_hook(
         }
         cmd.run()?
     } else {
+        if sandbox_config.is_some_and(|s| s.require) {
+            return Err(SoarError::Custom(format!(
+                "{} hook requires sandbox but Landlock is not available on this system. \
+                 Either upgrade to Linux 5.13+ or set sandbox.require = false.",
+                hook_name
+            )));
+        }
+
         use std::process::Command;
         warn!(
             "Landlock not supported, running {} hook without sandbox",

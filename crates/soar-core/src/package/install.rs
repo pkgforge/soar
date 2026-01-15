@@ -362,6 +362,13 @@ impl PackageInstaller {
         if use_sandbox {
             debug!("running build with Landlock sandbox");
         } else {
+            if self.sandbox.as_ref().is_some_and(|s| s.require) {
+                return Err(SoarError::Custom(
+                    "Build requires sandbox but Landlock is not available on this system. \
+                     Either upgrade to Linux 5.13+ or set sandbox.require = false."
+                        .into(),
+                ));
+            }
             warn!(
                 "Landlock not supported, running build without sandbox ({} commands)",
                 build_config.commands.len()
