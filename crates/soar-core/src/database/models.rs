@@ -86,6 +86,48 @@ impl PackageExt for Package {
     }
 }
 
+/// Replace `{{version}}` placeholder in a string with the actual version.
+fn resolve_version_placeholder(s: &str, version: &str) -> String {
+    s.replace("{{version}}", version)
+}
+
+/// Replace `{{version}}` placeholder in an optional string.
+fn resolve_version_placeholder_opt(s: Option<&str>, version: &str) -> Option<String> {
+    s.map(|s| resolve_version_placeholder(s, version))
+}
+
+impl Package {
+    /// Check if a version is available for this package.
+    ///
+    /// Returns true if the version matches the package's current version
+    /// or is present in the snapshots array.
+    pub fn has_version(&self, version: &str) -> bool {
+        if self.version == version {
+            return true;
+        }
+        self.snapshots
+            .as_ref()
+            .is_some_and(|s| s.iter().any(|v| v == version))
+    }
+
+    /// Create a copy of this package with all `{{version}}` placeholders resolved.
+    ///
+    /// If `version` is provided, uses that version; otherwise uses the package's version.
+    /// This is useful when installing a specific snapshot version.
+    pub fn resolve(&self, version: Option<&str>) -> Self {
+        let ver = version.unwrap_or(&self.version);
+        let mut pkg = self.clone();
+        pkg.download_url = resolve_version_placeholder(&self.download_url, ver);
+        pkg.ghcr_pkg = resolve_version_placeholder_opt(self.ghcr_pkg.as_deref(), ver);
+        pkg.ghcr_blob = resolve_version_placeholder_opt(self.ghcr_blob.as_deref(), ver);
+        pkg.ghcr_url = resolve_version_placeholder_opt(self.ghcr_url.as_deref(), ver);
+        if version.is_some() {
+            pkg.version = ver.to_string();
+        }
+        pkg
+    }
+}
+
 /// Installed package record.
 #[derive(Debug, Clone)]
 pub struct InstalledPackage {
@@ -249,5 +291,122 @@ impl From<soar_db::models::metadata::PackageWithRepo> for Package {
         let mut pkg: Package = pkg_with_repo.package.into();
         pkg.repo_name = pkg_with_repo.repo_name;
         pkg
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_version_placeholder() {
+        assert_eq!(
+            resolve_version_placeholder("https://example.com/pkg?tag={{version}}-x86_64", "v1.0.0"),
+            "https://example.com/pkg?tag=v1.0.0-x86_64"
+        );
+    }
+
+    #[test]
+    fn test_resolve_version_placeholder_multiple() {
+        assert_eq!(
+            resolve_version_placeholder("ghcr.io/user/pkg:{{version}}-{{version}}", "v2.0.0"),
+            "ghcr.io/user/pkg:v2.0.0-v2.0.0"
+        );
+    }
+
+    #[test]
+    fn test_resolve_version_placeholder_none() {
+        assert_eq!(
+            resolve_version_placeholder("https://example.com/static-url", "v1.0.0"),
+            "https://example.com/static-url"
+        );
+    }
+
+    #[test]
+    fn test_resolve_version_placeholder_opt() {
+        assert_eq!(
+            resolve_version_placeholder_opt(Some("ghcr.io/pkg:{{version}}"), "v1.0.0"),
+            Some("ghcr.io/pkg:v1.0.0".to_string())
+        );
+        assert_eq!(resolve_version_placeholder_opt(None, "v1.0.0"), None);
+    }
+
+    #[test]
+    fn test_package_resolve() {
+        let pkg = Package {
+            version: "v1.0.0".to_string(),
+            download_url: "https://example.com/pkg?tag={{version}}".to_string(),
+            ghcr_pkg: Some("ghcr.io/pkg:{{version}}".to_string()),
+            ..Default::default()
+        };
+
+        // Resolve with default version
+        let resolved = pkg.resolve(None);
+        assert_eq!(resolved.download_url, "https://example.com/pkg?tag=v1.0.0");
+        assert_eq!(resolved.ghcr_pkg, Some("ghcr.io/pkg:v1.0.0".to_string()));
+        assert_eq!(resolved.version, "v1.0.0");
+
+        // Resolve with specific version (snapshot)
+        let resolved = pkg.resolve(Some("v0.5.0"));
+        assert_eq!(resolved.download_url, "https://example.com/pkg?tag=v0.5.0");
+        assert_eq!(resolved.ghcr_pkg, Some("ghcr.io/pkg:v0.5.0".to_string()));
+        assert_eq!(resolved.version, "v0.5.0");
+    }
+
+    #[test]
+    fn test_package_resolve_no_placeholder() {
+        let pkg = Package {
+            version: "v2.0.0".to_string(),
+            download_url: "https://api.example.com/pkg/static-url".to_string(),
+            ..Default::default()
+        };
+
+        // No placeholder - URL unchanged
+        let resolved = pkg.resolve(None);
+        assert_eq!(
+            resolved.download_url,
+            "https://api.example.com/pkg/static-url"
+        );
+    }
+
+    #[test]
+    fn test_has_version_current() {
+        let pkg = Package {
+            version: "v1.0.0".to_string(),
+            ..Default::default()
+        };
+
+        assert!(pkg.has_version("v1.0.0"));
+        assert!(!pkg.has_version("v0.9.0"));
+    }
+
+    #[test]
+    fn test_has_version_snapshot() {
+        let pkg = Package {
+            version: "v1.0.0".to_string(),
+            snapshots: Some(vec![
+                "v0.9.0".to_string(),
+                "v0.8.0".to_string(),
+                "v0.7.0".to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        assert!(pkg.has_version("v1.0.0")); // current version
+        assert!(pkg.has_version("v0.9.0")); // in snapshots
+        assert!(pkg.has_version("v0.8.0")); // in snapshots
+        assert!(!pkg.has_version("v0.6.0")); // not available
+    }
+
+    #[test]
+    fn test_has_version_no_snapshots() {
+        let pkg = Package {
+            version: "v1.0.0".to_string(),
+            snapshots: None,
+            ..Default::default()
+        };
+
+        assert!(pkg.has_version("v1.0.0"));
+        assert!(!pkg.has_version("v0.9.0"));
     }
 }

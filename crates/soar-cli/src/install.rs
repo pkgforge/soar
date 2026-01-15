@@ -286,7 +286,7 @@ fn resolve_packages(
                             conn,
                             query.name.as_deref(),
                             None,
-                            query.version.as_deref(),
+                            None,
                             None,
                             Some(SortDirection::Asc),
                         )
@@ -305,7 +305,7 @@ fn resolve_packages(
                         conn,
                         query.name.as_deref(),
                         None,
-                        query.version.as_deref(),
+                        None,
                         None,
                         Some(SortDirection::Asc),
                     )?;
@@ -318,6 +318,15 @@ fn resolve_packages(
                         })
                         .collect())
                 })?
+            };
+
+            let repo_pkgs: Vec<Package> = if let Some(ref version) = query.version {
+                repo_pkgs
+                    .into_iter()
+                    .filter(|p| p.has_version(version))
+                    .collect()
+            } else {
+                repo_pkgs
             };
 
             if repo_pkgs.is_empty() {
@@ -391,6 +400,8 @@ fn resolve_packages(
                     }
                 }
             }
+
+            let pkg = pkg.resolve(query.version.as_deref());
 
             install_targets.push(InstallTarget {
                 package: pkg,
@@ -568,6 +579,8 @@ fn resolve_packages(
                         }
                     }
 
+                    let pkg = pkg.resolve(query.version.as_deref());
+
                     install_targets.push(InstallTarget {
                         package: pkg,
                         existing_install,
@@ -587,7 +600,7 @@ fn resolve_packages(
                     query.repo_name.as_deref(),
                     query.name.as_deref(),
                     query.pkg_id.as_deref(),
-                    query.version.as_deref(),
+                    None,
                     None,
                     None,
                     None,
@@ -606,7 +619,7 @@ fn resolve_packages(
                             conn,
                             None,
                             query.pkg_id.as_deref(),
-                            query.version.as_deref(),
+                            None,
                             None,
                             None,
                         )
@@ -625,7 +638,7 @@ fn resolve_packages(
                         conn,
                         None,
                         query.pkg_id.as_deref(),
-                        query.version.as_deref(),
+                        None,
                         None,
                         None,
                     )?;
@@ -640,7 +653,18 @@ fn resolve_packages(
                 })?
             };
 
+            let repo_pkgs: Vec<Package> = if let Some(ref version) = query.version {
+                repo_pkgs
+                    .into_iter()
+                    .filter(|p| p.has_version(version))
+                    .collect()
+            } else {
+                repo_pkgs
+            };
+
             for pkg in repo_pkgs {
+                let pkg = pkg.resolve(query.version.as_deref());
+
                 let existing_install = installed_packages
                     .iter()
                     .find(|ip| ip.pkg_name == pkg.pkg_name)
@@ -701,6 +725,8 @@ fn resolve_packages(
                     .find(|ip| ip.version == db_pkg.version)
                     .cloned();
 
+                let db_pkg = db_pkg.resolve(query.version.as_deref());
+
                 install_targets.push(InstallTarget {
                     package: db_pkg,
                     existing_install,
@@ -753,7 +779,7 @@ fn select_package(
                     conn,
                     query.name.as_deref(),
                     query.pkg_id.as_deref(),
-                    query.version.as_deref(),
+                    None,
                     None,
                     None,
                 )?;
@@ -776,7 +802,7 @@ fn select_package(
                     conn,
                     query.name.as_deref(),
                     query.pkg_id.as_deref(),
-                    query.version.as_deref(),
+                    None,
                     None,
                     None,
                 )
@@ -795,7 +821,7 @@ fn select_package(
                 conn,
                 query.name.as_deref(),
                 query.pkg_id.as_deref(),
-                query.version.as_deref(),
+                None,
                 None,
                 None,
             )?;
@@ -808,6 +834,15 @@ fn select_package(
                 })
                 .collect())
         })?
+    };
+
+    let packages: Vec<Package> = if let Some(ref version) = query.version {
+        packages
+            .into_iter()
+            .filter(|p| p.has_version(version))
+            .collect()
+    } else {
+        packages
     };
 
     match packages.len() {

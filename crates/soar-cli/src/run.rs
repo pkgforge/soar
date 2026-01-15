@@ -51,7 +51,7 @@ pub async fn run_package(
                         conn,
                         Some(package_name),
                         pkg_id,
-                        version,
+                        None,
                         None,
                         None,
                     )
@@ -70,7 +70,7 @@ pub async fn run_package(
                     conn,
                     Some(package_name),
                     pkg_id,
-                    version,
+                    None,
                     None,
                     None,
                 )?;
@@ -85,6 +85,15 @@ pub async fn run_package(
             })?
         };
 
+        let packages: Vec<Package> = if let Some(version) = version {
+            packages
+                .into_iter()
+                .filter(|p| p.has_version(version))
+                .collect()
+        } else {
+            packages
+        };
+
         let package = match packages.len() {
             0 => return Err(SoarError::PackageNotFound(package_name.clone())),
             1 => packages.into_iter().next(),
@@ -92,6 +101,8 @@ pub async fn run_package(
             _ => select_package_interactively(packages, package_name)?,
         }
         .unwrap();
+
+        let package = package.resolve(version);
 
         fs::create_dir_all(&cache_bin)
             .with_context(|| format!("creating directory {}", cache_bin.display()))?;

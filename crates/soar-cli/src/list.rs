@@ -191,7 +191,7 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
                     conn,
                     query.name.as_deref(),
                     query.pkg_id.as_deref(),
-                    query.version.as_deref(),
+                    None,
                     None,
                     Some(SortDirection::Asc),
                 )
@@ -210,7 +210,7 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
                 conn,
                 query.name.as_deref(),
                 query.pkg_id.as_deref(),
-                query.version.as_deref(),
+                None,
                 None,
                 Some(SortDirection::Asc),
             )?;
@@ -225,7 +225,18 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
         })?
     };
 
+    let packages: Vec<Package> = if let Some(ref version) = query.version {
+        packages
+            .into_iter()
+            .filter(|p| p.has_version(version))
+            .collect()
+    } else {
+        packages
+    };
+
     for package in packages {
+        let package = package.resolve(query.version.as_deref());
+
         let mut builder = Builder::new();
 
         builder.push_record([

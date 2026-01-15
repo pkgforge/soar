@@ -71,7 +71,7 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
                     conn,
                     query.name.as_deref(),
                     query.pkg_id.as_deref(),
-                    query.version.as_deref(),
+                    None,
                     None,
                     Some(SortDirection::Asc),
                 )
@@ -90,7 +90,7 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
                 conn,
                 query.name.as_deref(),
                 query.pkg_id.as_deref(),
-                query.version.as_deref(),
+                None,
                 None,
                 Some(SortDirection::Asc),
             )?;
@@ -103,6 +103,15 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
                 })
                 .collect())
         })?
+    };
+
+    let packages: Vec<Package> = if let Some(ref version) = query.version {
+        packages
+            .into_iter()
+            .filter(|p| p.has_version(version))
+            .collect()
+    } else {
+        packages
     };
 
     if packages.is_empty() {

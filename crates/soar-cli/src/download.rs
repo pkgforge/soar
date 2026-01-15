@@ -157,7 +157,7 @@ pub async fn handle_direct_downloads(
                                 conn,
                                 query.name.as_deref(),
                                 query.pkg_id.as_deref(),
-                                query.version.as_deref(),
+                                None,
                                 None,
                                 None,
                             )
@@ -176,7 +176,7 @@ pub async fn handle_direct_downloads(
                             conn,
                             query.name.as_deref(),
                             query.pkg_id.as_deref(),
-                            query.version.as_deref(),
+                            None,
                             None,
                             None,
                         )?;
@@ -191,16 +191,27 @@ pub async fn handle_direct_downloads(
                     })?
                 };
 
+                let packages: Vec<Package> = if let Some(ref version) = query.version {
+                    packages
+                        .into_iter()
+                        .filter(|p| p.has_version(version))
+                        .collect()
+                } else {
+                    packages
+                };
+
                 if packages.is_empty() {
                     error!("Invalid download resource '{}'", link);
                     break;
                 }
 
                 let package = if packages.len() == 1 || ctx.yes {
-                    packages.first().unwrap()
+                    packages.first().unwrap().clone()
                 } else {
-                    &select_package_interactively(packages, link)?.unwrap()
+                    select_package_interactively(packages, link)?.unwrap()
                 };
+
+                let package = package.resolve(query.version.as_deref());
 
                 info!(
                     "Downloading package: {}#{}",
