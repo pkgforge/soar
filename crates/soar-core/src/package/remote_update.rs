@@ -44,31 +44,37 @@ pub fn check_for_update(
             asset_pattern,
             include_prerelease,
             tag_pattern,
-        } => check_github(
-            repo,
-            asset_pattern.as_deref(),
-            *include_prerelease,
-            tag_pattern.as_deref(),
-            current_version,
-        ),
+        } => {
+            check_github(
+                repo,
+                asset_pattern.as_deref(),
+                *include_prerelease,
+                tag_pattern.as_deref(),
+                current_version,
+            )
+        }
         UpdateSource::GitLab {
             repo,
             asset_pattern,
             include_prerelease,
             tag_pattern,
-        } => check_gitlab(
-            repo,
-            asset_pattern.as_deref(),
-            *include_prerelease,
-            tag_pattern.as_deref(),
-            current_version,
-        ),
+        } => {
+            check_gitlab(
+                repo,
+                asset_pattern.as_deref(),
+                *include_prerelease,
+                tag_pattern.as_deref(),
+                current_version,
+            )
+        }
         UpdateSource::Url {
             url,
             version_path,
             download_path,
         } => check_url(url, version_path, download_path, current_version),
-        UpdateSource::Command { command } => check_command(command, current_version),
+        UpdateSource::Command {
+            command,
+        } => check_command(command, current_version),
     }
 }
 
