@@ -116,13 +116,14 @@ impl UrlPackage {
             .map(|s| s.to_lowercase())
             .unwrap_or_else(|| package.rsplit('/').next().unwrap_or(package).to_lowercase());
 
+        // Normalize version by stripping "v" prefix for consistency
         let version = version_override
-            .map(String::from)
-            .unwrap_or_else(|| tag.clone());
+            .map(|v| v.strip_prefix('v').unwrap_or(v).to_string())
+            .unwrap_or_else(|| tag.strip_prefix('v').unwrap_or(&tag).to_string());
 
         let pkg_id = pkg_id_override
             .map(String::from)
-            .unwrap_or_else(|| format!("ghcr.io.{}", package.replace('/', ".")));
+            .unwrap_or_else(|| package.replace('/', "."));
 
         let pkg_type = pkg_type_override.map(|s| s.to_lowercase());
 
@@ -514,8 +515,8 @@ mod tests {
         let pkg = UrlPackage::from_ghcr(ghcr, None, None, None, None).unwrap();
 
         assert_eq!(pkg.pkg_name, "soar");
-        assert_eq!(pkg.version, "v0.8.1");
-        assert_eq!(pkg.pkg_id, "ghcr.io.pkgforge.soar");
+        assert_eq!(pkg.version, "0.8.1"); // 'v' prefix stripped
+        assert_eq!(pkg.pkg_id, "pkgforge.soar");
         assert!(pkg.is_ghcr);
     }
 
@@ -526,7 +527,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "repo");
         assert_eq!(pkg.version, "sha256:deadbeef1234567890");
-        assert_eq!(pkg.pkg_id, "ghcr.io.org.repo");
+        assert_eq!(pkg.pkg_id, "org.repo");
         assert!(pkg.is_ghcr);
     }
 
@@ -537,7 +538,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "package");
         assert_eq!(pkg.version, "latest");
-        assert_eq!(pkg.pkg_id, "ghcr.io.org.package");
+        assert_eq!(pkg.pkg_id, "org.package");
         assert!(pkg.is_ghcr);
     }
 
@@ -548,7 +549,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "repo");
         assert_eq!(pkg.version, "1.0");
-        assert_eq!(pkg.pkg_id, "ghcr.io.org.team.repo");
+        assert_eq!(pkg.pkg_id, "org.team.repo");
         assert!(pkg.is_ghcr);
     }
 
@@ -573,8 +574,8 @@ mod tests {
 
         assert_eq!(pkg.repo_name, "local");
         assert_eq!(pkg.pkg_name, "soar");
-        assert_eq!(pkg.version, "v0.8.1");
-        assert_eq!(pkg.pkg_id, "ghcr.io.pkgforge.soar");
+        assert_eq!(pkg.version, "0.8.1"); // 'v' prefix stripped
+        assert_eq!(pkg.pkg_id, "pkgforge.soar");
         assert_eq!(pkg.download_url, "");
         assert_eq!(
             pkg.ghcr_pkg,

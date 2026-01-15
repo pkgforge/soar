@@ -43,11 +43,13 @@ pub fn check_for_update(
             repo,
             asset_pattern,
             include_prerelease,
+            tag_pattern,
         } => {
             check_github(
                 repo,
                 asset_pattern.as_deref(),
                 *include_prerelease,
+                tag_pattern.as_deref(),
                 current_version,
             )
         }
@@ -55,11 +57,13 @@ pub fn check_for_update(
             repo,
             asset_pattern,
             include_prerelease,
+            tag_pattern,
         } => {
             check_gitlab(
                 repo,
                 asset_pattern.as_deref(),
                 *include_prerelease,
+                tag_pattern.as_deref(),
                 current_version,
             )
         }
@@ -79,6 +83,7 @@ fn check_github(
     repo: &str,
     asset_pattern: Option<&str>,
     include_prerelease: Option<bool>,
+    tag_pattern: Option<&str>,
     current_version: &str,
 ) -> SoarResult<Option<RemoteUpdate>> {
     let releases: Vec<GithubRelease> = Github::fetch_releases(repo, None).map_err(|e| {
@@ -90,9 +95,11 @@ fn check_github(
 
     let include_prerelease = include_prerelease.unwrap_or(false);
 
-    let release = releases
-        .iter()
-        .find(|r: &&GithubRelease| include_prerelease || !r.is_prerelease());
+    let release = releases.iter().find(|r: &&GithubRelease| {
+        let prerelease_ok = include_prerelease || !r.is_prerelease();
+        let tag_ok = tag_pattern.map_or(true, |p| fast_glob::glob_match(p, r.tag()));
+        prerelease_ok && tag_ok
+    });
 
     let Some(release) = release else {
         return Ok(None);
@@ -119,6 +126,7 @@ fn check_gitlab(
     repo: &str,
     asset_pattern: Option<&str>,
     include_prerelease: Option<bool>,
+    tag_pattern: Option<&str>,
     current_version: &str,
 ) -> SoarResult<Option<RemoteUpdate>> {
     let releases: Vec<GitLabRelease> = GitLab::fetch_releases(repo, None).map_err(|e| {
@@ -130,9 +138,11 @@ fn check_gitlab(
 
     let include_prerelease = include_prerelease.unwrap_or(false);
 
-    let release = releases
-        .iter()
-        .find(|r: &&GitLabRelease| include_prerelease || !r.is_prerelease());
+    let release = releases.iter().find(|r: &&GitLabRelease| {
+        let prerelease_ok = include_prerelease || !r.is_prerelease();
+        let tag_ok = tag_pattern.map_or(true, |p| fast_glob::glob_match(p, r.tag()));
+        prerelease_ok && tag_ok
+    });
 
     let Some(release) = release else {
         return Ok(None);

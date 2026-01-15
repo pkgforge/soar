@@ -330,6 +330,7 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
 /// # Errors
 ///
 /// Returns [`PackageError`] if integration fails.
+#[allow(clippy::too_many_arguments)]
 pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
     package: &T,
