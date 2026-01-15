@@ -500,9 +500,7 @@ impl PackagesConfig {
 
         let content = fs::read_to_string(&config_path)?;
 
-        if new_url.is_none() && new_version.is_some() {
-            let version = new_version.unwrap();
-
+        if let (None, Some(version)) = (new_url, new_version) {
             let doc = content.parse::<DocumentMut>()?;
             let packages = doc
                 .get("packages")
@@ -520,14 +518,12 @@ impl PackagesConfig {
                 toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
                     if table.contains_key("version") {
                         let mut doc = content.parse::<DocumentMut>()?;
-                        if let Some(pkg) = doc
+                        if let Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(t))) = doc
                             .get_mut("packages")
                             .and_then(|p| p.as_table_mut())
                             .and_then(|t| t.get_mut(package_name))
                         {
-                            if let toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) = pkg {
-                                t.insert("version", version.into());
-                            }
+                            t.insert("version", version.into());
                         }
                         fs::write(&config_path, doc.to_string())?;
                     } else {
@@ -537,14 +533,12 @@ impl PackagesConfig {
                 }
                 toml_edit::Item::Table(_) => {
                     let mut doc = content.parse::<DocumentMut>()?;
-                    if let Some(pkg) = doc
+                    if let Some(toml_edit::Item::Table(t)) = doc
                         .get_mut("packages")
                         .and_then(|p| p.as_table_mut())
                         .and_then(|t| t.get_mut(package_name))
                     {
-                        if let toml_edit::Item::Table(t) = pkg {
-                            t.insert("version", toml_edit::value(version));
-                        }
+                        t.insert("version", toml_edit::value(version));
                     }
                     fs::write(&config_path, doc.to_string())?;
                 }
