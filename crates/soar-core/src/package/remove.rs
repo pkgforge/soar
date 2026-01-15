@@ -9,7 +9,11 @@ use soar_config::{
     packages::{PackageHooks, SandboxConfig},
 };
 use soar_db::{models::types::ProvideStrategy, repository::core::CoreRepository};
-use soar_utils::{error::FileSystemResult, fs::walk_dir, path::{desktop_dir, icons_dir}};
+use soar_utils::{
+    error::FileSystemResult,
+    fs::walk_dir,
+    path::{desktop_dir, icons_dir},
+};
 use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
