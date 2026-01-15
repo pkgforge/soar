@@ -13,7 +13,7 @@ use std::{
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use regex::Regex;
-use soar_config::config::get_config;
+use soar_config::config::{get_config, is_system_mode};
 use soar_utils::{
     fs::{create_symlink, walk_dir},
     path::{desktop_dir, icons_dir},
@@ -105,7 +105,7 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
         (w, h)
     };
 
-    let final_path = icons_dir()
+    let final_path = icons_dir(is_system_mode())
         .join(format!("{w}x{h}"))
         .join("apps")
         .join(format!(
@@ -185,7 +185,8 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         .write_all(final_content.as_bytes())
         .with_context(|| format!("writing desktop file to {}", real_path.display()))?;
 
-    let final_path = desktop_dir().join(format!("{}-soar.desktop", file_name.to_string_lossy()));
+    let final_path =
+        desktop_dir(is_system_mode()).join(format!("{}-soar.desktop", file_name.to_string_lossy()));
 
     if final_path.is_symlink() {
         fs::remove_file(&final_path)

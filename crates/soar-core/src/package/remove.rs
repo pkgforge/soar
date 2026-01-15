@@ -5,11 +5,15 @@ use std::{
 };
 
 use soar_config::{
-    config::get_config,
+    config::{get_config, is_system_mode},
     packages::{PackageHooks, SandboxConfig},
 };
 use soar_db::{models::types::ProvideStrategy, repository::core::CoreRepository};
-use soar_utils::{error::FileSystemResult, fs::walk_dir, path::desktop_dir};
+use soar_utils::{
+    error::FileSystemResult,
+    fs::walk_dir,
+    path::{desktop_dir, icons_dir},
+};
 use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
@@ -161,18 +165,18 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            walk_dir(desktop_dir(), &mut remove_action)?;
+            walk_dir(desktop_dir(is_system_mode()), &mut remove_action)?;
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                 if let Ok(real_path) = fs::read_link(path) {
                     if real_path.parent() == Some(&installed_path) {
-                        trace!("removing symlink: {}", path.display());
+                        trace!("removing icon symlink: {}", path.display());
                         let _ = fs::remove_file(path);
                     }
                 }
                 Ok(())
             };
-            walk_dir(desktop_dir(), &mut remove_action)?;
+            walk_dir(icons_dir(is_system_mode()), &mut remove_action)?;
         }
 
         // Calculate directory size before removal for logging

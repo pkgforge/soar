@@ -1,7 +1,7 @@
 use std::{cell::RefCell, env, path::Path, rc::Rc};
 
 use nu_ansi_term::Color::{Blue, Cyan, Green, Red, Yellow};
-use soar_config::config::get_config;
+use soar_config::config::{get_config, is_system_mode};
 use soar_core::{package::remove::PackageRemover, SoarResult};
 use soar_db::repository::core::CoreRepository;
 use soar_utils::{
@@ -134,8 +134,8 @@ fn get_broken_symlinks() -> SoarResult<Vec<std::path::PathBuf>> {
     };
 
     walk_dir(&get_config().get_bin_path()?, &mut collect_action)?;
-    walk_dir(desktop_dir(), &mut soar_files_action)?;
-    walk_dir(icons_dir(), &mut soar_files_action)?;
+    walk_dir(desktop_dir(is_system_mode()), &mut soar_files_action)?;
+    walk_dir(icons_dir(is_system_mode()), &mut soar_files_action)?;
 
     Ok(Rc::try_unwrap(broken_symlinks)
         .unwrap_or_else(|rc| rc.borrow().clone().into())

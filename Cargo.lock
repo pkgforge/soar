@@ -2217,6 +2217,7 @@ dependencies = [
  "indicatif",
  "miette",
  "minisign-verify",
+ "nix",
  "nu-ansi-term",
  "once_cell",
  "rayon",
