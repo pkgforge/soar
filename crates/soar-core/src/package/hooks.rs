@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, process::Command};
 
 use soar_config::{config::get_config, packages::SandboxConfig};
 use tracing::{debug, warn};
@@ -68,7 +68,6 @@ pub fn run_hook(
             )));
         }
 
-        use std::process::Command;
         warn!(
             "Landlock not supported, running {} hook without sandbox",
             hook_name

@@ -2,6 +2,7 @@ use std::{
     env, fs,
     io::Write,
     path::{Path, PathBuf},
+    process::Command,
     thread::sleep,
     time::Duration,
 };
@@ -313,8 +314,6 @@ impl PackageInstaller {
 
     /// Check if build dependencies are available.
     fn check_build_dependencies(&self, deps: &[String]) -> SoarResult<()> {
-        use std::process::Command;
-
         for dep in deps {
             let result = Command::new("which").arg(dep).output();
 
@@ -417,7 +416,6 @@ impl PackageInstaller {
                 }
                 sandbox_cmd.run()?
             } else {
-                use std::process::Command;
                 Command::new("sh")
                     .arg("-c")
                     .arg(cmd)
