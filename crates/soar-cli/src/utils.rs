@@ -12,7 +12,9 @@ use indicatif::HumanBytes;
 use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta, Red};
 use serde::Serialize;
 use soar_config::{
-    config::get_config, display::DisplaySettings, packages::BinaryMapping,
+    config::get_config,
+    display::DisplaySettings,
+    packages::{BinaryMapping, PackageHooks, PackagesConfig, SandboxConfig},
     repository::get_platform_repositories,
 };
 use soar_core::{
@@ -519,4 +521,20 @@ pub fn parse_default_repos_arg(arg: &str) -> SoarResult<String> {
             supported_repos.join(", ")
         )))
     }
+}
+
+/// Look up hooks and sandbox configuration for a package from packages.toml.
+/// Returns (None, None) if packages.toml doesn't exist or the package isn't found.
+pub fn get_package_hooks(pkg_name: &str) -> (Option<PackageHooks>, Option<SandboxConfig>) {
+    let config = match PackagesConfig::load(None) {
+        Ok(c) => c,
+        Err(_) => return (None, None),
+    };
+
+    config
+        .resolved_packages()
+        .into_iter()
+        .find(|p| p.name == pkg_name)
+        .map(|p| (p.hooks, p.sandbox))
+        .unwrap_or((None, None))
 }

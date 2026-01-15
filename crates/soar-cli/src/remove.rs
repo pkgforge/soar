@@ -8,7 +8,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     state::AppState,
-    utils::{confirm_action, select_package_interactively, Colored},
+    utils::{confirm_action, get_package_hooks, select_package_interactively, Colored},
 };
 
 pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarResult<()> {
@@ -55,7 +55,11 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
                     pkg_id = pkg.pkg_id,
                     "removing package variant"
                 );
-                let remover = PackageRemover::new(pkg.clone(), diesel_db.clone()).await;
+                let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
+                let remover = PackageRemover::new(pkg.clone(), diesel_db.clone())
+                    .await
+                    .with_hooks(hooks)
+                    .with_sandbox(sandbox);
                 remover.remove().await?;
 
                 info!(
@@ -154,7 +158,11 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
                         pkg_id = pkg.pkg_id,
                         "removing package"
                     );
-                    let remover = PackageRemover::new(pkg.clone(), diesel_db.clone()).await;
+                    let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
+                    let remover = PackageRemover::new(pkg.clone(), diesel_db.clone())
+                        .await
+                        .with_hooks(hooks)
+                        .with_sandbox(sandbox);
                     remover.remove().await?;
 
                     info!(
@@ -218,7 +226,11 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
                 installed_path = installed_pkg.installed_path,
                 "removing package"
             );
-            let remover = PackageRemover::new(installed_pkg.clone(), diesel_db.clone()).await;
+            let (hooks, sandbox) = get_package_hooks(&installed_pkg.pkg_name);
+            let remover = PackageRemover::new(installed_pkg.clone(), diesel_db.clone())
+                .await
+                .with_hooks(hooks)
+                .with_sandbox(sandbox);
             remover.remove().await?;
 
             info!(

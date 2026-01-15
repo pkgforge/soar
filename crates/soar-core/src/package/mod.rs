@@ -1,3 +1,4 @@
+pub mod hooks;
 pub mod install;
 pub mod query;
 pub mod remote_update;

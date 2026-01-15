@@ -210,70 +210,16 @@ impl PackageInstaller {
 
     /// Run a hook command with environment variables set.
     fn run_hook(&self, hook_name: &str, command: &str) -> SoarResult<()> {
-        use crate::sandbox;
+        use super::hooks::{run_hook, HookEnv};
 
-        debug!("running {} hook: {}", hook_name, command);
-
-        let bin_dir = get_config().get_bin_path()?;
-
-        let env_vars: Vec<(&str, &str)> = vec![
-            ("INSTALL_DIR", self.install_dir.to_str().unwrap_or("")),
-            ("BIN_DIR", bin_dir.to_str().unwrap_or("")),
-            ("PKG_NAME", &self.package.pkg_name),
-            ("PKG_ID", &self.package.pkg_id),
-            ("PKG_VERSION", &self.package.version),
-        ];
-
-        let status = if sandbox::is_landlock_supported() {
-            debug!("running {} hook with Landlock sandbox", hook_name);
-            let mut cmd = sandbox::SandboxedCommand::new(command)
-                .working_dir(&self.install_dir)
-                .read_path(&bin_dir)
-                .envs(env_vars);
-
-            if let Some(s) = &self.sandbox {
-                let config = sandbox::SandboxConfig::new().with_network(if s.network {
-                    sandbox::NetworkConfig::allow_all()
-                } else {
-                    sandbox::NetworkConfig::default()
-                });
-                cmd = cmd.config(config);
-                for path in &s.fs_read {
-                    cmd = cmd.read_path(path);
-                }
-                for path in &s.fs_write {
-                    cmd = cmd.write_path(path);
-                }
-            }
-            cmd.run()?
-        } else {
-            use std::process::Command;
-            warn!(
-                "Landlock not supported, running {} hook without sandbox",
-                hook_name
-            );
-            Command::new("sh")
-                .arg("-c")
-                .arg(command)
-                .env("INSTALL_DIR", &self.install_dir)
-                .env("BIN_DIR", &bin_dir)
-                .env("PKG_NAME", &self.package.pkg_name)
-                .env("PKG_ID", &self.package.pkg_id)
-                .env("PKG_VERSION", &self.package.version)
-                .current_dir(&self.install_dir)
-                .status()
-                .with_context(|| format!("executing {} hook", hook_name))?
+        let env = HookEnv {
+            install_dir: &self.install_dir,
+            pkg_name: &self.package.pkg_name,
+            pkg_id: &self.package.pkg_id,
+            pkg_version: &self.package.version,
         };
 
-        if !status.success() {
-            return Err(SoarError::Custom(format!(
-                "{} hook failed with exit code: {}",
-                hook_name,
-                status.code().unwrap_or(-1)
-            )));
-        }
-
-        Ok(())
+        run_hook(hook_name, command, &env, self.sandbox.as_ref())
     }
 
     /// Run post_download hook if configured.

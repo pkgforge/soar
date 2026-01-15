@@ -17,7 +17,7 @@ use tracing::info;
 
 use crate::{
     state::AppState,
-    utils::{icon_or, term_width, Colored, Icons},
+    utils::{get_package_hooks, icon_or, term_width, Colored, Icons},
 };
 
 pub async fn display_health() -> SoarResult<()> {
@@ -156,8 +156,12 @@ pub async fn remove_broken_packages() -> SoarResult<()> {
     for package in broken_packages {
         let pkg_name = package.pkg_name.clone();
         let pkg_id = package.pkg_id.clone();
+        let (hooks, sandbox) = get_package_hooks(&pkg_name);
         let installed_pkg = package.into();
-        let remover = PackageRemover::new(installed_pkg, diesel_db.clone()).await;
+        let remover = PackageRemover::new(installed_pkg, diesel_db.clone())
+            .await
+            .with_hooks(hooks)
+            .with_sandbox(sandbox);
         remover.remove().await?;
 
         info!("Removed {}#{}", pkg_name, pkg_id);
