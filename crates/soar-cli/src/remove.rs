@@ -213,9 +213,6 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
                 }
             } else {
                 installed_pkgs
-                    .into_iter()
-                    .filter(|pkg| query.name.is_some() || pkg.with_pkg_id)
-                    .collect()
             };
 
         debug!(count = pkgs_to_remove.len(), "packages to remove");

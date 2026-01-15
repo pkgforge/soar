@@ -13,7 +13,6 @@ diesel::table! {
         profile -> Text,
         pinned -> Bool,
         is_installed -> Bool,
-        with_pkg_id -> Bool,
         detached -> Bool,
         unlinked -> Bool,
         provides -> Nullable<Jsonb>,

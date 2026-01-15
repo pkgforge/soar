@@ -1,0 +1,1 @@
+ALTER TABLE packages ADD COLUMN with_pkg_id BOOLEAN NOT NULL DEFAULT false;

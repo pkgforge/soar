@@ -269,7 +269,6 @@ fn resolve_packages(
             install_targets.push(InstallTarget {
                 package: url_pkg.to_package(),
                 existing_install,
-                with_pkg_id: false,
                 pinned: false,
                 profile: None,
                 ..Default::default()
@@ -396,7 +395,6 @@ fn resolve_packages(
             install_targets.push(InstallTarget {
                 package: pkg,
                 existing_install,
-                with_pkg_id: false,
                 pinned: query.version.is_some(),
                 profile: None,
                 ..Default::default()
@@ -573,7 +571,6 @@ fn resolve_packages(
                     install_targets.push(InstallTarget {
                         package: pkg,
                         existing_install,
-                        with_pkg_id: true,
                         pinned: query.version.is_some(),
                         profile: None,
                         ..Default::default()
@@ -649,9 +646,6 @@ fn resolve_packages(
                     .find(|ip| ip.pkg_name == pkg.pkg_name)
                     .cloned();
                 if let Some(ref existing) = existing_install {
-                    if !existing.with_pkg_id {
-                        continue;
-                    }
                     if existing.is_installed {
                         warn!(
                             "{}#{}:{} ({}) is already installed - {}",
@@ -670,7 +664,6 @@ fn resolve_packages(
                 install_targets.push(InstallTarget {
                     package: pkg,
                     existing_install,
-                    with_pkg_id: true,
                     pinned: query.version.is_some(),
                     profile: None,
                     ..Default::default()
@@ -711,7 +704,6 @@ fn resolve_packages(
                 install_targets.push(InstallTarget {
                     package: db_pkg,
                     existing_install,
-                    with_pkg_id: false,
                     pinned: query.version.is_some(),
                     profile: None,
                     ..Default::default()
@@ -1158,7 +1150,6 @@ pub async fn install_single_package(
         &install_dir,
         Some(progress_callback),
         core_db,
-        target.with_pkg_id,
         install_patterns.to_vec(),
     )
     .await?;

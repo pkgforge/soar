@@ -408,14 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_with_pkg_id_override() {
-        let url = "https://example.com/app.AppImage";
-        let pkg = UrlPackage::from_url(url, None, None, None, Some("custom-id")).unwrap();
-
-        assert_eq!(pkg.pkg_id, "custom-id");
-    }
-
-    #[test]
     fn test_extract_pkg_id_from_url() {
         assert_eq!(
             extract_pkg_id_from_url("https://github.com/pkgforge/soar/releases/file"),

@@ -133,8 +133,6 @@ pub async fn update_packages(
                     });
 
                 if let Some(package) = new_pkg {
-                    let with_pkg_id = pkg.with_pkg_id;
-
                     // Check if the new version is already installed (skip if so)
                     let new_version_installed = get_existing(&package, &diesel_db)?;
                     if let Some(ref installed) = new_version_installed {
@@ -146,7 +144,6 @@ pub async fn update_packages(
                     update_targets.push(InstallTarget {
                         package,
                         existing_install: Some(pkg.clone()),
-                        with_pkg_id,
                         pinned: pkg.pinned,
                         profile: Some(pkg.profile.clone()),
                         portable: pkg.portable_path.clone(),
@@ -223,8 +220,6 @@ pub async fn update_packages(
                 });
 
             if let Some(package) = new_pkg {
-                let with_pkg_id = pkg.with_pkg_id;
-
                 // Check if the new version is already installed (skip if so)
                 let new_version_installed = get_existing(&package, &diesel_db)?;
                 if let Some(ref installed) = new_version_installed {
@@ -238,7 +233,6 @@ pub async fn update_packages(
                 update_targets.push(InstallTarget {
                     package,
                     existing_install: Some(pkg.clone()),
-                    with_pkg_id,
                     pinned: pkg.pinned,
                     profile: Some(pkg.profile.clone()),
                     portable: pkg.portable_path.clone(),
@@ -389,7 +383,6 @@ fn check_local_package_update(
     let target = InstallTarget {
         package: updated_url_pkg.to_package(),
         existing_install: Some(pkg.clone()),
-        with_pkg_id: pkg.with_pkg_id,
         pinned: resolved.pinned,
         profile: resolved.profile.clone(),
         portable: resolved.portable.as_ref().and_then(|p| p.path.clone()),

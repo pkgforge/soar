@@ -18,7 +18,6 @@ pub struct Package {
     pub profile: String,
     pub pinned: bool,
     pub is_installed: bool,
-    pub with_pkg_id: bool,
     pub detached: bool,
     pub unlinked: bool,
     pub provides: Option<Vec<PackageProvide>>,
@@ -42,7 +41,6 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         bool,
         bool,
         bool,
-        bool,
         Option<Value>,
         Option<Value>,
     );
@@ -62,11 +60,10 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
             profile: row.10,
             pinned: row.11,
             is_installed: row.12,
-            with_pkg_id: row.13,
-            detached: row.14,
-            unlinked: row.15,
-            provides: json_vec!(row.16),
-            install_patterns: json_vec!(row.17),
+            detached: row.13,
+            unlinked: row.14,
+            provides: json_vec!(row.15),
+            install_patterns: json_vec!(row.16),
         })
     }
 }
@@ -98,7 +95,6 @@ pub struct NewPackage<'a> {
     pub profile: &'a str,
     pub pinned: bool,
     pub is_installed: bool,
-    pub with_pkg_id: bool,
     pub detached: bool,
     pub unlinked: bool,
     pub provides: Option<Value>,

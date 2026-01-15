@@ -118,7 +118,6 @@ pub struct PackageInstaller {
     install_dir: PathBuf,
     progress_callback: Option<std::sync::Arc<dyn Fn(Progress) + Send + Sync>>,
     db: DieselDatabase,
-    with_pkg_id: bool,
     globs: Vec<String>,
     nested_extract: Option<String>,
     extract_root: Option<String>,
@@ -131,7 +130,6 @@ pub struct PackageInstaller {
 pub struct InstallTarget {
     pub package: Package,
     pub existing_install: Option<crate::database::models::InstalledPackage>,
-    pub with_pkg_id: bool,
     pub pinned: bool,
     pub profile: Option<String>,
     pub portable: Option<String>,
@@ -154,7 +152,6 @@ impl PackageInstaller {
         install_dir: P,
         progress_callback: Option<std::sync::Arc<dyn Fn(Progress) + Send + Sync>>,
         db: DieselDatabase,
-        with_pkg_id: bool,
         globs: Vec<String>,
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
@@ -243,7 +240,6 @@ impl PackageInstaller {
                 profile: &profile,
                 pinned: target.pinned,
                 is_installed: false,
-                with_pkg_id,
                 detached: false,
                 unlinked: false,
                 provides: None,
@@ -258,7 +254,6 @@ impl PackageInstaller {
             install_dir,
             progress_callback,
             db,
-            with_pkg_id,
             globs,
             nested_extract: target.nested_extract.clone(),
             extract_root: target.extract_root.clone(),
@@ -743,7 +738,6 @@ impl PackageInstaller {
         let checksum = package.bsum.as_deref();
         let provides = package.provides.clone();
 
-        let with_pkg_id = self.with_pkg_id;
         let installed_date = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         let installed_path = self.install_dir.to_string_lossy();
@@ -756,7 +750,6 @@ impl PackageInstaller {
                 version,
                 size,
                 provides,
-                with_pkg_id,
                 checksum,
                 &installed_date,
                 &installed_path,
