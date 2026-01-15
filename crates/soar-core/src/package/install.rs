@@ -10,7 +10,7 @@ use std::{
 use chrono::Utc;
 use serde_json::json;
 use soar_config::{
-    config::get_config,
+    config::{get_config, is_system_mode},
     packages::{BinaryMapping, BuildConfig, PackageHooks, SandboxConfig},
 };
 use soar_db::{
@@ -834,7 +834,7 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(desktop_dir(), &mut remove_action)?;
+                walk_dir(desktop_dir(is_system_mode()), &mut remove_action)?;
 
                 let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                     if let Ok(real_path) = fs::read_link(path) {
@@ -844,7 +844,7 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(icons_dir(), &mut remove_action)?;
+                walk_dir(icons_dir(is_system_mode()), &mut remove_action)?;
 
                 if let Some(ref provides) = alt_pkg.provides {
                     for provide in provides {

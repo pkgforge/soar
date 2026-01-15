@@ -137,14 +137,22 @@ pub fn xdg_cache_home() -> PathBuf {
         .unwrap_or_else(|_| home_dir().join(".cache"))
 }
 
-/// Returns the user's desktop directory
-pub fn desktop_dir() -> PathBuf {
-    xdg_data_home().join("applications")
+/// Returns the desktop directory
+pub fn desktop_dir(system: bool) -> PathBuf {
+    if system {
+        PathBuf::from("/usr/local/share/applications")
+    } else {
+        xdg_data_home().join("applications")
+    }
 }
 
-/// Returns the user's icons directory
-pub fn icons_dir() -> PathBuf {
-    xdg_data_home().join("icons/hicolor")
+/// Returns the icons directory
+pub fn icons_dir(system: bool) -> PathBuf {
+    if system {
+        PathBuf::from("/usr/local/share/icons/hicolor")
+    } else {
+        xdg_data_home().join("icons/hicolor")
+    }
 }
 
 fn expand_variables(path: &str) -> PathResult<String> {
@@ -448,16 +456,26 @@ mod tests {
     #[test]
     #[serial]
     fn test_desktop_dir() {
+        // User mode
         env::set_var("XDG_DATA_HOME", "/tmp/data");
-        let desktop = desktop_dir();
+        let desktop = desktop_dir(false);
         assert_eq!(desktop, PathBuf::from("/tmp/data/applications"));
+
+        // System mode
+        let desktop = desktop_dir(true);
+        assert_eq!(desktop, PathBuf::from("/usr/local/share/applications"));
     }
 
     #[test]
     #[serial]
     fn test_icons_dir() {
+        // User mode
         env::set_var("XDG_DATA_HOME", "/tmp/data");
-        let icons = icons_dir();
+        let icons = icons_dir(false);
         assert_eq!(icons, PathBuf::from("/tmp/data/icons/hicolor"));
+
+        // System mode
+        let icons = icons_dir(true);
+        assert_eq!(icons, PathBuf::from("/usr/local/share/icons/hicolor"));
     }
 }

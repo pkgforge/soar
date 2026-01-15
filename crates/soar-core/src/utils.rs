@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use soar_config::config::get_config;
+use soar_config::config::{get_config, is_system_mode};
 use soar_db::{connection::DbConnection, migration::DbType};
 use soar_utils::{
     error::FileSystemResult,
@@ -82,8 +82,8 @@ pub fn remove_broken_symlinks() -> Result<()> {
     };
 
     walk_dir(&get_config().get_bin_path()?, &mut remove_action)?;
-    walk_dir(desktop_dir(), &mut soar_files_action)?;
-    walk_dir(icons_dir(), &mut soar_files_action)?;
+    walk_dir(desktop_dir(is_system_mode()), &mut soar_files_action)?;
+    walk_dir(icons_dir(is_system_mode()), &mut soar_files_action)?;
 
     Ok(())
 }

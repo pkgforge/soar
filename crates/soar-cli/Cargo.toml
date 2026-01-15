@@ -23,6 +23,7 @@ clap = { version = "4.5.54", features = ["cargo", "derive"] }
 indicatif = "0.18.3"
 miette = { workspace = true }
 minisign-verify = "0.2.4"
+nix = { workspace = true }
 nu-ansi-term = "0.50.3"
 once_cell = "1.21.3"
 rayon = { workspace = true }

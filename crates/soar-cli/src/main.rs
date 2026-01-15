@@ -15,7 +15,8 @@ use progress::create_progress_bar;
 use remove::remove_packages;
 use run::run_package;
 use soar_config::config::{
-    self, generate_default_config, get_config, set_current_profile, Config, CONFIG_PATH,
+    self, enable_system_mode, generate_default_config, get_config, set_current_profile, Config,
+    CONFIG_PATH,
 };
 use soar_core::{
     error::{ErrorContext, SoarError},
@@ -25,7 +26,7 @@ use soar_core::{
 use soar_dl::http_client::configure_http_client;
 use soar_utils::path::resolve_path;
 use state::AppState;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use update::update_packages;
 use ureq::Proxy;
 use use_package::use_alternate_package;
@@ -54,6 +55,38 @@ mod self_actions;
 
 #[cfg(feature = "self")]
 use self_actions::process_self_action;
+
+/// Handle system mode - check for root privileges and re-exec with sudo/doas if needed
+fn handle_system_mode() -> SoarResult<()> {
+    if nix::unistd::geteuid().is_root() {
+        enable_system_mode();
+        return Ok(());
+    }
+
+    let args: Vec<String> = env::args().collect();
+
+    let escalation_cmd = if Command::new("doas").arg("true").status().is_ok() {
+        "doas"
+    } else if Command::new("sudo").arg("true").status().is_ok() {
+        "sudo"
+    } else {
+        return Err(SoarError::Custom(
+            "System mode requires root privileges. Neither 'doas' nor 'sudo' found.".into(),
+        ));
+    };
+
+    debug!(
+        "System mode requires root privileges. Re-executing with {}...",
+        escalation_cmd
+    );
+
+    let status = Command::new(escalation_cmd)
+        .args(&args)
+        .status()
+        .with_context(|| format!("executing {} {:?}", escalation_cmd, args))?;
+
+    std::process::exit(status.code().unwrap_or(1));
+}
 
 async fn handle_cli() -> SoarResult<()> {
     let mut args = env::args().collect::<Vec<_>>();
@@ -87,6 +120,10 @@ async fn handle_cli() -> SoarResult<()> {
     if args.no_progress {
         let mut progress = utils::PROGRESS.write().unwrap();
         *progress = false;
+    }
+
+    if args.system {
+        handle_system_mode()?;
     }
 
     if let Some(ref c) = args.config {

@@ -98,6 +98,7 @@ pub struct Config {
 
 pub static CONFIG: LazyLock<RwLock<Option<Config>>> = LazyLock::new(|| RwLock::new(None));
 pub static CURRENT_PROFILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
+pub static SYSTEM_MODE: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(false));
 
 pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
     RwLock::new(match std::env::var("SOAR_CONFIG") {
@@ -105,6 +106,26 @@ pub static CONFIG_PATH: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
         Err(_) => xdg_config_home().join("soar").join("config.toml"),
     })
 });
+
+/// Check if running in system mode
+pub fn is_system_mode() -> bool {
+    *SYSTEM_MODE.read().unwrap()
+}
+
+/// Enable system mode and set appropriate paths
+pub fn enable_system_mode() {
+    let mut system_mode = SYSTEM_MODE.write().unwrap();
+    *system_mode = true;
+    drop(system_mode);
+
+    let mut config_path = CONFIG_PATH.write().unwrap();
+    *config_path = PathBuf::from("/etc/soar/config.toml");
+}
+
+/// Get the system root path
+pub fn system_root() -> PathBuf {
+    PathBuf::from("/usr/lib/soar")
+}
 
 pub fn init() -> Result<()> {
     let config = Config::new()?;
@@ -154,8 +175,12 @@ pub fn set_current_profile(name: &str) -> Result<()> {
 impl Config {
     pub fn default_config<T: AsRef<str>>(external: bool, selected_repos: &[T]) -> Self {
         trace!(external = external, "creating default configuration");
-        let soar_root = std::env::var("SOAR_ROOT")
-            .unwrap_or_else(|_| format!("{}/soar", xdg_data_home().display()));
+        let soar_root = if is_system_mode() {
+            std::env::var("SOAR_ROOT").unwrap_or_else(|_| system_root().display().to_string())
+        } else {
+            std::env::var("SOAR_ROOT")
+                .unwrap_or_else(|_| format!("{}/soar", xdg_data_home().display()))
+        };
         trace!(soar_root = soar_root, "resolved SOAR_ROOT");
 
         let default_profile = Profile {
