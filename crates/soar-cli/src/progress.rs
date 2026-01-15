@@ -79,13 +79,15 @@ pub fn create_spinner(message: &str) -> ProgressBar {
 }
 
 fn format_bytes(state: &ProgressState, w: &mut dyn std::fmt::Write) {
-    write!(
-        w,
-        "{}/{}",
-        HumanBytes(state.pos()),
-        HumanBytes(state.len().unwrap_or(state.pos()))
-    )
-    .unwrap();
+    let pos = state.pos();
+    let len = state.len().unwrap_or(0);
+
+    // When content length is unknown (0), just show current downloaded bytes
+    if len == 0 {
+        write!(w, "{}", HumanBytes(pos)).unwrap();
+    } else {
+        write!(w, "{}/{}", HumanBytes(pos), HumanBytes(len)).unwrap();
+    }
 }
 
 pub fn handle_progress(state: Progress, progress_bar: &ProgressBar) {
