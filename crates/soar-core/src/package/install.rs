@@ -39,6 +39,57 @@ use crate::{
     SoarResult,
 };
 
+/// Early validation of relative paths before download.
+/// Rejects paths containing `..` or absolute paths.
+fn validate_relative_path(relative_path: &str, path_type: &str) -> SoarResult<()> {
+    if Path::new(relative_path).is_absolute() {
+        return Err(SoarError::Custom(format!(
+            "{} '{}' must be a relative path, not absolute",
+            path_type, relative_path
+        )));
+    }
+
+    if relative_path.contains("..") {
+        return Err(SoarError::Custom(format!(
+            "{} '{}' contains path traversal components",
+            path_type, relative_path
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate that a path is contained within a base directory (post-extraction check).
+/// Returns the canonicalized path if valid, or an error if the path escapes the base.
+fn validate_path_containment(
+    base_dir: &Path,
+    relative_path: &str,
+    path_type: &str,
+) -> SoarResult<PathBuf> {
+    let joined_path = base_dir.join(relative_path);
+
+    let canonical_base = base_dir
+        .canonicalize()
+        .with_context(|| format!("canonicalizing base directory {}", base_dir.display()))?;
+
+    let canonical_path = joined_path.canonicalize().with_context(|| {
+        format!(
+            "canonicalizing {} path {}",
+            path_type,
+            joined_path.display()
+        )
+    })?;
+
+    if !canonical_path.starts_with(&canonical_base) {
+        return Err(SoarError::Custom(format!(
+            "{} '{}' escapes install directory (path traversal)",
+            path_type, relative_path
+        )));
+    }
+
+    Ok(canonical_path)
+}
+
 /// Marker content to verify partial install matches current package
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct InstallMarker {
@@ -114,6 +165,14 @@ impl PackageInstaller {
             "creating package installer"
         );
         let profile = get_config().default_profile.clone();
+
+        // Early validation of extract_root and nested_extract paths
+        if let Some(ref extract_root) = target.extract_root {
+            validate_relative_path(extract_root, "extract_root")?;
+        }
+        if let Some(ref nested_extract) = target.nested_extract {
+            validate_relative_path(nested_extract, "nested_extract")?;
+        }
 
         // Check if there's a pending install for this exact version we can resume
         let has_pending = db.with_conn(|conn| {
@@ -556,7 +615,9 @@ impl PackageInstaller {
 
             // Handle extract_root: move contents from subdirectory to install root
             if let Some(ref root_dir) = self.extract_root {
-                let root_path = self.install_dir.join(root_dir);
+                let root_path =
+                    validate_path_containment(&self.install_dir, root_dir, "extract_root")?;
+
                 if root_path.is_dir() {
                     debug!(
                         "applying extract_root: moving contents from {} to {}",
@@ -591,16 +652,20 @@ impl PackageInstaller {
 
             // Handle nested_extract: extract an archive within the package
             if let Some(ref nested_archive) = self.nested_extract {
-                let archive_path = self.install_dir.join(nested_archive);
+                let archive_path =
+                    validate_path_containment(&self.install_dir, nested_archive, "nested_extract")?;
+
                 if archive_path.is_file() {
                     debug!("extracting nested archive: {}", archive_path.display());
                     let nested_extract_dir = get_extract_dir(&self.install_dir);
-                    let nested_dl = Download::new(format!("file://{}", archive_path.display()))
-                        .output(archive_path.to_string_lossy())
-                        .extract(true)
-                        .extract_to(&nested_extract_dir);
 
-                    nested_dl.execute()?;
+                    compak::extract_archive(&archive_path, &nested_extract_dir).map_err(|e| {
+                        SoarError::Custom(format!(
+                            "Failed to extract nested archive {}: {}",
+                            archive_path.display(),
+                            e
+                        ))
+                    })?;
 
                     fs::remove_file(&archive_path).ok();
 

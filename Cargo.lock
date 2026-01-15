@@ -2259,6 +2259,7 @@ name = "soar-core"
 version = "0.10.0"
 dependencies = [
  "chrono",
+ "compak",
  "diesel",
  "fast-glob",
  "landlock",
