@@ -4,10 +4,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use soar_config::config::get_config;
+use soar_config::{
+    config::get_config,
+    packages::{PackageHooks, SandboxConfig},
+};
 use soar_db::{models::types::ProvideStrategy, repository::core::CoreRepository};
 use soar_utils::{error::FileSystemResult, fs::walk_dir, path::desktop_dir};
 use tracing::{debug, trace, warn};
+
+use super::hooks::{run_hook, HookEnv};
 
 /// Formats bytes into human-readable string (e.g., "1.5 MiB")
 fn format_size(bytes: u64) -> String {
@@ -35,6 +40,8 @@ use crate::{
 pub struct PackageRemover {
     package: InstalledPackage,
     db: DieselDatabase,
+    hooks: Option<PackageHooks>,
+    sandbox: Option<SandboxConfig>,
 }
 
 impl PackageRemover {
@@ -47,7 +54,45 @@ impl PackageRemover {
         Self {
             package,
             db,
+            hooks: None,
+            sandbox: None,
         }
+    }
+
+    /// Set hooks configuration for the package removal.
+    pub fn with_hooks(mut self, hooks: Option<PackageHooks>) -> Self {
+        self.hooks = hooks;
+        self
+    }
+
+    /// Set sandbox configuration for hook execution.
+    pub fn with_sandbox(mut self, sandbox: Option<SandboxConfig>) -> Self {
+        self.sandbox = sandbox;
+        self
+    }
+
+    /// Run a hook command with environment variables set.
+    fn run_hook(&self, hook_name: &str, command: &str) -> SoarResult<()> {
+        let install_dir = PathBuf::from(&self.package.installed_path);
+        let env = HookEnv {
+            install_dir: &install_dir,
+            pkg_name: &self.package.pkg_name,
+            pkg_id: &self.package.pkg_id,
+            pkg_version: &self.package.version,
+        };
+
+        run_hook(hook_name, command, &env, self.sandbox.as_ref())
+    }
+
+    /// Run pre_remove hook if configured.
+    /// This should be called before any file deletions during package removal.
+    pub fn run_pre_remove_hook(&self) -> SoarResult<()> {
+        if let Some(ref hooks) = self.hooks {
+            if let Some(ref cmd) = hooks.pre_remove {
+                self.run_hook("pre_remove", cmd)?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn remove(&self) -> SoarResult<()> {
@@ -63,6 +108,9 @@ impl PackageRemover {
             self.package.repo_name,
             self.package.version
         );
+
+        self.run_pre_remove_hook()?;
+
         // Track removed symlinks for logging
         let mut removed_symlinks: Vec<PathBuf> = Vec::new();
 

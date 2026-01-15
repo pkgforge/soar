@@ -25,7 +25,7 @@ use crate::{
     install::{create_install_context, perform_installation},
     state::AppState,
     update::perform_update,
-    utils::{display_settings, icon_or, Colored, Icons},
+    utils::{display_settings, get_package_hooks, icon_or, Colored, Icons},
 };
 
 /// Result of comparing declared packages vs installed packages
@@ -303,6 +303,12 @@ fn create_install_target(
         portable_share: resolved.portable.as_ref().and_then(|p| p.share.clone()),
         portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
         entrypoint: resolved.entrypoint.clone(),
+        binaries: resolved.binaries.clone(),
+        nested_extract: resolved.nested_extract.clone(),
+        extract_root: resolved.extract_root.clone(),
+        hooks: resolved.hooks.clone(),
+        build: resolved.build.clone(),
+        sandbox: resolved.sandbox.clone(),
     }
 }
 
@@ -324,6 +330,12 @@ fn create_url_install_target(
         portable_share: resolved.portable.as_ref().and_then(|p| p.share.clone()),
         portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
         entrypoint: resolved.entrypoint.clone(),
+        binaries: resolved.binaries.clone(),
+        nested_extract: resolved.nested_extract.clone(),
+        extract_root: resolved.extract_root.clone(),
+        hooks: resolved.hooks.clone(),
+        build: resolved.build.clone(),
+        sandbox: resolved.sandbox.clone(),
     }
 }
 
@@ -535,8 +547,12 @@ async fn execute_apply(state: &AppState, diff: ApplyDiff, no_verify: bool) -> So
         info!("\nRemoving {} package(s)...", diff.to_remove.len());
 
         for pkg in diff.to_remove {
+            // Look up hooks from packages config (may not exist for pruned packages)
+            let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
             match PackageRemover::new(pkg.clone(), diesel_db.clone())
                 .await
+                .with_hooks(hooks)
+                .with_sandbox(sandbox)
                 .remove()
                 .await
             {

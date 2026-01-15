@@ -2,13 +2,17 @@ use std::{
     env, fs,
     io::Write,
     path::{Path, PathBuf},
+    process::Command,
     thread::sleep,
     time::Duration,
 };
 
 use chrono::Utc;
 use serde_json::json;
-use soar_config::config::get_config;
+use soar_config::{
+    config::get_config,
+    packages::{BinaryMapping, BuildConfig, PackageHooks, SandboxConfig},
+};
 use soar_db::{
     models::types::ProvideStrategy,
     repository::core::{CoreRepository, InstalledPackageWithPortable, NewInstalledPackage},
@@ -35,6 +39,57 @@ use crate::{
     utils::get_extract_dir,
     SoarResult,
 };
+
+/// Early validation of relative paths before download.
+/// Rejects paths containing `..` or absolute paths.
+fn validate_relative_path(relative_path: &str, path_type: &str) -> SoarResult<()> {
+    if Path::new(relative_path).is_absolute() {
+        return Err(SoarError::Custom(format!(
+            "{} '{}' must be a relative path, not absolute",
+            path_type, relative_path
+        )));
+    }
+
+    if relative_path.contains("..") {
+        return Err(SoarError::Custom(format!(
+            "{} '{}' contains path traversal components",
+            path_type, relative_path
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate that a path is contained within a base directory (post-extraction check).
+/// Returns the canonicalized path if valid, or an error if the path escapes the base.
+fn validate_path_containment(
+    base_dir: &Path,
+    relative_path: &str,
+    path_type: &str,
+) -> SoarResult<PathBuf> {
+    let joined_path = base_dir.join(relative_path);
+
+    let canonical_base = base_dir
+        .canonicalize()
+        .with_context(|| format!("canonicalizing base directory {}", base_dir.display()))?;
+
+    let canonical_path = joined_path.canonicalize().with_context(|| {
+        format!(
+            "canonicalizing {} path {}",
+            path_type,
+            joined_path.display()
+        )
+    })?;
+
+    if !canonical_path.starts_with(&canonical_base) {
+        return Err(SoarError::Custom(format!(
+            "{} '{}' escapes install directory (path traversal)",
+            path_type, relative_path
+        )));
+    }
+
+    Ok(canonical_path)
+}
 
 /// Marker content to verify partial install matches current package
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -65,6 +120,11 @@ pub struct PackageInstaller {
     db: DieselDatabase,
     with_pkg_id: bool,
     globs: Vec<String>,
+    nested_extract: Option<String>,
+    extract_root: Option<String>,
+    hooks: Option<PackageHooks>,
+    build: Option<BuildConfig>,
+    sandbox: Option<SandboxConfig>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -80,6 +140,12 @@ pub struct InstallTarget {
     pub portable_share: Option<String>,
     pub portable_cache: Option<String>,
     pub entrypoint: Option<String>,
+    pub binaries: Option<Vec<BinaryMapping>>,
+    pub nested_extract: Option<String>,
+    pub extract_root: Option<String>,
+    pub hooks: Option<PackageHooks>,
+    pub build: Option<BuildConfig>,
+    pub sandbox: Option<SandboxConfig>,
 }
 
 impl PackageInstaller {
@@ -100,6 +166,14 @@ impl PackageInstaller {
             "creating package installer"
         );
         let profile = get_config().default_profile.clone();
+
+        // Early validation of extract_root and nested_extract paths
+        if let Some(ref extract_root) = target.extract_root {
+            validate_relative_path(extract_root, "extract_root")?;
+        }
+        if let Some(ref nested_extract) = target.nested_extract {
+            validate_relative_path(nested_extract, "nested_extract")?;
+        }
 
         // Check if there's a pending install for this exact version we can resume
         let has_pending = db.with_conn(|conn| {
@@ -186,7 +260,187 @@ impl PackageInstaller {
             db,
             with_pkg_id,
             globs,
+            nested_extract: target.nested_extract.clone(),
+            extract_root: target.extract_root.clone(),
+            hooks: target.hooks.clone(),
+            build: target.build.clone(),
+            sandbox: target.sandbox.clone(),
         })
+    }
+
+    /// Run a hook command with environment variables set.
+    fn run_hook(&self, hook_name: &str, command: &str) -> SoarResult<()> {
+        use super::hooks::{run_hook, HookEnv};
+
+        let env = HookEnv {
+            install_dir: &self.install_dir,
+            pkg_name: &self.package.pkg_name,
+            pkg_id: &self.package.pkg_id,
+            pkg_version: &self.package.version,
+        };
+
+        run_hook(hook_name, command, &env, self.sandbox.as_ref())
+    }
+
+    /// Run post_download hook if configured.
+    pub fn run_post_download_hook(&self) -> SoarResult<()> {
+        if let Some(ref hooks) = self.hooks {
+            if let Some(ref cmd) = hooks.post_download {
+                self.run_hook("post_download", cmd)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Run post_extract hook if configured.
+    pub fn run_post_extract_hook(&self) -> SoarResult<()> {
+        if let Some(ref hooks) = self.hooks {
+            if let Some(ref cmd) = hooks.post_extract {
+                self.run_hook("post_extract", cmd)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Run post_install hook if configured.
+    pub fn run_post_install_hook(&self) -> SoarResult<()> {
+        if let Some(ref hooks) = self.hooks {
+            if let Some(ref cmd) = hooks.post_install {
+                self.run_hook("post_install", cmd)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Check if build dependencies are available.
+    fn check_build_dependencies(&self, deps: &[String]) -> SoarResult<()> {
+        for dep in deps {
+            let result = Command::new("which").arg(dep).output();
+
+            match result {
+                Ok(output) if !output.status.success() => {
+                    warn!("Build dependency '{}' not found in PATH", dep);
+                }
+                Err(_) => {
+                    warn!("Could not check for build dependency '{}'", dep);
+                }
+                _ => {
+                    trace!("Build dependency '{}' found", dep);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Run build commands if configured.
+    pub fn run_build(&self) -> SoarResult<()> {
+        use crate::sandbox;
+
+        let build_config = match &self.build {
+            Some(config) if !config.commands.is_empty() => config,
+            _ => return Ok(()),
+        };
+
+        debug!(
+            "building package {} with {} commands",
+            self.package.pkg_name,
+            build_config.commands.len()
+        );
+
+        if !build_config.dependencies.is_empty() {
+            self.check_build_dependencies(&build_config.dependencies)?;
+        }
+
+        let bin_dir = get_config().get_bin_path()?;
+        let nproc = std::thread::available_parallelism()
+            .map(|p| p.get().to_string())
+            .unwrap_or_else(|_| "1".to_string());
+
+        let use_sandbox = sandbox::is_landlock_supported();
+
+        if use_sandbox {
+            debug!("running build with Landlock sandbox");
+        } else {
+            if self.sandbox.as_ref().is_some_and(|s| s.require) {
+                return Err(SoarError::Custom(
+                    "Build requires sandbox but Landlock is not available on this system. \
+                     Either upgrade to Linux 5.13+ or set sandbox.require = false."
+                        .into(),
+                ));
+            }
+            warn!(
+                "Landlock not supported, running build without sandbox ({} commands)",
+                build_config.commands.len()
+            );
+        }
+
+        for (i, cmd) in build_config.commands.iter().enumerate() {
+            debug!(
+                "running build command {}/{}: {}",
+                i + 1,
+                build_config.commands.len(),
+                cmd
+            );
+
+            let status = if use_sandbox {
+                let env_vars: Vec<(&str, String)> = vec![
+                    (
+                        "INSTALL_DIR",
+                        self.install_dir.to_string_lossy().to_string(),
+                    ),
+                    ("BIN_DIR", bin_dir.to_string_lossy().to_string()),
+                    ("PKG_NAME", self.package.pkg_name.clone()),
+                    ("PKG_ID", self.package.pkg_id.clone()),
+                    ("PKG_VERSION", self.package.version.clone()),
+                    ("NPROC", nproc.clone()),
+                ];
+
+                let mut sandbox_cmd = sandbox::SandboxedCommand::new(cmd)
+                    .working_dir(&self.install_dir)
+                    .read_path(&bin_dir)
+                    .envs(env_vars);
+
+                if let Some(s) = &self.sandbox {
+                    let config = sandbox::SandboxConfig::new().with_network(if s.network {
+                        sandbox::NetworkConfig::allow_all()
+                    } else {
+                        sandbox::NetworkConfig::default()
+                    });
+                    sandbox_cmd = sandbox_cmd.config(config);
+                    for path in &s.fs_read {
+                        sandbox_cmd = sandbox_cmd.read_path(path);
+                    }
+                    for path in &s.fs_write {
+                        sandbox_cmd = sandbox_cmd.write_path(path);
+                    }
+                }
+                sandbox_cmd.run()?
+            } else {
+                Command::new("sh")
+                    .arg("-c")
+                    .arg(cmd)
+                    .env("INSTALL_DIR", &self.install_dir)
+                    .env("BIN_DIR", &bin_dir)
+                    .env("PKG_NAME", &self.package.pkg_name)
+                    .env("PKG_ID", &self.package.pkg_id)
+                    .env("PKG_VERSION", &self.package.version)
+                    .env("NPROC", &nproc)
+                    .current_dir(&self.install_dir)
+                    .status()
+                    .with_context(|| format!("executing build command {}", i + 1))?
+            };
+
+            if !status.success() {
+                return Err(SoarError::Custom(format!(
+                    "Build command {} failed with exit code: {}",
+                    i + 1,
+                    status.code().unwrap_or(-1)
+                )));
+            }
+        }
+
+        debug!("build completed successfully");
+        Ok(())
     }
 
     fn write_marker(&self) -> SoarResult<()> {
@@ -304,12 +558,17 @@ impl PackageInstaller {
                 }
             }
 
+            // Run post_download hook for OCI packages
+            // For OCI packages, content is directly placed, so post_extract also applies
+            self.run_post_download_hook()?;
+            self.run_post_extract_hook()?;
+            self.run_build()?;
+
             Ok(None)
         } else {
             trace!(url = url.as_str(), "using direct download");
             let extract_dir = get_extract_dir(&self.install_dir);
 
-            // Only extract if it's an archive type
             let should_extract = self
                 .package
                 .pkg_type
@@ -330,6 +589,8 @@ impl PackageInstaller {
             }
 
             let file_path = dl.execute()?;
+
+            self.run_post_download_hook()?;
 
             let checksum = if PathBuf::from(&file_path).exists() {
                 Some(calculate_checksum(&file_path)?)
@@ -356,6 +617,103 @@ impl PackageInstaller {
 
                 fs::remove_dir_all(&extract_path).ok();
             }
+
+            // Handle extract_root: move contents from subdirectory to install root
+            if let Some(ref root_dir) = self.extract_root {
+                let root_path =
+                    validate_path_containment(&self.install_dir, root_dir, "extract_root")?;
+
+                if root_path.is_dir() {
+                    debug!(
+                        "applying extract_root: moving contents from {} to {}",
+                        root_path.display(),
+                        self.install_dir.display()
+                    );
+                    // Move all contents from root_path to install_dir
+                    for entry in fs::read_dir(&root_path).with_context(|| {
+                        format!("reading extract_root directory {}", root_path.display())
+                    })? {
+                        let entry = entry.with_context(|| {
+                            format!("reading entry from directory {}", root_path.display())
+                        })?;
+                        let from = entry.path();
+                        let to = self.install_dir.join(entry.file_name());
+                        if to.exists() {
+                            if to.is_dir() {
+                                fs::remove_dir_all(&to).ok();
+                            } else {
+                                fs::remove_file(&to).ok();
+                            }
+                        }
+                        fs::rename(&from, &to).with_context(|| {
+                            format!("moving {} to {}", from.display(), to.display())
+                        })?;
+                    }
+                    fs::remove_dir_all(&root_path).ok();
+                } else {
+                    warn!("extract_root '{}' not found in package", root_dir);
+                }
+            }
+
+            // Handle nested_extract: extract an archive within the package
+            if let Some(ref nested_archive) = self.nested_extract {
+                let archive_path =
+                    validate_path_containment(&self.install_dir, nested_archive, "nested_extract")?;
+
+                if archive_path.is_file() {
+                    debug!("extracting nested archive: {}", archive_path.display());
+                    let nested_extract_dir = get_extract_dir(&self.install_dir);
+
+                    compak::extract_archive(&archive_path, &nested_extract_dir).map_err(|e| {
+                        SoarError::Custom(format!(
+                            "Failed to extract nested archive {}: {}",
+                            archive_path.display(),
+                            e
+                        ))
+                    })?;
+
+                    fs::remove_file(&archive_path).ok();
+
+                    // Move extracted contents to install_dir
+                    let nested_extract_path = PathBuf::from(&nested_extract_dir);
+                    if nested_extract_path.exists() {
+                        for entry in fs::read_dir(&nested_extract_path).with_context(|| {
+                            format!(
+                                "reading nested extract directory {}",
+                                nested_extract_path.display()
+                            )
+                        })? {
+                            let entry = entry.with_context(|| {
+                                format!(
+                                    "reading entry from directory {}",
+                                    nested_extract_path.display()
+                                )
+                            })?;
+                            let from = entry.path();
+                            let to = self.install_dir.join(entry.file_name());
+                            if to.exists() {
+                                if to.is_dir() {
+                                    fs::remove_dir_all(&to).ok();
+                                } else {
+                                    fs::remove_file(&to).ok();
+                                }
+                            }
+                            fs::rename(&from, &to).with_context(|| {
+                                format!("moving {} to {}", from.display(), to.display())
+                            })?;
+                        }
+                        fs::remove_dir_all(&nested_extract_path).ok();
+                    }
+                } else {
+                    warn!(
+                        "nested_extract archive '{}' not found in package",
+                        nested_archive
+                    );
+                }
+            }
+
+            self.run_post_extract_hook()?;
+            self.run_build()?;
 
             Ok(checksum)
         }

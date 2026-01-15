@@ -67,6 +67,70 @@ impl Default for PackageSpec {
     }
 }
 
+/// Binary mapping for custom symlink creation.
+/// Maps a source executable path to a custom symlink name.
+#[derive(Clone, Debug, Deserialize, Serialize, Documented, DocumentedFields)]
+pub struct BinaryMapping {
+    /// Path to the executable within the package (relative to install dir).
+    pub source: String,
+
+    /// Name for the symlink in the bin directory.
+    pub link_as: String,
+}
+
+/// Hook commands to run at various stages of package installation.
+/// Commands are run with environment variables for paths.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Documented, DocumentedFields)]
+pub struct PackageHooks {
+    /// Command to run after the package is downloaded (before extraction).
+    pub post_download: Option<String>,
+
+    /// Command to run after the package is extracted.
+    pub post_extract: Option<String>,
+
+    /// Command to run after the package is fully installed (symlinks created).
+    pub post_install: Option<String>,
+
+    /// Command to run before the package is removed.
+    pub pre_remove: Option<String>,
+}
+
+/// Build configuration for compiling packages from source.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Documented, DocumentedFields)]
+pub struct BuildConfig {
+    /// Shell commands to run for building the package.
+    /// Commands are executed in sequence. If any command fails, the build stops.
+    /// Available environment variables: $INSTALL_DIR, $PKG_NAME, $PKG_VERSION, $NPROC
+    pub commands: Vec<String>,
+
+    /// Optional list of dependencies required for building.
+    /// Soar will warn if these are not found in PATH.
+    #[serde(default)]
+    pub dependencies: Vec<String>,
+}
+
+/// Sandbox configuration for restricting hook and build command execution.
+/// Uses Landlock (Linux 5.13+) to restrict filesystem access.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Documented, DocumentedFields)]
+pub struct SandboxConfig {
+    /// Require sandbox - fail if Landlock is not available instead of falling back
+    /// to unsandboxed execution. Use this for builds you don't trust to run unsandboxed.
+    #[serde(default)]
+    pub require: bool,
+
+    /// Additional paths that can be read (beyond defaults like /usr, /lib, etc).
+    #[serde(default)]
+    pub fs_read: Vec<String>,
+
+    /// Additional paths that can be written (beyond install_dir and /tmp).
+    #[serde(default)]
+    pub fs_write: Vec<String>,
+
+    /// Whether to allow network access (requires Landlock V4+, kernel 6.7+).
+    #[serde(default)]
+    pub network: bool,
+}
+
 /// Full package options for detailed specification.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Documented, DocumentedFields)]
 pub struct PackageOptions {
@@ -87,6 +151,28 @@ pub struct PackageOptions {
 
     /// Entrypoint executable name (for URL packages where the binary name differs from package name).
     pub entrypoint: Option<String>,
+
+    /// Multiple binary mappings (source path -> symlink name).
+    /// Use this when a package provides multiple executables.
+    pub binaries: Option<Vec<BinaryMapping>>,
+
+    /// Path to a nested archive to extract after the main extraction.
+    /// Useful for packages that contain archives within archives.
+    pub nested_extract: Option<String>,
+
+    /// Subdirectory within the extracted archive to treat as the root.
+    /// Useful when archives have a versioned root folder like "app-v1.0/".
+    pub extract_root: Option<String>,
+
+    /// Hook commands to run at various stages of installation.
+    pub hooks: Option<PackageHooks>,
+
+    /// Build configuration for compiling from source.
+    pub build: Option<BuildConfig>,
+
+    /// Sandbox configuration for restricting hook and build command execution.
+    /// When set, commands are restricted to read/write only specific paths.
+    pub sandbox: Option<SandboxConfig>,
 
     /// Whether to pin this package (prevents automatic updates).
     #[serde(default)]
@@ -180,6 +266,12 @@ pub struct ResolvedPackage {
     pub url: Option<String>,
     pub pkg_type: Option<String>,
     pub entrypoint: Option<String>,
+    pub binaries: Option<Vec<BinaryMapping>>,
+    pub nested_extract: Option<String>,
+    pub extract_root: Option<String>,
+    pub hooks: Option<PackageHooks>,
+    pub build: Option<BuildConfig>,
+    pub sandbox: Option<SandboxConfig>,
     pub pinned: bool,
     pub profile: Option<String>,
     pub portable: Option<PortableConfig>,
@@ -207,6 +299,12 @@ impl PackageSpec {
                     url: None,
                     pkg_type: None,
                     entrypoint: None,
+                    binaries: None,
+                    nested_extract: None,
+                    extract_root: None,
+                    hooks: None,
+                    build: None,
+                    sandbox: None,
                     pinned,
                     profile: defaults.and_then(|d| d.profile.clone()),
                     portable: None,
@@ -229,6 +327,12 @@ impl PackageSpec {
                     url: opts.url.clone(),
                     pkg_type: opts.pkg_type.clone(),
                     entrypoint: opts.entrypoint.clone(),
+                    binaries: opts.binaries.clone(),
+                    nested_extract: opts.nested_extract.clone(),
+                    extract_root: opts.extract_root.clone(),
+                    hooks: opts.hooks.clone(),
+                    build: opts.build.clone(),
+                    sandbox: opts.sandbox.clone(),
                     pinned,
                     profile: opts
                         .profile
