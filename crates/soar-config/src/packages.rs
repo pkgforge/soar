@@ -146,6 +146,30 @@ pub struct PackageOptions {
     /// Direct URL to download the package from (makes it a "local" package).
     pub url: Option<String>,
 
+    /// GitHub repository in "owner/repo" format for installing from releases.
+    /// When set, soar fetches the latest release and downloads the matching asset.
+    pub github: Option<String>,
+
+    /// GitLab repository in "owner/repo" format for installing from releases.
+    /// When set, soar fetches the latest release and downloads the matching asset.
+    pub gitlab: Option<String>,
+
+    /// Glob pattern to match release asset filename (e.g., "*linux*.AppImage").
+    /// Required when github/gitlab is set to select the correct asset.
+    pub asset_pattern: Option<String>,
+
+    /// Whether to include pre-release versions when using github/gitlab sources.
+    #[serde(default)]
+    pub include_prerelease: Option<bool>,
+
+    /// Glob pattern to match release tag names (e.g., "v*-stable", "nightly-*").
+    /// If not set, the first matching release is used.
+    pub tag_pattern: Option<String>,
+
+    /// Custom command to fetch version (outputs version string on stdout).
+    /// If not set and github/gitlab is used, version is fetched from releases API.
+    pub version_command: Option<String>,
+
     /// Package type for URL installs (e.g., appimage, flatimage, archive).
     pub pkg_type: Option<String>,
 
@@ -227,6 +251,8 @@ pub enum UpdateSource {
         asset_pattern: Option<String>,
         /// Whether to include pre-release versions.
         include_prerelease: Option<bool>,
+        /// Glob pattern to match release tag names (e.g., "v*-stable").
+        tag_pattern: Option<String>,
     },
     /// GitLab releases.
     #[serde(rename = "gitlab")]
@@ -237,6 +263,8 @@ pub enum UpdateSource {
         asset_pattern: Option<String>,
         /// Whether to include pre-release versions.
         include_prerelease: Option<bool>,
+        /// Glob pattern to match release tag names (e.g., "v*-stable").
+        tag_pattern: Option<String>,
     },
     /// Custom URL endpoint that returns JSON with version/download info.
     #[serde(rename = "url")]
@@ -257,13 +285,19 @@ pub enum UpdateSource {
 }
 
 /// Resolved package specification with name included.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ResolvedPackage {
     pub name: String,
     pub pkg_id: Option<String>,
     pub version: Option<String>,
     pub repo: Option<String>,
     pub url: Option<String>,
+    pub github: Option<String>,
+    pub gitlab: Option<String>,
+    pub asset_pattern: Option<String>,
+    pub include_prerelease: Option<bool>,
+    pub tag_pattern: Option<String>,
+    pub version_command: Option<String>,
     pub pkg_type: Option<String>,
     pub entrypoint: Option<String>,
     pub binaries: Option<Vec<BinaryMapping>>,
@@ -297,6 +331,12 @@ impl PackageSpec {
                     version,
                     repo: None,
                     url: None,
+                    github: None,
+                    gitlab: None,
+                    asset_pattern: None,
+                    include_prerelease: None,
+                    tag_pattern: None,
+                    version_command: None,
                     pkg_type: None,
                     entrypoint: None,
                     binaries: None,
@@ -316,15 +356,23 @@ impl PackageSpec {
             PackageSpec::Detailed(opts) => {
                 // Treat "*" as None (latest version)
                 let version = opts.version.as_ref().filter(|v| v.as_str() != "*").cloned();
-                // URL packages: only pinned if explicitly set
+                // URL/GitHub/GitLab packages: only pinned if explicitly set
                 // Other packages: pinned if explicitly set or if a specific version is requested
-                let pinned = opts.pinned || (version.is_some() && opts.url.is_none());
+                let is_remote =
+                    opts.url.is_some() || opts.github.is_some() || opts.gitlab.is_some();
+                let pinned = opts.pinned || (version.is_some() && !is_remote);
                 ResolvedPackage {
                     name: name.to_string(),
                     pkg_id: opts.pkg_id.clone(),
                     version,
                     repo: opts.repo.clone(),
                     url: opts.url.clone(),
+                    github: opts.github.clone(),
+                    gitlab: opts.gitlab.clone(),
+                    asset_pattern: opts.asset_pattern.clone(),
+                    include_prerelease: opts.include_prerelease,
+                    tag_pattern: opts.tag_pattern.clone(),
+                    version_command: opts.version_command.clone(),
                     pkg_type: opts.pkg_type.clone(),
                     entrypoint: opts.entrypoint.clone(),
                     binaries: opts.binaries.clone(),
@@ -423,16 +471,22 @@ impl PackagesConfig {
         Ok(doc)
     }
 
-    /// Update the URL and version for a specific package in the packages.toml file.
+    /// Update package fields in packages.toml.
     ///
     /// This preserves comments and formatting in the file.
-    /// The version is only updated if a version field already exists in the config.
-    pub fn update_package_url(
+    /// - If `new_url` is provided, the `url` field is updated and `version` is updated only if it already exists.
+    /// - If only `new_version` is provided, the `version` field is added/updated.
+    /// - Simple string specs are skipped (user explicitly set a version).
+    pub fn update_package(
         package_name: &str,
-        new_url: &str,
-        new_version: &str,
+        new_url: Option<&str>,
+        new_version: Option<&str>,
         config_path: Option<&str>,
     ) -> Result<()> {
+        if new_url.is_none() && new_version.is_none() {
+            return Ok(());
+        }
+
         let config_path = match config_path {
             Some(p) => PathBuf::from(p),
             None => PACKAGES_CONFIG_PATH.read().unwrap().clone(),
@@ -445,6 +499,72 @@ impl PackagesConfig {
         }
 
         let content = fs::read_to_string(&config_path)?;
+
+        if new_url.is_none() && new_version.is_some() {
+            let version = new_version.unwrap();
+
+            let doc = content.parse::<DocumentMut>()?;
+            let packages = doc
+                .get("packages")
+                .and_then(|p| p.as_table())
+                .ok_or_else(|| ConfigError::Custom("No [packages] section found".into()))?;
+
+            let package = packages.get(package_name).ok_or_else(|| {
+                ConfigError::Custom(format!("Package '{}' not found in config", package_name))
+            })?;
+
+            match package {
+                toml_edit::Item::Value(toml_edit::Value::String(_)) => {
+                    return Ok(());
+                }
+                toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
+                    if table.contains_key("version") {
+                        let mut doc = content.parse::<DocumentMut>()?;
+                        if let Some(pkg) = doc
+                            .get_mut("packages")
+                            .and_then(|p| p.as_table_mut())
+                            .and_then(|t| t.get_mut(package_name))
+                        {
+                            if let toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) = pkg {
+                                t.insert("version", version.into());
+                            }
+                        }
+                        fs::write(&config_path, doc.to_string())?;
+                    } else {
+                        let updated = add_version_to_inline_table(&content, package_name, version)?;
+                        fs::write(&config_path, updated)?;
+                    }
+                }
+                toml_edit::Item::Table(_) => {
+                    let mut doc = content.parse::<DocumentMut>()?;
+                    if let Some(pkg) = doc
+                        .get_mut("packages")
+                        .and_then(|p| p.as_table_mut())
+                        .and_then(|t| t.get_mut(package_name))
+                    {
+                        if let toml_edit::Item::Table(t) = pkg {
+                            t.insert("version", toml_edit::value(version));
+                        }
+                    }
+                    fs::write(&config_path, doc.to_string())?;
+                }
+                _ => {
+                    return Err(ConfigError::Custom(format!(
+                        "Unexpected package format for '{}'",
+                        package_name
+                    )));
+                }
+            }
+
+            info!(
+                "Updated version to {} for '{}' in {}",
+                version,
+                package_name,
+                config_path.display()
+            );
+            return Ok(());
+        }
+
         let mut doc = content.parse::<DocumentMut>()?;
 
         let packages = doc
@@ -456,32 +576,92 @@ impl PackagesConfig {
             ConfigError::Custom(format!("Package '{}' not found in config", package_name))
         })?;
 
+        let url = new_url.unwrap();
         match package {
             toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
-                table.insert("url", new_url.into());
-                if table.contains_key("version") {
-                    table.insert("version", new_version.into());
+                table.insert("url", url.into());
+                if let Some(version) = new_version {
+                    if table.contains_key("version") {
+                        table.insert("version", version.into());
+                    }
                 }
             }
             toml_edit::Item::Table(table) => {
-                table.insert("url", toml_edit::value(new_url));
-                if table.contains_key("version") {
-                    table.insert("version", toml_edit::value(new_version));
+                table.insert("url", toml_edit::value(url));
+                if let Some(version) = new_version {
+                    if table.contains_key("version") {
+                        table.insert("version", toml_edit::value(version));
+                    }
                 }
             }
             _ => {
-                unreachable!("Package is a simple string (version)");
+                return Err(ConfigError::Custom(format!(
+                    "Unexpected package format for '{}'",
+                    package_name
+                )));
             }
         }
 
         fs::write(&config_path, doc.to_string())?;
+
+        let updated = match new_version {
+            Some(v) => format!("URL and version ({})", v),
+            None => "URL".to_string(),
+        };
         info!(
-            "Updated URL for '{}' in {}",
+            "Updated {} for '{}' in {}",
+            updated,
             package_name,
             config_path.display()
         );
 
         Ok(())
+    }
+}
+
+/// Add version field to an inline table using string manipulation.
+fn add_version_to_inline_table(content: &str, package_name: &str, version: &str) -> Result<String> {
+    let search = format!("{} = {{", package_name);
+    let Some(brace_pos) = content.find(&search).map(|p| p + search.len() - 1) else {
+        let start = content
+            .find(&format!("{} =", package_name))
+            .ok_or_else(|| ConfigError::Custom(format!("Package '{}' not found", package_name)))?;
+        let brace_pos = content[start..]
+            .find('{')
+            .map(|p| start + p)
+            .ok_or_else(|| {
+                ConfigError::Custom(format!("No inline table for '{}'", package_name))
+            })?;
+        return Ok(insert_version_at(content, brace_pos, version));
+    };
+
+    Ok(insert_version_at(content, brace_pos, version))
+}
+
+fn insert_version_at(content: &str, brace_pos: usize, version: &str) -> String {
+    let after_brace = &content[brace_pos + 1..];
+    let is_multiline = after_brace.starts_with('\n') || after_brace.starts_with("\r\n");
+
+    if is_multiline {
+        let next_line_start = brace_pos + 1 + after_brace.find('\n').map(|p| p + 1).unwrap_or(0);
+        let indent: String = content[next_line_start..]
+            .chars()
+            .take_while(|c| c.is_whitespace() && *c != '\n')
+            .collect();
+        format!(
+            "{}\n{}version = \"{}\",{}",
+            &content[..=brace_pos],
+            indent,
+            version,
+            &content[brace_pos + 1..]
+        )
+    } else {
+        format!(
+            "{} version = \"{}\",{}",
+            &content[..=brace_pos],
+            version,
+            after_brace
+        )
     }
 }
 

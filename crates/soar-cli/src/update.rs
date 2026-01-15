@@ -1,7 +1,7 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use nu_ansi_term::Color::{Cyan, Green, Red};
-use soar_config::packages::PackagesConfig;
+use soar_config::packages::{PackagesConfig, ResolvedPackage, UpdateSource};
 use soar_core::{
     database::{
         connection::DieselDatabase,
@@ -301,10 +301,10 @@ pub async fn update_packages(
             .unwrap_or(false);
 
         if is_installed {
-            if let Err(e) = PackagesConfig::update_package_url(
+            if let Err(e) = PackagesConfig::update_package(
                 &url_info.pkg_name,
-                &url_info.new_url,
-                &url_info.new_version,
+                Some(&url_info.new_url),
+                Some(&url_info.new_version),
                 None,
             ) {
                 warn!(
@@ -318,22 +318,55 @@ pub async fn update_packages(
     Ok(())
 }
 
+/// Derive an UpdateSource from a resolved package.
+fn derive_update_source(resolved: &ResolvedPackage) -> Option<UpdateSource> {
+    if let Some(ref update) = resolved.update {
+        return Some(update.clone());
+    }
+
+    if let Some(ref repo) = resolved.github {
+        return Some(UpdateSource::GitHub {
+            repo: repo.clone(),
+            asset_pattern: resolved.asset_pattern.clone(),
+            include_prerelease: resolved.include_prerelease,
+            tag_pattern: resolved.tag_pattern.clone(),
+        });
+    }
+
+    if let Some(ref repo) = resolved.gitlab {
+        return Some(UpdateSource::GitLab {
+            repo: repo.clone(),
+            asset_pattern: resolved.asset_pattern.clone(),
+            include_prerelease: resolved.include_prerelease,
+            tag_pattern: resolved.tag_pattern.clone(),
+        });
+    }
+
+    None
+}
+
 /// Check if a local package has an update available via its update source
 fn check_local_package_update(
     pkg: &InstalledPackage,
-    resolved_packages: &[soar_config::packages::ResolvedPackage],
+    resolved_packages: &[ResolvedPackage],
 ) -> SoarResult<Option<(InstallTarget, UrlUpdateInfo)>> {
+    // Find resolved package that has an update source
     let resolved = resolved_packages
         .iter()
-        .find(|r| r.name == pkg.pkg_name && r.update.is_some());
+        .find(|r| r.name == pkg.pkg_name && derive_update_source(r).is_some());
 
     let Some(resolved) = resolved else {
         return Ok(None);
     };
 
-    let update_source = resolved.update.as_ref().unwrap();
+    if resolved.pinned {
+        info!("Skipping {}#{} (pinned)", pkg.pkg_name, pkg.pkg_id);
+        return Ok(None);
+    }
 
-    let remote_update = match check_for_update(update_source, &pkg.version) {
+    let update_source = derive_update_source(resolved).unwrap();
+
+    let remote_update = match check_for_update(&update_source, &pkg.version) {
         Ok(update) => update,
         Err(e) => {
             warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
