@@ -1,5 +1,7 @@
 //! Error types for soar-core.
 
+#![expect(unused_assignments)]
+
 use std::error::Error;
 
 use miette::Diagnostic;

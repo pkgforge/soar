@@ -25,7 +25,7 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
         let query = PackageQuery::try_from(package.as_str())?;
 
         // --all flag: remove all installed variants of the package
-        if all && query.pkg_id.is_none() && query.name.is_some() {
+        if let (true, None, Some(ref name)) = (all, &query.pkg_id, &query.name) {
             let installed: Vec<InstalledPackage> = diesel_db
                 .with_conn(|conn| {
                     CoreRepository::list_filtered(
@@ -45,7 +45,7 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
                 .collect();
 
             if installed.is_empty() {
-                error!("Package {} is not installed", query.name.as_ref().unwrap());
+                error!("Package {} is not installed", name);
                 continue;
             }
 

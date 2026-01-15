@@ -171,11 +171,10 @@ fn resolve_github(
                     "No release found for {} with version '{}'",
                     repo, ver
                 ))
-            } else if tag_pattern.is_some() {
+            } else if let Some(pattern) = tag_pattern {
                 SoarError::Custom(format!(
                     "No releases found for {} matching tag pattern '{}'",
-                    repo,
-                    tag_pattern.unwrap()
+                    repo, pattern
                 ))
             } else {
                 SoarError::Custom(format!("No releases found for {}", repo))
@@ -228,11 +227,10 @@ fn resolve_gitlab(
                     "No release found for {} with version '{}'",
                     repo, ver
                 ))
-            } else if tag_pattern.is_some() {
+            } else if let Some(pattern) = tag_pattern {
                 SoarError::Custom(format!(
                     "No releases found for {} matching tag pattern '{}'",
-                    repo,
-                    tag_pattern.unwrap()
+                    repo, pattern
                 ))
             } else {
                 SoarError::Custom(format!("No releases found for {}", repo))

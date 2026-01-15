@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_shared_agent_default() {
-        let agent = SharedAgent::default();
+        let agent = SharedAgent;
         let _ = agent.get("https://example.com");
     }
 

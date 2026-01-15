@@ -383,7 +383,7 @@ mod tests {
 
         // Cleanup: Set back to writable to allow tempdir to be removed.
         let mut perms = fs::metadata(&read_only_dir).unwrap().permissions();
-        perms.set_readonly(false);
+        perms.set_mode(0o755);
         fs::set_permissions(&read_only_dir, perms).unwrap();
     }
 
@@ -405,7 +405,7 @@ mod tests {
 
         // Cleanup: Set back to writable to allow tempdir to be removed.
         let mut perms = fs::metadata(&sub_dir).unwrap().permissions();
-        perms.set_readonly(false);
+        perms.set_mode(0o755);
         fs::set_permissions(&sub_dir, perms).unwrap();
     }
 
@@ -427,7 +427,7 @@ mod tests {
 
         // Cleanup: Set back to writable to allow tempdir to be removed.
         let mut perms = fs::metadata(&sub_dir).unwrap().permissions();
-        perms.set_readonly(false);
+        perms.set_mode(0o755);
         fs::set_permissions(&sub_dir, perms).unwrap();
     }
 
@@ -471,7 +471,7 @@ mod tests {
 
         // Cleanup: Set back to writable to allow tempdir to be removed.
         let mut perms = fs::metadata(dir.path()).unwrap().permissions();
-        perms.set_readonly(false);
+        perms.set_mode(0o755);
         fs::set_permissions(dir.path(), perms).unwrap();
     }
 
@@ -717,7 +717,7 @@ mod tests {
 
         // Cleanup: Set back to writable to allow tempdir to be removed.
         let mut perms = fs::metadata(tempdir.path()).unwrap().permissions();
-        perms.set_readonly(false);
+        perms.set_mode(0o755);
         fs::set_permissions(tempdir.path(), perms).unwrap();
     }
 }

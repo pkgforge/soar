@@ -279,7 +279,7 @@ fn resolve_packages(
 
         let query = PackageQuery::try_from(package.as_str())?;
 
-        if show && query.pkg_id.is_none() && query.name.is_some() {
+        if let (true, None, Some(ref name)) = (show, &query.pkg_id, &query.name) {
             let repo_pkgs: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
                 metadata_mgr
                     .query_repo(repo_name, |conn| {
@@ -322,7 +322,7 @@ fn resolve_packages(
             };
 
             if repo_pkgs.is_empty() {
-                error!("Package {} not found", query.name.as_ref().unwrap());
+                error!("Package {} not found", name);
                 continue;
             }
 
@@ -1279,7 +1279,7 @@ pub async fn install_single_package(
         if let Ok(entries) = fs::read_dir(&install_dir) {
             for entry in entries.filter_map(|e| e.ok()) {
                 let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "sig") && path.is_file() {
+                if path.extension().is_some_and(|ext| ext == "sig") && path.is_file() {
                     fs::remove_file(&path).ok();
                 }
             }

@@ -366,8 +366,8 @@ async fn compute_diff(
         for installed in all_installed {
             let is_declared = declared_keys.iter().any(|(name, pkg_id, repo)| {
                 let name_matches = *name == installed.pkg_name;
-                let pkg_id_matches = pkg_id.as_ref().map_or(true, |id| *id == installed.pkg_id);
-                let repo_matches = repo.as_ref().map_or(true, |r| *r == installed.repo_name);
+                let pkg_id_matches = pkg_id.as_ref().is_none_or(|id| *id == installed.pkg_id);
+                let repo_matches = repo.as_ref().is_none_or(|r| *r == installed.repo_name);
                 name_matches && pkg_id_matches && repo_matches
             });
 

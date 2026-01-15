@@ -97,7 +97,7 @@ fn check_github(
 
     let release = releases.iter().find(|r: &&GithubRelease| {
         let prerelease_ok = include_prerelease || !r.is_prerelease();
-        let tag_ok = tag_pattern.map_or(true, |p| fast_glob::glob_match(p, r.tag()));
+        let tag_ok = tag_pattern.is_none_or(|p| fast_glob::glob_match(p, r.tag()));
         prerelease_ok && tag_ok
     });
 
@@ -140,7 +140,7 @@ fn check_gitlab(
 
     let release = releases.iter().find(|r: &&GitLabRelease| {
         let prerelease_ok = include_prerelease || !r.is_prerelease();
-        let tag_ok = tag_pattern.map_or(true, |p| fast_glob::glob_match(p, r.tag()));
+        let tag_ok = tag_pattern.is_none_or(|p| fast_glob::glob_match(p, r.tag()));
         prerelease_ok && tag_ok
     });
 
