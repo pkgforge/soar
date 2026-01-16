@@ -381,7 +381,12 @@ fn check_local_package_update(
                 return Ok(None);
             }
 
-            (v, result.download_url, result.size, None)
+            let toml_url = if is_github_or_gitlab {
+                None
+            } else {
+                Some(result.download_url.clone())
+            };
+            (v, result.download_url, result.size, toml_url)
         } else {
             let update_source = derive_update_source(resolved).unwrap();
             let update = match check_for_update(&update_source, &pkg.version) {
