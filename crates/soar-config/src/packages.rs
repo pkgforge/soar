@@ -494,61 +494,6 @@ impl PackagesConfig {
         }
 
         let content = fs::read_to_string(&config_path)?;
-
-        if let (None, Some(version)) = (new_url, new_version) {
-            let doc = content.parse::<DocumentMut>()?;
-            let packages = doc
-                .get("packages")
-                .and_then(|p| p.as_table())
-                .ok_or_else(|| ConfigError::Custom("No [packages] section found".into()))?;
-
-            let package = packages.get(package_name).ok_or_else(|| {
-                ConfigError::Custom(format!("Package '{}' not found in config", package_name))
-            })?;
-
-            match package {
-                toml_edit::Item::Value(toml_edit::Value::String(_)) => {
-                    return Ok(());
-                }
-                toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
-                    if table.contains_key("version") {
-                        // Update in-place using string replacement to preserve formatting
-                        let updated =
-                            replace_version_in_inline_table(&content, package_name, version)?;
-                        fs::write(&config_path, updated)?;
-                    } else {
-                        let updated = add_version_to_inline_table(&content, package_name, version)?;
-                        fs::write(&config_path, updated)?;
-                    }
-                }
-                toml_edit::Item::Table(_) => {
-                    let mut doc = content.parse::<DocumentMut>()?;
-                    if let Some(toml_edit::Item::Table(t)) = doc
-                        .get_mut("packages")
-                        .and_then(|p| p.as_table_mut())
-                        .and_then(|t| t.get_mut(package_name))
-                    {
-                        t.insert("version", toml_edit::value(version));
-                    }
-                    fs::write(&config_path, doc.to_string())?;
-                }
-                _ => {
-                    return Err(ConfigError::Custom(format!(
-                        "Unexpected package format for '{}'",
-                        package_name
-                    )));
-                }
-            }
-
-            info!(
-                "Updated version to {} for '{}' in {}",
-                version,
-                package_name,
-                config_path.display()
-            );
-            return Ok(());
-        }
-
         let mut doc = content.parse::<DocumentMut>()?;
 
         let packages = doc
@@ -560,22 +505,25 @@ impl PackagesConfig {
             ConfigError::Custom(format!("Package '{}' not found in config", package_name))
         })?;
 
-        let url = new_url.unwrap();
+        if matches!(package, toml_edit::Item::Value(toml_edit::Value::String(_))) {
+            return Ok(());
+        }
+
         match package {
             toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
-                table.insert("url", url.into());
+                if let Some(url) = new_url {
+                    table.insert("url", url.into());
+                }
                 if let Some(version) = new_version {
-                    if table.contains_key("version") {
-                        table.insert("version", version.into());
-                    }
+                    table.insert("version", version.into());
                 }
             }
             toml_edit::Item::Table(table) => {
-                table.insert("url", toml_edit::value(url));
+                if let Some(url) = new_url {
+                    table.insert("url", toml_edit::value(url));
+                }
                 if let Some(version) = new_version {
-                    if table.contains_key("version") {
-                        table.insert("version", toml_edit::value(version));
-                    }
+                    table.insert("version", toml_edit::value(version));
                 }
             }
             _ => {
@@ -588,9 +536,11 @@ impl PackagesConfig {
 
         fs::write(&config_path, doc.to_string())?;
 
-        let updated = match new_version {
-            Some(v) => format!("URL and version ({})", v),
-            None => "URL".to_string(),
+        let updated = match (new_url, new_version) {
+            (Some(_), Some(v)) => format!("URL and version ({})", v),
+            (Some(_), None) => "URL".to_string(),
+            (None, Some(v)) => format!("version to {}", v),
+            (None, None) => unreachable!(),
         };
         info!(
             "Updated {} for '{}' in {}",
@@ -601,89 +551,6 @@ impl PackagesConfig {
 
         Ok(())
     }
-}
-
-/// Add version field to an inline table using string manipulation.
-fn add_version_to_inline_table(content: &str, package_name: &str, version: &str) -> Result<String> {
-    let search = format!("{} = {{", package_name);
-    let Some(brace_pos) = content.find(&search).map(|p| p + search.len() - 1) else {
-        let start = content
-            .find(&format!("{} =", package_name))
-            .ok_or_else(|| ConfigError::Custom(format!("Package '{}' not found", package_name)))?;
-        let brace_pos = content[start..]
-            .find('{')
-            .map(|p| start + p)
-            .ok_or_else(|| {
-                ConfigError::Custom(format!("No inline table for '{}'", package_name))
-            })?;
-        return Ok(insert_version_at(content, brace_pos, version));
-    };
-
-    Ok(insert_version_at(content, brace_pos, version))
-}
-
-/// Insert version field after opening brace, preserving indentation for multiline tables.
-fn insert_version_at(content: &str, brace_pos: usize, version: &str) -> String {
-    let after_brace = &content[brace_pos + 1..];
-    let is_multiline = after_brace.starts_with('\n') || after_brace.starts_with("\r\n");
-
-    if is_multiline {
-        let next_line_start = brace_pos + 1 + after_brace.find('\n').map(|p| p + 1).unwrap_or(0);
-        let indent: String = content[next_line_start..]
-            .chars()
-            .take_while(|c| c.is_whitespace() && *c != '\n')
-            .collect();
-        format!(
-            "{}\n{}version = \"{}\",{}",
-            &content[..=brace_pos],
-            indent,
-            version,
-            &content[brace_pos + 1..]
-        )
-    } else {
-        format!(
-            "{} version = \"{}\",{}",
-            &content[..=brace_pos],
-            version,
-            after_brace
-        )
-    }
-}
-
-/// Replace version value in an inline table in-place.
-fn replace_version_in_inline_table(
-    content: &str,
-    package_name: &str,
-    version: &str,
-) -> Result<String> {
-    let err = || ConfigError::Custom(format!("Failed to update version for '{}'", package_name));
-
-    let pkg_start = content
-        .find(&format!("{} = ", package_name))
-        .ok_or_else(err)?;
-    let table_start = content[pkg_start..]
-        .find('{')
-        .map(|p| pkg_start + p)
-        .ok_or_else(err)?;
-    let table_end = content[table_start..]
-        .find('}')
-        .map(|p| table_start + p)
-        .ok_or_else(err)?;
-
-    let table = &content[table_start..=table_end];
-    let ver_pos = table.find("version = \"").ok_or_else(err)?;
-    let value_start = table_start + ver_pos + "version = \"".len();
-    let value_end = content[value_start..]
-        .find('"')
-        .map(|p| value_start + p)
-        .ok_or_else(err)?;
-
-    Ok(format!(
-        "{}{}{}",
-        &content[..value_start],
-        version,
-        &content[value_end..]
-    ))
 }
 
 /// Generate a default packages configuration file.
@@ -806,38 +673,5 @@ firefox = { portable = { home = "~/.firefox-home", config = "~/.firefox-config" 
 
         // Should contain field documentation comments
         assert!(doc_str.contains("#"));
-    }
-
-    #[test]
-    fn test_replace_version_in_inline_table() {
-        let content = r#"[packages]
-nvim-prerelease = { version = "2025-01-15T05:17:43Z", github = "neovim/neovim", asset_pattern = "*linux-x86_64.appimage" }
-other = { version = "1.0.0" }
-"#;
-        let result =
-            replace_version_in_inline_table(content, "nvim-prerelease", "2026-01-16T10:00:00Z")
-                .unwrap();
-
-        // Version should be updated in-place
-        assert!(result.contains("version = \"2026-01-16T10:00:00Z\""));
-        // Other fields should remain in the same position
-        assert!(result.contains(
-            "nvim-prerelease = { version = \"2026-01-16T10:00:00Z\", github = \"neovim/neovim\""
-        ));
-        // Other package should be unchanged
-        assert!(result.contains("other = { version = \"1.0.0\" }"));
-    }
-
-    #[test]
-    fn test_add_version_to_inline_table() {
-        let content = r#"[packages]
-nvim = { github = "neovim/neovim", asset_pattern = "*.appimage" }
-"#;
-        let result = add_version_to_inline_table(content, "nvim", "1.0.0").unwrap();
-
-        // Version should be added after the opening brace
-        assert!(result.contains("{ version = \"1.0.0\","));
-        // Other fields should still be present
-        assert!(result.contains("github = \"neovim/neovim\""));
     }
 }
