@@ -171,82 +171,176 @@ async fn compute_diff(
         // Track declared package
         declared_keys.insert((pkg.name.clone(), pkg.pkg_id.clone(), pkg.repo.clone()));
 
-        // Handle GitHub/GitLab release sources
-        if pkg.github.is_some() || pkg.gitlab.is_some() {
-            let source = match ReleaseSource::from_resolved(pkg) {
-                Some(s) => s,
-                None => {
-                    diff.not_found.push(format!(
-                        "{} (missing asset_pattern for github/gitlab source)",
-                        pkg.name
-                    ));
-                    continue;
-                }
+        let is_github_or_gitlab = pkg.github.is_some() || pkg.gitlab.is_some();
+        if is_github_or_gitlab || pkg.url.is_some() {
+            let local_pkg_id = if is_github_or_gitlab {
+                pkg.pkg_id.clone().or_else(|| {
+                    pkg.github
+                        .as_ref()
+                        .or(pkg.gitlab.as_ref())
+                        .map(|repo| repo.replace('/', "."))
+                })
+            } else {
+                pkg.pkg_id.clone()
             };
 
-            // If version is specified, fetch that specific tag; otherwise fetch latest
-            let release = match source.resolve_version(pkg.version.as_deref()) {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!("Failed to resolve release for {}: {}", pkg.name, e);
-                    diff.not_found.push(format!("{} ({})", pkg.name, e));
-                    continue;
-                }
-            };
+            let installed: Option<InstalledPackage> = diesel_db
+                .with_conn(|conn| {
+                    CoreRepository::list_filtered(
+                        conn,
+                        Some("local"),
+                        Some(&pkg.name),
+                        local_pkg_id.as_deref(),
+                        None,
+                        Some(true),
+                        None,
+                        Some(1),
+                        None,
+                    )
+                })?
+                .into_iter()
+                .next()
+                .map(Into::into);
 
-            // Use version_command if specified, otherwise use release version
-            let version = if let Some(ref cmd) = pkg.version_command {
-                match run_version_command(cmd) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        warn!("Failed to run version_command for {}: {}", pkg.name, e);
-                        release.version.clone()
+            if is_github_or_gitlab {
+                if let Some(ref declared) = pkg.version {
+                    let normalized = declared.strip_prefix('v').unwrap_or(declared);
+                    if let Some(ref existing) = installed {
+                        if existing.version == normalized {
+                            diff.in_sync.push(format!("{} (local)", pkg.name));
+                            continue;
+                        }
                     }
                 }
-            } else {
-                release.version.clone()
-            };
 
-            let version = version.strip_prefix('v').unwrap_or(&version).to_string();
+                let (version, release) = if let Some(ref cmd) = pkg.version_command {
+                    let v = match run_version_command(cmd) {
+                        Ok(v) => v.strip_prefix('v').unwrap_or(&v).to_string(),
+                        Err(e) => {
+                            warn!("Failed to run version_command for {}: {}", pkg.name, e);
+                            diff.not_found
+                                .push(format!("{} (version_command failed: {})", pkg.name, e));
+                            continue;
+                        }
+                    };
 
-            let derived_pkg_id = pkg.pkg_id.clone().or_else(|| {
-                pkg.github
-                    .as_ref()
-                    .or(pkg.gitlab.as_ref())
-                    .map(|repo| repo.replace('/', "."))
-            });
+                    if let Some(ref existing) = installed {
+                        if existing.version == v {
+                            let declared = pkg
+                                .version
+                                .as_ref()
+                                .map(|s| s.strip_prefix('v').unwrap_or(s));
+                            if declared != Some(v.as_str()) {
+                                if let Err(e) =
+                                    PackagesConfig::update_package(&pkg.name, None, Some(&v), None)
+                                {
+                                    warn!(
+                                        "Failed to update version for '{}' in packages.toml: {}",
+                                        pkg.name, e
+                                    );
+                                }
+                            }
+                            diff.in_sync.push(format!("{} (local)", pkg.name));
+                            continue;
+                        }
+                    }
 
-            let url_pkg = UrlPackage::from_remote(
-                &release.download_url,
-                Some(&pkg.name),
-                Some(&version),
-                pkg.pkg_type.as_deref(),
-                derived_pkg_id.as_deref(),
-            )?;
+                    let source = match ReleaseSource::from_resolved(pkg) {
+                        Some(s) => s,
+                        None => {
+                            diff.not_found.push(format!(
+                                "{} (missing asset_pattern for github/gitlab source)",
+                                pkg.name
+                            ));
+                            continue;
+                        }
+                    };
+                    let r = match source.resolve_version(None) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("Failed to resolve release for {}: {}", pkg.name, e);
+                            diff.not_found.push(format!("{} ({})", pkg.name, e));
+                            continue;
+                        }
+                    };
+                    (v, r)
+                } else {
+                    let source = match ReleaseSource::from_resolved(pkg) {
+                        Some(s) => s,
+                        None => {
+                            diff.not_found.push(format!(
+                                "{} (missing asset_pattern for github/gitlab source)",
+                                pkg.name
+                            ));
+                            continue;
+                        }
+                    };
+                    let r = match source.resolve_version(pkg.version.as_deref()) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("Failed to resolve release for {}: {}", pkg.name, e);
+                            diff.not_found.push(format!("{} ({})", pkg.name, e));
+                            continue;
+                        }
+                    };
+                    let v = r
+                        .version
+                        .strip_prefix('v')
+                        .unwrap_or(&r.version)
+                        .to_string();
+                    (v, r)
+                };
 
-            match check_url_package_status(&url_pkg, pkg, "local", &diesel_db)? {
-                UrlPackageStatus::ToInstall(target) => diff.to_install.push((pkg.clone(), target)),
-                UrlPackageStatus::ToUpdate(target) => diff.to_update.push((pkg.clone(), target)),
-                UrlPackageStatus::InSync(label) => diff.in_sync.push(label),
+                let url_pkg = UrlPackage::from_remote(
+                    &release.download_url,
+                    Some(&pkg.name),
+                    Some(&version),
+                    pkg.pkg_type.as_deref(),
+                    local_pkg_id.as_deref(),
+                )?;
+
+                match check_url_package_status(&url_pkg, pkg, "local", &diesel_db)? {
+                    UrlPackageStatus::ToInstall(target) => {
+                        diff.to_install.push((pkg.clone(), target))
+                    }
+                    UrlPackageStatus::ToUpdate(target) => {
+                        diff.to_update.push((pkg.clone(), target))
+                    }
+                    UrlPackageStatus::InSync(label) => diff.in_sync.push(label),
+                }
+                continue;
             }
-            continue;
-        }
 
-        if let Some(ref url) = pkg.url {
-            let url_pkg = UrlPackage::from_remote(
-                url,
-                Some(&pkg.name),
-                pkg.version.as_deref(),
-                pkg.pkg_type.as_deref(),
-                pkg.pkg_id.as_deref(),
-            )?;
+            if let Some(ref url) = pkg.url {
+                if let Some(ref declared) = pkg.version {
+                    let normalized = declared.strip_prefix('v').unwrap_or(declared);
+                    if let Some(ref existing) = installed {
+                        if existing.version == normalized {
+                            diff.in_sync.push(format!("{} (local)", pkg.name));
+                            continue;
+                        }
+                    }
+                }
 
-            match check_url_package_status(&url_pkg, pkg, "local", &diesel_db)? {
-                UrlPackageStatus::ToInstall(target) => diff.to_install.push((pkg.clone(), target)),
-                UrlPackageStatus::ToUpdate(target) => diff.to_update.push((pkg.clone(), target)),
-                UrlPackageStatus::InSync(label) => diff.in_sync.push(label),
+                let url_pkg = UrlPackage::from_remote(
+                    url,
+                    Some(&pkg.name),
+                    pkg.version.as_deref(),
+                    pkg.pkg_type.as_deref(),
+                    pkg.pkg_id.as_deref(),
+                )?;
+
+                match check_url_package_status(&url_pkg, pkg, "local", &diesel_db)? {
+                    UrlPackageStatus::ToInstall(target) => {
+                        diff.to_install.push((pkg.clone(), target))
+                    }
+                    UrlPackageStatus::ToUpdate(target) => {
+                        diff.to_update.push((pkg.clone(), target))
+                    }
+                    UrlPackageStatus::InSync(label) => diff.in_sync.push(label),
+                }
+                continue;
             }
-            continue;
         }
 
         // Find package in metadata
@@ -590,7 +684,11 @@ async fn execute_apply(state: &AppState, diff: ApplyDiff, no_verify: bool) -> So
         info!("\nInstalling {} package(s)...", diff.to_install.len());
 
         for (pkg, target) in &diff.to_install {
-            if (pkg.github.is_some() || pkg.gitlab.is_some()) && pkg.version.is_none() {
+            let declared_version = pkg
+                .version
+                .as_ref()
+                .map(|v| v.strip_prefix('v').unwrap_or(v));
+            if declared_version != Some(target.package.version.as_str()) {
                 version_updates.push((pkg.name.clone(), target.package.version.clone()));
             }
         }
@@ -633,6 +731,17 @@ async fn execute_apply(state: &AppState, diff: ApplyDiff, no_verify: bool) -> So
     if !diff.to_update.is_empty() {
         info!("\nUpdating {} package(s)...", diff.to_update.len());
 
+        let mut update_version_updates: Vec<(String, String)> = Vec::new();
+        for (pkg, target) in &diff.to_update {
+            let declared_version = pkg
+                .version
+                .as_ref()
+                .map(|v| v.strip_prefix('v').unwrap_or(v));
+            if declared_version != Some(target.package.version.as_str()) {
+                update_version_updates.push((pkg.name.clone(), target.package.version.clone()));
+            }
+        }
+
         let targets: Vec<InstallTarget> = diff
             .to_update
             .into_iter()
@@ -654,6 +763,18 @@ async fn execute_apply(state: &AppState, diff: ApplyDiff, no_verify: bool) -> So
         perform_update(ctx.clone(), targets, diesel_db.clone(), false).await?;
         updated_count = ctx.installed_count.load(Ordering::Relaxed) as usize;
         failed_count += ctx.failed.load(Ordering::Relaxed) as usize;
+
+        if updated_count > 0 {
+            for (pkg_name, version) in &update_version_updates {
+                if let Err(e) = PackagesConfig::update_package(pkg_name, None, Some(version), None)
+                {
+                    warn!(
+                        "Failed to update version for '{}' in packages.toml: {}",
+                        pkg_name, e
+                    );
+                }
+            }
+        }
     }
 
     if !diff.to_remove.is_empty() {
