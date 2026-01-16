@@ -106,6 +106,8 @@ pub struct ApplyDiff {
     pub in_sync: Vec<String>,
     /// Packages not found in metadata
     pub not_found: Vec<String>,
+    /// Pending version updates for packages.toml (package_name, version)
+    pub pending_version_updates: Vec<(String, String)>,
 }
 
 /// Main entry point for the apply command
@@ -131,12 +133,27 @@ pub async fn apply_packages(
 
     display_diff(&diff, prune);
 
-    if diff.to_install.is_empty() && diff.to_update.is_empty() && diff.to_remove.is_empty() {
+    let has_package_changes =
+        !diff.to_install.is_empty() || !diff.to_update.is_empty() || !diff.to_remove.is_empty();
+    let has_toml_updates = !diff.pending_version_updates.is_empty();
+
+    if !has_package_changes && !has_toml_updates {
         info!("\nAll packages are in sync!");
         return Ok(());
     }
 
     if dry_run {
+        if has_toml_updates {
+            info!("\nWould update packages.toml:");
+            for (pkg_name, version) in &diff.pending_version_updates {
+                info!(
+                    "  {} {} -> {}",
+                    Colored(Blue, pkg_name),
+                    Colored(Yellow, "version"),
+                    Colored(Green, version)
+                );
+            }
+        }
         info!("\n{} Dry run - no changes made", icon_or("", "[DRY RUN]"));
         return Ok(());
     }
@@ -236,17 +253,9 @@ async fn compute_diff(
                             .as_ref()
                             .map(|s| s.strip_prefix('v').unwrap_or(s));
                         if declared != Some(version.as_str()) {
-                            if let Err(e) = PackagesConfig::update_package(
-                                &pkg.name,
-                                None,
-                                Some(&version),
-                                None,
-                            ) {
-                                warn!(
-                                    "Failed to update version for '{}' in packages.toml: {}",
-                                    pkg.name, e
-                                );
-                            }
+                            // Queue version update for after user confirmation
+                            diff.pending_version_updates
+                                .push((pkg.name.clone(), version.clone()));
                         }
                         diff.in_sync.push(format!("{} (local)", pkg.name));
                         continue;
@@ -697,6 +706,16 @@ async fn execute_apply(state: &AppState, diff: ApplyDiff, no_verify: bool) -> So
     let mut failed_count = 0;
 
     let mut version_updates: Vec<(String, String)> = Vec::new();
+
+    // Apply pending version updates for in-sync packages
+    for (pkg_name, version) in &diff.pending_version_updates {
+        if let Err(e) = PackagesConfig::update_package(pkg_name, None, Some(version), None) {
+            warn!(
+                "Failed to update version for '{}' in packages.toml: {}",
+                pkg_name, e
+            );
+        }
+    }
 
     if !diff.to_install.is_empty() {
         info!("\nInstalling {} package(s)...", diff.to_install.len());
