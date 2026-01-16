@@ -166,7 +166,8 @@ pub struct PackageOptions {
     /// If not set, the first matching release is used.
     pub tag_pattern: Option<String>,
 
-    /// Custom command to fetch version (outputs version string on stdout).
+    /// Custom command to fetch version and download URL.
+    /// Output format: line 1 = version, line 2 = download URL, line 3 = size in bytes (optional).
     /// If not set and github/gitlab is used, version is fetched from releases API.
     pub version_command: Option<String>,
 
@@ -275,12 +276,6 @@ pub enum UpdateSource {
         version_path: String,
         /// JSON path to download URL field.
         download_path: String,
-    },
-    /// Shell command that outputs version and download URL.
-    #[serde(rename = "command")]
-    Command {
-        /// Command to execute. Should output "version\\ndownload_url".
-        command: String,
     },
 }
 

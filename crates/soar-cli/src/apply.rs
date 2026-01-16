@@ -202,6 +202,78 @@ async fn compute_diff(
                 .next()
                 .map(Into::into);
 
+            if let Some(ref cmd) = pkg.version_command {
+                if let Some(ref declared) = pkg.version {
+                    let normalized = declared.strip_prefix('v').unwrap_or(declared);
+                    if let Some(ref existing) = installed {
+                        if existing.version == normalized {
+                            diff.in_sync.push(format!("{} (local)", pkg.name));
+                            continue;
+                        }
+                    }
+                }
+
+                let result = match run_version_command(cmd) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!("Failed to run version_command for {}: {}", pkg.name, e);
+                        diff.not_found
+                            .push(format!("{} (version_command failed: {})", pkg.name, e));
+                        continue;
+                    }
+                };
+
+                let version = result
+                    .version
+                    .strip_prefix('v')
+                    .unwrap_or(&result.version)
+                    .to_string();
+
+                if let Some(ref existing) = installed {
+                    if existing.version == version {
+                        let declared = pkg
+                            .version
+                            .as_ref()
+                            .map(|s| s.strip_prefix('v').unwrap_or(s));
+                        if declared != Some(version.as_str()) {
+                            if let Err(e) = PackagesConfig::update_package(
+                                &pkg.name,
+                                None,
+                                Some(&version),
+                                None,
+                            ) {
+                                warn!(
+                                    "Failed to update version for '{}' in packages.toml: {}",
+                                    pkg.name, e
+                                );
+                            }
+                        }
+                        diff.in_sync.push(format!("{} (local)", pkg.name));
+                        continue;
+                    }
+                }
+
+                let mut url_pkg = UrlPackage::from_remote(
+                    &result.download_url,
+                    Some(&pkg.name),
+                    Some(&version),
+                    pkg.pkg_type.as_deref(),
+                    local_pkg_id.as_deref(),
+                )?;
+                url_pkg.size = result.size;
+
+                match check_url_package_status(&url_pkg, pkg, "local", &diesel_db)? {
+                    UrlPackageStatus::ToInstall(target) => {
+                        diff.to_install.push((pkg.clone(), target))
+                    }
+                    UrlPackageStatus::ToUpdate(target) => {
+                        diff.to_update.push((pkg.clone(), target))
+                    }
+                    UrlPackageStatus::InSync(label) => diff.in_sync.push(label),
+                }
+                continue;
+            }
+
             if is_github_or_gitlab {
                 if let Some(ref declared) = pkg.version {
                     let normalized = declared.strip_prefix('v').unwrap_or(declared);
@@ -213,83 +285,29 @@ async fn compute_diff(
                     }
                 }
 
-                let (version, release) = if let Some(ref cmd) = pkg.version_command {
-                    let v = match run_version_command(cmd) {
-                        Ok(v) => v.strip_prefix('v').unwrap_or(&v).to_string(),
-                        Err(e) => {
-                            warn!("Failed to run version_command for {}: {}", pkg.name, e);
-                            diff.not_found
-                                .push(format!("{} (version_command failed: {})", pkg.name, e));
-                            continue;
-                        }
-                    };
-
-                    if let Some(ref existing) = installed {
-                        if existing.version == v {
-                            let declared = pkg
-                                .version
-                                .as_ref()
-                                .map(|s| s.strip_prefix('v').unwrap_or(s));
-                            if declared != Some(v.as_str()) {
-                                if let Err(e) =
-                                    PackagesConfig::update_package(&pkg.name, None, Some(&v), None)
-                                {
-                                    warn!(
-                                        "Failed to update version for '{}' in packages.toml: {}",
-                                        pkg.name, e
-                                    );
-                                }
-                            }
-                            diff.in_sync.push(format!("{} (local)", pkg.name));
-                            continue;
-                        }
+                let source = match ReleaseSource::from_resolved(pkg) {
+                    Some(s) => s,
+                    None => {
+                        diff.not_found.push(format!(
+                            "{} (missing asset_pattern for github/gitlab source)",
+                            pkg.name
+                        ));
+                        continue;
                     }
-
-                    let source = match ReleaseSource::from_resolved(pkg) {
-                        Some(s) => s,
-                        None => {
-                            diff.not_found.push(format!(
-                                "{} (missing asset_pattern for github/gitlab source)",
-                                pkg.name
-                            ));
-                            continue;
-                        }
-                    };
-                    let r = match source.resolve_version(None) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            warn!("Failed to resolve release for {}: {}", pkg.name, e);
-                            diff.not_found.push(format!("{} ({})", pkg.name, e));
-                            continue;
-                        }
-                    };
-                    (v, r)
-                } else {
-                    let source = match ReleaseSource::from_resolved(pkg) {
-                        Some(s) => s,
-                        None => {
-                            diff.not_found.push(format!(
-                                "{} (missing asset_pattern for github/gitlab source)",
-                                pkg.name
-                            ));
-                            continue;
-                        }
-                    };
-                    let r = match source.resolve_version(pkg.version.as_deref()) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            warn!("Failed to resolve release for {}: {}", pkg.name, e);
-                            diff.not_found.push(format!("{} ({})", pkg.name, e));
-                            continue;
-                        }
-                    };
-                    let v = r
-                        .version
-                        .strip_prefix('v')
-                        .unwrap_or(&r.version)
-                        .to_string();
-                    (v, r)
                 };
+                let release = match source.resolve_version(pkg.version.as_deref()) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!("Failed to resolve release for {}: {}", pkg.name, e);
+                        diff.not_found.push(format!("{} ({})", pkg.name, e));
+                        continue;
+                    }
+                };
+                let version = release
+                    .version
+                    .strip_prefix('v')
+                    .unwrap_or(&release.version)
+                    .to_string();
 
                 let url_pkg = UrlPackage::from_remote(
                     &release.download_url,

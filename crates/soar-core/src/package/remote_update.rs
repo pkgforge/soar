@@ -8,6 +8,7 @@ use soar_config::packages::UpdateSource;
 use soar_dl::{
     github::{Github, GithubAsset, GithubRelease},
     gitlab::{GitLab, GitLabAsset, GitLabRelease},
+    http::Http,
     traits::{Asset, Platform, Release},
 };
 
@@ -72,9 +73,6 @@ pub fn check_for_update(
             version_path,
             download_path,
         } => check_url(url, version_path, download_path, current_version),
-        UpdateSource::Command {
-            command,
-        } => check_command(command, current_version),
     }
 }
 
@@ -171,8 +169,6 @@ fn check_url(
     download_path: &str,
     current_version: &str,
 ) -> SoarResult<Option<RemoteUpdate>> {
-    use soar_dl::http::Http;
-
     let json: serde_json::Value = Http::json(url).map_err(|e| {
         SoarError::Custom(format!("Failed to fetch update info from {}: {}", url, e))
     })?;
@@ -209,63 +205,12 @@ fn check_url(
     }))
 }
 
-/// Check for updates via shell command.
-fn check_command(command: &str, current_version: &str) -> SoarResult<Option<RemoteUpdate>> {
-    use std::process::Command;
-
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .output()
-        .map_err(|e| SoarError::Custom(format!("Failed to execute update command: {}", e)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SoarError::Custom(format!(
-            "Update command failed: {}",
-            stderr
-        )));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut lines = stdout.lines();
-
-    let new_version = lines
-        .next()
-        .ok_or_else(|| SoarError::Custom("Update command returned no output".into()))?
-        .trim()
-        .to_string();
-
-    if !is_newer_version(current_version, &new_version) {
-        return Ok(None);
-    }
-
-    let download_url = lines
-        .next()
-        .ok_or_else(|| SoarError::Custom("Update command did not return download URL".into()))?
-        .trim()
-        .to_string();
-
-    if !is_valid_download_url(&download_url) {
-        return Err(SoarError::Custom(format!(
-            "Invalid download URL returned by command: {}",
-            download_url
-        )));
-    }
-
-    Ok(Some(RemoteUpdate {
-        new_version,
-        download_url,
-        size: None,
-    }))
-}
-
 /// Validate that a download URL is properly formed.
 ///
 /// Checks that the URL:
 /// - Starts with http:// or https://
 /// - Is a valid URL structure (has host, etc.)
-fn is_valid_download_url(url: &str) -> bool {
+pub fn is_valid_download_url(url: &str) -> bool {
     let url = url.trim();
     if url.is_empty() {
         return false;

@@ -12,7 +12,7 @@ use soar_dl::{
     traits::{Asset, Platform, Release},
 };
 
-use crate::{error::SoarError, SoarResult};
+use crate::{error::SoarError, package::remote_update::is_valid_download_url, SoarResult};
 
 /// Source for fetching package releases.
 #[derive(Debug, Clone)]
@@ -269,11 +269,26 @@ fn find_matching_asset<'a, A: Asset>(assets: &'a [A], pattern: &str) -> SoarResu
         })
 }
 
-/// Execute a version command and return the version string.
+/// Result of running a version command.
+#[derive(Debug, Clone)]
+pub struct VersionCommandResult {
+    /// The version string (line 1).
+    pub version: String,
+    /// The download URL (line 2).
+    pub download_url: String,
+    /// Optional size in bytes (line 3).
+    pub size: Option<u64>,
+}
+
+/// Execute a version command and return version, URL, and optional size.
 ///
-/// The command is executed via `sh -c` and should output a version
-/// string on stdout. Leading/trailing whitespace is trimmed.
-pub fn run_version_command(command: &str) -> SoarResult<String> {
+/// The command is executed via `sh -c` and should output:
+/// - Line 1: version string (required)
+/// - Line 2: download URL (required)
+/// - Line 3: size in bytes (optional)
+///
+/// Leading/trailing whitespace is trimmed from each line.
+pub fn run_version_command(command: &str) -> SoarResult<VersionCommandResult> {
     let output = Command::new("sh")
         .arg("-c")
         .arg(command)
@@ -288,15 +303,35 @@ pub fn run_version_command(command: &str) -> SoarResult<String> {
         )));
     }
 
-    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
 
-    if version.is_empty() {
-        return Err(SoarError::Custom(
-            "Version command returned empty output".into(),
-        ));
+    let version = lines
+        .next()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| SoarError::Custom("Version command returned empty output".into()))?;
+
+    let download_url = lines
+        .next()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| SoarError::Custom("Version command did not return download URL".into()))?;
+
+    if !is_valid_download_url(&download_url) {
+        return Err(SoarError::Custom(format!(
+            "Invalid download URL returned: {}",
+            download_url
+        )));
     }
 
-    Ok(version)
+    let size = lines.next().and_then(|s| s.trim().parse::<u64>().ok());
+
+    Ok(VersionCommandResult {
+        version,
+        download_url,
+        size,
+    })
 }
 
 #[cfg(test)]

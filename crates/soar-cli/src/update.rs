@@ -359,63 +359,60 @@ fn check_local_package_update(
     }
 
     let is_github_or_gitlab = resolved.github.is_some() || resolved.gitlab.is_some();
-    let update_source = derive_update_source(resolved).unwrap();
 
-    let (version, download_url, update_toml_url) = if let Some(ref cmd) = resolved.version_command {
-        let v = match run_version_command(cmd) {
-            Ok(v) => v.strip_prefix('v').unwrap_or(&v).to_string(),
-            Err(e) => {
-                warn!("Failed to run version_command for {}: {}", pkg.pkg_name, e);
-                return Ok(None);
-            }
-        };
+    let (version, download_url, size, update_toml_url) =
+        if let Some(ref cmd) = resolved.version_command {
+            let result = match run_version_command(cmd) {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("Failed to run version_command for {}: {}", pkg.pkg_name, e);
+                    return Ok(None);
+                }
+            };
 
-        let installed_version = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
-        if v == installed_version {
-            return Ok(None);
-        }
+            let v = result
+                .version
+                .strip_prefix('v')
+                .unwrap_or(&result.version)
+                .to_string();
 
-        let update = match check_for_update(&update_source, &pkg.version) {
-            Ok(Some(u)) => u,
-            Ok(None) => {
-                warn!("No release found for {}", pkg.pkg_name);
+            let installed_version = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
+            if v == installed_version {
                 return Ok(None);
             }
-            Err(e) => {
-                warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
-                return Ok(None);
-            }
-        };
-        (v, update.download_url, None)
-    } else {
-        let update = match check_for_update(&update_source, &pkg.version) {
-            Ok(Some(u)) => u,
-            Ok(None) => return Ok(None),
-            Err(e) => {
-                warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
-                return Ok(None);
-            }
-        };
-        let v = update
-            .new_version
-            .strip_prefix('v')
-            .unwrap_or(&update.new_version)
-            .to_string();
-        let url = if is_github_or_gitlab {
-            None
+
+            (v, result.download_url, result.size, None)
         } else {
-            Some(update.download_url.clone())
+            let update_source = derive_update_source(resolved).unwrap();
+            let update = match check_for_update(&update_source, &pkg.version) {
+                Ok(Some(u)) => u,
+                Ok(None) => return Ok(None),
+                Err(e) => {
+                    warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
+                    return Ok(None);
+                }
+            };
+            let v = update
+                .new_version
+                .strip_prefix('v')
+                .unwrap_or(&update.new_version)
+                .to_string();
+            let url = if is_github_or_gitlab {
+                None
+            } else {
+                Some(update.download_url.clone())
+            };
+            (v, update.download_url, update.size, url)
         };
-        (v, update.download_url, url)
-    };
 
-    let updated_url_pkg = UrlPackage::from_remote(
+    let mut updated_url_pkg = UrlPackage::from_remote(
         &download_url,
         Some(&pkg.pkg_name),
         Some(&version),
         pkg.pkg_type.as_deref(),
         Some(&pkg.pkg_id),
     )?;
+    updated_url_pkg.size = size;
 
     let target = InstallTarget {
         package: updated_url_pkg.to_package(),

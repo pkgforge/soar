@@ -21,6 +21,8 @@ pub struct UrlPackage {
     pub pkg_type: Option<String>,
     /// Whether this is a GHCR package reference
     pub is_ghcr: bool,
+    /// Optional size in bytes
+    pub size: Option<u64>,
 }
 
 impl UrlPackage {
@@ -134,6 +136,7 @@ impl UrlPackage {
             version,
             pkg_type,
             is_ghcr: true,
+            size: None,
         })
     }
 
@@ -211,6 +214,7 @@ impl UrlPackage {
             version,
             pkg_type,
             is_ghcr: false,
+            size: None,
         })
     }
 
@@ -226,6 +230,7 @@ impl UrlPackage {
                 version: self.version.clone(),
                 download_url: String::new(),
                 ghcr_pkg: Some(self.url.clone()),
+                ghcr_size: self.size,
                 description: format!("Installed from {}", self.url),
                 ..Default::default()
             }
@@ -238,6 +243,7 @@ impl UrlPackage {
                 pkg_type: self.pkg_type.clone(),
                 version: self.version.clone(),
                 download_url: self.url.clone(),
+                size: self.size,
                 description: format!("Installed from {}", self.url),
                 ..Default::default()
             }
