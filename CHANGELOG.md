@@ -1,5 +1,5 @@
 
-## [0.11.0](https://github.com/pkgforge/soar/compare/v0.10.1...v0.11.0) - 2026-01-17
+## [0.10.2](https://github.com/pkgforge/soar/compare/v0.10.1...v0.10.2) - 2026-01-17
 
 ### 🐛 Bug Fixes
 
