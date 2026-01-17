@@ -1,4 +1,10 @@
 
+## [0.11.0](https://github.com/pkgforge/soar/compare/v0.10.1...v0.11.0) - 2026-01-17
+
+### 🐛 Bug Fixes
+
+- [**breaking**] Change system install path to /opt/soar - ([8d38346](https://github.com/pkgforge/soar/commit/8d38346bf360cd1802be07f4544b45af5e418468))
+
 ## [0.10.1](https://github.com/pkgforge/soar/compare/v0.10.0...v0.10.1) - 2026-01-17
 
 ### 🐛 Bug Fixes
