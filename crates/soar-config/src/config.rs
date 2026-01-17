@@ -124,7 +124,7 @@ pub fn enable_system_mode() {
 
 /// Get the system root path
 pub fn system_root() -> PathBuf {
-    PathBuf::from("/usr/lib/soar")
+    PathBuf::from("/opt/soar")
 }
 
 pub fn init() -> Result<()> {
