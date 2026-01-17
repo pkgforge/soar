@@ -1,5 +1,5 @@
 
-## [0.9.2](https://github.com/pkgforge/soar/compare/v0.9.1...v0.9.2) - 2026-01-17
+## [0.10.0](https://github.com/pkgforge/soar/compare/v0.9.1...v0.10.0) - 2026-01-17
 
 ### ⛰️  Features
 
