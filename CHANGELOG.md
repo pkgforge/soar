@@ -1,4 +1,10 @@
 
+## [0.10.1](https://github.com/pkgforge/soar/compare/v0.10.0...v0.10.1) - 2026-01-17
+
+### 🐛 Bug Fixes
+
+- *(system)* Fix sudo escalation - ([91f9715](https://github.com/pkgforge/soar/commit/91f97159132c82b2433cb83e9df967d640e865bb))
+
 ## [0.10.0](https://github.com/pkgforge/soar/compare/v0.9.1...v0.10.0) - 2026-01-17
 
 ### ⛰️  Features
