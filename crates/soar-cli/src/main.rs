@@ -63,7 +63,9 @@ fn handle_system_mode() -> SoarResult<()> {
         return Ok(());
     }
 
-    let args: Vec<String> = env::args().collect();
+    let current_exe = env::current_exe()
+        .map_err(|e| SoarError::Custom(format!("Failed to get current executable path: {e}")))?;
+    let args: Vec<String> = env::args().skip(1).collect();
 
     let escalation_cmd = if Command::new("doas").arg("true").status().is_ok() {
         "doas"
@@ -81,9 +83,10 @@ fn handle_system_mode() -> SoarResult<()> {
     );
 
     let status = Command::new(escalation_cmd)
+        .arg(&current_exe)
         .args(&args)
         .status()
-        .with_context(|| format!("executing {} {:?}", escalation_cmd, args))?;
+        .with_context(|| format!("executing {} {:?} {:?}", escalation_cmd, current_exe, args))?;
 
     std::process::exit(status.code().unwrap_or(1));
 }
