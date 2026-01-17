@@ -1,4 +1,18 @@
 
+## [0.2.0](https://github.com/pkgforge/soar/compare/soar-config-v0.1.1...soar-config-v0.2.0) - 2026-01-17
+
+### ⛰️  Features
+
+- *(cli)* Add system-wide package management ([#141](https://github.com/pkgforge/soar/pull/141)) - ([f8d4f1c](https://github.com/pkgforge/soar/commit/f8d4f1c4e0e230427cd037355ba4a23da5b28a6b))
+- *(install)* Add entrypoint option and executable discovery fallbacks - ([b77cffd](https://github.com/pkgforge/soar/commit/b77cffdd6cbdfd66518c1613313d53e1c102a7a2))
+- *(packages)* Add github/gitlab as first-class package sources ([#142](https://github.com/pkgforge/soar/pull/142)) - ([2fc3c3b](https://github.com/pkgforge/soar/commit/2fc3c3b4f8e08dd9eac828dbf4f77128f186c91f))
+- *(packages)* Add hooks, build commands, and sandbox support ([#140](https://github.com/pkgforge/soar/pull/140)) - ([a776d61](https://github.com/pkgforge/soar/commit/a776d61c7e7f57567a05b18c1baf683c96f08dff))
+- *(update)* Allow updating remote URL packages ([#137](https://github.com/pkgforge/soar/pull/137)) - ([af13bb6](https://github.com/pkgforge/soar/commit/af13bb637c8c4c4a89cfdac451e39b105e7ee378))
+
+### 🐛 Bug Fixes
+
+- *(packages)* Skip version fetching when installed version matches ([#143](https://github.com/pkgforge/soar/pull/143)) - ([4325206](https://github.com/pkgforge/soar/commit/4325206829ddc161b9243782bedbb0b47a612c28))
+
 ## [0.1.1](https://github.com/pkgforge/soar/compare/soar-config-v0.1.0...soar-config-v0.1.1) - 2025-12-28
 
 ### ⚙️ Miscellaneous Tasks

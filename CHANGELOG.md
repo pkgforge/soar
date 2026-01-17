@@ -1,4 +1,28 @@
 
+## [0.9.2](https://github.com/pkgforge/soar/compare/v0.9.1...v0.9.2) - 2026-01-17
+
+### ⛰️  Features
+
+- *(apply)* Allow applying ghcr packages - ([06e2b73](https://github.com/pkgforge/soar/commit/06e2b73fce7f4189527b8868bb9adfe14d0600cc))
+- *(cli)* Add system-wide package management ([#141](https://github.com/pkgforge/soar/pull/141)) - ([f8d4f1c](https://github.com/pkgforge/soar/commit/f8d4f1c4e0e230427cd037355ba4a23da5b28a6b))
+- *(install)* Add entrypoint option and executable discovery fallbacks - ([b77cffd](https://github.com/pkgforge/soar/commit/b77cffdd6cbdfd66518c1613313d53e1c102a7a2))
+- *(packages)* Add snapshot version support with URL placeholders - ([099f96c](https://github.com/pkgforge/soar/commit/099f96c2dea4a559b47cad6da98dd0ee10633a02))
+- *(packages)* Add github/gitlab as first-class package sources ([#142](https://github.com/pkgforge/soar/pull/142)) - ([2fc3c3b](https://github.com/pkgforge/soar/commit/2fc3c3b4f8e08dd9eac828dbf4f77128f186c91f))
+- *(packages)* Add hooks, build commands, and sandbox support ([#140](https://github.com/pkgforge/soar/pull/140)) - ([a776d61](https://github.com/pkgforge/soar/commit/a776d61c7e7f57567a05b18c1baf683c96f08dff))
+- *(sandbox)* Add landlock for sandboxing - ([32687c6](https://github.com/pkgforge/soar/commit/32687c67cce0f880d44d407376b5cb7b57b75f48))
+- *(update)* Allow updating remote URL packages ([#137](https://github.com/pkgforge/soar/pull/137)) - ([af13bb6](https://github.com/pkgforge/soar/commit/af13bb637c8c4c4a89cfdac451e39b105e7ee378))
+
+### 🐛 Bug Fixes
+
+- *(clippy)* Apply clippy suggestions - ([1b45180](https://github.com/pkgforge/soar/commit/1b45180380790576d50f5c2430038efb0ca6d3a5))
+- *(packages)* Skip version fetching when installed version matches ([#143](https://github.com/pkgforge/soar/pull/143)) - ([4325206](https://github.com/pkgforge/soar/commit/4325206829ddc161b9243782bedbb0b47a612c28))
+
+### 🚜 Refactor
+
+- *(db)* Drop with_pkg_id - ([fa99208](https://github.com/pkgforge/soar/commit/fa99208ec1132c720c0065c7ab3eb235db187d34))
+- *(error)* Don't override error messages - ([e44342f](https://github.com/pkgforge/soar/commit/e44342f3c23b9cdbe23df2739bcf04bde4138025))
+- *(query)* Update query field icons - ([695a427](https://github.com/pkgforge/soar/commit/695a427ef6a4874cb212cdceed192f94150c5548))
+
 ## [0.9.1](https://github.com/pkgforge/soar/compare/v0.9.0...v0.9.1) - 2025-12-28
 
 ### 🐛 Bug Fixes
