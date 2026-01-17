@@ -2211,7 +2211,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "soar-cli"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "clap",
  "indicatif",
@@ -2243,7 +2243,7 @@ dependencies = [
 
 [[package]]
 name = "soar-config"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "documented",
  "miette",
@@ -2257,7 +2257,7 @@ dependencies = [
 
 [[package]]
 name = "soar-core"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "chrono",
  "compak",
@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "soar-db"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "diesel",
  "diesel_migrations",
@@ -2321,7 +2321,7 @@ dependencies = [
 
 [[package]]
 name = "soar-package"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "image",
  "miette",
@@ -2335,7 +2335,7 @@ dependencies = [
 
 [[package]]
 name = "soar-registry"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "miette",
  "serde",

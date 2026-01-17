@@ -1,4 +1,10 @@
 
+## [0.3.0](https://github.com/pkgforge/soar/compare/soar-config-v0.2.0...soar-config-v0.3.0) - 2026-01-17
+
+### 🐛 Bug Fixes
+
+- *(system)* [**breaking**] Change system install path to /opt/soar - ([e694e30](https://github.com/pkgforge/soar/commit/e694e305958fb5def3c5e06946e4e8fa4c625b1a))
+
 ## [0.2.0](https://github.com/pkgforge/soar/compare/soar-config-v0.1.1...soar-config-v0.2.0) - 2026-01-17
 
 ### ⛰️  Features
