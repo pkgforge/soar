@@ -9,8 +9,8 @@ use soar_core::{
     },
     error::SoarError,
     package::{
-        install::InstallTarget, query::PackageQuery, remote_update::check_for_update,
-        update::remove_old_versions, url::UrlPackage,
+        install::InstallTarget, query::PackageQuery, release_source::run_version_command,
+        remote_update::check_for_update, update::remove_old_versions, url::UrlPackage,
     },
     SoarResult,
 };
@@ -54,7 +54,7 @@ fn get_existing(
 struct UrlUpdateInfo {
     pkg_name: String,
     new_version: String,
-    new_url: String,
+    new_url: Option<String>,
 }
 
 pub async fn update_packages(
@@ -297,12 +297,12 @@ pub async fn update_packages(
         if is_installed {
             if let Err(e) = PackagesConfig::update_package(
                 &url_info.pkg_name,
-                Some(&url_info.new_url),
+                url_info.new_url.as_deref(),
                 Some(&url_info.new_version),
                 None,
             ) {
                 warn!(
-                    "Failed to update URL for '{}' in packages.toml: {}",
+                    "Failed to update version for '{}' in packages.toml: {}",
                     url_info.pkg_name, e
                 );
             }
@@ -358,27 +358,66 @@ fn check_local_package_update(
         return Ok(None);
     }
 
-    let update_source = derive_update_source(resolved).unwrap();
+    let is_github_or_gitlab = resolved.github.is_some() || resolved.gitlab.is_some();
 
-    let remote_update = match check_for_update(&update_source, &pkg.version) {
-        Ok(update) => update,
-        Err(e) => {
-            warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
-            return Ok(None);
-        }
-    };
+    let (version, download_url, size, update_toml_url) =
+        if let Some(ref cmd) = resolved.version_command {
+            let result = match run_version_command(cmd) {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("Failed to run version_command for {}: {}", pkg.pkg_name, e);
+                    return Ok(None);
+                }
+            };
 
-    let Some(update) = remote_update else {
-        return Ok(None);
-    };
+            let v = result
+                .version
+                .strip_prefix('v')
+                .unwrap_or(&result.version)
+                .to_string();
 
-    let updated_url_pkg = UrlPackage::from_remote(
-        &update.download_url,
+            let installed_version = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
+            if v == installed_version {
+                return Ok(None);
+            }
+
+            let toml_url = if is_github_or_gitlab {
+                None
+            } else {
+                Some(result.download_url.clone())
+            };
+            (v, result.download_url, result.size, toml_url)
+        } else {
+            let update_source = derive_update_source(resolved).unwrap();
+            let update = match check_for_update(&update_source, &pkg.version) {
+                Ok(Some(u)) => u,
+                Ok(None) => return Ok(None),
+                Err(e) => {
+                    warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
+                    return Ok(None);
+                }
+            };
+            let v = update
+                .new_version
+                .strip_prefix('v')
+                .unwrap_or(&update.new_version)
+                .to_string();
+            let url = if is_github_or_gitlab {
+                None
+            } else {
+                Some(update.download_url.clone())
+            };
+            (v, update.download_url, update.size, url)
+        };
+
+    let mut updated_url_pkg = UrlPackage::from_remote(
+        &download_url,
         Some(&pkg.pkg_name),
-        Some(&update.new_version),
+        Some(&version),
         pkg.pkg_type.as_deref(),
         Some(&pkg.pkg_id),
     )?;
+    updated_url_pkg.size = size;
 
     let target = InstallTarget {
         package: updated_url_pkg.to_package(),
@@ -402,7 +441,7 @@ fn check_local_package_update(
     let url_info = UrlUpdateInfo {
         pkg_name: pkg.pkg_name.clone(),
         new_version: updated_url_pkg.version.clone(),
-        new_url: update.download_url,
+        new_url: update_toml_url,
     };
 
     Ok(Some((target, url_info)))
