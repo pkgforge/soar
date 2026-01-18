@@ -21,6 +21,7 @@ use soar_core::{
     database::models::Package,
     error::{ErrorContext, SoarError},
     package::install::InstallTarget,
+    utils::substitute_placeholders,
     SoarResult,
 };
 use soar_db::models::types::{PackageProvide, ProvideStrategy};
@@ -238,6 +239,7 @@ pub async fn mangle_package_symlinks(
     bin_dir: &Path,
     provides: Option<&[PackageProvide]>,
     pkg_name: &str,
+    version: &str,
     entrypoint: Option<&str>,
     binaries: Option<&[BinaryMapping]>,
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
@@ -247,12 +249,13 @@ pub async fn mangle_package_symlinks(
     if let Some(bins) = binaries {
         if !bins.is_empty() {
             for mapping in bins {
+                let source_pattern = substitute_placeholders(&mapping.source, Some(version));
                 let source_paths: Vec<PathBuf> = fs::read_dir(install_dir)
                     .with_context(|| format!("reading directory {}", install_dir.display()))?
                     .filter_map(|entry| entry.ok())
                     .filter(|entry| {
                         let name = entry.file_name();
-                        fast_glob::glob_match(&mapping.source, name.to_string_lossy().as_ref())
+                        fast_glob::glob_match(&source_pattern, name.to_string_lossy().as_ref())
                     })
                     .map(|entry| entry.path())
                     .collect();
@@ -260,7 +263,7 @@ pub async fn mangle_package_symlinks(
                 if source_paths.is_empty() {
                     return Err(SoarError::Custom(format!(
                         "Binary source '{}' not found in package",
-                        mapping.source
+                        source_pattern
                     )));
                 }
 
@@ -279,8 +282,9 @@ pub async fn mangle_package_symlinks(
                     });
                     let link_path = bin_dir.join(link_name);
 
-                    let metadata = fs::metadata(&source_path)
-                        .with_context(|| format!("reading metadata for {}", source_path.display()))?;
+                    let metadata = fs::metadata(&source_path).with_context(|| {
+                        format!("reading metadata for {}", source_path.display())
+                    })?;
                     let mut perms = metadata.permissions();
                     let mode = perms.mode();
                     if mode & 0o111 == 0 {

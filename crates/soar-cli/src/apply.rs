@@ -17,6 +17,7 @@ use soar_core::{
         remove::PackageRemover,
         url::UrlPackage,
     },
+    utils::substitute_placeholders,
     SoarResult,
 };
 use soar_db::repository::{
@@ -262,8 +263,24 @@ async fn compute_diff(
                     }
                 }
 
+                let download_url = match result.download_url {
+                    Some(url) => url,
+                    None => {
+                        match &pkg.url {
+                            Some(url) => substitute_placeholders(url, Some(&version)),
+                            None => {
+                                diff.not_found.push(format!(
+                                "{} (version_command returned no URL and no url field configured)",
+                                pkg.name
+                            ));
+                                continue;
+                            }
+                        }
+                    }
+                };
+
                 let mut url_pkg = UrlPackage::from_remote(
-                    &result.download_url,
+                    &download_url,
                     Some(&pkg.name),
                     Some(&version),
                     pkg.pkg_type.as_deref(),
@@ -349,8 +366,9 @@ async fn compute_diff(
                     }
                 }
 
+                let url = substitute_placeholders(url, pkg.version.as_deref());
                 let url_pkg = UrlPackage::from_remote(
-                    url,
+                    &url,
                     Some(&pkg.name),
                     pkg.version.as_deref(),
                     pkg.pkg_type.as_deref(),

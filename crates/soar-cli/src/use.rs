@@ -90,6 +90,7 @@ pub async fn use_alternate_package(name: &str) -> SoarResult<()> {
         &bin_dir,
         selected_package.provides.as_deref(),
         &selected_package.pkg_name,
+        &selected_package.version,
         None,
         None,
     )

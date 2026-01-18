@@ -1,7 +1,7 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use nu_ansi_term::Color::{Cyan, Green, Red};
-use soar_config::packages::{PackagesConfig, ResolvedPackage, UpdateSource};
+use soar_config::packages::{PackagesConfig, ResolvedPackage};
 use soar_core::{
     database::{
         connection::DieselDatabase,
@@ -9,9 +9,13 @@ use soar_core::{
     },
     error::SoarError,
     package::{
-        install::InstallTarget, query::PackageQuery, release_source::run_version_command,
-        remote_update::check_for_update, update::remove_old_versions, url::UrlPackage,
+        install::InstallTarget,
+        query::PackageQuery,
+        release_source::{run_version_command, ReleaseSource},
+        update::remove_old_versions,
+        url::UrlPackage,
     },
+    utils::substitute_placeholders,
     SoarResult,
 };
 use soar_db::repository::{
@@ -312,31 +316,9 @@ pub async fn update_packages(
     Ok(())
 }
 
-/// Derive an UpdateSource from a resolved package.
-fn derive_update_source(resolved: &ResolvedPackage) -> Option<UpdateSource> {
-    if let Some(ref update) = resolved.update {
-        return Some(update.clone());
-    }
-
-    if let Some(ref repo) = resolved.github {
-        return Some(UpdateSource::GitHub {
-            repo: repo.clone(),
-            asset_pattern: resolved.asset_pattern.clone(),
-            include_prerelease: resolved.include_prerelease,
-            tag_pattern: resolved.tag_pattern.clone(),
-        });
-    }
-
-    if let Some(ref repo) = resolved.gitlab {
-        return Some(UpdateSource::GitLab {
-            repo: repo.clone(),
-            asset_pattern: resolved.asset_pattern.clone(),
-            include_prerelease: resolved.include_prerelease,
-            tag_pattern: resolved.tag_pattern.clone(),
-        });
-    }
-
-    None
+/// Check if a resolved package has any update mechanism configured
+fn has_update_source(resolved: &ResolvedPackage) -> bool {
+    resolved.version_command.is_some() || resolved.github.is_some() || resolved.gitlab.is_some()
 }
 
 /// Check if a local package has an update available via its update source
@@ -347,7 +329,7 @@ fn check_local_package_update(
     // Find resolved package that has an update source
     let resolved = resolved_packages
         .iter()
-        .find(|r| r.name == pkg.pkg_name && derive_update_source(r).is_some());
+        .find(|r| r.name == pkg.pkg_name && has_update_source(r));
 
     let Some(resolved) = resolved else {
         return Ok(None);
@@ -381,33 +363,61 @@ fn check_local_package_update(
                 return Ok(None);
             }
 
-            let toml_url = if is_github_or_gitlab {
+            let (url, should_update_toml_url) = match result.download_url {
+                Some(url) => (url, true),
+                None => {
+                    match &resolved.url {
+                        Some(url) => (substitute_placeholders(url, Some(&v)), false),
+                        None => {
+                            warn!(
+                            "version_command returned no URL and no url field configured for {}",
+                            pkg.pkg_name
+                        );
+                            return Ok(None);
+                        }
+                    }
+                }
+            };
+
+            let toml_url = if is_github_or_gitlab || !should_update_toml_url {
                 None
             } else {
-                Some(result.download_url.clone())
+                Some(url.clone())
             };
-            (v, result.download_url, result.size, toml_url)
+            (v, url, result.size, toml_url)
         } else {
-            let update_source = derive_update_source(resolved).unwrap();
-            let update = match check_for_update(&update_source, &pkg.version) {
-                Ok(Some(u)) => u,
-                Ok(None) => return Ok(None),
+            let release_source = match ReleaseSource::from_resolved(resolved) {
+                Some(s) => s,
+                None => {
+                    warn!("No release source configured for {}", pkg.pkg_name);
+                    return Ok(None);
+                }
+            };
+            let release = match release_source.resolve() {
+                Ok(r) => r,
                 Err(e) => {
                     warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
                     return Ok(None);
                 }
             };
-            let v = update
-                .new_version
+
+            let v = release
+                .version
                 .strip_prefix('v')
-                .unwrap_or(&update.new_version)
+                .unwrap_or(&release.version)
                 .to_string();
+
+            let installed_version = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
+            if v == installed_version {
+                return Ok(None);
+            }
+
             let url = if is_github_or_gitlab {
                 None
             } else {
-                Some(update.download_url.clone())
+                Some(release.download_url.clone())
             };
-            (v, update.download_url, update.size, url)
+            (v, release.download_url, release.size, url)
         };
 
     let mut updated_url_pkg = UrlPackage::from_remote(

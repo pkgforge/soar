@@ -91,6 +91,8 @@ fn validate_path_containment(
     Ok(canonical_path)
 }
 
+use crate::utils::substitute_placeholders;
+
 /// Marker content to verify partial install matches current package
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct InstallMarker {
@@ -615,8 +617,9 @@ impl PackageInstaller {
 
             // Handle extract_root: move contents from subdirectory to install root
             if let Some(ref root_dir) = self.extract_root {
+                let root_dir = substitute_placeholders(root_dir, Some(&self.package.version));
                 let root_path =
-                    validate_path_containment(&self.install_dir, root_dir, "extract_root")?;
+                    validate_path_containment(&self.install_dir, &root_dir, "extract_root")?;
 
                 if root_path.is_dir() {
                     debug!(
@@ -652,8 +655,13 @@ impl PackageInstaller {
 
             // Handle nested_extract: extract an archive within the package
             if let Some(ref nested_archive) = self.nested_extract {
-                let archive_path =
-                    validate_path_containment(&self.install_dir, nested_archive, "nested_extract")?;
+                let nested_archive =
+                    substitute_placeholders(nested_archive, Some(&self.package.version));
+                let archive_path = validate_path_containment(
+                    &self.install_dir,
+                    &nested_archive,
+                    "nested_extract",
+                )?;
 
                 if archive_path.is_file() {
                     debug!("extracting nested archive: {}", archive_path.display());

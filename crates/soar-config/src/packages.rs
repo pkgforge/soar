@@ -215,9 +215,6 @@ pub struct PackageOptions {
 
     /// Whether to install binary only.
     pub binary_only: Option<bool>,
-
-    /// Update source configuration for remote packages.
-    pub update: Option<UpdateSource>,
 }
 
 /// Portable directory configuration for a package.
@@ -237,47 +234,6 @@ pub struct PortableConfig {
 
     /// Portable cache directory.
     pub cache: Option<String>,
-}
-
-/// Update source configuration for remote packages.
-/// Specifies how to check for newer versions.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
-pub enum UpdateSource {
-    /// GitHub releases (auto-detected from github.com URLs).
-    #[serde(rename = "github")]
-    GitHub {
-        /// Repository in "owner/repo" format.
-        repo: String,
-        /// Glob pattern to match asset filename (e.g., "*nvim*.appimage").
-        asset_pattern: Option<String>,
-        /// Whether to include pre-release versions.
-        include_prerelease: Option<bool>,
-        /// Glob pattern to match release tag names (e.g., "v*-stable").
-        tag_pattern: Option<String>,
-    },
-    /// GitLab releases.
-    #[serde(rename = "gitlab")]
-    GitLab {
-        /// Repository in "owner/repo" format.
-        repo: String,
-        /// Glob pattern to match asset filename.
-        asset_pattern: Option<String>,
-        /// Whether to include pre-release versions.
-        include_prerelease: Option<bool>,
-        /// Glob pattern to match release tag names (e.g., "v*-stable").
-        tag_pattern: Option<String>,
-    },
-    /// Custom URL endpoint that returns JSON with version/download info.
-    #[serde(rename = "url")]
-    Url {
-        /// URL that returns JSON response.
-        url: String,
-        /// JSON path to version field (e.g., "tag_name" or "version").
-        version_path: String,
-        /// JSON path to download URL field.
-        download_path: String,
-    },
 }
 
 /// Resolved package specification with name included.
@@ -307,7 +263,6 @@ pub struct ResolvedPackage {
     pub portable: Option<PortableConfig>,
     pub install_patterns: Option<Vec<String>>,
     pub binary_only: bool,
-    pub update: Option<UpdateSource>,
 }
 
 impl PackageSpec {
@@ -346,7 +301,6 @@ impl PackageSpec {
                     portable: None,
                     install_patterns: defaults.and_then(|d| d.install_patterns.clone()),
                     binary_only: defaults.and_then(|d| d.binary_only).unwrap_or(false),
-                    update: None,
                 }
             }
             PackageSpec::Detailed(opts) => {
@@ -391,7 +345,6 @@ impl PackageSpec {
                         .binary_only
                         .or_else(|| defaults.and_then(|d| d.binary_only))
                         .unwrap_or(false),
-                    update: opts.update.clone(),
                 }
             }
         }

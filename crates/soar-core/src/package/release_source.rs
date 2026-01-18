@@ -12,7 +12,10 @@ use soar_dl::{
     traits::{Asset, Platform, Release},
 };
 
-use crate::{error::SoarError, package::remote_update::is_valid_download_url, SoarResult};
+use crate::{
+    error::SoarError, package::remote_update::is_valid_download_url,
+    utils::substitute_placeholders, SoarResult,
+};
 
 /// Source for fetching package releases.
 #[derive(Debug, Clone)]
@@ -182,7 +185,8 @@ fn resolve_github(
         })?;
 
     let assets: &[GithubAsset] = release.assets();
-    let asset = find_matching_asset(assets, asset_pattern)?;
+    let asset_pattern = substitute_placeholders(asset_pattern, Some(release.tag()));
+    let asset = find_matching_asset(assets, &asset_pattern)?;
 
     Ok(ResolvedRelease {
         version: release.tag().to_string(),
@@ -238,7 +242,8 @@ fn resolve_gitlab(
         })?;
 
     let assets: &[GitLabAsset] = release.assets();
-    let asset = find_matching_asset(assets, asset_pattern)?;
+    let asset_pattern = substitute_placeholders(asset_pattern, Some(release.tag()));
+    let asset = find_matching_asset(assets, &asset_pattern)?;
 
     Ok(ResolvedRelease {
         version: release.tag().to_string(),
@@ -274,17 +279,18 @@ fn find_matching_asset<'a, A: Asset>(assets: &'a [A], pattern: &str) -> SoarResu
 pub struct VersionCommandResult {
     /// The version string (line 1).
     pub version: String,
-    /// The download URL (line 2).
-    pub download_url: String,
+    /// The download URL (line 2, optional).
+    /// If not provided, the `url` field from config should be used with {version} substituted.
+    pub download_url: Option<String>,
     /// Optional size in bytes (line 3).
     pub size: Option<u64>,
 }
 
-/// Execute a version command and return version, URL, and optional size.
+/// Execute a version command and return version, optional URL, and optional size.
 ///
 /// The command is executed via `sh -c` and should output:
 /// - Line 1: version string (required)
-/// - Line 2: download URL (required)
+/// - Line 2: download URL (optional - if omitted, use `url` field with {version} placeholder)
 /// - Line 3: size in bytes (optional)
 ///
 /// Leading/trailing whitespace is trimmed from each line.
@@ -315,15 +321,7 @@ pub fn run_version_command(command: &str) -> SoarResult<VersionCommandResult> {
     let download_url = lines
         .next()
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| SoarError::Custom("Version command did not return download URL".into()))?;
-
-    if !is_valid_download_url(&download_url) {
-        return Err(SoarError::Custom(format!(
-            "Invalid download URL returned: {}",
-            download_url
-        )));
-    }
+        .filter(|s| !s.is_empty() && is_valid_download_url(s));
 
     let size = lines.next().and_then(|s| s.trim().parse::<u64>().ok());
 

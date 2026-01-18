@@ -94,6 +94,23 @@ pub fn get_extract_dir<P: AsRef<Path>>(base_dir: P) -> PathBuf {
     base_dir.join("SOAR_AUTOEXTRACT")
 }
 
+/// Substitute placeholders in a string with system/package metadata.
+///
+/// Supported placeholders:
+/// - `{arch}` - System architecture (e.g., "x86_64", "aarch64")
+/// - `{os}` - Operating system (e.g., "linux", "macos")
+/// - `{version}` - Package version (if provided)
+pub fn substitute_placeholders(template: &str, version: Option<&str>) -> String {
+    let result = template
+        .replace("{arch}", std::env::consts::ARCH)
+        .replace("{os}", std::env::consts::OS);
+
+    match version {
+        Some(v) => result.replace("{version}", v),
+        None => result,
+    }
+}
+
 /// Opens a connection to the nests database with migrations applied.
 pub fn get_nests_db_conn() -> SoarResult<DbConnection> {
     let config = get_config();

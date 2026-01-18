@@ -1352,6 +1352,7 @@ pub async fn install_single_package(
         &bin_dir,
         target.package.provides.as_deref(),
         &target.package.pkg_name,
+        &target.package.version,
         target.entrypoint.as_deref(),
         target.binaries.as_deref(),
     )
