@@ -2214,6 +2214,7 @@ name = "soar-cli"
 version = "0.10.2"
 dependencies = [
  "clap",
+ "fast-glob",
  "indicatif",
  "miette",
  "minisign-verify",

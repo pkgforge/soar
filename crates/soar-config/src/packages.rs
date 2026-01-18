@@ -75,7 +75,8 @@ pub struct BinaryMapping {
     pub source: String,
 
     /// Name for the symlink in the bin directory.
-    pub link_as: String,
+    /// If not specified, uses the filename from source.
+    pub link_as: Option<String>,
 }
 
 /// Hook commands to run at various stages of package installation.

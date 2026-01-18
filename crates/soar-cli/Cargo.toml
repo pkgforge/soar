@@ -20,6 +20,7 @@ self = []
 
 [dependencies]
 clap = { version = "4.5.54", features = ["cargo", "derive"] }
+fast-glob = { workspace = true }
 indicatif = "0.18.3"
 miette = { workspace = true }
 minisign-verify = "0.2.4"

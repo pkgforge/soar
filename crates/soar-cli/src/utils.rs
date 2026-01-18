@@ -247,44 +247,67 @@ pub async fn mangle_package_symlinks(
     if let Some(bins) = binaries {
         if !bins.is_empty() {
             for mapping in bins {
-                let source_path = install_dir.join(&mapping.source);
-                let link_path = bin_dir.join(&mapping.link_as);
+                let source_paths: Vec<PathBuf> = fs::read_dir(install_dir)
+                    .with_context(|| format!("reading directory {}", install_dir.display()))?
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| {
+                        let name = entry.file_name();
+                        fast_glob::glob_match(&mapping.source, name.to_string_lossy().as_ref())
+                    })
+                    .map(|entry| entry.path())
+                    .collect();
 
-                if !source_path.exists() {
+                if source_paths.is_empty() {
                     return Err(SoarError::Custom(format!(
                         "Binary source '{}' not found in package",
                         mapping.source
                     )));
                 }
 
-                let metadata = fs::metadata(&source_path)
-                    .with_context(|| format!("reading metadata for {}", source_path.display()))?;
-                let mut perms = metadata.permissions();
-                let mode = perms.mode();
-                if mode & 0o111 == 0 {
-                    perms.set_mode(mode | 0o755);
-                    fs::set_permissions(&source_path, perms).with_context(|| {
+                let single_match = source_paths.len() == 1;
+                for source_path in source_paths {
+                    let link_name = if single_match {
+                        mapping.link_as.as_deref()
+                    } else {
+                        None
+                    }
+                    .unwrap_or_else(|| {
+                        source_path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(&mapping.source)
+                    });
+                    let link_path = bin_dir.join(link_name);
+
+                    let metadata = fs::metadata(&source_path)
+                        .with_context(|| format!("reading metadata for {}", source_path.display()))?;
+                    let mut perms = metadata.permissions();
+                    let mode = perms.mode();
+                    if mode & 0o111 == 0 {
+                        perms.set_mode(mode | 0o755);
+                        fs::set_permissions(&source_path, perms).with_context(|| {
+                            format!(
+                                "setting executable permissions on {}",
+                                source_path.display()
+                            )
+                        })?;
+                    }
+
+                    if link_path.is_symlink() || link_path.is_file() {
+                        std::fs::remove_file(&link_path).with_context(|| {
+                            format!("removing existing file/symlink at {}", link_path.display())
+                        })?;
+                    }
+
+                    unix::fs::symlink(&source_path, &link_path).with_context(|| {
                         format!(
-                            "setting executable permissions on {}",
-                            source_path.display()
+                            "creating symlink {} -> {}",
+                            source_path.display(),
+                            link_path.display()
                         )
                     })?;
+                    symlinks.push((source_path, link_path));
                 }
-
-                if link_path.is_symlink() || link_path.is_file() {
-                    std::fs::remove_file(&link_path).with_context(|| {
-                        format!("removing existing file/symlink at {}", link_path.display())
-                    })?;
-                }
-
-                unix::fs::symlink(&source_path, &link_path).with_context(|| {
-                    format!(
-                        "creating symlink {} -> {}",
-                        source_path.display(),
-                        link_path.display()
-                    )
-                })?;
-                symlinks.push((source_path, link_path));
             }
             return Ok(symlinks);
         }
