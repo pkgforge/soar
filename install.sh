@@ -3,7 +3,7 @@
 # Tries to be as POSIX compliant as possible (Any deviation is intentional)
 # Assumptions: User has a supported downloader
 # Supported Downloaders:
-#  aria2 (aria2c) axel bash (/dev/tcp) busybox curl http (httpie) nushell (http) perl (libww) python/python3 soar-dl soar wget
+#  aria2 (aria2c) axel bash (/dev/tcp) busybox curl http (httpie) nushell (http) perl (libww) python/python3 soar wget
 # If no supported downloaders are found (happens often), a fallback to bash+sed or nushell is used
 
 set -eu
@@ -27,82 +27,44 @@ main() {
   YELLOW="\033[0;33m"
   RESET="\033[0m"
 
+  # Check if running as root
+  IS_ROOT=""
+  if [ "$(id -u)" = "0" ]; then
+    IS_ROOT="1"
+    printf "${GREEN}ⓘ Running as root${RESET}\n"
+  fi
+
   # Refresh command -v
   if command -v hash >/dev/null 2>&1; then
     hash -r >/dev/null 2>&1
   fi
 
-  # Ensure HOME
-  if [ -z "$HOME" ]; then
-    printf "${YELLOW}⚠ Notice: ${BLUE}\$HOME${YELLOW} is not set. (Will try guessing...)${RESET}\n" >&2
-
-    case $(
-      command -v awk getent grep tr whoami >/dev/null 2>&1
-      echo $?
-    ) in
-    0)
-      [ -z "$USER" ] && {
-        printf "${YELLOW}⚠ Notice: ${BLUE}\$USER${YELLOW} is not set. (Will try guessing...)${RESET}\n" >&2
-        USER="$(whoami | tr -d '[:space:]')"
-      }
-      HOME="$(getent passwd "$USER" | awk -F':' 'NF >= 6 {print $6}' | tr -d '[:space:]')"
-      ;;
-    esac
-
-    if [ ! -d "$HOME" ]; then
-      printf "${RED}✗ Error: Could not determine ${BLUE}\$HOME${RESET}\n" >&2
+  # Determine BIN_DIR for installation
+  BIN_DIR=""
+  if [ -n "${SOAR_INSTALL_DIR-}" ]; then
+    if [ -d "$SOAR_INSTALL_DIR" ] && [ -w "$SOAR_INSTALL_DIR" ]; then
+      BIN_DIR="$SOAR_INSTALL_DIR"
     else
-      printf "${YELLOW}⚠ Notice: ${BLUE}\$HOME${YELLOW} is set to ${BLUE}$HOME${RESET}\n" >&2
+      printf "${RED}✗ Error: SOAR_INSTALL_DIR ${BLUE}($SOAR_INSTALL_DIR)${RED} is not writable or doesn't exist${RESET}\n" >&2
+      exit 1
     fi
+  elif [ -n "${INSTALL_DIR-}" ]; then
+    if [ -d "$INSTALL_DIR" ] && [ -w "$INSTALL_DIR" ]; then
+      BIN_DIR="$INSTALL_DIR"
+    else
+      printf "${RED}✗ Error: INSTALL_DIR ${BLUE}($INSTALL_DIR)${RED} is not writable or doesn't exist${RESET}\n" >&2
+      exit 1
+    fi
+  elif [ -n "$IS_ROOT" ]; then
+    BIN_DIR="/usr/local/bin"
+  elif [ -n "$HOME" ]; then
+    BIN_DIR="$HOME/.local/bin"
   fi
 
-  # Check XDG/Fallback Vars & Perms
-  for var in X_BIN X_CONFIG X_CACHE X_DATA; do
-    dir_var=""
-    dir_path=""
-
-    case $var in
-    X_BIN)
-      dir_var="BIN_DIR"
-      xdg_var="XDG_BIN_HOME"
-      fallback="$HOME/.local/bin"
-      ;;
-    X_CONFIG)
-      dir_var="CONFIG_DIR"
-      xdg_var="XDG_CONFIG_HOME"
-      fallback="$HOME/.config"
-      ;;
-    X_CACHE)
-      dir_var="CACHE_DIR"
-      xdg_var="XDG_CACHE_HOME"
-      fallback="$HOME/.cache"
-      ;;
-    X_DATA)
-      dir_var="DATA_DIR"
-      xdg_var="XDG_DATA_HOME"
-      fallback="$HOME/.local/share"
-      ;;
-    esac
-
-    xdg_value=""
-    eval "xdg_value=\"\${$xdg_var:-}\""
-
-    if [ -n "$xdg_value" ]; then
-      xdg_path="$xdg_value"
-      mkdir -p "$xdg_path" >/dev/null 2>&1
-      if [ -d "$xdg_path" ] && [ -w "$xdg_path" ]; then
-        eval "$dir_var=\"$xdg_path\""
-        continue
-      fi
-    fi
-
-    if [ -n "$HOME" ]; then
-      mkdir -p "$fallback" >/dev/null 2>&1
-      if [ -d "$fallback" ] && [ -w "$fallback" ]; then
-        eval "$dir_var=\"$fallback\""
-      fi
-    fi
-  done
+  if [ -z "$BIN_DIR" ]; then
+    printf "${RED}✗ Error: Could not determine installation directory${RESET}\n" >&2
+    exit 1
+  fi
 
   # Check for a downloader, sorted by sanest choice
   check_download_tool() {
@@ -111,9 +73,6 @@ main() {
       return 0
     elif command -v wget >/dev/null 2>&1; then
       printf "wget -O"
-      return 0
-    elif command -v soar-dl >/dev/null 2>&1; then
-      printf "soar-dl -o"
       return 0
     elif command -v soar >/dev/null 2>&1; then
       printf "soar dl -o"
@@ -149,53 +108,9 @@ main() {
       printf "BASH_DEV_TCP"
       return 0
     else
-      printf "${RED}✗ Error: Could not find a downloader (curl, wget, soar-dl, aria2, axel, httpie, perl, python, busybox).${RESET}\n" >&2
+      printf "${RED}✗ Error: Could not find a downloader (curl, wget, aria2, axel, httpie, perl, python, busybox).${RESET}\n" >&2
       return 1
     fi
-  }
-
-  # Determine installation directory
-  get_install_dir() {
-    # Check environment variables first
-    if [ -n "${SOAR_INSTALL_DIR-}" ]; then
-      if [ -d "$SOAR_INSTALL_DIR" ] && [ -w "$SOAR_INSTALL_DIR" ]; then
-        printf "%s" "$SOAR_INSTALL_DIR"
-        return
-      else
-        printf "${RED}✗ Error: SOAR_INSTALL_DIR ${BLUE}($SOAR_INSTALL_DIR)${RED} is not writable or doesn't exist${RESET}\n" >&2
-        exit 1
-      fi
-    fi
-    if [ -n "${INSTALL_DIR-}" ]; then
-      if [ -d "$INSTALL_DIR" ] && [ -w "$INSTALL_DIR" ]; then
-        printf "%s" "$INSTALL_DIR"
-        return
-      else
-        printf "${RED}✗ Error: INSTALL_DIR ${BLUE}($INSTALL_DIR)${RED} is not writable or doesn't exist${RESET}\n" >&2
-        exit 1
-      fi
-    fi
-
-    # Check Writable BIN Dir
-    if [ -n "$BIN_DIR" ]; then
-      if [ -d "$BIN_DIR" ] && [ -w "$BIN_DIR" ]; then
-        printf "%s" "$BIN_DIR"
-        return
-      fi
-    fi
-
-    # Fallback to /usr/local/bin if running as root
-    if [ "$(id -u)" = "0" ]; then
-      if [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
-        printf "/usr/local/bin"
-        return
-      fi
-    fi
-
-    # Fallback to current directory
-    printf "${YELLOW}⚠ Notice: ${BLUE}~/.local/bin${YELLOW} not found or not writable. Installing in current directory.${RESET}\n" >&2
-    printf "${YELLOW}You should move the binary to a location in your ${BLUE}\$PATH.${RESET}\n" >&2
-    printf "%s" "$(pwd)"
   }
 
   # Function to download and install
@@ -204,7 +119,13 @@ main() {
     if ! DOWNLOAD_TOOL=$(check_download_tool); then
       exit 1
     fi
-    INSTALL_PATH=$(get_install_dir)
+
+    mkdir -p "$BIN_DIR" >/dev/null 2>&1
+    if [ ! -d "$BIN_DIR" ] || [ ! -w "$BIN_DIR" ]; then
+      printf "${RED}✗ Error: ${BLUE}$BIN_DIR${RED} is not writable or doesn't exist${RESET}\n" >&2
+      exit 1
+    fi
+    INSTALL_PATH="$BIN_DIR"
 
     # Detect architecture
     ARCH=$(uname -m)
@@ -348,7 +269,6 @@ main() {
     "$INSTALL_PATH/soar" --version || printf "${RED}Error: Failed to properly download soar${RESET}"
     printf "\n${GREEN}✓ Soar has been installed to: ${BLUE}$INSTALL_PATH/soar${RESET}\n"
     printf "${YELLOW}ⓘ Documentation: ${BLUE}https://soar.qaidvoid.dev${RESET}\n"
-    printf "${YELLOW}ⓘ Discord: ${BLUE}https://docs.pkgforge.dev/contact/chat${RESET}\n"
     # Check if in PATH
     if command -v expr >/dev/null 2>&1; then
       if expr ":$PATH:" : ".*:$BIN_DIR:" >/dev/null ||
@@ -362,14 +282,17 @@ main() {
     else
       printf "${YELLOW}ⓘ Make sure ${BLUE}$INSTALL_PATH${YELLOW} is in your ${BLUE}PATH.${RESET}\n"
     fi
-    # Enable External Repos
-    printf "${YELLOW}ⓘ External Repositories are ${RED}NOT Enabled${YELLOW} by default${RESET}\n"
-    printf "${YELLOW}ⓘ Learn More: ${BLUE}https://docs.pkgforge.dev/repositories/external${RESET}\n"
-    printf "${YELLOW}ⓘ To enable external repos, Run: ${GREEN}soar defconfig --external${RESET}\n"
-    # Sync
-    printf "${YELLOW}ⓘ Finally, To synchronize all repos, Run: ${GREEN}soar sync${RESET}\n"
+    if [ -n "$IS_ROOT" ]; then
+      printf "${YELLOW}ⓘ To synchronize all repos, run: ${GREEN}soar sync --system${RESET}\n"
+    else
+      printf "${YELLOW}ⓘ To synchronize all repos, run: ${GREEN}soar sync${RESET}\n"
+    fi
     # Check Current Config
-    SOAR_ENV_OUT="$($INSTALL_PATH/soar env 2>/dev/null)"
+    if [ -n "$IS_ROOT" ]; then
+      SOAR_ENV_OUT="$($INSTALL_PATH/soar env --system 2>/dev/null)"
+    else
+      SOAR_ENV_OUT="$($INSTALL_PATH/soar env 2>/dev/null)"
+    fi
     if [ -n "$SOAR_ENV_OUT" ]; then
       if command -v awk >/dev/null 2>&1 && command -v expr >/dev/null 2>&1; then
         SOAR_BIN_PATH="$(printf "$SOAR_ENV_OUT" | awk -F= '/^SOAR_BIN=/{print $2}')"
@@ -386,9 +309,12 @@ main() {
       fi
     fi
     # Print Current config
-    printf "\n${YELLOW}ⓘ Current Soar Configuration:${RESET}\n\n"
-    "$INSTALL_PATH/soar" env
-    printf "\n"
+    printf "\n${YELLOW}ⓘ Current Soar Configuration:${RESET}\n"
+    if [ -n "$IS_ROOT" ]; then
+      "$INSTALL_PATH/soar" env --system
+    else
+      "$INSTALL_PATH/soar" env
+    fi
   }
 
   # Run Installation
