@@ -2269,7 +2269,6 @@ dependencies = [
  "miette",
  "nix",
  "regex",
- "semver",
  "serde",
  "serde_json",
  "soar-config",

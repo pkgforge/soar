@@ -207,14 +207,22 @@ where
     })
 }
 
-/// Determines whether a download `HttpError` status should cause a fallback attempt.
+/// Determines whether a download error status should cause a fallback attempt.
 ///
 /// # Returns
 ///
 /// `true` if the error is an HTTP status of 429, 401, 403, or any status >= 500; `false` otherwise.
 fn should_fallback_status(e: &DownloadError) -> bool {
-    matches!(e, DownloadError::HttpError { status, .. }
-        if *status == 429 || *status == 401 || *status == 403 || *status >= 500)
+    match e {
+        DownloadError::HttpError {
+            status, ..
+        } => *status == 429 || *status == 401 || *status == 403 || *status >= 500,
+        DownloadError::Network(err) => {
+            matches!(err.as_ref(), ureq::Error::StatusCode(status)
+                if *status == 429 || *status == 401 || *status == 403 || *status >= 500)
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
