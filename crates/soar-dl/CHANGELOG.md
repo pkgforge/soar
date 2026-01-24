@@ -1,4 +1,15 @@
 
+## [0.7.3](https://github.com/pkgforge/soar/compare/soar-dl-v0.7.2...soar-dl-v0.7.3) - 2026-01-24
+
+### ⛰️  Features
+
+- *(platforms)* Allow fallback token env for github/gitlab - ([ca94243](https://github.com/pkgforge/soar/commit/ca942433caf6a37f2816d2da87891b0bb1f6a593))
+
+### 🐛 Bug Fixes
+
+- *(dl)* Handle ureq StatusCode in fallback logic - ([27f5738](https://github.com/pkgforge/soar/commit/27f5738e78f5eb9e83eda9dc99879c2ae2381087))
+- *(test)* Fix failing doctest - ([54e9107](https://github.com/pkgforge/soar/commit/54e91075754d78b0b7bd218eec4c680176af9b69))
+
 ## [0.7.2](https://github.com/pkgforge/soar/compare/soar-dl-v0.7.1...soar-dl-v0.7.2) - 2026-01-17
 
 ### ⛰️  Features
