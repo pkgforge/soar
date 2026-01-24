@@ -149,7 +149,7 @@ impl PlatformUrl {
 /// struct Item { id: u32 }
 ///
 /// // Attempts fallback first, then primary with token from "API_TOKEN" if needed.
-/// let result: Result<Vec<Item>, _> = fetch_with_fallback("/api/items", "https://primary.example.com", "https://fallback.example.com", "API_TOKEN");
+/// let result: Result<Vec<Item>, _> = fetch_with_fallback("/api/items", "https://primary.example.com", "https://fallback.example.com", ["API_TOKEN", "API_TOKEN_FALLBACK"]);
 /// ```
 pub fn fetch_with_fallback<T>(
     path: &str,
