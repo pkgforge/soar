@@ -1,4 +1,15 @@
 
+## [0.10.3](https://github.com/pkgforge/soar/compare/v0.10.2...v0.10.3) - 2026-01-24
+
+### ⛰️  Features
+
+- *(config)* Add placeholder support and remove update field - ([824d060](https://github.com/pkgforge/soar/commit/824d0600b342ad5c921fffb3677102377f74ec47))
+- *(config)* Make link_as optional and add glob support in binary maps - ([c3945ee](https://github.com/pkgforge/soar/commit/c3945ee556b00713d9f71eb5119a7580d19d6ce1))
+
+### 🐛 Bug Fixes
+
+- *(dl)* Handle ureq StatusCode in fallback logic - ([27f5738](https://github.com/pkgforge/soar/commit/27f5738e78f5eb9e83eda9dc99879c2ae2381087))
+
 ## [0.10.2](https://github.com/pkgforge/soar/compare/v0.10.1...v0.10.2) - 2026-01-17
 
 ### 🐛 Bug Fixes
