@@ -36,3 +36,179 @@
 ### ⛰️  Features
 
 - *(crate)* Init soar-dl crate ([#102](https://github.com/pkgforge/soar/pull/102)) - ([8be00ab](https://github.com/pkgforge/soar/commit/8be00ab414accb3d03302b6bf85073919d73565d))
+
+## [0.6.3] - 2025-06-03
+
+### Changed
+
+- Only create extract dir if the download is archive
+
+### Fixed
+
+- Fix file target when output path is provided
+
+## [0.6.2] - 2025-06-01
+
+### Changed
+
+- Update dependencies
+
+## [0.6.1] - 2025-05-17
+
+### Added
+
+- Add OCI resumability
+
+### Changed
+
+- Use async stdout
+- Set default overwrite prompt
+- Treat URL as direct link if only it has scheme and host
+
+## [0.6.0] - 2025-05-04
+
+### Added
+
+- Add resumability and overwrite prompting
+- Add glob support
+
+### Changed
+
+- Allow specifying http headers, proxy and user agent
+- Use shared http client
+- Allow specifying extract directory; fix extract when output is not specified
+- Handle encoded tags, allow / and trim quotes in tags
+
+## [0.5.3] - 2025-04-06
+
+### Added
+
+- Add support for streaming response to stdout
+
+### Changed
+
+- Revert "use hickory-dns"
+
+## [0.5.2] - 2025-04-06
+
+### Changed
+
+- Update dependencies
+- Use hickory-dns
+
+## [0.5.1] - 2025-04-01
+
+### Fixed
+
+- Fix archive extract dir
+
+## [0.5.0] - 2025-03-22
+
+### Added
+
+- Add support for archives
+
+### Changed
+
+- Prioritize filename from response header if not provided
+
+## [0.4.2] - 2025-02-28
+
+### Changed
+
+- Truncate existing file instead of append
+
+### Fixed
+
+- Fix gitlab regex
+
+## [0.4.0] - 2025-02-24
+
+### Changed
+
+- Fetch directly using tag api if tag is provided
+
+## [0.3.5] - 2025-02-16
+
+### Changed
+
+- Return error if url is invalid
+
+## [0.3.4] - 2025-02-08
+
+### Changed
+
+- Enhance OCI download state & support retries on OCI rate limit
+
+## [0.3.3] - 2025-01-27
+
+### Fixed
+
+- Fix parsing github release without name
+
+## [0.3.2] - 2025-01-25
+
+### Added
+
+- Add keyword matching support for OCI downloads
+- Add custom API and concurrency support for OCI downloads
+
+## [0.3.1] - 2025-01-18
+
+### Fixed
+
+- Fix oci download progress
+
+## [0.3.0] - 2025-01-18
+
+### Added
+
+- Add oci blob download support
+- Add support for download OCI packages
+
+### Changed
+
+- Simplify download state
+
+## [0.2.0] - 2025-01-11
+
+### Changed
+
+- Handle github/gitlab project passed as link
+
+## [0.1.2] - 2024-12-19
+
+### Added
+
+- Add name field to releases
+
+## [0.1.1] - 2024-12-05
+
+### Added
+
+- Add workflow
+
+### Changed
+
+- Handle tags
+- Initialize soar-dl
+- Initial commit
+
+[0.6.3]: https://github.com/pkgforge/soar-dl/compare/v0.6.2..v0.6.3
+[0.6.2]: https://github.com/pkgforge/soar-dl/compare/v0.6.1..v0.6.2
+[0.6.1]: https://github.com/pkgforge/soar-dl/compare/v0.6.0..v0.6.1
+[0.6.0]: https://github.com/pkgforge/soar-dl/compare/v0.5.3..v0.6.0
+[0.5.3]: https://github.com/pkgforge/soar-dl/compare/v0.5.2..v0.5.3
+[0.5.2]: https://github.com/pkgforge/soar-dl/compare/v0.5.1..v0.5.2
+[0.5.1]: https://github.com/pkgforge/soar-dl/compare/v0.5.0..v0.5.1
+[0.5.0]: https://github.com/pkgforge/soar-dl/compare/v0.4.2..v0.5.0
+[0.4.2]: https://github.com/pkgforge/soar-dl/compare/v0.4.0..v0.4.2
+[0.4.0]: https://github.com/pkgforge/soar-dl/compare/v0.3.5..v0.4.0
+[0.3.5]: https://github.com/pkgforge/soar-dl/compare/v0.3.4..v0.3.5
+[0.3.4]: https://github.com/pkgforge/soar-dl/compare/v0.3.3..v0.3.4
+[0.3.3]: https://github.com/pkgforge/soar-dl/compare/v0.3.2..v0.3.3
+[0.3.2]: https://github.com/pkgforge/soar-dl/compare/v0.3.1..v0.3.2
+[0.3.1]: https://github.com/pkgforge/soar-dl/compare/v0.3.0..v0.3.1
+[0.3.0]: https://github.com/pkgforge/soar-dl/compare/v0.2.0..v0.3.0
+[0.2.0]: https://github.com/pkgforge/soar-dl/compare/v0.1.2..v0.2.0
+[0.1.2]: https://github.com/pkgforge/soar-dl/compare/v0.1.1..v0.1.2
