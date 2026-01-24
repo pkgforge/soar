@@ -29,7 +29,7 @@ impl Platform for Github {
 
     const API_PKGFORGE: &'static str = "https://api.gh.pkgforge.dev";
     const API_UPSTREAM: &'static str = "https://api.github.com";
-    const TOKEN_ENV: &'static str = "GITHUB_TOKEN";
+    const TOKEN_ENV: [&str; 2] = ["GITHUB_TOKEN", "GH_TOKEN"];
 
     /// Fetches releases for the given GitHub repository, optionally filtered by a specific tag.
     ///

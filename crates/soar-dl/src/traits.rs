@@ -21,7 +21,7 @@ pub trait Platform {
 
     const API_UPSTREAM: &'static str;
     const API_PKGFORGE: &'static str;
-    const TOKEN_ENV: &'static str;
+    const TOKEN_ENV: [&str; 2];
 
     fn fetch_releases(
         project: &str,

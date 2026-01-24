@@ -33,7 +33,7 @@ impl Platform for GitLab {
 
     const API_PKGFORGE: &'static str = "https://api.gl.pkgforge.dev";
     const API_UPSTREAM: &'static str = "https://gitlab.com";
-    const TOKEN_ENV: &'static str = "GITLAB_TOKEN";
+    const TOKEN_ENV: [&str; 2] = ["GITLAB_TOKEN", "GL_TOKEN"];
 
     /// Fetches releases for a GitLab project, optionally narrowing to a specific tag.
     ///
