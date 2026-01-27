@@ -38,10 +38,6 @@ jobs:
               TARGET: aarch64-unknown-linux-musl,
             }
           - {
-              NAME: loongarch64-linux,
-              TARGET: loongarch64-unknown-linux-musl
-            }
-          - {
               NAME: riscv64-linux,
               TARGET: riscv64gc-unknown-linux-musl
             }

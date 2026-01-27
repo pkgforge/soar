@@ -133,9 +133,6 @@ main() {
     aarch64)
       ARCH="aarch64"
       ;;
-    loongarch64)
-      ARCH="loongarch64"
-      ;;
     riscv64)
       ARCH="riscv64"
       ;;
