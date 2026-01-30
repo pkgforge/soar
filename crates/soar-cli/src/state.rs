@@ -13,17 +13,14 @@ use soar_config::{
 use soar_core::{
     database::connection::{DieselDatabase, MetadataManager},
     error::{ErrorContext, SoarError},
-    utils::get_nests_db_conn,
     SoarResult,
 };
 use soar_db::{
     connection::DbConnection,
     migration::DbType,
-    repository::{core::CoreRepository, metadata::MetadataRepository, nest::NestRepository},
+    repository::{core::CoreRepository, metadata::MetadataRepository},
 };
-use soar_registry::{
-    fetch_metadata, fetch_nest_metadata, write_metadata_db, MetadataContent, RemotePackage,
-};
+use soar_registry::{fetch_metadata, write_metadata_db, MetadataContent, RemotePackage};
 use tokio::sync::OnceCell as AsyncOnceCell;
 use tracing::{debug, error, info, trace};
 
@@ -77,64 +74,6 @@ impl AppState {
     pub async fn sync(&self) -> SoarResult<()> {
         debug!("starting sync");
         self.init_repo_dbs(true).await?;
-        self.sync_nests(true).await
-    }
-
-    async fn sync_nests(&self, force: bool) -> SoarResult<()> {
-        debug!(force = force, "syncing nests");
-        let mut nests_db = get_nests_db_conn()?;
-        let nests = NestRepository::list_all(nests_db.conn())
-            .map_err(|e| SoarError::Custom(format!("listing nests: {}", e)))?;
-        trace!(count = nests.len(), "found nests to sync");
-
-        let nests_repo_path = self.config().get_repositories_path()?.join("nests");
-
-        let mut tasks = Vec::new();
-
-        for nest in nests {
-            let etag = self.read_nest_etag(&nest.name);
-            let registry_nest = soar_registry::Nest {
-                id: nest.id as i64,
-                name: nest.name.clone(),
-                url: nest.url.clone(),
-            };
-            let task = tokio::task::spawn(async move {
-                fetch_nest_metadata(&registry_nest, force, etag).await
-            });
-            tasks.push((task, nest));
-        }
-
-        for (task, nest) in tasks {
-            match task
-                .await
-                .map_err(|err| SoarError::Custom(format!("Join handle error: {err}")))?
-            {
-                Ok(Some((etag, content))) => {
-                    let nest_path = nests_repo_path.join(&nest.name);
-                    let metadata_db_path = nest_path.join("metadata.db");
-                    let nest_name = format!("nest-{}", nest.name);
-
-                    match content {
-                        MetadataContent::SqliteDb(db_bytes) => {
-                            write_metadata_db(&db_bytes, &metadata_db_path)
-                                .map_err(|e| SoarError::Custom(e.to_string()))?;
-                        }
-                        MetadataContent::Json(packages) => {
-                            handle_json_metadata(&packages, &metadata_db_path, &nest_name)?;
-                        }
-                    }
-
-                    let db = DieselDatabase::open_metadata(&metadata_db_path)?;
-                    db.with_conn(|conn| {
-                        MetadataRepository::update_repo_metadata(conn, &nest_name, &etag)
-                    })?;
-                    info!("[{}] Nest synced", Colored(Magenta, &nest.name))
-                }
-                Err(err) => error!("Failed to sync nest {}: {err}", nest.name),
-                _ => {}
-            }
-        }
-
         Ok(())
     }
 
@@ -270,23 +209,6 @@ impl AppState {
             }
         }
 
-        if let Ok(mut nests_db) = get_nests_db_conn() {
-            if let Ok(nests) = NestRepository::list_all(nests_db.conn()) {
-                if let Ok(nests_repo_path) = self.config().get_repositories_path() {
-                    let nests_repo_path = nests_repo_path.join("nests");
-                    for nest in nests {
-                        let nest_path = nests_repo_path.join(&nest.name);
-                        let metadata_db = nest_path.join("metadata.db");
-                        if metadata_db.is_file() {
-                            let nest_name = format!("nest-{}", nest.name);
-                            trace!(nest_name = nest_name, "adding nest to metadata manager");
-                            manager.add_repo(&nest_name, metadata_db)?;
-                        }
-                    }
-                }
-            }
-        }
-
         debug!(repos = manager.repo_count(), "metadata manager created");
         Ok(manager)
     }
@@ -300,22 +222,6 @@ impl AppState {
     fn read_repo_etag(&self, repo: &Repository) -> Option<String> {
         let repo_path = repo.get_path().ok()?;
         let metadata_db = repo_path.join("metadata.db");
-
-        if !metadata_db.exists() {
-            return None;
-        }
-
-        let mut conn = DbConnection::open(&metadata_db, DbType::Metadata).ok()?;
-        MetadataRepository::get_repo_etag(conn.conn())
-            .ok()
-            .flatten()
-    }
-
-    /// Reads the etag from an existing nest metadata database.
-    fn read_nest_etag(&self, nest_name: &str) -> Option<String> {
-        let nests_repo_path = self.config().get_repositories_path().ok()?.join("nests");
-        let nest_path = nests_repo_path.join(nest_name);
-        let metadata_db = nest_path.join("metadata.db");
 
         if !metadata_db.exists() {
             return None;
@@ -341,7 +247,6 @@ impl AppState {
             .get_or_try_init(|| {
                 async {
                     self.init_repo_dbs(false).await?;
-                    self.sync_nests(false).await?;
                     self.create_metadata_manager()
                 }
             })

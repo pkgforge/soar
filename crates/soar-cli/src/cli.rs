@@ -429,10 +429,6 @@ pub enum Commands {
         action: SelfAction,
     },
 
-    /// Manage nests
-    #[clap(subcommand, name = "nest")]
-    Nest(NestCommands),
-
     /// Apply declarative package configuration
     #[clap(name = "apply")]
     Apply {
@@ -460,32 +456,4 @@ pub enum Commands {
     /// Generate default packages configuration
     #[clap(name = "defpackages")]
     DefPackages,
-}
-
-#[derive(Subcommand)]
-pub enum NestCommands {
-    /// Add a nest
-    #[command(arg_required_else_help = true)]
-    Add {
-        /// Name of the nest
-        #[arg(required = true)]
-        name: String,
-
-        /// URL of the nest
-        #[arg(required = true)]
-        url: String,
-    },
-
-    /// Remove a nest
-    #[command(arg_required_else_help = true)]
-    #[clap(name = "remove", visible_alias = "rm", visible_alias = "del")]
-    Remove {
-        /// Name of the nest to remove
-        #[arg(required = true)]
-        name: String,
-    },
-
-    /// List all nests
-    #[clap(name = "list", visible_alias = "ls")]
-    List,
 }

@@ -5,7 +5,6 @@
 //!
 //! - **Core database**: Tracks installed packages
 //! - **Metadata databases**: One per repository, contains package metadata
-//! - **Nests database**: Tracks nest configurations
 
 use std::{collections::HashMap, path::Path};
 
@@ -46,9 +45,9 @@ impl DbConnection {
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
         trace!("migrations applied");
 
-        // Migrate text JSON to JSONB for databases we manage (Core, Nest)
+        // Migrate text JSON to JSONB for core database
         // Metadata databases are generated externally and migrated on fetch
-        if matches!(db_type, DbType::Core | DbType::Nest) {
+        if matches!(db_type, DbType::Core) {
             migrate_json_to_jsonb(&mut conn, db_type)
                 .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
             trace!("JSON to JSONB migration completed");
@@ -137,7 +136,6 @@ impl std::ops::DerefMut for DbConnection {
 /// This struct manages separate connections for:
 /// - The core database (installed packages)
 /// - Multiple metadata databases (one per repository)
-/// - The nests database (nest configurations)
 ///
 /// # Example
 ///
@@ -159,8 +157,6 @@ pub struct DatabaseManager {
     core: DbConnection,
     /// Metadata database connections, keyed by repository name.
     metadata: HashMap<String, DbConnection>,
-    /// Nests database connection.
-    nests: DbConnection,
 }
 
 impl DatabaseManager {
@@ -172,7 +168,6 @@ impl DatabaseManager {
     ///
     /// The following databases will be created/opened:
     /// - `{base_dir}/core.db` - Installed packages
-    /// - `{base_dir}/nests.db` - Nest configurations
     ///
     /// Metadata databases are added separately via `add_metadata_db`.
     pub fn new<P: AsRef<Path>>(base_dir: P) -> Result<Self, ConnectionError> {
@@ -180,16 +175,13 @@ impl DatabaseManager {
         debug!(base_dir = %base.display(), "initializing database manager");
 
         let core_path = base.join("core.db");
-        let nests_path = base.join("nests.db");
 
         let core = DbConnection::open(&core_path, DbType::Core)?;
-        let nests = DbConnection::open(&nests_path, DbType::Nest)?;
 
-        debug!("database manager initialized with core and nests databases");
+        debug!("database manager initialized");
         Ok(Self {
             core,
             metadata: HashMap::new(),
-            nests,
         })
     }
 
@@ -230,11 +222,6 @@ impl DatabaseManager {
     /// Gets an iterator over all metadata database connections.
     pub fn all_metadata(&mut self) -> impl Iterator<Item = (&String, &mut DbConnection)> {
         self.metadata.iter_mut()
-    }
-
-    /// Gets a mutable reference to the nests database connection.
-    pub fn nests(&mut self) -> &mut DbConnection {
-        &mut self.nests
     }
 
     /// Returns the names of all loaded metadata databases.

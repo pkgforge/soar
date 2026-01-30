@@ -82,13 +82,6 @@ pub enum ConfigError {
     )]
     DuplicateRepositoryName(String),
 
-    #[error("Repository name cannot start with `nest-`")]
-    #[diagnostic(
-        code(soar_config::invalid_repository_name),
-        help("Repository names cannot start with `nest-`")
-    )]
-    InvalidRepositoryNameStartsWithNest,
-
     #[error(transparent)]
     #[diagnostic(code(soar_config::io))]
     IoError(#[from] std::io::Error),

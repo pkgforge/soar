@@ -2,18 +2,17 @@
 //!
 //! This crate provides database management for soar, including:
 //!
-//! - **Connection management**: Separate connections for core, metadata, and nests databases
+//! - **Connection management**: Separate connections for core and metadata databases
 //! - **Models**: Diesel ORM models for all database tables
 //! - **Repositories**: Type-safe CRUD operations using the repository pattern
 //! - **Migrations**: Automatic schema migrations using diesel_migrations
 //!
 //! # Database Architecture
 //!
-//! Soar uses three types of SQLite databases:
+//! Soar uses two types of SQLite databases:
 //!
 //! - **Core database** (`core.db`): Tracks installed packages
 //! - **Metadata databases** (one per repository): Contains package metadata
-//! - **Nests database** (`nests.db`): Stores nest configurations
 //!
 //! # Example
 //!

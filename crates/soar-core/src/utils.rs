@@ -6,7 +6,6 @@ use std::{
 };
 
 use soar_config::config::{get_config, is_system_mode};
-use soar_db::{connection::DbConnection, migration::DbType};
 use soar_utils::{
     error::FileSystemResult,
     fs::{safe_remove, walk_dir},
@@ -14,10 +13,7 @@ use soar_utils::{
 };
 use tracing::info;
 
-use crate::{
-    error::{ErrorContext, SoarError},
-    SoarResult,
-};
+use crate::error::{ErrorContext, SoarError};
 
 type Result<T> = std::result::Result<T, SoarError>;
 
@@ -109,13 +105,4 @@ pub fn substitute_placeholders(template: &str, version: Option<&str>) -> String 
         Some(v) => result.replace("{version}", v),
         None => result,
     }
-}
-
-/// Opens a connection to the nests database with migrations applied.
-pub fn get_nests_db_conn() -> SoarResult<DbConnection> {
-    let config = get_config();
-    let path = config.get_db_path()?.join("nests.db");
-    let conn = DbConnection::open(&path, DbType::Nest)
-        .map_err(|e| SoarError::Custom(format!("opening nests database: {}", e)))?;
-    Ok(conn)
 }

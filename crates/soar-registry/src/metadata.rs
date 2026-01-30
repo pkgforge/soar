@@ -1,7 +1,7 @@
 //! Metadata fetching and processing for package repositories.
 //!
 //! This module provides functions for fetching package metadata from remote
-//! repositories and nests, handling both SQLite database and JSON formats.
+//! repositories, handling both SQLite database and JSON formats.
 
 use std::{
     fs::{self, File},
@@ -9,9 +9,8 @@ use std::{
     path::Path,
 };
 
-use soar_config::{config::get_config, repository::Repository};
+use soar_config::repository::Repository;
 use soar_dl::{download::Download, http_client::SHARED_AGENT, types::OverwriteMode};
-use soar_utils::system::platform;
 use tracing::info;
 use ureq::http::{
     header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH, PRAGMA},
@@ -21,7 +20,6 @@ use url::Url;
 
 use crate::{
     error::{ErrorContext, RegistryError, Result},
-    nest::Nest,
     package::RemotePackage,
 };
 
@@ -35,7 +33,7 @@ pub const ZST_MAGIC_BYTES: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 ///
 /// Metadata from repositories can come in two formats:
 /// - Pre-built SQLite databases (more efficient for large repositories)
-/// - JSON arrays of packages (simpler format, used by nests)
+/// - JSON arrays of packages (simpler format)
 ///
 /// The caller is responsible for handling each variant appropriately,
 /// typically by either writing the SQLite bytes directly to disk or
@@ -45,126 +43,6 @@ pub enum MetadataContent {
     SqliteDb(Vec<u8>),
     /// Parsed package metadata from JSON format.
     Json(Vec<RemotePackage>),
-}
-
-fn construct_nest_url(url: &str) -> Result<String> {
-    let url = if let Some(repo) = url.strip_prefix("github:") {
-        format!(
-            "https://github.com/{}/releases/download/soar-nest/{}.json",
-            repo,
-            platform()
-        )
-    } else {
-        url.to_string()
-    };
-    Url::parse(&url).map_err(|err| RegistryError::InvalidUrl(err.to_string()))?;
-    Ok(url)
-}
-
-/// Fetches nest metadata from a remote source.
-///
-/// This function retrieves package metadata for a user-defined nest, handling
-/// caching via ETags and respecting the configured sync interval.
-///
-/// # Arguments
-///
-/// * `nest` - The nest configuration containing the name and URL
-/// * `force` - If `true`, bypasses cache validation and fetches fresh metadata
-/// * `existing_etag` - Optional etag from a previous fetch, read from the database
-///
-/// # Returns
-///
-/// * `Ok(Some((etag, content)))` - New metadata was fetched successfully
-/// * `Ok(None)` - Cached metadata is still valid (not modified)
-/// * `Err(_)` - An error occurred during fetching or processing
-///
-/// # Errors
-///
-/// Returns [`RegistryError`] if:
-/// - The nest URL is invalid
-/// - Network request fails
-/// - Server returns an error response
-/// - Response is missing required ETag header
-/// - Metadata content cannot be processed
-pub async fn fetch_nest_metadata(
-    nest: &Nest,
-    force: bool,
-    existing_etag: Option<String>,
-) -> Result<Option<(String, MetadataContent)>> {
-    let config = get_config();
-    let nests_repo_path = config
-        .get_repositories_path()
-        .map_err(|e| {
-            RegistryError::IoError {
-                action: "getting repositories path".to_string(),
-                source: io::Error::other(e.to_string()),
-            }
-        })?
-        .join("nests");
-    let nest_path = nests_repo_path.join(&nest.name);
-    let metadata_db = nest_path.join("metadata.db");
-
-    if !metadata_db.exists() {
-        fs::create_dir_all(&nest_path)
-            .with_context(|| format!("creating directory {}", nest_path.display()))?;
-    }
-
-    let etag = if metadata_db.exists() {
-        let etag = existing_etag.unwrap_or_default();
-
-        if !force && !etag.is_empty() {
-            let file_info = metadata_db
-                .metadata()
-                .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
-            let sync_interval = config.get_nests_sync_interval();
-            if let Ok(created) = file_info.created() {
-                if sync_interval >= created.elapsed()?.as_millis() {
-                    return Ok(None);
-                }
-            }
-        }
-        etag
-    } else {
-        String::new()
-    };
-
-    let url = construct_nest_url(&nest.url)?;
-
-    let mut req = SHARED_AGENT
-        .get(&url)
-        .header(CACHE_CONTROL, "no-cache")
-        .header(PRAGMA, "no-cache");
-
-    if !etag.is_empty() {
-        req = req.header(IF_NONE_MATCH, etag);
-    }
-
-    let resp = req
-        .call()
-        .map_err(|err| RegistryError::FailedToFetchRemote(err.to_string()))?;
-
-    if resp.status() == StatusCode::NOT_MODIFIED {
-        return Ok(None);
-    }
-
-    if !resp.status().is_success() {
-        let msg = format!("{} [{}]", url, resp.status());
-        return Err(RegistryError::FailedToFetchRemote(msg));
-    }
-
-    let etag = resp
-        .headers()
-        .get(ETAG)
-        .and_then(|h| h.to_str().ok())
-        .map(String::from)
-        .ok_or(RegistryError::MissingEtag)?;
-
-    info!("Fetching nest from {}", url);
-
-    let content = resp.into_body().read_to_vec()?;
-    let metadata_content = process_metadata_content(content, &metadata_db)?;
-
-    Ok(Some((etag, metadata_content)))
 }
 
 /// Fetches the public key for package signature verification.

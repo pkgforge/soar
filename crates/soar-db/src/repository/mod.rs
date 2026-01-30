@@ -5,8 +5,6 @@
 //!
 //! - [`CoreRepository`] - Installed package operations
 //! - [`MetadataRepository`] - Package metadata queries
-//! - [`NestRepository`] - Nest configuration management
 
 pub mod core;
 pub mod metadata;
-pub mod nest;

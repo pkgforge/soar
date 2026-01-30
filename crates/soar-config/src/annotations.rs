@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_annotate_toml_document() {
-        let config = Config::default_config::<&str>(false, &[]);
+        let config = Config::default_config::<&str>(&[]);
         let doc = config.to_annotated_document();
 
         assert!(doc.is_ok());

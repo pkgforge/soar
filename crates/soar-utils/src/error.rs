@@ -1,9 +1,5 @@
 //! Error types for soar-utils.
 
-// https://github.com/zkat/miette/issues/458
-// https://github.com/rust-lang/rust/issues/147648
-#![expect(unused_assignments)]
-
 use std::path::PathBuf;
 
 use miette::Diagnostic;

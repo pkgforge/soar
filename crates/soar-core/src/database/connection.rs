@@ -38,15 +38,6 @@ impl DieselDatabase {
         })
     }
 
-    /// Opens a nests database connection with migrations.
-    pub fn open_nests<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let conn = DbConnection::open(path, DbType::Nest)
-            .map_err(|e| SoarError::Custom(format!("opening nests database: {}", e)))?;
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
-    }
-
     /// Gets a mutable reference to the underlying connection.
     /// Locks the mutex and returns a guard.
     pub fn conn(&self) -> Result<std::sync::MutexGuard<'_, DbConnection>> {

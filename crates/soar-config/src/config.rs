@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use soar_utils::{
     path::{resolve_path, xdg_config_home, xdg_data_home},
     system::platform,
-    time::parse_duration,
 };
 use toml_edit::DocumentMut;
 use tracing::{debug, info, trace, warn};
@@ -88,9 +87,6 @@ pub struct Config {
 
     /// Global override for sync interval
     pub sync_interval: Option<String>,
-
-    /// Sync interval for nests
-    pub nests_sync_interval: Option<String>,
 
     /// Display settings for output formatting
     pub display: Option<DisplaySettings>,
@@ -255,7 +251,6 @@ impl Config {
             signature_verification: None,
             desktop_integration: None,
             sync_interval: None,
-            nests_sync_interval: None,
             display: None,
         }
     }
@@ -318,9 +313,6 @@ impl Config {
         for repo in &mut self.repositories {
             if repo.name == "local" {
                 return Err(ConfigError::ReservedRepositoryName);
-            }
-            if repo.name.starts_with("nest-") {
-                return Err(ConfigError::InvalidRepositoryNameStartsWithNest);
             }
             if !seen_repos.insert(&repo.name) {
                 return Err(ConfigError::DuplicateRepositoryName(repo.name.clone()));
@@ -423,15 +415,6 @@ impl Config {
             return Ok(resolve_path(portable_dirs)?);
         }
         self.default_profile()?.get_portable_dirs()
-    }
-
-    pub fn get_nests_sync_interval(&self) -> u128 {
-        match self.nests_sync_interval.as_deref().unwrap_or("3h") {
-            "always" => 0,
-            "never" => u128::MAX,
-            "auto" => 3 * 3_600_000,
-            value => parse_duration(value).unwrap_or(3_600_000),
-        }
     }
 
     pub fn get_repository(&self, repo_name: &str) -> Option<&Repository> {
@@ -566,26 +549,6 @@ mod tests {
     }
 
     #[test]
-    fn test_config_resolve_nest_prefix() {
-        let mut config = Config::default_config::<&str>(&[]);
-        config.repositories.push(Repository {
-            name: "nest-invalid".to_string(),
-            url: "https://example.com".to_string(),
-            desktop_integration: None,
-            pubkey: None,
-            enabled: Some(true),
-            signature_verification: None,
-            sync_interval: None,
-        });
-
-        let result = config.resolve();
-        assert!(matches!(
-            result,
-            Err(ConfigError::InvalidRepositoryNameStartsWithNest)
-        ));
-    }
-
-    #[test]
     fn test_config_resolve_duplicate_repo() {
         let mut config = Config::default_config::<&str>(&[]);
         config.repositories.push(Repository {
@@ -675,23 +638,6 @@ mod tests {
             sync_interval: None,
         });
         assert!(config.has_desktop_integration("test_repo"));
-    }
-
-    #[test]
-    fn test_get_nests_sync_interval() {
-        let mut config = Config::default_config::<&str>(&[]);
-
-        config.nests_sync_interval = Some("always".to_string());
-        assert_eq!(config.get_nests_sync_interval(), 0);
-
-        config.nests_sync_interval = Some("never".to_string());
-        assert_eq!(config.get_nests_sync_interval(), u128::MAX);
-
-        config.nests_sync_interval = Some("auto".to_string());
-        assert_eq!(config.get_nests_sync_interval(), 3 * 3_600_000);
-
-        config.nests_sync_interval = Some("1h".to_string());
-        assert_eq!(config.get_nests_sync_interval(), 3_600_000);
     }
 
     #[test]

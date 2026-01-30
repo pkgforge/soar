@@ -5,20 +5,17 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
 pub const CORE_MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/core");
 pub const METADATA_MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/metadata");
-pub const NEST_MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/nest");
 
 #[derive(Clone, Copy, Debug)]
 pub enum DbType {
     Core,
     Metadata,
-    Nest,
 }
 
 fn get_migrations(db_type: &DbType) -> EmbeddedMigrations {
     match db_type {
         DbType::Core => CORE_MIGRATIONS,
         DbType::Metadata => METADATA_MIGRATIONS,
-        DbType::Nest => NEST_MIGRATIONS,
     }
 }
 
@@ -135,7 +132,6 @@ pub fn migrate_json_to_jsonb(
                 ),
             ]
         }
-        DbType::Nest => vec![],
     };
 
     let mut total = 0;

@@ -1,13 +1,12 @@
 //! Registry management for the soar package manager.
 //!
 //! This crate provides functionality for fetching, processing, and managing
-//! package metadata from remote repositories and nests.
+//! package metadata from remote repositories.
 //!
 //! # Overview
 //!
-//! The crate handles two main types of metadata sources:
+//! The crate handles metadata sources:
 //! - **Repositories**: Standard package repositories containing package metadata
-//! - **Nests**: User-defined package collections (similar to PPAs or custom repos)
 //!
 //! Metadata can be provided in two formats:
 //! - SQLite databases (`.sdb` files, optionally zstd-compressed)
@@ -36,13 +35,11 @@
 
 pub mod error;
 pub mod metadata;
-pub mod nest;
 pub mod package;
 
 pub use error::{ErrorContext, RegistryError, Result};
 pub use metadata::{
-    fetch_metadata, fetch_nest_metadata, fetch_public_key, process_metadata_content,
-    write_metadata_db, MetadataContent, SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES,
+    fetch_metadata, fetch_public_key, process_metadata_content, write_metadata_db, MetadataContent,
+    SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES,
 };
-pub use nest::Nest;
 pub use package::RemotePackage;
