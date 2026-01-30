@@ -171,9 +171,8 @@ async fn handle_cli() -> SoarResult<()> {
 
     match args.command {
         cli::Commands::DefConfig {
-            external,
             repositories,
-        } => generate_default_config(external, repositories.as_slice())?,
+        } => generate_default_config(repositories.as_slice())?,
         command => {
             config::init()?;
 
@@ -407,14 +406,14 @@ async fn handle_cli() -> SoarResult<()> {
                                 Ok(v) => v,
                                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                                     warn!("Config file {} not found", config_path.display());
-                                    let def_config = Config::default_config::<&str>(false, &[]);
+                                    let def_config = Config::default_config::<&str>(&[]);
                                     toml::to_string_pretty(&def_config)?
                                 }
                                 Err(err) => {
                                     return Err(SoarError::IoError {
                                         action: "reading config".to_string(),
                                         source: err,
-                                    })
+                                    });
                                 }
                             };
                             info!("{}", content);

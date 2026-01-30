@@ -137,7 +137,7 @@ pub fn init() -> Result<()> {
 fn ensure_config_initialized() {
     let mut config_guard = CONFIG.write().unwrap();
     if config_guard.is_none() {
-        *config_guard = Some(Config::default_config::<&str>(false, &[]));
+        *config_guard = Some(Config::default_config::<&str>(&[]));
     }
 }
 
@@ -173,8 +173,8 @@ pub fn set_current_profile(name: &str) -> Result<()> {
 }
 
 impl Config {
-    pub fn default_config<T: AsRef<str>>(external: bool, selected_repos: &[T]) -> Self {
-        trace!(external = external, "creating default configuration");
+    pub fn default_config<T: AsRef<str>>(selected_repos: &[T]) -> Self {
+        trace!("creating default configuration");
         let soar_root = if is_system_mode() {
             std::env::var("SOAR_ROOT").unwrap_or_else(|_| system_root().display().to_string())
         } else {
@@ -199,7 +199,7 @@ impl Config {
                 continue;
             }
 
-            if repo_info.is_core || external || selected_set.contains(repo_info.name) {
+            if selected_set.contains(repo_info.name) {
                 repositories.push(Repository {
                     name: repo_info.name.to_string(),
                     url: repo_info.url_template.replace("{}", &current_platform),
@@ -265,7 +265,7 @@ impl Config {
     pub fn new() -> Result<Self> {
         if std::env::var("SOAR_STEALTH").is_ok() {
             trace!("SOAR_STEALTH set, using default config");
-            return Ok(Self::default_config::<&str>(false, &[]));
+            return Ok(Self::default_config::<&str>(&[]));
         }
 
         let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
@@ -278,7 +278,7 @@ impl Config {
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 debug!("config file not found, using defaults");
-                Self::default_config::<&str>(false, &[])
+                Self::default_config::<&str>(&[])
             }
             Err(err) => return Err(ConfigError::IoError(err)),
         };
@@ -491,14 +491,14 @@ impl Config {
     }
 }
 
-pub fn generate_default_config<T: AsRef<str>>(external: bool, repos: &[T]) -> Result<()> {
+pub fn generate_default_config<T: AsRef<str>>(repos: &[T]) -> Result<()> {
     let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
 
     if config_path.exists() {
         return Err(ConfigError::ConfigAlreadyExists);
     }
 
-    let def_config = Config::default_config(external, repos);
+    let def_config = Config::default_config(repos);
     let annotated_doc = def_config.to_annotated_document()?;
 
     if let Some(parent) = config_path.parent() {
@@ -520,7 +520,7 @@ mod tests {
 
     #[test]
     fn test_default_config_creation() {
-        let config = Config::default_config::<&str>(false, &[]);
+        let config = Config::default_config::<&str>(&[]);
 
         assert_eq!(config.default_profile, "default");
         assert!(config.profile.contains_key("default"));
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn test_default_config_with_selected_repos() {
-        let config = Config::default_config(false, &["bincache"]);
+        let config = Config::default_config(&["bincache"]);
 
         assert!(!config.repositories.is_empty());
         assert!(config.repositories.iter().any(|r| r.name == "bincache"));
@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn test_config_resolve_missing_default_profile() {
-        let mut config = Config::default_config::<&str>(false, &[]);
+        let mut config = Config::default_config::<&str>(&[]);
         config.default_profile = "nonexistent".to_string();
 
         let result = config.resolve();
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_config_resolve_reserved_repo_name() {
-        let mut config = Config::default_config::<&str>(false, &[]);
+        let mut config = Config::default_config::<&str>(&[]);
         config.repositories.push(Repository {
             name: "local".to_string(),
             url: "https://example.com".to_string(),
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn test_config_resolve_nest_prefix() {
-        let mut config = Config::default_config::<&str>(false, &[]);
+        let mut config = Config::default_config::<&str>(&[]);
         config.repositories.push(Repository {
             name: "nest-invalid".to_string(),
             url: "https://example.com".to_string(),
@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn test_config_resolve_duplicate_repo() {
-        let mut config = Config::default_config::<&str>(false, &[]);
+        let mut config = Config::default_config::<&str>(&[]);
         config.repositories.push(Repository {
             name: "duplicate".to_string(),
             url: "https://example.com".to_string(),
@@ -616,7 +616,7 @@ mod tests {
 
     #[test]
     fn test_config_resolve_sets_defaults() {
-        let mut config = Config::default_config::<&str>(false, &[]);
+        let mut config = Config::default_config::<&str>(&[]);
         config.ghcr_concurrency = None;
         config.search_limit = None;
         config.cross_repo_updates = None;
@@ -632,7 +632,7 @@ mod tests {
 
     #[test]
     fn test_get_profile() {
-        let config = Config::default_config::<&str>(false, &[]);
+        let config = Config::default_config::<&str>(&[]);
 
         let profile = config.get_profile("default");
         assert!(profile.is_ok());
@@ -643,7 +643,7 @@ mod tests {
 
     #[test]
     fn test_get_repository() {
-        let config = Config::default_config::<&str>(false, &[]);
+        let config = Config::default_config::<&str>(&[]);
 
         if let Some(repo) = config.repositories.first() {
             let found = config.get_repository(&repo.name);
@@ -656,7 +656,7 @@ mod tests {
 
     #[test]
     fn test_has_desktop_integration() {
-        let mut config = Config::default_config::<&str>(false, &[]);
+        let mut config = Config::default_config::<&str>(&[]);
 
         config.desktop_integration = Some(true);
         assert!(config.has_desktop_integration("any_repo"));
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn test_get_nests_sync_interval() {
-        let mut config = Config::default_config::<&str>(false, &[]);
+        let mut config = Config::default_config::<&str>(&[]);
 
         config.nests_sync_interval = Some("always".to_string());
         assert_eq!(config.get_nests_sync_interval(), 0);
@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_config_serialization() {
-        let config = Config::default_config::<&str>(false, &[]);
+        let config = Config::default_config::<&str>(&[]);
         let serialized = toml::to_string(&config);
         assert!(serialized.is_ok());
 
@@ -707,7 +707,7 @@ mod tests {
     #[test]
     fn test_config_path_env_override() {
         with_env(vec![("SOAR_BIN", "/custom/bin")], || {
-            let config = Config::default_config::<&str>(false, &[]);
+            let config = Config::default_config::<&str>(&[]);
             let bin_path = config.get_bin_path().unwrap();
             assert_eq!(bin_path, PathBuf::from("/custom/bin"));
         });

@@ -388,10 +388,6 @@ pub enum Commands {
     /// Generate default config
     #[clap(name = "defconfig")]
     DefConfig {
-        /// Enable external repositories
-        #[arg(required = false, short, long)]
-        external: bool,
-
         /// Enable only selected repositories
         #[arg(
             required = false,

@@ -255,7 +255,7 @@ pub async fn mangle_package_symlinks(
                     .filter_map(|entry| entry.ok())
                     .filter(|entry| {
                         let name = entry.file_name();
-                        fast_glob::glob_match(&source_pattern, name.to_string_lossy().as_ref())
+                        fast_glob::glob_match(&source_pattern, name.to_string_lossy().to_string())
                     })
                     .map(|entry| entry.path())
                     .collect();

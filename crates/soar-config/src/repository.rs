@@ -81,7 +81,6 @@ pub struct DefaultRepositoryInfo {
     pub signature_verification: Option<bool>,
     pub sync_interval: Option<&'static str>,
     pub platforms: Vec<&'static str>,
-    pub is_core: bool,
 }
 
 pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
@@ -95,7 +94,6 @@ pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
             signature_verification: Some(true),
             sync_interval: Some("3h"),
             platforms: vec!["aarch64-Linux", "riscv64-Linux", "x86_64-Linux"],
-            is_core: true,
         },
         DefaultRepositoryInfo {
             name: "pkgcache",
@@ -103,7 +101,6 @@ pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
             pubkey: Some("https://meta.pkgforge.dev/pkgcache/minisign.pub"),
             desktop_integration: Some(true),
             platforms: vec!["aarch64-Linux", "riscv64-Linux", "x86_64-Linux"],
-            is_core: true,
             ..DefaultRepositoryInfo::default()
         },
     ]
@@ -162,7 +159,6 @@ mod tests {
         assert!(!repos.is_empty());
         assert!(repos.iter().any(|r| r.name == "bincache"));
         assert!(repos.iter().any(|r| r.name == "pkgcache"));
-        assert!(repos.iter().any(|r| r.is_core));
     }
 
     #[test]
