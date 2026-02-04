@@ -9,7 +9,7 @@ use soar_config::config::{get_config, is_system_mode};
 use soar_utils::{
     error::FileSystemResult,
     fs::{safe_remove, walk_dir},
-    path::{desktop_dir, icons_dir},
+    path::icons_dir,
 };
 use tracing::info;
 
@@ -78,7 +78,7 @@ pub fn remove_broken_symlinks() -> Result<()> {
     };
 
     walk_dir(&get_config().get_bin_path()?, &mut remove_action)?;
-    walk_dir(desktop_dir(is_system_mode()), &mut soar_files_action)?;
+    walk_dir(&get_config().get_desktop_path()?, &mut soar_files_action)?;
     walk_dir(icons_dir(is_system_mode()), &mut soar_files_action)?;
 
     Ok(())

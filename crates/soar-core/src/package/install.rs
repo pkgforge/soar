@@ -28,7 +28,7 @@ use soar_utils::{
     error::FileSystemResult,
     fs::{safe_remove, walk_dir},
     hash::calculate_checksum,
-    path::{desktop_dir, icons_dir},
+    path::icons_dir,
 };
 use tracing::{debug, trace, warn};
 
@@ -835,7 +835,7 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(desktop_dir(is_system_mode()), &mut remove_action)?;
+                walk_dir(&get_config().get_desktop_path()?, &mut remove_action)?;
 
                 let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                     if let Ok(real_path) = fs::read_link(path) {

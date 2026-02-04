@@ -9,11 +9,7 @@ use soar_config::{
     packages::{PackageHooks, SandboxConfig},
 };
 use soar_db::{models::types::ProvideStrategy, repository::core::CoreRepository};
-use soar_utils::{
-    error::FileSystemResult,
-    fs::walk_dir,
-    path::{desktop_dir, icons_dir},
-};
+use soar_utils::{error::FileSystemResult, fs::walk_dir, path::icons_dir};
 use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
@@ -165,7 +161,7 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            walk_dir(desktop_dir(is_system_mode()), &mut remove_action)?;
+            walk_dir(&get_config().get_desktop_path()?, &mut remove_action)?;
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                 if let Ok(real_path) = fs::read_link(path) {

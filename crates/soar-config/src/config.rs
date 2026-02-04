@@ -47,6 +47,10 @@ pub struct Config {
     /// Default: $SOAR_ROOT/bin
     pub bin_path: Option<String>,
 
+    /// Directory where desktop files are stored.
+    /// Default: $XDG_DATA_HOME/applications (user) or /usr/local/share/applications (system)
+    pub desktop_path: Option<String>,
+
     /// Path to the local clone of all repositories.
     /// Default: $SOAR_ROOT/repos
     pub repositories_path: Option<String>,
@@ -235,6 +239,7 @@ impl Config {
             default_profile: default_profile_name,
 
             bin_path: Some(format!("{soar_root}/bin")),
+            desktop_path: None,
             cache_path: Some(format!("{soar_root}/cache")),
             db_path: Some(format!("{soar_root}/db")),
             repositories_path: Some(format!("{soar_root}/repos")),
@@ -366,6 +371,16 @@ impl Config {
             return Ok(resolve_path(bin_path)?);
         }
         self.default_profile()?.get_bin_path()
+    }
+
+    pub fn get_desktop_path(&self) -> Result<PathBuf> {
+        if let Ok(env_path) = std::env::var("SOAR_DESKTOP") {
+            return Ok(resolve_path(&env_path)?);
+        }
+        if let Some(desktop_path) = &self.desktop_path {
+            return Ok(resolve_path(desktop_path)?);
+        }
+        Ok(soar_utils::path::desktop_dir(is_system_mode()))
     }
 
     pub fn get_db_path(&self) -> Result<PathBuf> {
@@ -638,6 +653,21 @@ mod tests {
             sync_interval: None,
         });
         assert!(config.has_desktop_integration("test_repo"));
+    }
+
+    #[test]
+    fn test_get_desktop_path() {
+        let config = Config::default_config::<&str>(&[]);
+
+        // Default path based on system mode
+        let desktop = config.get_desktop_path().unwrap();
+        assert!(desktop.ends_with("applications"));
+
+        // Custom path override
+        let mut config = Config::default_config::<&str>(&[]);
+        config.desktop_path = Some("/custom/desktop/path".to_string());
+        let desktop = config.get_desktop_path().unwrap();
+        assert_eq!(desktop, PathBuf::from("/custom/desktop/path"));
     }
 
     #[test]
