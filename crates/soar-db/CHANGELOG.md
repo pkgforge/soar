@@ -1,4 +1,10 @@
 
+## [0.4.0](https://github.com/pkgforge/soar/compare/soar-db-v0.3.2...soar-db-v0.4.0) - 2026-02-04
+
+### ⛰️  Features
+
+- *(nest)* [**breaking**] Remove nest functionality - ([dc21853](https://github.com/pkgforge/soar/commit/dc21853a2506d93d5ade9e2c4015c3a12b24c199))
+
 ## [0.3.2](https://github.com/pkgforge/soar/compare/soar-db-v0.3.1...soar-db-v0.3.2) - 2026-01-24
 
 ### ⚙️ Miscellaneous Tasks

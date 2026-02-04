@@ -1,4 +1,10 @@
 
+## [0.2.3](https://github.com/pkgforge/soar/compare/soar-package-v0.2.2...soar-package-v0.2.3) - 2026-02-04
+
+### ⛰️  Features
+
+- *(config)* Allow setting path for desktop files - ([50c0335](https://github.com/pkgforge/soar/commit/50c033592d5611f4a982c20c45a0242b4826e93d))
+
 ## [0.2.2](https://github.com/pkgforge/soar/compare/soar-package-v0.2.1...soar-package-v0.2.2) - 2026-01-24
 
 ### ⚙️ Miscellaneous Tasks
