@@ -1,4 +1,11 @@
 
+## [0.13.0](https://github.com/pkgforge/soar/compare/soar-core-v0.12.0...soar-core-v0.13.0) - 2026-02-04
+
+### ⛰️  Features
+
+- *(config)* Allow setting path for desktop files - ([50c0335](https://github.com/pkgforge/soar/commit/50c033592d5611f4a982c20c45a0242b4826e93d))
+- *(nest)* [**breaking**] Remove nest functionality - ([dc21853](https://github.com/pkgforge/soar/commit/dc21853a2506d93d5ade9e2c4015c3a12b24c199))
+
 ## [0.12.0](https://github.com/pkgforge/soar/compare/soar-core-v0.11.1...soar-core-v0.12.0) - 2026-01-24
 
 ### ⛰️  Features

@@ -1,4 +1,10 @@
 
+## [0.8.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.7.3...soar-dl-v0.8.0) - 2026-02-04
+
+### ⛰️  Features
+
+- *(self)* Add release notes display and improve update UX - ([e63648c](https://github.com/pkgforge/soar/commit/e63648c0ded70e694a89ab16a65c10649692adf7))
+
 ## [0.7.3](https://github.com/pkgforge/soar/compare/soar-dl-v0.7.2...soar-dl-v0.7.3) - 2026-01-24
 
 ### ⛰️  Features

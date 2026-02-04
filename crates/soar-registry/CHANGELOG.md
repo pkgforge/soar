@@ -1,4 +1,10 @@
 
+## [0.3.0](https://github.com/pkgforge/soar/compare/soar-registry-v0.2.2...soar-registry-v0.3.0) - 2026-02-04
+
+### ⛰️  Features
+
+- *(nest)* [**breaking**] Remove nest functionality - ([dc21853](https://github.com/pkgforge/soar/commit/dc21853a2506d93d5ade9e2c4015c3a12b24c199))
+
 ## [0.2.2](https://github.com/pkgforge/soar/compare/soar-registry-v0.2.1...soar-registry-v0.2.2) - 2026-01-24
 
 ### ⚙️ Miscellaneous Tasks

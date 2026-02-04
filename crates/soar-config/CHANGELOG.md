@@ -1,4 +1,19 @@
 
+## [0.5.0](https://github.com/pkgforge/soar/compare/soar-config-v0.4.0...soar-config-v0.5.0) - 2026-02-04
+
+### ⛰️  Features
+
+- *(config)* Allow setting path for desktop files - ([50c0335](https://github.com/pkgforge/soar/commit/50c033592d5611f4a982c20c45a0242b4826e93d))
+- *(nest)* [**breaking**] Remove nest functionality - ([dc21853](https://github.com/pkgforge/soar/commit/dc21853a2506d93d5ade9e2c4015c3a12b24c199))
+
+### 🐛 Bug Fixes
+
+- *(config)* Fix default repositories detection - ([22c121e](https://github.com/pkgforge/soar/commit/22c121ed2f134274a1edca9a174a4efa076b91c9))
+
+### 🚜 Refactor
+
+- *(config)* Remove --external flag - ([3b53b8b](https://github.com/pkgforge/soar/commit/3b53b8bd91e322df21f7e4466f7d7640330fb613))
+
 ## [0.4.0](https://github.com/pkgforge/soar/compare/soar-config-v0.3.0...soar-config-v0.4.0) - 2026-01-24
 
 ### ⛰️  Features
