@@ -66,7 +66,11 @@ pub struct Args {
 #[derive(Subcommand)]
 pub enum SelfAction {
     /// Update soar
-    Update,
+    Update {
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
     /// Uninstall soar
     Uninstall,
 }

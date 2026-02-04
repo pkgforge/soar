@@ -1,6 +1,7 @@
 use std::{
     env::{self, consts::ARCH},
     fs,
+    io::{self, Write},
 };
 
 use semver::Version;
@@ -12,11 +13,15 @@ use soar_dl::{
     download::Download,
     github::Github,
     traits::{Asset as _, Platform as _, Release as _},
-    types::{OverwriteMode, Progress},
+    types::OverwriteMode,
 };
+use soar_utils::bytes::format_bytes;
 use tracing::{debug, error, info};
 
-use crate::cli::SelfAction;
+use crate::{
+    cli::SelfAction,
+    progress::{create_progress_bar, handle_progress},
+};
 
 pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
     let self_bin =
@@ -26,7 +31,9 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
     debug!("Executable path: {}", self_bin.display());
 
     match action {
-        SelfAction::Update => {
+        SelfAction::Update {
+            yes,
+        } => {
             let is_nightly = self_version.starts_with("nightly");
             debug!("Current version: {}", self_version);
 
@@ -79,6 +86,43 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
             });
 
             if let Some(release) = release {
+                let new_version = release.tag();
+
+                if let Some(body) = release.body() {
+                    if !body.is_empty() {
+                        println!("\nRelease Notes for {}:\n", new_version);
+                        println!("{}", body);
+                        println!();
+                    } else {
+                        println!("No release notes available for this update.");
+                    }
+                } else {
+                    println!("No release notes available for this update.");
+                }
+
+                if !yes {
+                    print!("Update to {}? [y/N] ", new_version);
+                    io::stdout().flush().map_err(|e| {
+                        SoarError::IoError {
+                            action: "flushing stdout".to_string(),
+                            source: e,
+                        }
+                    })?;
+
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input).map_err(|e| {
+                        SoarError::IoError {
+                            action: "reading user input".to_string(),
+                            source: e,
+                        }
+                    })?;
+
+                    if !input.trim().to_lowercase().starts_with('y') {
+                        info!("Update cancelled.");
+                        return Ok(());
+                    }
+                }
+
                 if target_nightly != is_nightly {
                     info!(
                         "Switching from {} to {} channel",
@@ -95,41 +139,29 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                         a.name.contains(ARCH) && !a.name.contains("tar") && !a.name.contains("sum")
                     })
                     .ok_or_else(|| {
-                        SoarError::Custom(format!("No matching asset fund for {}", ARCH))
+                        SoarError::Custom(format!("No matching asset found for {}", ARCH))
                     })?;
 
                 debug!("Selected asset: {}", asset.name());
 
+                if let Some(size) = asset.size() {
+                    info!("Download size: {}", format_bytes(size, 2));
+                }
+
+                let progress_bar = create_progress_bar();
+                progress_bar.set_prefix("Downloading");
+
                 let dl = Download::new(asset.url())
                     .output(self_bin.to_string_lossy())
                     .overwrite(OverwriteMode::Force)
-                    .progress(|p| {
-                        match p {
-                            Progress::Starting {
-                                total,
-                            } => {
-                                info!("Downloading update ({} bytes)...", total);
-                            }
-                            Progress::Chunk {
-                                current,
-                                total,
-                            } => {
-                                if current % (1024 * 1024) == 0 {
-                                    let pct = (current as f64 / total as f64 * 100.0) as u8;
-                                    debug!("Progress: {}%", pct);
-                                }
-                            }
-                            Progress::Complete {
-                                ..
-                            } => {
-                                debug!("Download complete");
-                            }
-                            _ => {}
-                        }
+                    .progress({
+                        let progress_bar = progress_bar.clone();
+                        move |p| handle_progress(p, &progress_bar)
                     });
 
                 debug!("Downloading update from: {}", asset.url());
                 dl.execute()?;
+                progress_bar.finish();
                 info!("Soar updated to {}", release.tag());
             } else {
                 eprintln!("No updates found.");

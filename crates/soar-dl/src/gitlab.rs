@@ -14,6 +14,7 @@ pub struct GitLabRelease {
     pub tag_name: String,
     pub upcoming_release: bool,
     pub released_at: String,
+    pub description: Option<String>,
     pub assets: GitLabAssets,
 }
 
@@ -103,6 +104,7 @@ impl Release for GitLabRelease {
     ///     tag_name: "v1.0".into(),
     ///     upcoming_release: false,
     ///     released_at: "".into(),
+    ///     description: None,
     ///     assets: GitLabAssets { links: vec![] },
     /// };
     /// assert_eq!(r.name(), "v1.0");
@@ -124,6 +126,7 @@ impl Release for GitLabRelease {
     ///     tag_name: "v1.0.0".into(),
     ///     upcoming_release: false,
     ///     released_at: "2025-01-01T00:00:00Z".into(),
+    ///     description: None,
     ///     assets: GitLabAssets { links: vec![] },
     /// };
     /// assert_eq!(r.tag(), "v1.0.0");
@@ -149,6 +152,7 @@ impl Release for GitLabRelease {
     ///     tag_name: "v1".to_string(),
     ///     upcoming_release: true,
     ///     released_at: "".to_string(),
+    ///     description: None,
     ///     assets: GitLabAssets { links: vec![] },
     /// };
     /// assert!(rel.is_prerelease());
@@ -170,6 +174,7 @@ impl Release for GitLabRelease {
     ///     tag_name: String::from("v1"),
     ///     upcoming_release: false,
     ///     released_at: String::from("2020-01-01T00:00:00Z"),
+    ///     description: None,
     ///     assets: GitLabAssets { links: vec![] },
     /// };
     /// assert_eq!(r.published_at(), "2020-01-01T00:00:00Z");
@@ -193,6 +198,7 @@ impl Release for GitLabRelease {
     ///     tag_name: "v1.0".into(),
     ///     upcoming_release: false,
     ///     released_at: "2025-10-31T00:00:00Z".into(),
+    ///     description: None,
     ///     assets,
     /// };
     /// let slice = release.assets();
@@ -205,6 +211,10 @@ impl Release for GitLabRelease {
     /// A slice of the release's assets.
     fn assets(&self) -> &[Self::Asset] {
         &self.assets.links
+    }
+
+    fn body(&self) -> Option<&str> {
+        self.description.as_deref()
     }
 }
 

@@ -13,6 +13,7 @@ pub trait Release {
     fn tag(&self) -> &str;
     fn is_prerelease(&self) -> bool;
     fn published_at(&self) -> &str;
+    fn body(&self) -> Option<&str>;
     fn assets(&self) -> &[Self::Asset];
 }
 

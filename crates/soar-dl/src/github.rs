@@ -14,6 +14,7 @@ pub struct GithubRelease {
     pub tag_name: String,
     pub prerelease: bool,
     pub published_at: String,
+    pub body: Option<String>,
     pub assets: Vec<GithubAsset>,
 }
 
@@ -94,6 +95,7 @@ impl Release for GithubRelease {
     ///     tag_name: "v1.0".into(),
     ///     prerelease: false,
     ///     published_at: "".into(),
+    ///     body: None,
     ///     assets: vec![],
     /// };
     /// assert_eq!(r.name(), "v1.0");
@@ -103,6 +105,7 @@ impl Release for GithubRelease {
     ///     tag_name: "v1.1".into(),
     ///     prerelease: false,
     ///     published_at: "".into(),
+    ///     body: None,
     ///     assets: vec![],
     /// };
     /// assert_eq!(unnamed.name(), "");
@@ -124,6 +127,7 @@ impl Release for GithubRelease {
     ///     tag_name: "v1.0.0".into(),
     ///     prerelease: false,
     ///     published_at: "".into(),
+    ///     body: None,
     ///     assets: vec![],
     /// };
     /// assert_eq!(release.tag(), "v1.0.0");
@@ -153,6 +157,7 @@ impl Release for GithubRelease {
     ///     tag_name: "v1.0.0".to_string(),
     ///     prerelease: true,
     ///     published_at: "".to_string(),
+    ///     body: None,
     ///     assets: vec![],
     /// };
     /// assert!(r.is_prerelease());
@@ -174,6 +179,7 @@ impl Release for GithubRelease {
     ///     tag_name: "v1.0.0".into(),
     ///     prerelease: false,
     ///     published_at: "2021-01-01T00:00:00Z".into(),
+    ///     body: None,
     ///     assets: vec![],
     /// };
     /// assert_eq!(r.published_at(), "2021-01-01T00:00:00Z");
@@ -203,6 +209,7 @@ impl Release for GithubRelease {
     ///     tag_name: "v1.0".into(),
     ///     prerelease: false,
     ///     published_at: "2025-01-01T00:00:00Z".into(),
+    ///     body: None,
     ///     assets: vec![asset],
     /// };
     ///
@@ -210,6 +217,10 @@ impl Release for GithubRelease {
     /// ```
     fn assets(&self) -> &[Self::Asset] {
         &self.assets
+    }
+
+    fn body(&self) -> Option<&str> {
+        self.body.as_deref()
     }
 }
 
