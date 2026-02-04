@@ -199,17 +199,19 @@ impl Config {
                 continue;
             }
 
-            if selected_set.contains(repo_info.name) {
-                repositories.push(Repository {
-                    name: repo_info.name.to_string(),
-                    url: repo_info.url_template.replace("{}", &current_platform),
-                    pubkey: repo_info.pubkey.map(String::from),
-                    desktop_integration: repo_info.desktop_integration,
-                    enabled: repo_info.enabled,
-                    signature_verification: repo_info.signature_verification,
-                    sync_interval: repo_info.sync_interval.map(String::from),
-                });
+            if !selected_repos.is_empty() && !selected_set.contains(repo_info.name) {
+                continue;
             }
+
+            repositories.push(Repository {
+                name: repo_info.name.to_string(),
+                url: repo_info.url_template.replace("{}", &current_platform),
+                pubkey: repo_info.pubkey.map(String::from),
+                desktop_integration: repo_info.desktop_integration,
+                enabled: repo_info.enabled,
+                signature_verification: repo_info.signature_verification,
+                sync_interval: repo_info.sync_interval.map(String::from),
+            });
         }
 
         // Filter by selected repositories if specified
