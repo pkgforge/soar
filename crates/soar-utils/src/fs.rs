@@ -40,7 +40,7 @@ pub fn safe_remove<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
             return Err(FileSystemError::RemoveFile {
                 path: path.to_path_buf(),
                 source: e,
-            })
+            });
         }
     };
 
