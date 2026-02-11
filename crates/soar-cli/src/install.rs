@@ -7,6 +7,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
+    time::Duration,
 };
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -25,13 +26,14 @@ use soar_core::{
     SoarResult,
 };
 use soar_db::repository::{
-    core::{CoreRepository, SortDirection},
+    core::{CoreRepository, InstalledPackageWithPortable, SortDirection},
     metadata::MetadataRepository,
 };
 use soar_dl::types::Progress;
 use soar_package::integrate_package;
 use soar_utils::{
     hash::{calculate_checksum, hash_string},
+    lock::FileLock,
     pattern::apply_sig_variants,
 };
 use tabled::{
@@ -1038,11 +1040,14 @@ async fn spawn_installation_task(
 
         match result {
             Ok((install_dir, symlinks)) => {
-                installed_indices
-                    .lock()
-                    .unwrap()
-                    .insert(idx, (install_dir, symlinks));
-                installed_count.fetch_add(1, Ordering::Relaxed);
+                // Only count as installed if actually installed (not skipped)
+                if !install_dir.as_os_str().is_empty() {
+                    installed_indices
+                        .lock()
+                        .unwrap()
+                        .insert(idx, (install_dir, symlinks));
+                    installed_count.fetch_add(1, Ordering::Relaxed);
+                }
                 total_pb.inc(1);
 
                 let _ = remove_old_versions(&target.package, &core_db, false);
@@ -1085,6 +1090,59 @@ pub async fn install_single_package(
         target.package.repo_name,
         target.package.version
     );
+
+    let mut lock_attempts = 0;
+    let _package_lock = loop {
+        match FileLock::try_acquire(&target.package.pkg_name) {
+            Ok(Some(lock)) => break Ok(lock),
+            Ok(None) => {
+                lock_attempts += 1;
+                if lock_attempts == 1 {
+                    info!(
+                        "Waiting for lock on '{}' (another process is installing)...",
+                        target.package.pkg_name
+                    );
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            Err(err) => {
+                break Err(err);
+            }
+        }
+    }
+    .map_err(|e| SoarError::Custom(format!("Failed to acquire package lock: {}", e)))?;
+
+    debug!(
+        "acquired lock for '{}' after {} attempts",
+        target.package.pkg_name, lock_attempts
+    );
+
+    // Re-check if package is already installed after acquiring lock
+    let freshly_installed: Option<InstalledPackageWithPortable> = core_db
+        .with_conn(|conn| {
+            CoreRepository::list_filtered(
+                conn,
+                Some(&target.package.repo_name),
+                Some(&target.package.pkg_name),
+                Some(&target.package.pkg_id),
+                Some(&target.package.version),
+                Some(true),
+                None,
+                None,
+                Some(SortDirection::Asc),
+            )
+        })?
+        .into_iter()
+        .find(|ip| ip.is_installed);
+
+    if let Some(ref pkg) = freshly_installed {
+        info!(
+            "{}#{}:{} ({}) is already installed - skipping",
+            pkg.pkg_name, pkg.pkg_id, pkg.repo_name, pkg.version
+        );
+        return Ok((PathBuf::new(), Vec::new()));
+    }
+
     let bin_dir = get_config().get_bin_path()?;
 
     let dir_suffix: String = target

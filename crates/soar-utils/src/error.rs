@@ -31,6 +31,24 @@ pub enum HashError {
     },
 }
 
+/// Errors that can occur when working with locks.
+#[derive(Debug, Diagnostic, Error)]
+pub enum LockError {
+    #[error(transparent)]
+    #[diagnostic(
+        code(soar_utils::lock::io),
+        help("Check if you have write permissions to the lock directory")
+    )]
+    Io(#[from] std::io::Error),
+
+    #[error("Failed to acquire lock for '{0}'")]
+    #[diagnostic(
+        code(soar_utils::lock::acquire_failed),
+        help("Check if the lock directory exists and you have write permissions")
+    )]
+    AcquireFailed(String),
+}
+
 /// Error type for path operations.
 #[derive(Error, Diagnostic, Debug)]
 pub enum PathError {
@@ -362,6 +380,10 @@ pub enum UtilsError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
+    Lock(#[from] LockError),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
     Path(#[from] PathError),
 
     #[error(transparent)]
@@ -376,6 +398,7 @@ pub enum UtilsError {
 pub type BytesResult<T> = std::result::Result<T, BytesError>;
 pub type FileSystemResult<T> = std::result::Result<T, FileSystemError>;
 pub type HashResult<T> = std::result::Result<T, HashError>;
+pub type LockResult<T> = std::result::Result<T, LockError>;
 pub type PathResult<T> = std::result::Result<T, PathError>;
 pub type UtilsResult<T> = std::result::Result<T, UtilsError>;
 
