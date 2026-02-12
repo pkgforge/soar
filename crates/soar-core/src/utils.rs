@@ -102,7 +102,10 @@ pub fn substitute_placeholders(template: &str, version: Option<&str>) -> String 
         .replace("{os}", std::env::consts::OS);
 
     match version {
-        Some(v) => result.replace("{version}", v),
+        Some(v) => {
+            let normalized_version = v.strip_prefix('v').unwrap_or(v);
+            result.replace("{version}", normalized_version)
+        }
         None => result,
     }
 }
