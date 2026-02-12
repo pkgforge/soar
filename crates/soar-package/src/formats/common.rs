@@ -162,13 +162,17 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
             match &caps[1] {
                 "Icon" => format!("Icon={}-soar", file_name.to_string_lossy()),
                 "Exec" | "TryExec" => {
-                    let value = &caps[0];
-                    let new_value = format!("{}/{}", &bin_path.display(), pkg_name);
+                    let old_cmd = &caps[2];
+                    let parts: Vec<&str> = old_cmd.split_whitespace().collect();
+                    let new_cmd = format!("{}/{}", &bin_path.display(), pkg_name);
 
-                    if value.contains("{{pkg_path}}") {
-                        value.replace("{{pkg_path}}", &new_value)
+                    if old_cmd.contains("{{pkg_path}}") {
+                        caps[0].replace("{{pkg_path}}", &new_cmd)
+                    } else if parts.is_empty() {
+                        format!("{}={}", &caps[1], new_cmd)
                     } else {
-                        format!("{}={}", &caps[1], new_value)
+                        let args = if parts.len() > 1 { &parts[1..] } else { &[] };
+                        format!("{}={} {}", &caps[1], new_cmd, args.join(" "))
                     }
                 }
                 _ => unreachable!(),
