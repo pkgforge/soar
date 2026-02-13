@@ -6,6 +6,7 @@ members = [
   "crates/soar-core",
   "crates/soar-db",
   "crates/soar-dl",
+  "crates/soar-events",
   "crates/soar-package",
   "crates/soar-registry",
   "crates/soar-utils",
@@ -52,6 +53,7 @@ soar-config = { version = "0.5.0", path = "crates/soar-config" }
 soar-core = { version = "0.13.0", path = "crates/soar-core" }
 soar-db = { version = "0.4.0", path = "crates/soar-db" }
 soar-dl = { version = "0.8.0", path = "crates/soar-dl" }
+soar-events = { version = "0.0.0", path = "crates/soar-events" }
 soar-package = { version = "0.2.3", path = "crates/soar-package" }
 soar-registry = { version = "0.3.0", path = "crates/soar-registry" }
 soar-utils = { version = "0.3.0", path = "crates/soar-utils" }

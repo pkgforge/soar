@@ -2320,6 +2320,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "soar-events"
+version = "0.0.0"
+
+[[package]]
 name = "soar-package"
 version = "0.2.3"
 dependencies = [
