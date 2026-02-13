@@ -444,6 +444,7 @@ mod tests {
         collector.emit(SoarEvent::OperationFailed {
             op_id: 2,
             pkg_name: "b".into(),
+            pkg_id: "b-id".into(),
             error: "not found".into(),
         });
 

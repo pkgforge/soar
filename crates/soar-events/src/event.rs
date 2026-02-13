@@ -118,6 +118,7 @@ pub enum SoarEvent {
     OperationFailed {
         op_id: OperationId,
         pkg_name: String,
+        pkg_id: String,
         error: String,
     },
     /// Repository sync progress.
