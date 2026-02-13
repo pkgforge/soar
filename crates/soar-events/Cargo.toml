@@ -1,0 +1,11 @@
+[package]
+name = "soar-events"
+version = "0.1.0"
+description = "Event system for soar package manager"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+categories.workspace = true
