@@ -200,6 +200,16 @@ fn download_to_cache(
 
             fs::remove_dir_all(&extract_dir).ok();
 
+            if extracted.is_empty() {
+                return Err(SoarError::Custom(format!(
+                    "Archive contained no files for '{}'",
+                    output_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                )));
+            }
+
             if !output_path.exists() {
                 if extracted.len() == 1 {
                     // Single extracted file didn't match the package name; rename it.

@@ -10,7 +10,7 @@ use std::{
 };
 
 use minisign_verify::{PublicKey, Signature};
-use soar_config::{config::get_config, utils::default_install_patterns};
+use soar_config::utils::default_install_patterns;
 use soar_core::{
     database::{
         connection::{DieselDatabase, MetadataManager},
@@ -761,7 +761,7 @@ async fn install_single_package(
         return Ok((PathBuf::new(), Vec::new()));
     }
 
-    let config = get_config();
+    let config = ctx.config();
     let bin_dir = config.get_bin_path()?;
 
     let dir_suffix: String = pkg
