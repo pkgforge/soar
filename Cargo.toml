@@ -7,6 +7,7 @@ members = [
   "crates/soar-db",
   "crates/soar-dl",
   "crates/soar-events",
+  "crates/soar-operations",
   "crates/soar-package",
   "crates/soar-registry",
   "crates/soar-utils",
@@ -38,7 +39,9 @@ image = { version = "0.25.9", default-features = false, features = ["png"] }
 landlock = "0.4.4"
 libsqlite3-sys = { version = ">=0.30.1,<0.36.0", features = [ "bundled" ]}
 miette = { version = "7.6.0", features = ["fancy"] }
+minisign-verify = "0.2.4"
 nix = { version = "0.30.1", features = ["fs", "ioctl", "term", "user"] }
+once_cell = "1.21"
 percent-encoding = "2.3.2"
 rayon = "1.11.0"
 regex = { version = "1.12.2", default-features = false, features = [
@@ -46,6 +49,7 @@ regex = { version = "1.12.2", default-features = false, features = [
   "unicode-case",
   "unicode-perl"
 ] }
+semver = "1.0.27"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149", features = ["indexmap"] }
 serial_test = "3.3.1"
@@ -54,12 +58,14 @@ soar-core = { version = "0.13.0", path = "crates/soar-core" }
 soar-db = { version = "0.4.0", path = "crates/soar-db" }
 soar-dl = { version = "0.8.0", path = "crates/soar-dl" }
 soar-events = { version = "0.0.0", path = "crates/soar-events" }
+soar-operations = { version = "0.0.0", path = "crates/soar-operations" }
 soar-package = { version = "0.2.3", path = "crates/soar-package" }
 soar-registry = { version = "0.3.0", path = "crates/soar-registry" }
 soar-utils = { version = "0.3.0", path = "crates/soar-utils" }
 squishy = { version = "0.4.0", features = ["appimage", "dwarfs"] }
 tempfile = "3.24.0"
 thiserror = "2.0.17"
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
 toml = "0.9.10"
 toml_edit = "0.23.10"
 tracing = { version = "0.1.44", default-features = false }

@@ -417,15 +417,15 @@ dependencies = [
 
 [[package]]
 name = "console"
-version = "0.16.0"
+version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e09ced7ebbccb63b4c65413d821f2e00ce54c5ca4514ddc6b3c892fdbcbc69d"
+checksum = "03e45a4a8926227e4197636ba97a9fc9b00477e9f4bd711395687c5f0734bec4"
 dependencies = [
  "encode_unicode",
  "libc",
  "once_cell",
  "unicode-width 0.2.2",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1292,9 +1292,9 @@ checksum = "2c4a545a15244c7d945065b5d392b2d2d7f21526fba56ce51467b06ed445e8f7"
 
 [[package]]
 name = "libc"
-version = "0.2.179"
+version = "0.2.180"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5a2d376baa530d1238d133232d15e239abad80d05838b4b59354e5268af431f"
+checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
 
 [[package]]
 name = "liblzma"
@@ -1758,9 +1758,9 @@ dependencies = [
 
 [[package]]
 name = "portable-atomic"
-version = "1.11.1"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
+checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
 
 [[package]]
 name = "positioned-io"
@@ -2214,14 +2214,10 @@ name = "soar-cli"
 version = "0.11.0"
 dependencies = [
  "clap",
- "fast-glob",
  "indicatif",
  "miette",
- "minisign-verify",
  "nix",
  "nu-ansi-term",
- "once_cell",
- "rayon",
  "regex",
  "semver",
  "serde",
@@ -2230,8 +2226,9 @@ dependencies = [
  "soar-core",
  "soar-db",
  "soar-dl",
+ "soar-events",
+ "soar-operations",
  "soar-package",
- "soar-registry",
  "soar-utils",
  "tabled",
  "terminal_size",
@@ -2322,6 +2319,26 @@ dependencies = [
 [[package]]
 name = "soar-events"
 version = "0.0.0"
+
+[[package]]
+name = "soar-operations"
+version = "0.0.0"
+dependencies = [
+ "fast-glob",
+ "minisign-verify",
+ "once_cell",
+ "rayon",
+ "soar-config",
+ "soar-core",
+ "soar-db",
+ "soar-dl",
+ "soar-events",
+ "soar-package",
+ "soar-registry",
+ "soar-utils",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "soar-package"
@@ -2813,9 +2830,9 @@ checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
 name = "unit-prefix"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323402cff2dd658f39ca17c789b502021b3f18707c91cdf22e3838e1b4023817"
+checksum = "81e544489bf3d8ef66c953931f56617f423cd4b5494be343d9b9d3dda037b9a3"
 
 [[package]]
 name = "untrusted"

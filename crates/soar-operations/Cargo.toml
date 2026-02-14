@@ -1,0 +1,27 @@
+[package]
+name = "soar-operations"
+version = "0.0.0"
+description = "Business logic for soar package manager"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+categories.workspace = true
+
+[dependencies]
+fast-glob = { workspace = true }
+minisign-verify = { workspace = true }
+once_cell = { workspace = true }
+rayon = { workspace = true }
+soar-config = { workspace = true }
+soar-core = { workspace = true }
+soar-db = { workspace = true }
+soar-dl = { workspace = true }
+soar-events = { workspace = true }
+soar-package = { workspace = true }
+soar-registry = { workspace = true }
+soar-utils = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
