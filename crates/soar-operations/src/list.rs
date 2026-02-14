@@ -101,7 +101,7 @@ pub async fn list_packages(
 }
 
 /// List installed packages, optionally filtered by repository.
-pub async fn list_installed(
+pub fn list_installed(
     ctx: &SoarContext,
     repo_name: Option<&str>,
 ) -> SoarResult<InstalledListResult> {

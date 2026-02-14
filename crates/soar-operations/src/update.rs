@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use soar_config::packages::{PackagesConfig, ResolvedPackage};
 use soar_core::{
     database::{
@@ -434,15 +436,26 @@ pub async fn perform_update(
 
     let install_report = perform_installation(ctx, targets.clone(), &options).await?;
 
-    // Clean up old versions
+    // Clean up old versions only for successfully updated packages
     if !keep_old {
         let diesel_db = ctx.diesel_core_db()?.clone();
+        let succeeded: HashSet<(&str, &str)> = install_report
+            .installed
+            .iter()
+            .map(|i| (i.pkg_name.as_str(), i.pkg_id.as_str()))
+            .collect();
+
         for target in &targets {
+            let pkg = &target.package;
+            if !succeeded.contains(&(pkg.pkg_name.as_str(), pkg.pkg_id.as_str())) {
+                continue;
+            }
+
             let op_id = next_op_id();
             ctx.events().emit(SoarEvent::UpdateCleanup {
                 op_id,
-                pkg_name: target.package.pkg_name.clone(),
-                pkg_id: target.package.pkg_id.clone(),
+                pkg_name: pkg.pkg_name.clone(),
+                pkg_id: pkg.pkg_id.clone(),
                 old_version: target
                     .existing_install
                     .as_ref()
@@ -451,12 +464,12 @@ pub async fn perform_update(
                 stage: UpdateCleanupStage::Removing,
             });
 
-            let _ = remove_old_versions(&target.package, &diesel_db, false);
+            let _ = remove_old_versions(pkg, &diesel_db, false);
 
             ctx.events().emit(SoarEvent::UpdateCleanup {
                 op_id,
-                pkg_name: target.package.pkg_name.clone(),
-                pkg_id: target.package.pkg_id.clone(),
+                pkg_name: pkg.pkg_name.clone(),
+                pkg_id: pkg.pkg_id.clone(),
                 old_version: target
                     .existing_install
                     .as_ref()

@@ -195,7 +195,7 @@ fn set_executable(path: &Path) -> SoarResult<()> {
     let mut perms = metadata.permissions();
     let mode = perms.mode();
     if mode & 0o111 == 0 {
-        perms.set_mode(mode | 0o755);
+        perms.set_mode(mode | 0o111);
         fs::set_permissions(path, perms)
             .with_context(|| format!("setting executable permissions on {}", path.display()))?;
     }

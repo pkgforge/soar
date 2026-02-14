@@ -247,8 +247,13 @@ pub async fn execute_apply(
         installed_count = report.installed.len();
         failed_count += report.failed.len();
 
-        if installed_count > 0 {
-            for (pkg_name, version) in &version_updates {
+        let succeeded: HashSet<&str> = report
+            .installed
+            .iter()
+            .map(|i| i.pkg_name.as_str())
+            .collect();
+        for (pkg_name, version) in &version_updates {
+            if succeeded.contains(pkg_name.as_str()) {
                 if let Err(e) = PackagesConfig::update_package(pkg_name, None, Some(version), None)
                 {
                     warn!(
@@ -288,8 +293,13 @@ pub async fn execute_apply(
         updated_count = report.installed.len();
         failed_count += report.failed.len();
 
-        if updated_count > 0 {
-            for (pkg_name, version) in &update_version_updates {
+        let succeeded: HashSet<&str> = report
+            .installed
+            .iter()
+            .map(|i| i.pkg_name.as_str())
+            .collect();
+        for (pkg_name, version) in &update_version_updates {
+            if succeeded.contains(pkg_name.as_str()) {
                 if let Err(e) = PackagesConfig::update_package(pkg_name, None, Some(version), None)
                 {
                     warn!(

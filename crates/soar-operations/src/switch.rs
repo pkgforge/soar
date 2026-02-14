@@ -85,9 +85,11 @@ pub async fn switch_variant(
     let pkg_id = &selected_package.pkg_id;
     let checksum = selected_package.checksum.as_deref();
 
-    // Unlink all other variants
+    // Atomically unlink other variants and link the selected one so the DB
+    // is never left in a state where all variants are unlinked.
     diesel_db.transaction(|conn| {
-        CoreRepository::unlink_others_by_checksum(conn, pkg_name, pkg_id, checksum)
+        CoreRepository::unlink_others_by_checksum(conn, pkg_name, pkg_id, checksum)?;
+        CoreRepository::link_by_checksum(conn, pkg_name, pkg_id, checksum)
     })?;
 
     let config = ctx.config();
@@ -164,16 +166,6 @@ pub async fn switch_variant(
             installed_pkg.portable_cache.as_deref(),
         )?;
     }
-
-    // Link the selected variant
-    diesel_db.transaction(|conn| {
-        CoreRepository::link_by_checksum(
-            conn,
-            &installed_pkg.pkg_name,
-            &installed_pkg.pkg_id,
-            installed_pkg.checksum.as_deref(),
-        )
-    })?;
 
     Ok(())
 }

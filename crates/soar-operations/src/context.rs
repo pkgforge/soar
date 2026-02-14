@@ -147,6 +147,11 @@ impl SoarContext {
                         stage: SyncStage::Decompressing,
                     });
 
+                    self.inner.events.emit(SoarEvent::SyncProgress {
+                        repo_name: repo_name.clone(),
+                        stage: SyncStage::WritingDatabase,
+                    });
+
                     match content {
                         MetadataContent::SqliteDb(db_bytes) => {
                             write_metadata_db(&db_bytes, &metadata_db_path)
@@ -159,7 +164,7 @@ impl SoarContext {
 
                     self.inner.events.emit(SoarEvent::SyncProgress {
                         repo_name: repo_name.clone(),
-                        stage: SyncStage::WritingDatabase,
+                        stage: SyncStage::Validating,
                     });
 
                     self.validate_packages(repo, &etag).await?;

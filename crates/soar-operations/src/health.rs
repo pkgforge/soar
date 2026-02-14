@@ -48,6 +48,8 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
         let op_id = next_op_id();
         let pkg_name = package.pkg_name.clone();
         let pkg_id = package.pkg_id.clone();
+        let repo_name = package.repo_name.clone();
+        let version = package.version.clone();
 
         ctx.events().emit(SoarEvent::Removing {
             op_id,
@@ -76,8 +78,8 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
                 removed.push(RemovedInfo {
                     pkg_name,
                     pkg_id,
-                    repo_name: String::new(),
-                    version: String::new(),
+                    repo_name,
+                    version,
                 });
             }
             Err(err) => {

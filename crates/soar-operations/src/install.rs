@@ -714,8 +714,9 @@ async fn install_single_package(
         "installing package"
     );
 
-    // Acquire lock
-    let mut lock_attempts = 0;
+    // Acquire lock with a bounded retry count to avoid hanging on stale locks
+    const MAX_LOCK_ATTEMPTS: u32 = 120; // 60 seconds at 500ms intervals
+    let mut lock_attempts = 0u32;
     let _package_lock = loop {
         match FileLock::try_acquire(&pkg.pkg_name) {
             Ok(Some(lock)) => break Ok(lock),
@@ -723,6 +724,13 @@ async fn install_single_package(
                 lock_attempts += 1;
                 if lock_attempts == 1 {
                     debug!("waiting for lock on '{}'", pkg.pkg_name);
+                }
+                if lock_attempts >= MAX_LOCK_ATTEMPTS {
+                    break Err(soar_utils::error::LockError::AcquireFailed(format!(
+                        "timed out waiting for lock on '{}' after {}s",
+                        pkg.pkg_name,
+                        MAX_LOCK_ATTEMPTS / 2
+                    )));
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
@@ -767,8 +775,7 @@ async fn install_single_package(
         });
 
     let install_dir = config
-        .get_packages_path(target.profile.clone())
-        .unwrap()
+        .get_packages_path(target.profile.clone())?
         .join(format!("{}-{}-{}", pkg.pkg_name, pkg.pkg_id, dir_suffix));
     let real_bin = install_dir.join(&pkg.pkg_name);
 

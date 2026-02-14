@@ -119,7 +119,7 @@ pub async fn prepare_run(
         package.pkg_id.clone(),
     );
 
-    download_to_cache(ctx, &package, &output_path, &cache_bin, progress_callback)?;
+    download_to_cache(&package, &output_path, &cache_bin, progress_callback)?;
 
     // Checksum verification
     let checksum = calculate_checksum(&output_path)?;
@@ -154,13 +154,11 @@ pub fn execute_binary(path: &Path, args: &[String]) -> SoarResult<RunResult> {
 }
 
 fn download_to_cache(
-    ctx: &SoarContext,
     package: &Package,
     output_path: &Path,
     cache_bin: &Path,
     progress_callback: Arc<dyn Fn(soar_dl::types::Progress) + Send + Sync>,
 ) -> SoarResult<()> {
-    let _ = ctx;
     if let Some(ref url) = package.ghcr_blob {
         let cb = progress_callback.clone();
         let mut dl = OciDownload::new(url.as_str())
@@ -184,8 +182,9 @@ fn download_to_cache(
 
         let file_name = dl.execute()?;
         if extract_dir.exists() {
-            fs::remove_file(file_name).ok();
+            fs::remove_file(&file_name).ok();
 
+            let mut extracted = Vec::new();
             for entry in fs::read_dir(&extract_dir)
                 .with_context(|| format!("reading {} directory", extract_dir.display()))?
             {
@@ -196,9 +195,23 @@ fn download_to_cache(
                 let to = cache_bin.join(entry.file_name());
                 fs::rename(&from, &to)
                     .with_context(|| format!("renaming {} to {}", from.display(), to.display()))?;
+                extracted.push(to);
             }
 
             fs::remove_dir_all(&extract_dir).ok();
+
+            // If output_path doesn't exist (no extracted file matched the
+            // package name) but exactly one file was extracted, rename it
+            // so checksum verification can find it.
+            if !output_path.exists() && extracted.len() == 1 {
+                fs::rename(&extracted[0], output_path).with_context(|| {
+                    format!(
+                        "renaming {} to {}",
+                        extracted[0].display(),
+                        output_path.display()
+                    )
+                })?;
+            }
         }
     }
 
