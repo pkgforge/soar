@@ -922,10 +922,9 @@ async fn install_single_package(
                     pkg_id: pkg.pkg_id.clone(),
                     stage: VerifyStage::Failed("checksum mismatch".into()),
                 });
-                return Err(SoarError::Custom(format!(
-                    "{}#{} - Invalid checksum, skipped installation.",
-                    pkg.pkg_name, pkg.pkg_id
-                )));
+                return Err(SoarError::Custom(
+                    "Invalid checksum, skipped installation.".into(),
+                ));
             }
             (Some(ref calculated), Some(expected)) if calculated == expected => {
                 events.emit(SoarEvent::Verifying {

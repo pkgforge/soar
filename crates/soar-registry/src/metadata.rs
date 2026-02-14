@@ -11,7 +11,7 @@ use std::{
 
 use soar_config::repository::Repository;
 use soar_dl::{download::Download, http_client::SHARED_AGENT, types::OverwriteMode};
-use tracing::info;
+use tracing::debug;
 use ureq::http::{
     header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH, PRAGMA},
     StatusCode,
@@ -67,7 +67,7 @@ pub async fn fetch_public_key<P: AsRef<Path>>(repo_path: P, pubkey_url: &str) ->
         return Ok(());
     }
 
-    info!("Fetching public key from {}", pubkey_url);
+    debug!("Fetching public key from {}", pubkey_url);
 
     Download::new(pubkey_url)
         .output(pubkey_file.to_string_lossy().to_string())
@@ -194,7 +194,7 @@ pub async fn fetch_metadata(
         .map(String::from)
         .ok_or(RegistryError::MissingEtag)?;
 
-    info!("Fetching metadata from {}", repo.url);
+    debug!("Fetching metadata from {}", repo.url);
 
     let content = resp.into_body().read_to_vec()?;
     let metadata_content = process_metadata_content(content, &metadata_db)?;

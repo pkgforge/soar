@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use indicatif::HumanBytes;
 use regex::Regex;
 use soar_config::config::get_config;
 use soar_core::{database::models::Package, package::query::PackageQuery, SoarResult};
@@ -16,13 +15,11 @@ use soar_dl::{
     traits::{Asset, Platform as _, Release as _},
     types::{OverwriteMode, Progress},
 };
+use soar_utils::bytes::format_bytes;
 use tokio::time::sleep;
 use tracing::{error, info};
 
-use crate::{
-    state::AppState,
-    utils::{interactive_ask, select_package_interactively},
-};
+use crate::utils::{interactive_ask, select_package_interactively};
 
 pub struct DownloadContext {
     pub regexes: Vec<Regex>,
@@ -145,8 +142,8 @@ pub async fn handle_direct_downloads(
             }
             None => {
                 // if it's not a url, try to parse it as package
-                let state = AppState::new();
-                let metadata_mgr = state.metadata_manager().await?;
+                let (ctx_inner, _) = crate::create_context();
+                let metadata_mgr = ctx_inner.metadata_manager().await?;
                 let query = PackageQuery::try_from(link.as_str())?;
 
                 // Query packages across all repos
@@ -511,7 +508,7 @@ where
     for (i, asset) in assets.iter().enumerate() {
         let size = asset
             .size()
-            .map(|s| format!(" ({})", HumanBytes(s)))
+            .map(|s| format!(" ({})", format_bytes(s, 2)))
             .unwrap_or_default();
         info!("  {}. {}{}", i + 1, asset.name(), size);
     }

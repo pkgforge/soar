@@ -1,6 +1,3 @@
-use std::sync::{Arc, RwLock, Weak};
-
-use indicatif::MultiProgress;
 use nu_ansi_term::Color::{Blue, Magenta, Red, Yellow};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{
@@ -13,32 +10,6 @@ use tracing_subscriber::{
 };
 
 use crate::{cli::Args, utils::Colored};
-
-/// Global holder for the current MultiProgress to enable log suspension during progress bar updates.
-static MULTI_PROGRESS: RwLock<Option<Weak<MultiProgress>>> = RwLock::new(None);
-
-/// Sets the global MultiProgress reference for log suspension.
-/// Logs will be printed using `MultiProgress::suspend()` when active.
-pub fn set_multi_progress(mp: &Arc<MultiProgress>) {
-    if let Ok(mut guard) = MULTI_PROGRESS.write() {
-        *guard = Some(Arc::downgrade(mp));
-    }
-}
-
-/// Clears the global MultiProgress reference.
-pub fn clear_multi_progress() {
-    if let Ok(mut guard) = MULTI_PROGRESS.write() {
-        *guard = None;
-    }
-}
-
-/// Gets the current MultiProgress if it's still alive.
-fn get_multi_progress() -> Option<Arc<MultiProgress>> {
-    MULTI_PROGRESS
-        .read()
-        .ok()
-        .and_then(|guard| guard.as_ref().and_then(Weak::upgrade))
-}
 
 #[derive(Default)]
 struct MessageVisitor {
@@ -93,7 +64,8 @@ impl WriterBuilder {
     }
 }
 
-/// A writer that buffers output and prints it properly, suspending progress bars if needed.
+/// A writer that buffers output and prints it properly, suspending the progress
+/// display to avoid interfering with progress rendering.
 struct SuspendingWriter {
     buffer: Vec<u8>,
     use_stderr: bool,
@@ -129,23 +101,15 @@ impl Drop for SuspendingWriter {
         // Remove trailing newline since println adds one
         let output = output.trim_end_matches('\n');
 
-        if let Some(mp) = get_multi_progress() {
-            // Use suspend to properly interleave with progress bars
-            mp.suspend(|| {
-                if self.use_stderr {
-                    eprintln!("{}", output);
-                } else {
-                    println!("{}", output);
-                }
-            });
-        } else {
-            // No active progress bars, print directly
-            if self.use_stderr {
+        let use_stderr = self.use_stderr;
+        let output = output.to_string();
+        crate::progress::suspend(|| {
+            if use_stderr {
                 eprintln!("{}", output);
             } else {
                 println!("{}", output);
             }
-        }
+        });
     }
 }
 

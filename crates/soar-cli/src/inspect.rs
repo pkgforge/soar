@@ -1,6 +1,5 @@
 use std::{fmt::Display, fs, path::PathBuf};
 
-use indicatif::HumanBytes;
 use soar_core::{
     database::{connection::DieselDatabase, models::Package},
     error::ErrorContext,
@@ -12,12 +11,12 @@ use soar_db::repository::{
     metadata::MetadataRepository,
 };
 use soar_dl::http_client::SHARED_AGENT;
+use soar_utils::bytes::format_bytes;
 use tracing::{error, info};
 use ureq::http::header::CONTENT_LENGTH;
 
 use crate::{
-    progress::create_spinner,
-    state::AppState,
+    progress::create_spinner_job,
     utils::{display_settings, interactive_ask, select_package_interactively},
 };
 
@@ -58,9 +57,9 @@ fn get_installed_path(
 }
 
 pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult<()> {
-    let state = AppState::new();
-    let metadata_mgr = state.metadata_manager().await?;
-    let diesel_db = state.diesel_core_db()?;
+    let (ctx, _) = crate::create_context();
+    let metadata_mgr = ctx.metadata_manager().await?;
+    let diesel_db = ctx.diesel_core_db()?;
 
     let query = PackageQuery::try_from(package)?;
 
@@ -135,10 +134,11 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
                 info!(
                     "Reading build {inspect_type} from {} [{}]",
                     file.display(),
-                    HumanBytes(
+                    format_bytes(
                         file.metadata()
                             .with_context(|| format!("reading file metadata {}", file.display()))?
-                            .len()
+                            .len(),
+                        2
                     )
                 );
                 let output = fs::read_to_string(&file)
@@ -173,8 +173,9 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
 
         let settings = display_settings();
         let spinner = if settings.spinners() {
-            let s = create_spinner(&format!("Fetching build {inspect_type}..."));
-            Some(s)
+            Some(create_spinner_job(&format!(
+                "Fetching build {inspect_type}..."
+            )))
         } else {
             None
         };
@@ -213,7 +214,7 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
         info!(
             "Fetching build {inspect_type} from {} [{}]",
             url,
-            HumanBytes(content_length)
+            format_bytes(content_length, 2)
         );
 
         let content = resp.into_body().read_to_vec()?;

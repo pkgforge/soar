@@ -5,12 +5,11 @@ use clap::Parser;
 use cli::Args;
 use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};
-use indicatif::MultiProgress;
 use inspect::{inspect_log, InspectType};
 use install::install_packages;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
-use logging::{clear_multi_progress, set_multi_progress, setup_logging};
-use progress::create_progress_bar;
+use logging::setup_logging;
+use progress::{create_download_job, handle_download_progress, spawn_event_handler, ProgressGuard};
 use remove::remove_packages;
 use run::run_package;
 use soar_config::config::{
@@ -23,13 +22,14 @@ use soar_core::{
     SoarResult,
 };
 use soar_dl::http_client::configure_http_client;
+use soar_events::EventSinkHandle;
+use soar_operations::SoarContext;
 use soar_utils::path::resolve_path;
-use state::AppState;
 use tracing::{debug, info, warn};
 use update::update_packages;
 use ureq::Proxy;
 use use_package::use_alternate_package;
-use utils::COLOR;
+use utils::{progress_enabled, COLOR};
 
 mod apply;
 mod cli;
@@ -42,7 +42,6 @@ mod logging;
 mod progress;
 mod remove;
 mod run;
-mod state;
 mod update;
 #[path = "use.rs"]
 mod use_package;
@@ -53,6 +52,22 @@ mod self_actions;
 
 #[cfg(feature = "self")]
 use self_actions::process_self_action;
+
+pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
+    let config = get_config();
+
+    if progress_enabled() {
+        let (sink, receiver) = soar_events::ChannelSink::new();
+        let events: EventSinkHandle = Arc::new(sink);
+        let ctx = SoarContext::new(config, events);
+        let guard = spawn_event_handler(receiver);
+        (ctx, Some(guard))
+    } else {
+        let events: EventSinkHandle = Arc::new(soar_events::NullSink);
+        let ctx = SoarContext::new(config, events);
+        (ctx, None)
+    }
+}
 
 /// Handle system mode - check for root privileges and re-exec with sudo/doas if needed
 fn handle_system_mode() -> SoarResult<()> {
@@ -180,6 +195,8 @@ async fn handle_cli() -> SoarResult<()> {
 
             setup_required_paths().unwrap();
 
+            let (ctx, progress_guard) = create_context();
+
             match command {
                 cli::Commands::Install {
                     packages,
@@ -207,6 +224,7 @@ async fn handle_cli() -> SoarResult<()> {
                     let portable_cache = portable_cache.map(|p| p.unwrap_or_default());
 
                     install_packages(
+                        &ctx,
                         &packages,
                         force,
                         yes,
@@ -232,24 +250,22 @@ async fn handle_cli() -> SoarResult<()> {
                     case_sensitive,
                     limit,
                 } => {
-                    search_packages(query, case_sensitive, limit).await?;
+                    search_packages(&ctx, query, case_sensitive, limit).await?;
                 }
                 cli::Commands::Query {
                     query,
                 } => {
-                    query_package(query).await?;
+                    query_package(&ctx, query).await?;
                 }
                 cli::Commands::Remove {
                     packages,
                     yes,
                     all,
                 } => {
-                    remove_packages(&packages, yes, all).await?;
+                    remove_packages(&ctx, &packages, yes, all).await?;
                 }
                 cli::Commands::Sync => {
-                    let state = AppState::new();
-                    state.sync().await?;
-                    info!("All repositories up to date");
+                    ctx.sync().await?;
                 }
                 cli::Commands::Update {
                     packages,
@@ -257,18 +273,18 @@ async fn handle_cli() -> SoarResult<()> {
                     ask,
                     no_verify,
                 } => {
-                    update_packages(packages, keep, ask, no_verify).await?;
+                    update_packages(&ctx, packages, keep, ask, no_verify).await?;
                 }
                 cli::Commands::ListInstalledPackages {
                     repo_name,
                     count,
                 } => {
-                    list_installed_packages(repo_name, count).await?;
+                    list_installed_packages(&ctx, repo_name, count).await?;
                 }
                 cli::Commands::ListPackages {
                     repo_name,
                 } => {
-                    list_packages(repo_name).await?;
+                    list_packages(&ctx, repo_name).await?;
                 }
                 cli::Commands::Log {
                     package,
@@ -283,6 +299,7 @@ async fn handle_cli() -> SoarResult<()> {
                     repo_name,
                 } => {
                     run_package(
+                        &ctx,
                         command.as_ref(),
                         yes,
                         repo_name.as_deref(),
@@ -293,7 +310,7 @@ async fn handle_cli() -> SoarResult<()> {
                 cli::Commands::Use {
                     package_name,
                 } => {
-                    use_alternate_package(&package_name).await?;
+                    use_alternate_package(&ctx, &package_name).await?;
                 }
                 cli::Commands::Download {
                     links,
@@ -312,10 +329,11 @@ async fn handle_cli() -> SoarResult<()> {
                     skip_existing,
                     force_overwrite,
                 } => {
-                    let multi_progress = Arc::new(MultiProgress::new());
-                    let progress_bar = multi_progress.add(create_progress_bar());
-                    let progress_callback =
-                        Arc::new(move |state| progress::handle_progress(state, &progress_bar));
+                    let pb = create_download_job("");
+                    let progress_callback: Arc<dyn Fn(soar_dl::types::Progress) + Send + Sync> = {
+                        let pb = pb.clone();
+                        Arc::new(move |state| handle_download_progress(state, &pb))
+                    };
                     let regexes = create_regex_patterns(regexes)?;
                     let globs = globs.unwrap_or_default();
                     let match_keywords = match_keywords.unwrap_or_default();
@@ -336,11 +354,9 @@ async fn handle_cli() -> SoarResult<()> {
                         force_overwrite,
                     };
 
-                    set_multi_progress(&multi_progress);
                     download(context, links, github, gitlab, ghcr).await?;
-                    clear_multi_progress();
                 }
-                cli::Commands::Health => display_health().await?,
+                cli::Commands::Health => display_health(&ctx).await?,
                 cli::Commands::Env => {
                     let config = get_config();
 
@@ -376,7 +392,7 @@ async fn handle_cli() -> SoarResult<()> {
                         remove_broken_symlinks()?;
                     }
                     if unspecified || broken {
-                        remove_broken_packages().await?;
+                        remove_broken_packages(&ctx).await?;
                     }
                 }
                 cli::Commands::Config {
@@ -426,13 +442,21 @@ async fn handle_cli() -> SoarResult<()> {
                     packages_config,
                     no_verify,
                 } => {
-                    apply_packages(prune, dry_run, yes, packages_config, no_verify).await?;
+                    apply_packages(&ctx, prune, dry_run, yes, packages_config, no_verify).await?;
                 }
                 cli::Commands::DefPackages => {
                     soar_config::packages::generate_default_packages_config()?;
                 }
                 _ => unreachable!(),
             }
+
+            // Drop context first to close the event channel, then join the
+            // progress handler thread so remaining events are fully drained.
+            drop(ctx);
+            if let Some(guard) = progress_guard {
+                guard.finish();
+            }
+            crate::progress::stop();
         }
     }
 
