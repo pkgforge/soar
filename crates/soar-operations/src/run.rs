@@ -200,17 +200,31 @@ fn download_to_cache(
 
             fs::remove_dir_all(&extract_dir).ok();
 
-            // If output_path doesn't exist (no extracted file matched the
-            // package name) but exactly one file was extracted, rename it
-            // so checksum verification can find it.
-            if !output_path.exists() && extracted.len() == 1 {
-                fs::rename(&extracted[0], output_path).with_context(|| {
-                    format!(
-                        "renaming {} to {}",
-                        extracted[0].display(),
-                        output_path.display()
-                    )
-                })?;
+            if !output_path.exists() {
+                if extracted.len() == 1 {
+                    // Single extracted file didn't match the package name; rename it.
+                    fs::rename(&extracted[0], output_path).with_context(|| {
+                        format!(
+                            "renaming {} to {}",
+                            extracted[0].display(),
+                            output_path.display()
+                        )
+                    })?;
+                } else if extracted.len() > 1 {
+                    return Err(SoarError::Custom(format!(
+                        "Archive extracted {} files but none matched '{}'. Extracted: {}",
+                        extracted.len(),
+                        output_path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy(),
+                        extracted
+                            .iter()
+                            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )));
+                }
             }
         }
     }

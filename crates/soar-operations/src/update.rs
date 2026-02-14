@@ -192,6 +192,7 @@ fn check_repo_update(
             portable_cache: pkg.portable_cache.clone(),
             ..Default::default()
         },
+        update_toml_url: None,
     }))
 }
 
@@ -228,7 +229,7 @@ fn check_local_update(
 
     let is_github_or_gitlab = resolved.github.is_some() || resolved.gitlab.is_some();
 
-    let (version, download_url, size, _update_toml_url) =
+    let (version, download_url, size, update_toml_url) =
         if let Some(ref cmd) = resolved.version_command {
             let result = match run_version_command(cmd) {
                 Ok(r) => r,
@@ -364,6 +365,7 @@ fn check_local_update(
         current_version: pkg.version.clone(),
         new_version: version,
         target,
+        update_toml_url,
     }))
 }
 
@@ -421,7 +423,7 @@ pub async fn perform_update(
                     (
                         u.pkg_name.clone(),
                         u.new_version.clone(),
-                        None, // URL tracking is handled in check_local_update
+                        u.update_toml_url.clone(),
                     )
                 })
         })

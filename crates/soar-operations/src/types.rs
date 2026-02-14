@@ -107,6 +107,7 @@ pub struct UpdateInfo {
     pub current_version: String,
     pub new_version: String,
     pub target: InstallTarget,
+    pub update_toml_url: Option<String>,
 }
 
 pub struct UpdateReport {

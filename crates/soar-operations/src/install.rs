@@ -896,7 +896,7 @@ async fn install_single_package(
     }
 
     // Checksum verification
-    if pkg.provides.is_some() && !no_verify {
+    if !no_verify {
         events.emit(SoarEvent::Verifying {
             op_id,
             pkg_name: pkg.pkg_name.clone(),

@@ -257,6 +257,10 @@ impl SoarContext {
     fn create_diesel_core_db(&self) -> SoarResult<DieselDatabase> {
         let core_db_file = self.config().get_db_path()?.join("soar.db");
         if !core_db_file.exists() {
+            if let Some(parent) = core_db_file.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating database directory {}", parent.display()))?;
+            }
             File::create(&core_db_file)
                 .with_context(|| format!("creating database file {}", core_db_file.display()))?;
         }
