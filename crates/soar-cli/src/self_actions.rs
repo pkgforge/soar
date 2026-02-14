@@ -20,7 +20,7 @@ use tracing::{debug, error, info};
 
 use crate::{
     cli::SelfAction,
-    progress::{create_progress_bar, handle_progress},
+    progress::{create_download_job, handle_download_progress},
 };
 
 pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
@@ -148,20 +148,18 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                     info!("Download size: {}", format_bytes(size, 2));
                 }
 
-                let progress_bar = create_progress_bar();
-                progress_bar.set_prefix("Downloading");
+                let pb = create_download_job("Downloading");
 
                 let dl = Download::new(asset.url())
                     .output(self_bin.to_string_lossy())
                     .overwrite(OverwriteMode::Force)
                     .progress({
-                        let progress_bar = progress_bar.clone();
-                        move |p| handle_progress(p, &progress_bar)
+                        let pb = pb.clone();
+                        move |p| handle_download_progress(p, &pb)
                     });
 
                 debug!("Downloading update from: {}", asset.url());
                 dl.execute()?;
-                progress_bar.finish();
                 info!("Soar updated to {}", release.tag());
             } else {
                 eprintln!("No updates found.");

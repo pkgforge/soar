@@ -1,39 +1,21 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-};
+use std::collections::HashSet;
 
-use indicatif::HumanBytes;
 use nu_ansi_term::Color::{Blue, Cyan, Green, LightRed, Magenta, Red, Yellow};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use soar_config::config::get_config;
-use soar_core::{
-    database::models::{InstalledPackage, Package},
-    package::query::PackageQuery,
-    SoarResult,
-};
-use soar_db::{
-    models::metadata::PackageListing,
-    repository::{
-        core::{CoreRepository, SortDirection},
-        metadata::MetadataRepository,
-    },
-};
-use soar_utils::fs::dir_size;
+use soar_core::SoarResult;
+use soar_operations::{list, search, SoarContext};
+use soar_utils::bytes::format_bytes;
 use tabled::{
     builder::Builder,
     settings::{peaker::PriorityMax, themes::BorderCorrection, Panel, Style, Width},
 };
-use tracing::{debug, info, trace};
+use tracing::{debug, info};
 
-use crate::{
-    state::AppState,
-    utils::{
-        display_settings, icon_or, pretty_package_size, term_width, vec_string, Colored, Icons,
-    },
+use crate::utils::{
+    display_settings, icon_or, pretty_package_size, term_width, vec_string, Colored, Icons,
 };
 
 pub async fn search_packages(
+    ctx: &SoarContext,
     query: String,
     case_sensitive: bool,
     limit: Option<usize>,
@@ -44,64 +26,25 @@ pub async fn search_packages(
         limit = ?limit,
         "searching packages"
     );
-    let state = AppState::new();
-    let metadata_mgr = state.metadata_manager().await?;
-    let diesel_db = state.diesel_core_db()?;
 
-    let search_limit = limit.or(get_config().search_limit).unwrap_or(20) as i64;
-    trace!(search_limit = search_limit, "using search limit");
+    let result = search::search_packages(ctx, &query, case_sensitive, limit).await?;
 
-    let packages: Vec<Package> = metadata_mgr.query_all_flat(|repo_name, conn| {
-        let pkgs = if case_sensitive {
-            MetadataRepository::search_case_sensitive(conn, &query, Some(search_limit))?
-        } else {
-            MetadataRepository::search(conn, &query, Some(search_limit))?
-        };
-        Ok(pkgs
-            .into_iter()
-            .map(|p| {
-                let mut pkg: Package = p.into();
-                pkg.repo_name = repo_name.to_string();
-                pkg
-            })
-            .collect())
-    })?;
-
-    let installed_pkgs: HashMap<(String, String, String), bool> = diesel_db
-        .with_conn(|conn| {
-            CoreRepository::list_filtered(conn, None, None, None, None, None, None, None, None)
-        })?
-        .into_par_iter()
-        .map(|pkg| ((pkg.repo_name, pkg.pkg_id, pkg.pkg_name), pkg.is_installed))
-        .collect();
-
-    let total = packages.len();
-    let display_count = std::cmp::min(search_limit as usize, total);
+    let total = result.total_count;
+    let display_count = result.packages.len();
 
     let mut installed_count = 0;
     let mut available_count = 0;
 
-    for package in packages.into_iter().take(display_count) {
-        let key = (
-            package.repo_name.clone(),
-            package.pkg_id.clone(),
-            package.pkg_name.clone(),
-        );
-        let state_icon = match installed_pkgs.get(&key) {
-            Some(is_installed) => {
-                if *is_installed {
-                    installed_count += 1;
-                    icon_or(Icons::INSTALLED, "+")
-                } else {
-                    "?"
-                }
-            }
-            None => {
-                available_count += 1;
-                icon_or(Icons::NOT_INSTALLED, "-")
-            }
+    for entry in &result.packages {
+        let state_icon = if entry.installed {
+            installed_count += 1;
+            icon_or(Icons::INSTALLED, "+")
+        } else {
+            available_count += 1;
+            icon_or(Icons::NOT_INSTALLED, "-")
         };
 
+        let package = &entry.package;
         info!(
             pkg_name = package.pkg_name,
             pkg_id = package.pkg_id,
@@ -170,73 +113,12 @@ pub async fn search_packages(
     Ok(())
 }
 
-pub async fn query_package(query_str: String) -> SoarResult<()> {
+pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<()> {
     debug!(query = query_str, "querying package info");
-    let state = AppState::new();
-    let metadata_mgr = state.metadata_manager().await?;
 
-    let query = PackageQuery::try_from(query_str.as_str())?;
-    trace!(
-        name = ?query.name,
-        pkg_id = ?query.pkg_id,
-        version = ?query.version,
-        repo = ?query.repo_name,
-        "parsed query"
-    );
-
-    let packages: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
-        metadata_mgr
-            .query_repo(repo_name, |conn| {
-                MetadataRepository::find_filtered(
-                    conn,
-                    query.name.as_deref(),
-                    query.pkg_id.as_deref(),
-                    None,
-                    None,
-                    Some(SortDirection::Asc),
-                )
-            })?
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| {
-                let mut pkg: Package = p.into();
-                pkg.repo_name = repo_name.clone();
-                pkg
-            })
-            .collect()
-    } else {
-        metadata_mgr.query_all_flat(|repo_name, conn| {
-            let pkgs = MetadataRepository::find_filtered(
-                conn,
-                query.name.as_deref(),
-                query.pkg_id.as_deref(),
-                None,
-                None,
-                Some(SortDirection::Asc),
-            )?;
-            Ok(pkgs
-                .into_iter()
-                .map(|p| {
-                    let mut pkg: Package = p.into();
-                    pkg.repo_name = repo_name.to_string();
-                    pkg
-                })
-                .collect())
-        })?
-    };
-
-    let packages: Vec<Package> = if let Some(ref version) = query.version {
-        packages
-            .into_iter()
-            .filter(|p| p.has_version(version))
-            .collect()
-    } else {
-        packages
-    };
+    let packages = search::query_package(ctx, &query_str).await?;
 
     for package in packages {
-        let package = package.resolve(query.version.as_deref());
-
         let mut builder = Builder::new();
 
         builder.push_record([
@@ -399,92 +281,38 @@ pub async fn query_package(query_str: String) -> SoarResult<()> {
     Ok(())
 }
 
-/// Lightweight struct for listing with repo name attached
-struct PackageListingWithRepo {
-    repo_name: String,
-    pkg: PackageListing,
-}
-
-pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
+pub async fn list_packages(ctx: &SoarContext, repo_name: Option<String>) -> SoarResult<()> {
     debug!(repo = ?repo_name, "listing packages");
-    let state = AppState::new();
-    let metadata_mgr = state.metadata_manager().await?;
-    let diesel_db = state.diesel_core_db()?;
 
-    let packages: Vec<PackageListingWithRepo> = if let Some(ref repo_name) = repo_name {
-        metadata_mgr
-            .query_repo(repo_name, MetadataRepository::list_all_minimal)?
-            .unwrap_or_default()
-            .into_iter()
-            .map(|pkg| {
-                PackageListingWithRepo {
-                    repo_name: repo_name.clone(),
-                    pkg,
-                }
-            })
-            .collect()
-    } else {
-        metadata_mgr.query_all_flat(|repo_name, conn| {
-            let pkgs = MetadataRepository::list_all_minimal(conn)?;
-            Ok(pkgs
-                .into_iter()
-                .map(|pkg| {
-                    PackageListingWithRepo {
-                        repo_name: repo_name.to_string(),
-                        pkg,
-                    }
-                })
-                .collect())
-        })?
-    };
+    let result = list::list_packages(ctx, repo_name.as_deref()).await?;
 
-    let installed_pkgs: HashMap<(String, String, String), bool> = diesel_db
-        .with_conn(|conn| {
-            CoreRepository::list_filtered(conn, None, None, None, None, None, None, None, None)
-        })?
-        .into_par_iter()
-        .map(|pkg| ((pkg.repo_name, pkg.pkg_id, pkg.pkg_name), pkg.is_installed))
-        .collect();
-
-    let total = packages.len();
+    let total = result.total;
     let mut installed_count = 0;
     let mut available_count = 0;
 
-    for entry in &packages {
-        let key = (
-            entry.repo_name.clone(),
-            entry.pkg.pkg_id.clone(),
-            entry.pkg.pkg_name.clone(),
-        );
-        let state_icon = match installed_pkgs.get(&key) {
-            Some(is_installed) => {
-                if *is_installed {
-                    installed_count += 1;
-                    icon_or(Icons::INSTALLED, "+")
-                } else {
-                    "?"
-                }
-            }
-            None => {
-                available_count += 1;
-                icon_or(Icons::NOT_INSTALLED, "-")
-            }
+    for entry in &result.packages {
+        let state_icon = if entry.installed {
+            installed_count += 1;
+            icon_or(Icons::INSTALLED, "+")
+        } else {
+            available_count += 1;
+            icon_or(Icons::NOT_INSTALLED, "-")
         };
 
+        let package = &entry.package;
         info!(
-            pkg_name = entry.pkg.pkg_name,
-            pkg_id = entry.pkg.pkg_id,
-            repo_name = entry.repo_name,
-            pkg_type = entry.pkg.pkg_type,
-            version = entry.pkg.version,
+            pkg_name = package.pkg_name,
+            pkg_id = package.pkg_id,
+            repo_name = package.repo_name,
+            pkg_type = package.pkg_type,
+            version = package.version,
             "[{}] {}#{}:{} | {} | {}",
             state_icon,
-            Colored(Blue, &entry.pkg.pkg_name),
-            Colored(Cyan, &entry.pkg.pkg_id),
-            Colored(Cyan, &entry.repo_name),
-            Colored(LightRed, &entry.pkg.version),
-            entry
-                .pkg
+            Colored(Blue, &package.pkg_name),
+            Colored(Cyan, &package.pkg_id),
+            Colored(Cyan, &package.repo_name),
+            Colored(LightRed, &package.version),
+            package
                 .pkg_type
                 .as_ref()
                 .map(|pkg_type| format!("{}", Colored(Magenta, &pkg_type)))
@@ -526,53 +354,33 @@ pub async fn list_packages(repo_name: Option<String>) -> SoarResult<()> {
     Ok(())
 }
 
-pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> SoarResult<()> {
+pub async fn list_installed_packages(
+    ctx: &SoarContext,
+    repo_name: Option<String>,
+    count: bool,
+) -> SoarResult<()> {
     debug!(repo = ?repo_name, count_only = count, "listing installed packages");
-    let state = AppState::new();
-    let diesel_db = state.diesel_core_db()?;
 
     if count {
-        let count = diesel_db.with_conn(|conn| {
-            CoreRepository::count_distinct_installed(conn, repo_name.as_deref())
-        })?;
+        let count = list::count_installed(ctx, repo_name.as_deref())?;
         info!("{}", count);
         return Ok(());
     }
 
-    // Get installed packages
-    let packages: Vec<InstalledPackage> = diesel_db
-        .with_conn(|conn| {
-            CoreRepository::list_filtered(
-                conn,
-                repo_name.as_deref(),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-        })?
-        .into_iter()
-        .map(Into::into)
-        .collect();
-    trace!(count = packages.len(), "fetched installed packages");
+    let result = list::list_installed(ctx, repo_name.as_deref())?;
 
     let mut unique_pkgs = HashSet::new();
     let settings = display_settings();
     let use_icons = settings.icons();
 
     let (installed_count, unique_count, broken_count, installed_size, broken_size) =
-        packages.iter().fold(
-            (0, 0, 0, 0, 0),
-            |(installed_count, unique_count, broken_count, installed_size, broken_size),
-             package| {
-                let installed_path = PathBuf::from(&package.installed_path);
-                let size = dir_size(&installed_path).unwrap_or(0);
-                let is_installed = package.is_installed && installed_path.exists();
+        result.packages.iter().fold(
+            (0, 0, 0, 0u64, 0u64),
+            |(installed_count, unique_count, broken_count, installed_size, broken_size), entry| {
+                let package = &entry.package;
+                let size = entry.disk_size;
 
-                let status = if is_installed {
+                let status = if entry.is_healthy {
                     String::new()
                 } else if use_icons {
                     format!(
@@ -595,11 +403,11 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
                     Colored(Magenta, &package.version),
                     Colored(Cyan, &package.repo_name),
                     Colored(Green, &package.installed_date.clone()),
-                    HumanBytes(size),
+                    format_bytes(size, 2),
                     status,
                 );
 
-                if is_installed {
+                if entry.is_healthy {
                     let unique_count = unique_pkgs
                         .insert(format!("{}-{}", package.pkg_id, package.pkg_name))
                         as u32
@@ -636,7 +444,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
                 } else {
                     String::new()
                 },
-                Colored(Magenta, HumanBytes(installed_size))
+                Colored(Magenta, format_bytes(installed_size, 2))
             ),
         ]);
 
@@ -646,7 +454,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
                 format!(
                     "{} ({})",
                     Colored(Red, broken_count),
-                    Colored(Magenta, HumanBytes(broken_size))
+                    Colored(Magenta, format_bytes(broken_size, 2))
                 ),
             ]);
 
@@ -657,7 +465,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
                 format!(
                     "{} ({})",
                     Colored(Blue, total_count),
-                    Colored(Magenta, HumanBytes(total_size))
+                    Colored(Magenta, format_bytes(total_size, 2))
                 ),
             ]);
         }
@@ -682,7 +490,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
             } else {
                 String::new()
             },
-            HumanBytes(installed_size),
+            format_bytes(installed_size, 2),
         );
 
         if broken_count > 0 {
@@ -691,7 +499,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
                 broken_size,
                 "Broken: {} ({})",
                 broken_count,
-                HumanBytes(broken_size)
+                format_bytes(broken_size, 2)
             );
 
             let total_count = installed_count + broken_count;
@@ -701,7 +509,7 @@ pub async fn list_installed_packages(repo_name: Option<String>, count: bool) -> 
                 total_size,
                 "Total: {} ({})",
                 total_count,
-                HumanBytes(total_size)
+                format_bytes(total_size, 2)
             );
         }
     }

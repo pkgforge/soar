@@ -1,143 +1,34 @@
-use soar_core::{
-    database::models::InstalledPackage,
-    package::{query::PackageQuery, remove::PackageRemover},
-    SoarResult,
-};
-use soar_db::repository::core::{CoreRepository, SortDirection};
-use tracing::{debug, error, info, trace, warn};
+use nu_ansi_term::Color::{Blue, Cyan, Green, LightRed};
+use soar_core::SoarResult;
+use soar_operations::{remove, RemoveResolveResult, SoarContext};
+use tracing::{debug, error, info, warn};
 
-use crate::{
-    state::AppState,
-    utils::{confirm_action, get_package_hooks, select_package_interactively, Colored},
-};
+use crate::utils::{confirm_action, select_package_interactively, Colored};
 
-pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarResult<()> {
+pub async fn remove_packages(
+    ctx: &SoarContext,
+    packages: &[String],
+    yes: bool,
+    all: bool,
+) -> SoarResult<()> {
     debug!(
         count = packages.len(),
         all = all,
         "starting package removal"
     );
-    let state = AppState::new();
-    let diesel_db = state.diesel_core_db()?.clone();
 
-    for package in packages {
-        trace!(package = package, "processing package for removal");
-        let query = PackageQuery::try_from(package.as_str())?;
+    let results = remove::resolve_removals(ctx, packages, all)?;
 
-        // --all flag: remove all installed variants of the package
-        if let (true, None, Some(ref name)) = (all, &query.pkg_id, &query.name) {
-            let installed: Vec<InstalledPackage> = diesel_db
-                .with_conn(|conn| {
-                    CoreRepository::list_filtered(
-                        conn,
-                        query.repo_name.as_deref(),
-                        query.name.as_deref(),
-                        None,
-                        query.version.as_deref(),
-                        None,
-                        None,
-                        None,
-                        Some(SortDirection::Asc),
-                    )
-                })?
-                .into_iter()
-                .map(Into::into)
-                .collect();
-
-            if installed.is_empty() {
-                error!("Package {} is not installed", name);
-                continue;
-            }
-
-            for pkg in installed {
-                debug!(
-                    pkg_name = pkg.pkg_name,
-                    pkg_id = pkg.pkg_id,
-                    "removing package variant"
-                );
-                let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
-                let remover = PackageRemover::new(pkg.clone(), diesel_db.clone())
-                    .await
-                    .with_hooks(hooks)
-                    .with_sandbox(sandbox);
-                remover.remove().await?;
-
-                info!(
-                    "Removed {}#{}:{} ({})",
-                    pkg.pkg_name, pkg.pkg_id, pkg.repo_name, pkg.version
-                );
-            }
-            continue;
-        }
-
-        // Remove all installed packages with the pkg_id that provides the package
-        if let Some(ref pkg_id) = query.pkg_id {
-            if pkg_id == "all" {
-                // Find all installed variants of this package
-                let installed: Vec<InstalledPackage> = diesel_db
-                    .with_conn(|conn| {
-                        CoreRepository::list_filtered(
-                            conn,
-                            query.repo_name.as_deref(),
-                            query.name.as_deref(),
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            Some(SortDirection::Asc),
-                        )
-                    })?
-                    .into_iter()
-                    .map(Into::into)
-                    .collect();
-
-                if installed.is_empty() {
-                    error!("Package {} is not installed", query.name.as_ref().unwrap());
-                    continue;
-                }
-
-                // If multiple variants with different pkg_ids, show picker
-                let selected_pkg = if installed.len() > 1 {
-                    if yes {
-                        installed.into_iter().next().unwrap()
-                    } else {
-                        select_package_interactively(installed, query.name.as_ref().unwrap())?
-                            .unwrap()
-                    }
-                } else {
-                    installed.into_iter().next().unwrap()
-                };
-
-                let target_pkg_id = selected_pkg.pkg_id.clone();
-
-                // Find all installed packages with this pkg_id
-                let all_installed: Vec<InstalledPackage> = diesel_db
-                    .with_conn(|conn| {
-                        CoreRepository::list_filtered(
-                            conn,
-                            query.repo_name.as_deref(),
-                            None,
-                            Some(&target_pkg_id),
-                            None,
-                            None,
-                            None,
-                            None,
-                            Some(SortDirection::Asc),
-                        )
-                    })?
-                    .into_iter()
-                    .map(Into::into)
-                    .collect();
-
-                // Show confirmation for bulk remove
-                if all_installed.len() > 1 && !yes {
-                    use nu_ansi_term::Color::{Blue, Cyan, Green, LightRed};
+    let mut to_remove = Vec::new();
+    for result in results {
+        match result {
+            RemoveResolveResult::Resolved(pkgs) => {
+                if pkgs.len() > 1 && !yes {
                     info!(
                         "The following {} packages will be removed:",
-                        Colored(Cyan, all_installed.len())
+                        Colored(Cyan, pkgs.len())
                     );
-                    for pkg in &all_installed {
+                    for pkg in &pkgs {
                         info!(
                             "  - {}#{}:{} ({})",
                             Colored(Blue, &pkg.pkg_name),
@@ -151,93 +42,47 @@ pub async fn remove_packages(packages: &[String], yes: bool, all: bool) -> SoarR
                         continue;
                     }
                 }
-
-                for pkg in all_installed {
-                    debug!(
-                        pkg_name = pkg.pkg_name,
-                        pkg_id = pkg.pkg_id,
-                        "removing package"
-                    );
-                    let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
-                    let remover = PackageRemover::new(pkg.clone(), diesel_db.clone())
-                        .await
-                        .with_hooks(hooks)
-                        .with_sandbox(sandbox);
-                    remover.remove().await?;
-
-                    info!(
-                        "Removed {}#{}:{} ({})",
-                        pkg.pkg_name, pkg.pkg_id, pkg.repo_name, pkg.version
-                    );
+                to_remove.extend(pkgs);
+            }
+            RemoveResolveResult::Ambiguous {
+                query,
+                candidates,
+            } => {
+                if yes {
+                    if let Some(pkg) = candidates.into_iter().next() {
+                        to_remove.push(pkg);
+                    }
+                } else {
+                    let pkg = select_package_interactively(candidates, &query)?;
+                    if let Some(pkg) = pkg {
+                        to_remove.push(pkg);
+                    }
                 }
-                continue;
+            }
+            RemoveResolveResult::NotInstalled(name) => {
+                warn!("Package {} is not installed.", name);
             }
         }
+    }
 
-        // Normal case - find matching installed packages
-        let installed_pkgs: Vec<InstalledPackage> = diesel_db
-            .with_conn(|conn| {
-                CoreRepository::list_filtered(
-                    conn,
-                    query.repo_name.as_deref(),
-                    query.name.as_deref(),
-                    query.pkg_id.as_deref(),
-                    query.version.as_deref(),
-                    None,
-                    None,
-                    None,
-                    Some(SortDirection::Asc),
-                )
-            })?
-            .into_iter()
-            .map(Into::into)
-            .collect();
+    if to_remove.is_empty() {
+        return Ok(());
+    }
 
-        if installed_pkgs.is_empty() {
-            warn!("Package {} is not installed.", package);
-            continue;
-        }
+    let report = remove::perform_removal(ctx, to_remove).await?;
 
-        // If multiple packages match and user didn't specify pkg_id
-        let pkgs_to_remove: Vec<InstalledPackage> =
-            if installed_pkgs.len() > 1 && query.pkg_id.is_none() {
-                if yes {
-                    vec![installed_pkgs.into_iter().next().unwrap()]
-                } else {
-                    let pkg = select_package_interactively(
-                        installed_pkgs,
-                        query.name.as_ref().unwrap_or(package),
-                    )?
-                    .unwrap();
-                    vec![pkg]
-                }
-            } else {
-                installed_pkgs
-            };
+    for removed in &report.removed {
+        info!(
+            "Removed {}#{}:{} ({})",
+            removed.pkg_name, removed.pkg_id, removed.repo_name, removed.version
+        );
+    }
 
-        debug!(count = pkgs_to_remove.len(), "packages to remove");
-        for installed_pkg in pkgs_to_remove {
-            debug!(
-                pkg_name = installed_pkg.pkg_name,
-                pkg_id = installed_pkg.pkg_id,
-                installed_path = installed_pkg.installed_path,
-                "removing package"
-            );
-            let (hooks, sandbox) = get_package_hooks(&installed_pkg.pkg_name);
-            let remover = PackageRemover::new(installed_pkg.clone(), diesel_db.clone())
-                .await
-                .with_hooks(hooks)
-                .with_sandbox(sandbox);
-            remover.remove().await?;
-
-            info!(
-                "Removed {}#{}:{} ({})",
-                installed_pkg.pkg_name,
-                installed_pkg.pkg_id,
-                installed_pkg.repo_name,
-                installed_pkg.version
-            );
-        }
+    for failed in &report.failed {
+        error!(
+            "Failed to remove {}#{}: {}",
+            failed.pkg_name, failed.pkg_id, failed.error
+        );
     }
 
     debug!("package removal completed");

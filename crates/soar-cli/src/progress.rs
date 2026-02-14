@@ -1,219 +1,513 @@
-use std::sync::atomic::Ordering;
-
-use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
-use nu_ansi_term::Color::Red;
-use soar_config::display::ProgressStyle as ConfigProgressStyle;
-use soar_dl::types::Progress;
-
-use crate::{
-    install::InstallContext,
-    utils::{display_settings, progress_enabled, Colored},
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{mpsc::Receiver, Arc, LazyLock},
+    time::Duration,
 };
 
-const SPINNER_CHARS: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use nu_ansi_term::Color::{Cyan, Green, Red};
+use soar_dl::types::Progress;
+use soar_events::{
+    InstallStage, OperationId, RemoveStage, SoarEvent, SyncStage, UpdateCleanupStage, VerifyStage,
+};
 
-pub fn create_progress_bar() -> ProgressBar {
-    let progress_bar = ProgressBar::new(0);
-    if !progress_enabled() {
-        progress_bar.set_draw_target(indicatif::ProgressDrawTarget::hidden());
-        return progress_bar;
-    }
-    let style = get_progress_style();
-    progress_bar.set_style(style);
-    progress_bar
+use crate::utils::{display_settings, progress_enabled};
+
+/// Shared MultiProgress instance for suspend/stop from other modules.
+static MULTI: LazyLock<Arc<MultiProgress>> = LazyLock::new(|| Arc::new(MultiProgress::new()));
+
+/// Pause progress display, run the closure, then resume.
+pub fn suspend<F: FnOnce()>(f: F) {
+    MULTI.suspend(f);
 }
 
-fn get_progress_style() -> ProgressStyle {
-    let settings = display_settings();
+/// Stop and clear all progress bars.
+pub fn stop() {
+    MULTI.clear().ok();
+}
 
-    match settings.progress_style() {
-        ConfigProgressStyle::Modern => {
-            ProgressStyle::with_template(
-                "{spinner:.cyan} {prefix} [{wide_bar:.green/dim}] {bytes_per_sec:>12} {computed_bytes:>22} ETA: {eta}",
-            )
-            .unwrap()
-            .with_key("computed_bytes", format_bytes)
-            .tick_chars(SPINNER_CHARS)
-            .progress_chars("━━─")
-        }
-        ConfigProgressStyle::Classic => {
-            ProgressStyle::with_template(
-                "{prefix} [{wide_bar}] {bytes_per_sec:>12} {computed_bytes:>22}",
-            )
-            .unwrap()
-            .with_key("computed_bytes", format_bytes)
-            .progress_chars("=>-")
-        }
-        ConfigProgressStyle::Minimal => {
-            ProgressStyle::with_template(
-                "{prefix} {percent:>3}% ({computed_bytes})",
-            )
-            .unwrap()
-            .with_key("computed_bytes", format_bytes)
+/// Handle returned by [`spawn_event_handler`] that owns the background progress thread.
+///
+/// Call [`finish`](ProgressGuard::finish) after dropping the [`SoarContext`] to join the
+/// handler thread and clean up.
+pub struct ProgressGuard {
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ProgressGuard {
+    /// Wait for the event handler thread to drain remaining events, then clean up.
+    ///
+    /// The [`SoarContext`] (which holds the channel sender) **must** be dropped before
+    /// calling this, otherwise the thread will block forever waiting for more events.
+    pub fn finish(mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.join().ok();
         }
     }
 }
 
-pub fn create_spinner(message: &str) -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
+fn download_style() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{spinner:.cyan} {prefix}  {wide_bar:.cyan/dim}  {bytes}/{total_bytes}  {bytes_per_sec}  {eta}",
+    )
+    .unwrap()
+    .progress_chars("━━─")
+}
 
-    if !progress_enabled() {
-        spinner.set_draw_target(indicatif::ProgressDrawTarget::hidden());
-        return spinner;
-    }
+/// Format a colored prefix: pkg_name in cyan, #pkg_id in dim.
+fn colored_prefix(pkg_name: &str, pkg_id: &str) -> String {
+    format!(
+        "{}{}",
+        Cyan.paint(pkg_name),
+        nu_ansi_term::Style::new()
+            .dimmed()
+            .paint(format!("#{pkg_id}"))
+    )
+}
 
-    let settings = display_settings();
-    if settings.spinners() {
-        spinner.set_style(
-            ProgressStyle::with_template("{spinner:.cyan} {msg}")
-                .unwrap()
-                .tick_chars(SPINNER_CHARS),
-        );
-        spinner.enable_steady_tick(std::time::Duration::from_millis(80));
+fn spinner_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner:.cyan} {msg}").unwrap()
+}
+
+/// Create a download progress bar with a progress bar, bytes, and ETA.
+pub fn create_download_job(prefix: &str) -> ProgressBar {
+    let pb = if progress_enabled() {
+        MULTI.add(ProgressBar::new(0))
     } else {
-        spinner.set_style(ProgressStyle::with_template("{msg}").unwrap());
-    }
-
-    spinner.set_message(message.to_string());
-    spinner
+        MULTI.add(ProgressBar::hidden())
+    };
+    pb.set_style(download_style());
+    pb.set_prefix(prefix.to_string());
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb
 }
 
-fn format_bytes(state: &ProgressState, w: &mut dyn std::fmt::Write) {
-    let pos = state.pos();
-    let len = state.len().unwrap_or(0);
-
-    // When content length is unknown (0), just show current downloaded bytes
-    if len == 0 {
-        write!(w, "{}", HumanBytes(pos)).unwrap();
+/// Create a spinner job.
+pub fn create_spinner_job(message: &str) -> ProgressBar {
+    let pb = if progress_enabled() && display_settings().spinners() {
+        MULTI.add(ProgressBar::new_spinner())
     } else {
-        write!(w, "{}/{}", HumanBytes(pos), HumanBytes(len)).unwrap();
-    }
+        MULTI.add(ProgressBar::hidden())
+    };
+    pb.set_style(spinner_style());
+    pb.set_message(message.to_string());
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb
 }
 
-pub fn handle_progress(state: Progress, progress_bar: &ProgressBar) {
+/// Handle download progress events and update a progress bar.
+pub fn handle_download_progress(state: Progress, pb: &ProgressBar) {
     match state {
         Progress::Starting {
             total,
         } => {
-            progress_bar.set_length(total);
+            pb.set_length(total);
         }
         Progress::Resuming {
             current,
             total,
         } => {
-            progress_bar.set_length(total);
-            progress_bar.set_position(current);
-            progress_bar.reset_elapsed();
+            pb.set_length(total);
+            pb.set_position(current);
         }
         Progress::Chunk {
             current, ..
         } => {
-            progress_bar.set_position(current);
+            pb.set_position(current);
         }
         Progress::Complete {
             ..
-        } => progress_bar.finish(),
+        } => {
+            pb.finish_and_clear();
+        }
         _ => {}
     }
 }
 
-pub fn handle_install_progress(
-    state: Progress,
-    progress_bar: &mut Option<ProgressBar>,
-    ctx: &InstallContext,
-    prefix: &str,
-) {
-    if progress_bar.is_none() {
-        let pb = ctx
-            .multi_progress
-            .insert_from_back(1, create_progress_bar());
-        pb.set_prefix(prefix.to_string());
-        *progress_bar = Some(pb);
-    }
+/// Create a spinner-style progress bar for an operation.
+fn create_op_spinner(msg: &str) -> ProgressBar {
+    let pb = if progress_enabled() && display_settings().spinners() {
+        MULTI.add(ProgressBar::new_spinner())
+    } else {
+        MULTI.add(ProgressBar::hidden())
+    };
+    pb.set_style(spinner_style());
+    pb.set_message(msg.to_string());
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb
+}
 
-    match state {
-        Progress::Starting {
-            total,
-        } => {
-            if let Some(pb) = progress_bar {
-                pb.set_length(total);
-            }
-        }
-        Progress::Resuming {
-            current,
-            total,
-        } => {
-            if let Some(pb) = progress_bar {
-                pb.set_length(total);
-                pb.set_position(current);
-                pb.reset_elapsed();
-            }
-        }
-        Progress::Chunk {
-            current, ..
-        } => {
-            if let Some(pb) = progress_bar {
-                pb.set_position(current);
-            }
-        }
-        Progress::Complete {
-            ..
-        } => {
-            if let Some(pb) = progress_bar.take() {
-                pb.finish();
-            }
-        }
-        Progress::Error => {
-            let count = ctx.retrying.fetch_add(1, Ordering::Relaxed);
-            let failed_count = ctx.failed.load(Ordering::Relaxed);
-            ctx.total_progress_bar.set_message(format!(
-                "(Retrying: {}){}",
-                Colored(Red, count + 1),
-                if failed_count > 0 {
-                    format!(" (Failed: {})", Colored(Red, failed_count))
-                } else {
-                    String::new()
-                },
-            ));
-        }
-        Progress::Aborted => {
-            let failed_count = ctx.failed.fetch_add(1, Ordering::Relaxed);
-            if let Some(pb) = progress_bar {
-                pb.set_style(ProgressStyle::with_template("{prefix} {msg}").unwrap());
-                pb.set_prefix(prefix.to_string());
-                pb.finish_with_message(format!(
-                    "\n  {}",
-                    Colored(Red, "└── Error: Too many failures. Aborted.")
-                ));
+/// Spawn a background thread that maps [`SoarEvent`]s to indicatif progress bars.
+///
+/// Each operation (`op_id`) gets a **single bar** for its entire lifecycle: it starts as a
+/// download progress bar and is converted to a spinner for verification / install stages.
+/// The bar is cleared on terminal events (`OperationComplete` / `OperationFailed`).
+pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
+    let handle = std::thread::spawn(move || {
+        let mut jobs: HashMap<OperationId, ProgressBar> = HashMap::new();
+        let mut sync_jobs: HashMap<String, ProgressBar> = HashMap::new();
+        let mut batch_job: Option<ProgressBar> = None;
+        let mut batch_msg: Option<String> = None;
+        let mut remove_ops: HashSet<OperationId> = HashSet::new();
 
-                let count = ctx.retrying.fetch_sub(1, Ordering::Relaxed);
-                if count > 1 {
-                    ctx.total_progress_bar.set_message(format!(
-                        "(Retrying: {}) (Failed: {})",
-                        Colored(Red, count - 1),
-                        Colored(Red, failed_count + 1)
-                    ));
-                } else {
-                    ctx.total_progress_bar.set_message("");
+        // Ensure the batch progress job stays at the bottom of the job list
+        // by removing and recreating it after new download jobs are added.
+        macro_rules! reposition_batch {
+            ($batch_job:expr, $batch_msg:expr) => {
+                if let Some(old) = $batch_job.take() {
+                    old.finish_and_clear();
+                    if let Some(ref msg) = $batch_msg {
+                        let new = MULTI.add(ProgressBar::new_spinner());
+                        new.set_style(spinner_style());
+                        new.set_message(msg.clone());
+                        new.enable_steady_tick(Duration::from_millis(100));
+                        $batch_job = Some(new);
+                    }
                 }
-            }
+            };
         }
-        Progress::Recovered => {
-            let count = ctx.retrying.fetch_sub(1, Ordering::Relaxed);
-            let failed_count = ctx.failed.load(Ordering::Relaxed);
-            if count > 1 || failed_count > 0 {
-                ctx.total_progress_bar.set_message(format!(
-                    "(Retrying: {}){}",
-                    Colored(Red, count - 1),
-                    if failed_count > 0 {
-                        format!(" (Failed: {})", Colored(Red, failed_count))
+
+        while let Ok(event) = receiver.recv() {
+            match event {
+                // ── Download lifecycle ──────────────────────────────────
+                SoarEvent::DownloadStarting {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    total,
+                } => {
+                    let pb = MULTI.add(ProgressBar::new(total));
+                    pb.set_style(download_style());
+                    pb.set_prefix(colored_prefix(&pkg_name, &pkg_id));
+                    pb.enable_steady_tick(Duration::from_millis(100));
+                    jobs.insert(op_id, pb);
+                    reposition_batch!(batch_job, batch_msg);
+                }
+                SoarEvent::DownloadResuming {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    current,
+                    total,
+                } => {
+                    let is_new = !jobs.contains_key(&op_id);
+                    let pb = jobs.entry(op_id).or_insert_with(|| {
+                        let pb = MULTI.add(ProgressBar::new(0));
+                        pb.set_style(download_style());
+                        pb.set_prefix(colored_prefix(&pkg_name, &pkg_id));
+                        pb.enable_steady_tick(Duration::from_millis(100));
+                        pb
+                    });
+                    pb.set_length(total);
+                    pb.set_position(current);
+                    if is_new {
+                        reposition_batch!(batch_job, batch_msg);
+                    }
+                }
+                SoarEvent::DownloadProgress {
+                    op_id,
+                    current,
+                    ..
+                } => {
+                    if let Some(pb) = jobs.get(&op_id) {
+                        pb.set_position(current);
+                    }
+                }
+                SoarEvent::DownloadComplete {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    ..
+                } => {
+                    if let Some(pb) = jobs.get(&op_id) {
+                        pb.set_style(spinner_style());
+                        pb.set_message(format!("{pkg_name}#{pkg_id}: downloaded"));
+                    }
+                }
+                SoarEvent::DownloadRetry {
+                    op_id, ..
+                } => {
+                    if let Some(pb) = jobs.get(&op_id) {
+                        pb.set_position(0);
+                    }
+                }
+                SoarEvent::DownloadAborted {
+                    op_id, ..
+                } => {
+                    if let Some(pb) = jobs.remove(&op_id) {
+                        pb.finish_and_clear();
+                    }
+                }
+                SoarEvent::DownloadRecovered {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                } => {
+                    let is_new = !jobs.contains_key(&op_id);
+                    jobs.entry(op_id).or_insert_with(|| {
+                        let pb = MULTI.add(ProgressBar::new(0));
+                        pb.set_style(download_style());
+                        pb.set_prefix(colored_prefix(&pkg_name, &pkg_id));
+                        pb.enable_steady_tick(Duration::from_millis(100));
+                        pb
+                    });
+                    if is_new {
+                        reposition_batch!(batch_job, batch_msg);
+                    }
+                }
+
+                // ── Verification ───────────────────────────────────────
+                SoarEvent::Verifying {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    stage,
+                } => {
+                    match stage {
+                        VerifyStage::Checksum | VerifyStage::Signature => {
+                            let msg = match stage {
+                                VerifyStage::Checksum => {
+                                    format!("{pkg_name}#{pkg_id}: verifying checksum")
+                                }
+                                VerifyStage::Signature => {
+                                    format!("{pkg_name}#{pkg_id}: verifying signature")
+                                }
+                                _ => unreachable!(),
+                            };
+                            let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
+                            pb.set_style(spinner_style());
+                            pb.set_message(msg);
+                        }
+                        VerifyStage::Passed => {}
+                        VerifyStage::Failed(_) => {
+                            if let Some(pb) = jobs.remove(&op_id) {
+                                pb.finish_and_clear();
+                            }
+                        }
+                    }
+                }
+
+                // ── Installation stages ────────────────────────────────
+                SoarEvent::Installing {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    stage,
+                } => {
+                    if stage != InstallStage::Complete {
+                        let msg = match &stage {
+                            InstallStage::Extracting => {
+                                format!("{pkg_name}#{pkg_id}: extracting")
+                            }
+                            InstallStage::ExtractingNested => {
+                                format!("{pkg_name}#{pkg_id}: extracting nested")
+                            }
+                            InstallStage::LinkingBinaries => {
+                                format!("{pkg_name}#{pkg_id}: linking binaries")
+                            }
+                            InstallStage::DesktopIntegration => {
+                                format!("{pkg_name}#{pkg_id}: desktop integration")
+                            }
+                            InstallStage::SetupPortable => {
+                                format!("{pkg_name}#{pkg_id}: setting up portable")
+                            }
+                            InstallStage::RecordingDatabase => {
+                                format!("{pkg_name}#{pkg_id}: recording to db")
+                            }
+                            InstallStage::RunningHook(hook) => {
+                                format!("{pkg_name}#{pkg_id}: running {hook}")
+                            }
+                            InstallStage::Complete => unreachable!(),
+                        };
+                        let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
+                        pb.set_style(spinner_style());
+                        pb.set_message(msg);
+                    }
+                }
+
+                // ── Removal stages ─────────────────────────────────────
+                SoarEvent::Removing {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    stage,
+                } => {
+                    remove_ops.insert(op_id);
+                    if !matches!(stage, RemoveStage::Complete { .. }) {
+                        let msg = match &stage {
+                            RemoveStage::RunningHook(hook) => {
+                                format!("{pkg_name}#{pkg_id}: running {hook}")
+                            }
+                            RemoveStage::UnlinkingBinaries => {
+                                format!("{pkg_name}#{pkg_id}: unlinking binaries")
+                            }
+                            RemoveStage::UnlinkingDesktop => {
+                                format!("{pkg_name}#{pkg_id}: unlinking desktop")
+                            }
+                            RemoveStage::UnlinkingIcons => {
+                                format!("{pkg_name}#{pkg_id}: unlinking icons")
+                            }
+                            RemoveStage::RemovingDirectory => {
+                                format!("{pkg_name}#{pkg_id}: removing files")
+                            }
+                            RemoveStage::CleaningDatabase => {
+                                format!("{pkg_name}#{pkg_id}: cleaning db")
+                            }
+                            RemoveStage::Complete {
+                                ..
+                            } => unreachable!(),
+                        };
+                        let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
+                        pb.set_message(msg);
+                    }
+                }
+
+                // ── Update cleanup (separate op_ids, no OperationComplete) ─
+                SoarEvent::UpdateCleanup {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    stage,
+                    ..
+                } => {
+                    if matches!(
+                        stage,
+                        UpdateCleanupStage::Complete { .. } | UpdateCleanupStage::Kept
+                    ) {
+                        if let Some(pb) = jobs.remove(&op_id) {
+                            pb.finish_and_clear();
+                        }
+                    } else {
+                        let msg = format!("{pkg_name}#{pkg_id}: cleaning old version");
+                        let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
+                        pb.set_message(msg);
+                    }
+                }
+
+                // ── Repository sync ────────────────────────────────────
+                SoarEvent::SyncProgress {
+                    repo_name,
+                    stage,
+                } => {
+                    match stage {
+                        SyncStage::Complete {
+                            ..
+                        }
+                        | SyncStage::UpToDate => {
+                            if let Some(pb) = sync_jobs.remove(&repo_name) {
+                                pb.finish_and_clear();
+                            }
+                            let status = if matches!(stage, SyncStage::UpToDate) {
+                                "up to date"
+                            } else {
+                                "synced"
+                            };
+                            MULTI.suspend(|| {
+                                eprintln!(
+                                    " {} {}: {}",
+                                    Green.paint("✓"),
+                                    Cyan.paint(&repo_name),
+                                    nu_ansi_term::Style::new().dimmed().paint(status)
+                                );
+                            });
+                        }
+                        _ => {
+                            let msg = match &stage {
+                                SyncStage::Fetching => format!("{repo_name}: fetching metadata"),
+                                SyncStage::Decompressing => format!("{repo_name}: decompressing"),
+                                SyncStage::WritingDatabase => format!("{repo_name}: writing db"),
+                                SyncStage::Validating => format!("{repo_name}: validating"),
+                                _ => unreachable!(),
+                            };
+                            let pb = sync_jobs
+                                .entry(repo_name)
+                                .or_insert_with(|| create_op_spinner(&msg));
+                            pb.set_message(msg);
+                        }
+                    }
+                }
+
+                // ── Batch progress (aggregated "Installing X/Y") ─────
+                SoarEvent::BatchProgress {
+                    completed,
+                    total,
+                    failed,
+                } => {
+                    let fail_msg = if failed > 0 {
+                        format!(" ({failed} failed)")
                     } else {
                         String::new()
-                    },
-                ));
-            } else {
-                ctx.total_progress_bar.set_message("");
+                    };
+                    let msg = format!("Progress: {completed}/{total}{fail_msg}");
+                    batch_msg = Some(msg.clone());
+                    let pb = batch_job.get_or_insert_with(|| {
+                        let pb = MULTI.add(ProgressBar::new_spinner());
+                        pb.set_style(spinner_style());
+                        pb.enable_steady_tick(Duration::from_millis(100));
+                        pb
+                    });
+                    pb.set_message(msg);
+                }
+
+                // ── Terminal events ────────────────────────────────────
+                SoarEvent::OperationComplete {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                } => {
+                    if !remove_ops.remove(&op_id) {
+                        MULTI.suspend(|| {
+                            eprintln!(
+                                " {} {}#{}: {}",
+                                Green.paint("✓"),
+                                Cyan.paint(&pkg_name),
+                                Cyan.paint(&pkg_id),
+                                Green.paint("installed")
+                            );
+                        });
+                    }
+                    if let Some(pb) = jobs.remove(&op_id) {
+                        pb.finish_and_clear();
+                    }
+                }
+                SoarEvent::OperationFailed {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    error,
+                } => {
+                    remove_ops.remove(&op_id);
+                    MULTI.suspend(|| {
+                        eprintln!(
+                            " {} {}#{}: {}",
+                            Red.paint("✗"),
+                            Cyan.paint(&pkg_name),
+                            Cyan.paint(&pkg_id),
+                            Red.paint(&error)
+                        );
+                    });
+                    if let Some(pb) = jobs.remove(&op_id) {
+                        pb.finish_and_clear();
+                    }
+                }
+
+                _ => {}
             }
         }
+
+        // Clean up remaining bars.
+        if let Some(pb) = batch_job.take() {
+            pb.finish_and_clear();
+        }
+        for (_, pb) in jobs {
+            pb.finish_and_clear();
+        }
+        for (_, pb) in sync_jobs {
+            pb.finish_and_clear();
+        }
+    });
+
+    ProgressGuard {
+        handle: Some(handle),
     }
 }

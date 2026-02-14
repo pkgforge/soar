@@ -398,6 +398,7 @@ pub async fn perform_update(
     ctx: &SoarContext,
     updates: Vec<UpdateInfo>,
     keep_old: bool,
+    no_verify: bool,
 ) -> SoarResult<UpdateReport> {
     debug!(
         count = updates.len(),
@@ -432,7 +433,7 @@ pub async fn perform_update(
     let targets: Vec<InstallTarget> = updates.into_iter().map(|u| u.target).collect();
 
     let options = InstallOptions {
-        no_verify: false,
+        no_verify,
         ..Default::default()
     };
 
