@@ -196,6 +196,7 @@ async fn handle_cli() -> SoarResult<()> {
             setup_required_paths().unwrap();
 
             let (ctx, progress_guard) = create_context();
+            let mut run_exit_code = None;
 
             match command {
                 cli::Commands::Install {
@@ -298,7 +299,7 @@ async fn handle_cli() -> SoarResult<()> {
                     pkg_id,
                     repo_name,
                 } => {
-                    run_package(
+                    let code = run_package(
                         &ctx,
                         command.as_ref(),
                         yes,
@@ -306,6 +307,9 @@ async fn handle_cli() -> SoarResult<()> {
                         pkg_id.as_deref(),
                     )
                     .await?;
+                    if code != 0 {
+                        run_exit_code = Some(code);
+                    }
                 }
                 cli::Commands::Use {
                     package_name,
@@ -457,6 +461,10 @@ async fn handle_cli() -> SoarResult<()> {
                 guard.finish();
             }
             crate::progress::stop();
+
+            if let Some(code) = run_exit_code {
+                std::process::exit(code);
+            }
         }
     }
 

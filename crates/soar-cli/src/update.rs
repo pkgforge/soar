@@ -14,7 +14,7 @@ pub async fn update_packages(
     packages: Option<Vec<String>>,
     keep: bool,
     ask: bool,
-    _no_verify: bool,
+    no_verify: bool,
 ) -> SoarResult<()> {
     let updates = update::check_updates(ctx, packages.as_deref()).await?;
 
@@ -39,7 +39,7 @@ pub async fn update_packages(
         ask_target_action(&install_targets, "update")?;
     }
 
-    let report = update::perform_update(ctx, updates, keep).await?;
+    let report = update::perform_update(ctx, updates, keep, no_verify).await?;
     display_update_report(&report);
 
     Ok(())

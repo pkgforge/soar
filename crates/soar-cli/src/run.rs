@@ -9,7 +9,7 @@ pub async fn run_package(
     yes: bool,
     repo_name: Option<&str>,
     pkg_id: Option<&str>,
-) -> SoarResult<()> {
+) -> SoarResult<i32> {
     let package_name = &command[0];
     let args = if command.len() > 1 {
         &command[1..]
@@ -29,7 +29,7 @@ pub async fn run_package(
             };
 
             let Some(pkg) = pkg else {
-                return Ok(());
+                return Ok(0);
             };
 
             // Re-run with selected package
@@ -39,20 +39,12 @@ pub async fn run_package(
 
             match result {
                 PrepareRunResult::Ready(path) => path,
-                _ => return Ok(()),
+                _ => return Ok(0),
             }
         }
     };
 
-    // Checksum verification for cached binary - prompt user on mismatch
-    // Note: prepare_run already handles checksum and returns error on mismatch,
-    // but for the interactive CLI we handle it specially
     let run_result = run::execute_binary(&output_path, args)?;
 
-    // For the `run` subcommand, propagate the exit code
-    if run_result.exit_code != 0 {
-        std::process::exit(run_result.exit_code);
-    }
-
-    Ok(())
+    Ok(run_result.exit_code)
 }

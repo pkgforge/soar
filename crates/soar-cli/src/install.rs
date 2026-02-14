@@ -128,7 +128,7 @@ async fn install_with_show(
     ctx: &SoarContext,
     packages: &[String],
     options: &InstallOptions,
-    _yes: bool,
+    yes: bool,
     force: bool,
     ask: bool,
     no_notes: bool,
@@ -152,8 +152,48 @@ async fn install_with_show(
             let results =
                 install::resolve_packages(ctx, std::slice::from_ref(package), options).await?;
             for result in results {
-                if let ResolveResult::Resolved(targets) = result {
-                    install_targets.extend(targets);
+                match result {
+                    ResolveResult::Resolved(targets) => {
+                        install_targets.extend(targets);
+                    }
+                    ResolveResult::Ambiguous(amb) => {
+                        let pkg = if yes {
+                            amb.candidates.into_iter().next()
+                        } else {
+                            select_package_interactively(amb.candidates, &amb.query)?
+                        };
+
+                        if let Some(pkg) = pkg {
+                            let specific_query =
+                                format!("{}#{}:{}", pkg.pkg_name, pkg.pkg_id, pkg.repo_name);
+                            let re_results =
+                                install::resolve_packages(ctx, &[specific_query], options).await?;
+                            for r in re_results {
+                                if let ResolveResult::Resolved(targets) = r {
+                                    install_targets.extend(targets);
+                                }
+                            }
+                        }
+                    }
+                    ResolveResult::NotFound(name) => {
+                        error!("Package {} not found", name);
+                    }
+                    ResolveResult::AlreadyInstalled {
+                        pkg_name,
+                        pkg_id,
+                        repo_name,
+                        version,
+                    } => {
+                        warn!(
+                            "{}#{}:{} ({}) is already installed - skipping",
+                            pkg_name, pkg_id, repo_name, version,
+                        );
+                        if !force {
+                            info!(
+                                "Hint: Use --force to reinstall, or --show to see other variants"
+                            );
+                        }
+                    }
                 }
             }
             continue;

@@ -106,8 +106,18 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
         );
     }
 
-    if !report.removed.is_empty() {
+    if !report.removed.is_empty() && report.failed.is_empty() {
         info!("Removed all broken packages");
+    } else if !report.failed.is_empty() {
+        tracing::warn!(
+            "Some broken packages could not be removed: {}",
+            report
+                .failed
+                .iter()
+                .map(|f| format!("{}#{}", f.pkg_name, f.pkg_id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
 
     Ok(())
