@@ -1,4 +1,18 @@
 
+## [0.11.1](https://github.com/pkgforge/soar/compare/v0.11.0...v0.11.1) - 2026-02-14
+
+### ⛰️  Features
+
+- *(lock)* Add locking for concurrent process safety ([#154](https://github.com/pkgforge/soar/pull/154)) - ([e3bef6a](https://github.com/pkgforge/soar/commit/e3bef6a09435e83a524b719f7b9f3e0d133c6b64))
+
+### 🐛 Bug Fixes
+
+- *(substitute)* Normalize package version - ([c66c4c2](https://github.com/pkgforge/soar/commit/c66c4c23ff9f68c7926c3ffb81ac18553f9ce604))
+
+### 🚜 Refactor
+
+- *(cli)* Use operations from shared crate ([#158](https://github.com/pkgforge/soar/pull/158)) - ([2a2f1be](https://github.com/pkgforge/soar/commit/2a2f1be5db831de95c2d99e114d02c80870f2165))
+
 ## [0.11.0](https://github.com/pkgforge/soar/compare/v0.10.3...v0.11.0) - 2026-02-04
 
 ### ⛰️  Features

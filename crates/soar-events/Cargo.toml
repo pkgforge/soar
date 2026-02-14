@@ -1,6 +1,6 @@
 [package]
 name = "soar-events"
-version = "0.0.0"
+version = "0.0.1"
 description = "Event system for soar package manager"
 authors.workspace = true
 license.workspace = true

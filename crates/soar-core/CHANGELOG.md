@@ -1,4 +1,10 @@
 
+## [0.13.1](https://github.com/pkgforge/soar/compare/soar-core-v0.13.0...soar-core-v0.13.1) - 2026-02-14
+
+### 🐛 Bug Fixes
+
+- *(substitute)* Normalize package version - ([c66c4c2](https://github.com/pkgforge/soar/commit/c66c4c23ff9f68c7926c3ffb81ac18553f9ce604))
+
 ## [0.13.0](https://github.com/pkgforge/soar/compare/soar-core-v0.12.0...soar-core-v0.13.0) - 2026-02-04
 
 ### ⛰️  Features

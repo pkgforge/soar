@@ -1,4 +1,10 @@
 
+## [0.5.1](https://github.com/pkgforge/soar/compare/soar-config-v0.5.0...soar-config-v0.5.1) - 2026-02-14
+
+### ⚙️ Miscellaneous Tasks
+
+- Updated the following local packages: soar-utils - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-config-v0.4.0...soar-config-v0.5.0) - 2026-02-04
 
 ### ⛰️  Features
