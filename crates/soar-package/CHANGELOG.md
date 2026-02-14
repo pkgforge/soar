@@ -1,4 +1,10 @@
 
+## [0.2.4](https://github.com/pkgforge/soar/compare/soar-package-v0.2.3...soar-package-v0.2.4) - 2026-02-14
+
+### 🐛 Bug Fixes
+
+- *(desktop)* Preserve flags/args in Exec/TryExec - ([465422d](https://github.com/pkgforge/soar/commit/465422ddef77b1d7d69015cb1bcfa5643d86845f))
+
 ## [0.2.3](https://github.com/pkgforge/soar/compare/soar-package-v0.2.2...soar-package-v0.2.3) - 2026-02-04
 
 ### ⛰️  Features

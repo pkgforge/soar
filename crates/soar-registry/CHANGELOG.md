@@ -1,4 +1,10 @@
 
+## [0.3.1](https://github.com/pkgforge/soar/compare/soar-registry-v0.3.0...soar-registry-v0.3.1) - 2026-02-14
+
+### 🚜 Refactor
+
+- *(cli)* Use operations from shared crate ([#158](https://github.com/pkgforge/soar/pull/158)) - ([2a2f1be](https://github.com/pkgforge/soar/commit/2a2f1be5db831de95c2d99e114d02c80870f2165))
+
 ## [0.3.0](https://github.com/pkgforge/soar/compare/soar-registry-v0.2.2...soar-registry-v0.3.0) - 2026-02-04
 
 ### ⛰️  Features
