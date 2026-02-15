@@ -2229,6 +2229,7 @@ dependencies = [
  "soar-events",
  "soar-operations",
  "soar-package",
+ "soar-registry",
  "soar-utils",
  "tabled",
  "terminal_size",

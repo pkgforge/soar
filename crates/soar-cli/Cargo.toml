@@ -35,6 +35,7 @@ soar-dl = { workspace = true }
 soar-events = { workspace = true }
 soar-operations = { workspace = true }
 soar-package = { workspace = true }
+soar-registry = { workspace = true }
 soar-utils = { workspace = true }
 tabled = { workspace = true }
 terminal_size = { workspace = true }

@@ -7,6 +7,7 @@ use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};
 use inspect::{inspect_log, InspectType};
 use install::install_packages;
+use json2db::json_to_db;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
 use logging::setup_logging;
 use progress::{create_download_job, handle_download_progress, spawn_event_handler, ProgressGuard};
@@ -37,6 +38,7 @@ mod download;
 mod health;
 mod inspect;
 mod install;
+mod json2db;
 mod list;
 mod logging;
 mod progress;
@@ -450,6 +452,13 @@ async fn handle_cli() -> SoarResult<()> {
                 }
                 cli::Commands::DefPackages => {
                     soar_config::packages::generate_default_packages_config()?;
+                }
+                cli::Commands::Json2Db {
+                    input,
+                    output,
+                    repo,
+                } => {
+                    json_to_db(&input, &output, repo.as_deref())?;
                 }
                 _ => unreachable!(),
             }

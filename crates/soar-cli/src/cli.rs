@@ -460,4 +460,20 @@ pub enum Commands {
     /// Generate default packages configuration
     #[clap(name = "defpackages")]
     DefPackages,
+
+    /// Convert JSON metadata to SQLite database
+    #[clap(name = "json2db")]
+    Json2Db {
+        /// Path to input JSON metadata file
+        #[arg(required = true, value_hint = ValueHint::FilePath)]
+        input: String,
+
+        /// Path to output SQLite database file
+        #[arg(required = true, value_hint = ValueHint::FilePath)]
+        output: String,
+
+        /// Repository name (default: "custom")
+        #[arg(short, long)]
+        repo: Option<String>,
+    },
 }
