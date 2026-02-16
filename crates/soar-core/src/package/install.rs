@@ -10,7 +10,7 @@ use std::{
 use chrono::Utc;
 use serde_json::json;
 use soar_config::{
-    config::{get_config, is_system_mode},
+    config::Config,
     packages::{BinaryMapping, BuildConfig, PackageHooks, SandboxConfig},
 };
 use soar_db::{
@@ -28,7 +28,6 @@ use soar_utils::{
     error::FileSystemResult,
     fs::{safe_remove, walk_dir},
     hash::calculate_checksum,
-    path::icons_dir,
 };
 use tracing::{debug, trace, warn};
 
@@ -120,6 +119,7 @@ pub struct PackageInstaller {
     install_dir: PathBuf,
     progress_callback: Option<std::sync::Arc<dyn Fn(Progress) + Send + Sync>>,
     db: DieselDatabase,
+    config: Config,
     globs: Vec<String>,
     nested_extract: Option<String>,
     extract_root: Option<String>,
@@ -155,6 +155,7 @@ impl PackageInstaller {
         progress_callback: Option<std::sync::Arc<dyn Fn(Progress) + Send + Sync>>,
         db: DieselDatabase,
         globs: Vec<String>,
+        config: Config,
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
@@ -164,7 +165,7 @@ impl PackageInstaller {
             install_dir = %install_dir.display(),
             "creating package installer"
         );
-        let profile = get_config().default_profile.clone();
+        let profile = config.default_profile.clone();
 
         // Early validation of extract_root and nested_extract paths
         if let Some(ref extract_root) = target.extract_root {
@@ -256,6 +257,7 @@ impl PackageInstaller {
             install_dir,
             progress_callback,
             db,
+            config,
             globs,
             nested_extract: target.nested_extract.clone(),
             extract_root: target.extract_root.clone(),
@@ -348,7 +350,7 @@ impl PackageInstaller {
             self.check_build_dependencies(&build_config.dependencies)?;
         }
 
-        let bin_dir = get_config().get_bin_path()?;
+        let bin_dir = self.config.get_bin_path()?;
         let nproc = std::thread::available_parallelism()
             .map(|p| p.get().to_string())
             .unwrap_or_else(|_| "1".to_string());
@@ -495,7 +497,7 @@ impl PackageInstaller {
             trace!(url = url.as_str(), "using OCI/GHCR download");
             let mut dl = OciDownload::new(url.as_str())
                 .output(output_path.to_string_lossy())
-                .parallel(get_config().ghcr_concurrency.unwrap_or(8))
+                .parallel(self.config.ghcr_concurrency.unwrap_or(8))
                 .overwrite(OverwriteMode::Skip);
 
             if let Some(ref cb) = self.progress_callback {
@@ -835,7 +837,7 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(&get_config().get_desktop_path()?, &mut remove_action)?;
+                walk_dir(&self.config.get_desktop_path()?, &mut remove_action)?;
 
                 let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                     if let Ok(real_path) = fs::read_link(path) {
@@ -845,7 +847,7 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(icons_dir(is_system_mode()), &mut remove_action)?;
+                walk_dir(self.config.get_icons_path(), &mut remove_action)?;
 
                 if let Some(ref provides) = alt_pkg.provides {
                     for provide in provides {
@@ -856,7 +858,7 @@ impl PackageInstaller {
                                     | Some(ProvideStrategy::KeepBoth)
                             );
                             if is_symlink {
-                                let target_name = get_config().get_bin_path()?.join(target);
+                                let target_name = self.config.get_bin_path()?.join(target);
                                 if target_name.is_symlink() || target_name.is_file() {
                                     std::fs::remove_file(&target_name).with_context(|| {
                                         format!("removing provide {}", target_name.display())

@@ -323,7 +323,7 @@ pub async fn execute_apply(
             });
 
             let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
-            match PackageRemover::new(pkg.clone(), diesel_db.clone())
+            match PackageRemover::new(pkg.clone(), diesel_db.clone(), ctx.config().clone())
                 .await
                 .with_hooks(hooks)
                 .with_sandbox(sandbox)

@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{LazyLock, RwLock},
 };
 
@@ -94,6 +94,12 @@ pub struct Config {
 
     /// Display settings for output formatting
     pub display: Option<DisplaySettings>,
+
+    /// Whether this config is for system mode.
+    /// Not serialized - set programmatically.
+    #[serde(skip)]
+    #[documented(skip)]
+    pub system_mode: bool,
 }
 
 pub static CONFIG: LazyLock<RwLock<Option<Config>>> = LazyLock::new(|| RwLock::new(None));
@@ -173,6 +179,16 @@ pub fn set_current_profile(name: &str) -> Result<()> {
 }
 
 impl Config {
+    /// Returns whether this config is for system mode.
+    pub fn is_system(&self) -> bool {
+        self.system_mode
+    }
+
+    /// Returns the icons directory path based on system mode.
+    pub fn get_icons_path(&self) -> std::path::PathBuf {
+        soar_utils::path::icons_dir(self.system_mode)
+    }
+
     pub fn default_config<T: AsRef<str>>(selected_repos: &[T]) -> Self {
         trace!("creating default configuration");
         let soar_root = if is_system_mode() {
@@ -259,6 +275,98 @@ impl Config {
             desktop_integration: None,
             sync_interval: None,
             display: None,
+            system_mode: is_system_mode(),
+        }
+    }
+
+    /// Creates a default configuration for the given system mode.
+    pub fn default_config_for_mode<T: AsRef<str>>(selected_repos: &[T], system_mode: bool) -> Self {
+        trace!(
+            "creating default configuration for system_mode={}",
+            system_mode
+        );
+        let soar_root = if system_mode {
+            std::env::var("SOAR_ROOT").unwrap_or_else(|_| system_root().display().to_string())
+        } else {
+            std::env::var("SOAR_ROOT")
+                .unwrap_or_else(|_| format!("{}/soar", xdg_data_home().display()))
+        };
+        trace!(soar_root = soar_root, "resolved SOAR_ROOT");
+
+        let default_profile = Profile {
+            root_path: soar_root.clone(),
+            packages_path: Some(format!("{soar_root}/packages")),
+        };
+        let default_profile_name = "default".to_string();
+
+        let current_platform = platform();
+        let mut repositories = Vec::new();
+        let selected_set: HashSet<&str> = selected_repos.iter().map(|s| s.as_ref()).collect();
+
+        for repo_info in get_platform_repositories().into_iter() {
+            if !repo_info.platforms.contains(&current_platform.as_str()) {
+                continue;
+            }
+
+            if !selected_repos.is_empty() && !selected_set.contains(repo_info.name) {
+                continue;
+            }
+
+            repositories.push(Repository {
+                name: repo_info.name.to_string(),
+                url: repo_info.url_template.replace("{}", &current_platform),
+                pubkey: repo_info.pubkey.map(String::from),
+                desktop_integration: repo_info.desktop_integration,
+                enabled: repo_info.enabled,
+                signature_verification: repo_info.signature_verification,
+                sync_interval: repo_info.sync_interval.map(String::from),
+            });
+        }
+
+        let repositories = if selected_repos.is_empty() {
+            repositories
+        } else {
+            repositories
+                .into_iter()
+                .filter(|repo| selected_set.contains(repo.name.as_str()))
+                .collect()
+        };
+
+        if repositories.is_empty() {
+            if selected_repos.is_empty() {
+                warn!(
+                    "No official repositories available for {}. You can add custom repositories in your config file.",
+                    current_platform
+                );
+            } else {
+                warn!("No repositories enabled.");
+            }
+        }
+
+        Self {
+            profile: HashMap::from([(default_profile_name.clone(), default_profile)]),
+            default_profile: default_profile_name,
+
+            bin_path: Some(format!("{soar_root}/bin")),
+            desktop_path: None,
+            cache_path: Some(format!("{soar_root}/cache")),
+            db_path: Some(format!("{soar_root}/db")),
+            repositories_path: Some(format!("{soar_root}/repos")),
+            portable_dirs: Some(format!("{soar_root}/portable-dirs")),
+
+            repositories,
+            parallel: Some(true),
+            parallel_limit: Some(4),
+            search_limit: Some(20),
+            ghcr_concurrency: Some(8),
+            cross_repo_updates: Some(false),
+            install_patterns: Some(default_install_patterns()),
+
+            signature_verification: None,
+            desktop_integration: None,
+            sync_interval: None,
+            display: None,
+            system_mode,
         }
     }
 
@@ -285,6 +393,8 @@ impl Config {
             Err(err) => return Err(ConfigError::IoError(err)),
         };
 
+        // Inherit system_mode from the global flag for backward compat
+        config.system_mode = is_system_mode();
         config.resolve()?;
         debug!(
             profile = config.default_profile,
@@ -382,7 +492,35 @@ impl Config {
         if let Some(desktop_path) = &self.desktop_path {
             return Ok(resolve_path(desktop_path)?);
         }
-        Ok(soar_utils::path::desktop_dir(is_system_mode()))
+        Ok(soar_utils::path::desktop_dir(self.system_mode))
+    }
+
+    /// Creates a new configuration from a specific config file path with the given system mode.
+    pub fn new_for_mode(config_path: &Path, system_mode: bool) -> Result<Self> {
+        debug!(path = %config_path.display(), system_mode, "loading configuration for mode");
+
+        let mut config = match fs::read_to_string(config_path) {
+            Ok(content) => {
+                trace!("parsing configuration file");
+                toml::from_str(&content)?
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                debug!("config file not found, using defaults");
+                Self::default_config_for_mode::<&str>(&[], system_mode)
+            }
+            Err(err) => return Err(ConfigError::IoError(err)),
+        };
+
+        config.system_mode = system_mode;
+        config.resolve()?;
+        debug!(
+            profile = config.default_profile,
+            repos = config.repositories.len(),
+            "configuration loaded for system_mode={}",
+            system_mode
+        );
+
+        Ok(config)
     }
 
     pub fn get_db_path(&self) -> Result<PathBuf> {

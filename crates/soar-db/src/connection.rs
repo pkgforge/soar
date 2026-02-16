@@ -59,6 +59,29 @@ impl DbConnection {
         })
     }
 
+    /// Opens a database connection in read-only mode.
+    ///
+    /// Uses `immutable=1` to skip all locking and WAL handling, which avoids
+    /// needing to create `-shm`/`-wal` files in root-owned directories.
+    /// Skips WAL mode, migrations, and JSON-to-JSONB conversion since
+    /// all of those require write access. Suitable for reading system
+    /// databases owned by root.
+    pub fn open_readonly<P: AsRef<Path>>(path: P) -> Result<Self, ConnectionError> {
+        let path_str = format!(
+            "file:{}?mode=ro&immutable=1",
+            path.as_ref().to_string_lossy()
+        );
+        debug!(path = %path_str, "opening database in read-only mode");
+
+        let conn = SqliteConnection::establish(&path_str)?;
+        trace!("read-only database connection established");
+
+        debug!(path = %path_str, "read-only database opened successfully");
+        Ok(Self {
+            conn,
+        })
+    }
+
     /// Opens a database connection without running migrations.
     ///
     /// Use this when you know the database is already migrated.

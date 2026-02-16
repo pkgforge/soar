@@ -5,11 +5,11 @@ use std::{
 };
 
 use soar_config::{
-    config::{get_config, is_system_mode},
+    config::Config,
     packages::{PackageHooks, SandboxConfig},
 };
 use soar_db::{models::types::ProvideStrategy, repository::core::CoreRepository};
-use soar_utils::{error::FileSystemResult, fs::walk_dir, path::icons_dir};
+use soar_utils::{error::FileSystemResult, fs::walk_dir};
 use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
@@ -40,12 +40,13 @@ use crate::{
 pub struct PackageRemover {
     package: InstalledPackage,
     db: DieselDatabase,
+    config: Config,
     hooks: Option<PackageHooks>,
     sandbox: Option<SandboxConfig>,
 }
 
 impl PackageRemover {
-    pub async fn new(package: InstalledPackage, db: DieselDatabase) -> Self {
+    pub async fn new(package: InstalledPackage, db: DieselDatabase, config: Config) -> Self {
         trace!(
             pkg_name = package.pkg_name,
             pkg_id = package.pkg_id,
@@ -54,6 +55,7 @@ impl PackageRemover {
         Self {
             package,
             db,
+            config,
             hooks: None,
             sandbox: None,
         }
@@ -118,7 +120,7 @@ impl PackageRemover {
         // remove only if the installation was successful
         if self.package.is_installed {
             trace!("package was installed, removing binaries and links");
-            let bin_path = get_config().get_bin_path()?;
+            let bin_path = self.config.get_bin_path()?;
             let def_bin = bin_path.join(&self.package.pkg_name);
             if def_bin.is_symlink() && def_bin.is_file() {
                 trace!("removing binary symlink: {}", def_bin.display());
@@ -161,7 +163,7 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            walk_dir(&get_config().get_desktop_path()?, &mut remove_action)?;
+            walk_dir(&self.config.get_desktop_path()?, &mut remove_action)?;
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                 if let Ok(real_path) = fs::read_link(path) {
@@ -172,7 +174,7 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            walk_dir(icons_dir(is_system_mode()), &mut remove_action)?;
+            walk_dir(self.config.get_icons_path(), &mut remove_action)?;
         }
 
         // Calculate directory size before removal for logging

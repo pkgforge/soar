@@ -6,7 +6,7 @@ use soar_utils::fs::read_file_signature;
 use squishy::appimage::{AppImage, AppImageEntryKind};
 
 use super::{
-    common::{symlink_desktop, symlink_icon},
+    common::{symlink_desktop_with_config, symlink_icon_with_mode},
     PNG_MAGIC_BYTES,
 };
 use crate::{
@@ -36,6 +36,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     package: &T,
     has_icon: bool,
     has_desktop: bool,
+    config: &soar_config::config::Config,
 ) -> Result<()> {
     if has_icon && has_desktop {
         return Ok(());
@@ -61,7 +62,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
                 fs::rename(&dest, &final_path)
                     .with_context(|| format!("renaming from {dest} to {final_path}"))?;
 
-                symlink_icon(final_path)?;
+                symlink_icon_with_mode(final_path, config.is_system())?;
             }
         }
     }
@@ -71,7 +72,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
             if entry.kind == AppImageEntryKind::File {
                 let dest = format!("{}/{}.desktop", install_dir.display(), pkg_name);
                 let _ = appimage.write_entry(&entry, &dest);
-                symlink_desktop(dest, package)?;
+                symlink_desktop_with_config(dest, package, config)?;
             }
         }
     }

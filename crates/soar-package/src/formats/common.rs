@@ -13,7 +13,7 @@ use std::{
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use regex::Regex;
-use soar_config::config::{get_config, is_system_mode};
+use soar_config::config::get_config;
 use soar_utils::{
     fs::{create_symlink, walk_dir},
     path::icons_dir,
@@ -84,6 +84,13 @@ fn normalize_image(image: DynamicImage) -> DynamicImage {
 ///
 /// Returns [`PackageError`] if image processing or symlink creation fails.
 pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
+    symlink_icon_with_mode(real_path, false)
+}
+
+/// Creates a symlink for an icon in the appropriate icons directory.
+///
+/// Uses the provided `system_mode` flag to determine the icons directory.
+pub fn symlink_icon_with_mode<P: AsRef<Path>>(real_path: P, system_mode: bool) -> Result<PathBuf> {
     let real_path = real_path.as_ref();
     trace!(path = %real_path.display(), "creating icon symlink");
     let icon_name = real_path.file_stem().unwrap();
@@ -105,7 +112,7 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
         (w, h)
     };
 
-    let final_path = icons_dir(is_system_mode())
+    let final_path = icons_dir(system_mode)
         .join(format!("{w}x{h}"))
         .join("apps")
         .join(format!(
@@ -146,6 +153,18 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     real_path: P,
     package: &T,
 ) -> Result<PathBuf> {
+    symlink_desktop_with_config(real_path, package, &get_config())
+}
+
+/// Creates a symlink for a desktop file using the provided config.
+///
+/// Uses the provided `config` to determine bin and desktop paths
+/// instead of the global config.
+pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
+    real_path: P,
+    package: &T,
+    config: &soar_config::config::Config,
+) -> Result<PathBuf> {
     let pkg_name = package.pkg_name();
     let real_path = real_path.as_ref();
     trace!(path = %real_path.display(), pkg_name = pkg_name, "creating desktop file symlink");
@@ -153,7 +172,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         .with_context(|| format!("reading content of desktop file: {}", real_path.display()))?;
     let file_name = real_path.file_stem().unwrap();
 
-    let bin_path = get_config().get_bin_path()?;
+    let bin_path = config.get_bin_path()?;
 
     let final_content = {
         let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
@@ -189,7 +208,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
         .write_all(final_content.as_bytes())
         .with_context(|| format!("writing desktop file to {}", real_path.display()))?;
 
-    let final_path = get_config()
+    let final_path = config
         .get_desktop_path()?
         .join(format!("{}-soar.desktop", file_name.to_string_lossy()));
 
@@ -345,6 +364,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     portable_config: Option<&str>,
     portable_share: Option<&str>,
     portable_cache: Option<&str>,
+    config: &soar_config::config::Config,
 ) -> Result<()> {
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
@@ -353,13 +373,15 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| install_dir.join(pkg_name));
 
+    let system_mode = config.is_system();
+
     let mut has_desktop = false;
     let mut has_icon = false;
     let mut symlink_action = |path: &Path| -> Result<()> {
         let ext = path.extension();
         if ext == Some(OsStr::new("desktop")) {
             has_desktop = true;
-            symlink_desktop(path, package)?;
+            symlink_desktop_with_config(path, package, config)?;
         }
         Ok(())
     };
@@ -369,7 +391,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         let ext = path.extension();
         if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
             has_icon = true;
-            symlink_icon(path)?;
+            symlink_icon_with_mode(path, system_mode)?;
         }
         Ok(())
     };
@@ -385,8 +407,15 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         PackageFormat::AppImage | PackageFormat::RunImage => {
             if matches!(file_type, PackageFormat::AppImage) {
                 trace!("integrating AppImage resources");
-                let _ = integrate_appimage(install_dir, &bin_path, package, has_icon, has_desktop)
-                    .await;
+                let _ = integrate_appimage(
+                    install_dir,
+                    &bin_path,
+                    package,
+                    has_icon,
+                    has_desktop,
+                    config,
+                )
+                .await;
             }
             trace!("setting up portable directories");
             setup_portable_dir(

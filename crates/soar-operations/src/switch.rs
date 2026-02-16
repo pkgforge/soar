@@ -150,6 +150,7 @@ pub async fn switch_variant(
             installed_pkg.portable_config.as_deref(),
             installed_pkg.portable_share.as_deref(),
             installed_pkg.portable_cache.as_deref(),
+            config,
         )
         .await?;
     } else if has_portable {

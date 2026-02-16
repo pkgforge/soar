@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
-use soar_config::config::is_system_mode;
 use soar_core::{package::remove::PackageRemover, SoarResult};
 use soar_db::repository::core::CoreRepository;
 use soar_events::{RemoveStage, SoarEvent};
-use soar_utils::{error::FileSystemResult, fs::walk_dir, path::icons_dir};
+use soar_utils::{error::FileSystemResult, fs::walk_dir};
 use tracing::debug;
 
 use crate::{
@@ -60,7 +59,7 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
 
         let (hooks, sandbox) = get_package_hooks(&pkg_name);
         let installed_pkg = package.into();
-        let remover = PackageRemover::new(installed_pkg, diesel_db.clone())
+        let remover = PackageRemover::new(installed_pkg, diesel_db.clone(), ctx.config().clone())
             .await
             .with_hooks(hooks)
             .with_sandbox(sandbox);
@@ -160,7 +159,7 @@ fn get_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
     };
 
     walk_dir(&desktop_path, &mut soar_check)?;
-    walk_dir(icons_dir(is_system_mode()), &mut soar_check)?;
+    walk_dir(config.get_icons_path(), &mut soar_check)?;
 
     Ok(broken)
 }

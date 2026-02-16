@@ -181,7 +181,7 @@ pub async fn perform_removal(
         );
 
         let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
-        let remover = PackageRemover::new(pkg.clone(), diesel_db.clone())
+        let remover = PackageRemover::new(pkg.clone(), diesel_db.clone(), ctx.config().clone())
             .await
             .with_hooks(hooks)
             .with_sandbox(sandbox);

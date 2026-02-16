@@ -29,6 +29,25 @@ impl DieselDatabase {
         })
     }
 
+    /// Opens a core database connection in read-only mode (no WAL, no migrations).
+    pub fn open_core_readonly<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let conn = DbConnection::open_readonly(path)
+            .map_err(|e| SoarError::Custom(format!("opening core database (readonly): {}", e)))?;
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+        })
+    }
+
+    /// Opens a metadata database connection in read-only mode (no WAL, no migrations).
+    pub fn open_metadata_readonly<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let conn = DbConnection::open_readonly(path).map_err(|e| {
+            SoarError::Custom(format!("opening metadata database (readonly): {}", e))
+        })?;
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+        })
+    }
+
     /// Opens a metadata database connection.
     pub fn open_metadata<P: AsRef<Path>>(path: P) -> Result<Self> {
         let conn = DbConnection::open_metadata(path)
@@ -100,6 +119,19 @@ impl MetadataManager {
             repo_name = repo_name,
             total_repos = self.databases.len(),
             "metadata database added"
+        );
+        Ok(())
+    }
+
+    /// Adds a metadata database for a repository in read-only mode.
+    pub fn add_repo_readonly<P: AsRef<Path>>(&mut self, repo_name: &str, path: P) -> Result<()> {
+        debug!(repo_name = repo_name, path = %path.as_ref().display(), "adding metadata database to manager (readonly)");
+        let db = DieselDatabase::open_metadata_readonly(path)?;
+        self.databases.push((repo_name.to_string(), db));
+        trace!(
+            repo_name = repo_name,
+            total_repos = self.databases.len(),
+            "readonly metadata database added"
         );
         Ok(())
     }

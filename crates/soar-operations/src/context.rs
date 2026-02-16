@@ -256,6 +256,11 @@ impl SoarContext {
 
     fn create_diesel_core_db(&self) -> SoarResult<DieselDatabase> {
         let core_db_file = self.config().get_db_path()?.join("soar.db");
+
+        if self.config().is_system() {
+            return DieselDatabase::open_core_readonly(&core_db_file);
+        }
+
         if !core_db_file.exists() {
             if let Some(parent) = core_db_file.parent() {
                 std::fs::create_dir_all(parent)
@@ -269,7 +274,8 @@ impl SoarContext {
     }
 
     fn create_metadata_manager(&self) -> SoarResult<MetadataManager> {
-        debug!("creating metadata manager");
+        let readonly = self.config().is_system();
+        debug!(readonly = readonly, "creating metadata manager");
         let mut manager = MetadataManager::new();
 
         for repo in &self.inner.config.repositories {
@@ -280,7 +286,11 @@ impl SoarContext {
                         repo_name = repo.name,
                         "adding repository to metadata manager"
                     );
-                    manager.add_repo(&repo.name, metadata_db)?;
+                    if readonly {
+                        manager.add_repo_readonly(&repo.name, metadata_db)?;
+                    } else {
+                        manager.add_repo(&repo.name, metadata_db)?;
+                    }
                 }
             }
         }

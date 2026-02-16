@@ -863,6 +863,7 @@ async fn install_single_package(
         Some(progress_callback),
         core_db.clone(),
         install_patterns.to_vec(),
+        config.clone(),
     )
     .await?;
 
@@ -976,6 +977,7 @@ async fn install_single_package(
             eff_portable_config,
             eff_portable_share,
             eff_portable_cache,
+            ctx.config(),
         )
         .await?;
     }
