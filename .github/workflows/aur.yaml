@@ -1,0 +1,292 @@
+name: aur publish
+
+on:
+  workflow_run:
+    workflows: ["soar release", "soar nightly"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to update"
+        required: true
+        type: choice
+        options:
+          - all-stable
+          - soar
+          - soar-bin
+          - soar-nightly-bin
+      dry_run:
+        description: "Generate PKGBUILDs without pushing to AUR"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  update-soar:
+    name: Update soar (source)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.package == 'all-stable' || github.event.inputs.package == 'soar'))
+      ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.name == 'soar release')
+    steps:
+      - name: Get latest stable version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --repo "${{ github.repository }}" --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "No stable release found"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $VERSION"
+
+      - name: Clone AUR package
+        run: git clone https://aur.archlinux.org/soar.git aur-soar
+
+      - name: Update PKGBUILD
+        working-directory: aur-soar
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+      - name: Update checksums
+        run: |
+          docker run --rm -v "$PWD/aur-soar:/pkg" -w /pkg archlinux:base bash -lc '
+            set -euo pipefail
+            pacman -Sy --noconfirm --needed pacman-contrib >/dev/null
+            useradd -m build
+            chown -R build:build /pkg
+            su build -c "updpkgsums"
+          '
+
+      - name: Generate .SRCINFO
+        run: |
+          docker run --rm -v "$PWD/aur-soar:/pkg" -w /pkg archlinux:base bash -lc '
+            set -euo pipefail
+            pacman -Sy --noconfirm --needed base-devel >/dev/null
+            useradd -m build
+            chown -R build:build /pkg
+            su build -c "makepkg --printsrcinfo > .SRCINFO"
+          '
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: soar-pkgbuild
+          path: |
+            aur-soar/PKGBUILD
+            aur-soar/.SRCINFO
+
+      - name: Push to AUR
+        if: >-
+          (github.event_name == 'workflow_run') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
+        working-directory: aur-soar
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ secrets.AUR_GIT_USERNAME || 'github-actions[bot]' }}
+          GIT_EMAIL: ${{ secrets.AUR_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" .
+
+          if git diff --quiet; then
+            echo "No changes to push."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          echo "Host aur.archlinux.org" >> ~/.ssh/config
+          echo "  IdentityFile ~/.ssh/aur" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking accept-new" >> ~/.ssh/config
+
+          git remote set-url origin ssh://aur@aur.archlinux.org/soar.git
+          git config user.name "$GIT_USERNAME"
+          git config user.email "$GIT_EMAIL"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to ${{ steps.version.outputs.version }}"
+          git push
+
+  update-soar-bin:
+    name: Update soar-bin (binary)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.package == 'all-stable' || github.event.inputs.package == 'soar-bin'))
+      ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.name == 'soar release')
+    steps:
+      - name: Get latest stable version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --repo "${{ github.repository }}" --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "No stable release found"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $VERSION"
+
+      - name: Clone AUR package
+        run: git clone https://aur.archlinux.org/soar-bin.git aur-soar-bin
+
+      - name: Update PKGBUILD
+        working-directory: aur-soar-bin
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+      - name: Update checksums
+        run: |
+          docker run --rm -v "$PWD/aur-soar-bin:/pkg" -w /pkg archlinux:base bash -lc '
+            set -euo pipefail
+            pacman -Sy --noconfirm --needed pacman-contrib >/dev/null
+            useradd -m build
+            chown -R build:build /pkg
+            su build -c "updpkgsums"
+          '
+
+      - name: Generate .SRCINFO
+        run: |
+          docker run --rm -v "$PWD/aur-soar-bin:/pkg" -w /pkg archlinux:base bash -lc '
+            set -euo pipefail
+            pacman -Sy --noconfirm --needed base-devel >/dev/null
+            useradd -m build
+            chown -R build:build /pkg
+            su build -c "makepkg --printsrcinfo > .SRCINFO"
+          '
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: soar-bin-pkgbuild
+          path: |
+            aur-soar-bin/PKGBUILD
+            aur-soar-bin/.SRCINFO
+
+      - name: Push to AUR
+        if: >-
+          (github.event_name == 'workflow_run') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
+        working-directory: aur-soar-bin
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ secrets.AUR_GIT_USERNAME || 'github-actions[bot]' }}
+          GIT_EMAIL: ${{ secrets.AUR_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" .
+
+          if git diff --quiet; then
+            echo "No changes to push."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          echo "Host aur.archlinux.org" >> ~/.ssh/config
+          echo "  IdentityFile ~/.ssh/aur" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking accept-new" >> ~/.ssh/config
+
+          git remote set-url origin ssh://aur@aur.archlinux.org/soar-bin.git
+          git config user.name "$GIT_USERNAME"
+          git config user.email "$GIT_EMAIL"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to ${{ steps.version.outputs.version }}"
+          git push
+
+  update-soar-nightly-bin:
+    name: Update soar-nightly-bin
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.package == 'soar-nightly-bin'))
+      ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.name == 'soar nightly')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Get nightly version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+          else
+            SHORT_SHA=$(git rev-parse --short HEAD)
+          fi
+          echo "version=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "Detected nightly version: $SHORT_SHA"
+
+      - name: Clone AUR package
+        run: git clone https://aur.archlinux.org/soar-nightly-bin.git aur-soar-nightly-bin
+
+      - name: Update PKGBUILD
+        working-directory: aur-soar-nightly-bin
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+      - name: Generate .SRCINFO
+        run: |
+          docker run --rm -v "$PWD/aur-soar-nightly-bin:/pkg" -w /pkg archlinux:base bash -lc '
+            set -euo pipefail
+            pacman -Sy --noconfirm --needed base-devel >/dev/null
+            useradd -m build
+            chown -R build:build /pkg
+            su build -c "makepkg --printsrcinfo > .SRCINFO"
+          '
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: soar-nightly-bin-pkgbuild
+          path: |
+            aur-soar-nightly-bin/PKGBUILD
+            aur-soar-nightly-bin/.SRCINFO
+
+      - name: Push to AUR
+        if: >-
+          (github.event_name == 'workflow_run') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
+        working-directory: aur-soar-nightly-bin
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ secrets.AUR_GIT_USERNAME || 'github-actions[bot]' }}
+          GIT_EMAIL: ${{ secrets.AUR_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" .
+
+          if git diff --quiet; then
+            echo "No changes to push."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          echo "Host aur.archlinux.org" >> ~/.ssh/config
+          echo "  IdentityFile ~/.ssh/aur" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking accept-new" >> ~/.ssh/config
+
+          git remote set-url origin ssh://aur@aur.archlinux.org/soar-nightly-bin.git
+          git config user.name "$GIT_USERNAME"
+          git config user.email "$GIT_EMAIL"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to nightly (${{ steps.version.outputs.version }})"
+          git push
