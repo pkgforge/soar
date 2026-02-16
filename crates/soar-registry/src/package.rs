@@ -229,9 +229,6 @@ pub struct RemotePackage {
     #[serde(default, deserialize_with = "flexible_bool")]
     pub portable: Option<bool>,
 
-    #[serde(default, deserialize_with = "flexible_bool")]
-    pub recurse_provides: Option<bool>,
-
     pub repology: Option<Vec<String>>,
     pub snapshots: Option<Vec<String>>,
     pub replaces: Option<Vec<String>>,

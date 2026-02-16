@@ -1,6 +1,7 @@
 CREATE TABLE packages (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   pkg_id TEXT NOT NULL COLLATE NOCASE,
+  pkg_family TEXT COLLATE NOCASE,
   pkg_name TEXT NOT NULL COLLATE NOCASE,
   pkg_type TEXT COLLATE NOCASE,
   pkg_webpage TEXT,
@@ -35,6 +36,5 @@ CREATE TABLE packages (
   soar_syms BOOLEAN NOT NULL DEFAULT false,
   desktop_integration BOOLEAN,
   portable BOOLEAN,
-  recurse_provides BOOLEAN,
   UNIQUE (pkg_id, pkg_name, version)
 );

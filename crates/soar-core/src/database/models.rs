@@ -65,7 +65,6 @@ pub struct Package {
     pub deprecated: bool,
     pub desktop_integration: Option<bool>,
     pub portable: Option<bool>,
-    pub recurse_provides: Option<bool>,
 }
 
 impl PackageExt for Package {
@@ -243,7 +242,7 @@ impl From<soar_db::models::metadata::Package> for Package {
             disabled_reason: None,
             pkg_id: pkg.pkg_id,
             pkg_name: pkg.pkg_name,
-            pkg_family: None,
+            pkg_family: pkg.pkg_family,
             pkg_type: pkg.pkg_type,
             pkg_webpage: pkg.pkg_webpage,
             app_id: pkg.app_id,
@@ -280,7 +279,6 @@ impl From<soar_db::models::metadata::Package> for Package {
             deprecated: false,
             desktop_integration: pkg.desktop_integration,
             portable: pkg.portable,
-            recurse_provides: pkg.recurse_provides,
         }
     }
 }

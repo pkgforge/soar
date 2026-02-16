@@ -510,7 +510,6 @@ impl MetadataRepository {
             vec.iter()
                 .filter_map(|p| {
                     let include = *p == package.pkg_name
-                        || matches!(package.recurse_provides, Some(true))
                         || p.strip_prefix(&package.pkg_name).is_some_and(|rest| {
                             PROVIDES_DELIMITERS.iter().any(|d| rest.starts_with(d))
                         });
@@ -523,6 +522,7 @@ impl MetadataRepository {
         let new_package = NewPackage {
             pkg_id: &package.pkg_id,
             pkg_name: &package.pkg_name,
+            pkg_family: package.pkg_family.as_deref(),
             pkg_type: package.pkg_type.as_deref(),
             pkg_webpage: package.pkg_webpage.as_deref(),
             app_id: package.app_id.as_deref(),
@@ -555,7 +555,6 @@ impl MetadataRepository {
             soar_syms: package.soar_syms.unwrap_or(false),
             desktop_integration: package.desktop_integration,
             portable: package.portable,
-            recurse_provides: package.recurse_provides,
         };
 
         let inserted = diesel::insert_into(packages::table)

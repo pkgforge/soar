@@ -19,6 +19,7 @@ diesel::table! {
         id -> Integer,
         pkg_id -> Text,
         pkg_name -> Text,
+        pkg_family -> Nullable<Text>,
         pkg_type -> Nullable<Text>,
         pkg_webpage -> Nullable<Text>,
         app_id -> Nullable<Text>,
@@ -51,7 +52,6 @@ diesel::table! {
         soar_syms -> Bool,
         desktop_integration -> Nullable<Bool>,
         portable -> Nullable<Bool>,
-        recurse_provides -> Nullable<Bool>,
     }
 }
 
