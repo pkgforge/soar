@@ -1,4 +1,10 @@
 
+## [0.4.0](https://github.com/pkgforge/soar/compare/soar-utils-v0.3.0...soar-utils-v0.4.0) - 2026-02-16
+
+### ⛰️  Features
+
+- *(lock)* Add locking for concurrent process safety ([#154](https://github.com/pkgforge/soar/pull/154)) - ([e3bef6a](https://github.com/pkgforge/soar/commit/e3bef6a09435e83a524b719f7b9f3e0d133c6b64))
+
 ## [0.3.0](https://github.com/pkgforge/soar/compare/soar-utils-v0.2.0...soar-utils-v0.3.0) - 2026-02-04
 
 ### ⛰️  Features

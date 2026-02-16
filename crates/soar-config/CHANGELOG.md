@@ -1,4 +1,10 @@
 
+## [0.6.0](https://github.com/pkgforge/soar/compare/soar-config-v0.5.0...soar-config-v0.6.0) - 2026-02-16
+
+### 🚜 Refactor
+
+- *(system)* Add per-context system mode support - ([10544ac](https://github.com/pkgforge/soar/commit/10544ac8a2bd896152448f79650c6d98db0d960a))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-config-v0.4.0...soar-config-v0.5.0) - 2026-02-04
 
 ### ⛰️  Features

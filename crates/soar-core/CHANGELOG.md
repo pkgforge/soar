@@ -1,4 +1,15 @@
 
+## [0.14.0](https://github.com/pkgforge/soar/compare/soar-core-v0.13.0...soar-core-v0.14.0) - 2026-02-16
+
+### 🐛 Bug Fixes
+
+- *(substitute)* Normalize package version - ([c66c4c2](https://github.com/pkgforge/soar/commit/c66c4c23ff9f68c7926c3ffb81ac18553f9ce604))
+
+### 🚜 Refactor
+
+- *(db)* Add pkg_family, drop recurse_provides - ([1d97b6d](https://github.com/pkgforge/soar/commit/1d97b6d0f9dc230a306fee936dc6571a0a658be3))
+- *(system)* Add per-context system mode support - ([10544ac](https://github.com/pkgforge/soar/commit/10544ac8a2bd896152448f79650c6d98db0d960a))
+
 ## [0.13.0](https://github.com/pkgforge/soar/compare/soar-core-v0.12.0...soar-core-v0.13.0) - 2026-02-04
 
 ### ⛰️  Features

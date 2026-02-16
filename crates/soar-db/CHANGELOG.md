@@ -1,4 +1,11 @@
 
+## [0.5.0](https://github.com/pkgforge/soar/compare/soar-db-v0.4.0...soar-db-v0.5.0) - 2026-02-16
+
+### 🚜 Refactor
+
+- *(db)* Add pkg_family, drop recurse_provides - ([1d97b6d](https://github.com/pkgforge/soar/commit/1d97b6d0f9dc230a306fee936dc6571a0a658be3))
+- *(system)* Add per-context system mode support - ([10544ac](https://github.com/pkgforge/soar/commit/10544ac8a2bd896152448f79650c6d98db0d960a))
+
 ## [0.4.0](https://github.com/pkgforge/soar/compare/soar-db-v0.3.2...soar-db-v0.4.0) - 2026-02-04
 
 ### ⛰️  Features
