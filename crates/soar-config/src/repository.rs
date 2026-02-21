@@ -16,7 +16,7 @@ pub struct Repository {
     pub url: String,
 
     /// Enables desktop integration for packages from this repository.
-    /// Default: false
+    /// Default: true
     pub desktop_integration: Option<bool>,
 
     /// URL to the repository's public key (for signature verification).
@@ -84,26 +84,17 @@ pub struct DefaultRepositoryInfo {
 }
 
 pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
-    vec![
-        DefaultRepositoryInfo {
-            name: "bincache",
-            url_template: "https://meta.pkgforge.dev/bincache/{}.sdb.zstd",
-            pubkey: Some("https://meta.pkgforge.dev/bincache/minisign.pub"),
-            desktop_integration: Some(false),
-            enabled: Some(true),
-            signature_verification: Some(true),
-            sync_interval: Some("3h"),
-            platforms: vec!["aarch64-Linux", "riscv64-Linux", "x86_64-Linux"],
-        },
-        DefaultRepositoryInfo {
-            name: "pkgcache",
-            url_template: "https://meta.pkgforge.dev/pkgcache/{}.sdb.zstd",
-            pubkey: Some("https://meta.pkgforge.dev/pkgcache/minisign.pub"),
-            desktop_integration: Some(true),
-            platforms: vec!["aarch64-Linux", "riscv64-Linux", "x86_64-Linux"],
-            ..DefaultRepositoryInfo::default()
-        },
-    ]
+    vec![DefaultRepositoryInfo {
+        name: "soarpkgs",
+        url_template:
+            "https://github.com/pkgforge/soarpkgs/releases/latest/download/metadata-{}.sdb.zstd",
+        pubkey: Some(
+            "https://raw.githubusercontent.com/pkgforge/soarpkgs/refs/heads/main/keys/minisign.pub",
+        ),
+        desktop_integration: Some(true),
+        platforms: vec!["aarch64-linux", "x86_64-linux"],
+        ..DefaultRepositoryInfo::default()
+    }]
 }
 
 #[cfg(test)]
@@ -157,8 +148,7 @@ mod tests {
         let repos = get_platform_repositories();
 
         assert!(!repos.is_empty());
-        assert!(repos.iter().any(|r| r.name == "bincache"));
-        assert!(repos.iter().any(|r| r.name == "pkgcache"));
+        assert!(repos.iter().any(|r| r.name == "soarpkgs"));
     }
 
     #[test]

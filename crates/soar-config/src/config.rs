@@ -437,23 +437,11 @@ impl Config {
 
             repo.enabled.get_or_insert(true);
 
-            if repo.desktop_integration.is_none() {
-                match repo.name.as_str() {
-                    "bincache" => repo.desktop_integration = Some(false),
-                    "pkgcache" => repo.desktop_integration = Some(true),
-                    _ => {}
-                }
-            }
-
             if repo.pubkey.is_none() {
                 match repo.name.as_str() {
-                    "bincache" => {
+                    "soarpkgs" => {
                         repo.pubkey =
-                            Some("https://meta.pkgforge.dev/bincache/minisign.pub".to_string())
-                    }
-                    "pkgcache" => {
-                        repo.pubkey =
-                            Some("https://meta.pkgforge.dev/pkgcache/minisign.pub".to_string())
+                            Some("https://raw.githubusercontent.com/pkgforge/soarpkgs/refs/heads/main/keys/minisign.pub".to_string())
                     }
                     _ => {}
                 }
@@ -583,7 +571,7 @@ impl Config {
             return global_override;
         }
         self.get_repository(repo_name)
-            .is_some_and(|repo| repo.desktop_integration.unwrap_or(false))
+            .is_some_and(|repo| repo.desktop_integration.unwrap_or(true))
     }
 
     pub fn display(&self) -> DisplaySettings {
@@ -671,10 +659,10 @@ mod tests {
 
     #[test]
     fn test_default_config_with_selected_repos() {
-        let config = Config::default_config(&["bincache"]);
+        let config = Config::default_config(&["soarpkgs"]);
 
         assert!(!config.repositories.is_empty());
-        assert!(config.repositories.iter().any(|r| r.name == "bincache"));
+        assert!(config.repositories.iter().any(|r| r.name == "soarpkgs"));
     }
 
     #[test]

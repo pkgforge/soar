@@ -556,14 +556,14 @@ jq = "1.8.1"
     fn test_detailed_package_spec() {
         let toml_str = r#"
 [packages]
-neovim = { pkg_id = "neovim-appimage", repo = "bincache", pinned = true }
+neovim = { pkg_id = "neovim-appimage", repo = "soarpkgs", pinned = true }
 "#;
         let config: PackagesConfig = toml::from_str(toml_str).unwrap();
         let resolved = config.resolved_packages();
 
         assert_eq!(resolved[0].name, "neovim");
         assert_eq!(resolved[0].pkg_id, Some("neovim-appimage".to_string()));
-        assert_eq!(resolved[0].repo, Some("bincache".to_string()));
+        assert_eq!(resolved[0].repo, Some("soarpkgs".to_string()));
         assert!(resolved[0].pinned);
     }
 

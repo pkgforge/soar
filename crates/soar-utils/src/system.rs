@@ -2,17 +2,12 @@ use std::env;
 
 use nix::unistd::{geteuid, User};
 
-/// Retrieves the platform string in the format `ARCH-Os`.
+/// Retrieves the platform string in the format `ARCH-OS`.
 ///
 /// This function combines the architecture (e.g., `x86_64`) and the operating
-/// system (e.g., `Linux`) into a single string to identify the platform.
+/// system (e.g., `linux`) into a single string to identify the platform.
 pub fn platform() -> String {
-    format!(
-        "{}-{}{}",
-        std::env::consts::ARCH,
-        &std::env::consts::OS[..1].to_uppercase(),
-        &std::env::consts::OS[1..]
-    )
+    format!("{}-{}", std::env::consts::ARCH, &std::env::consts::OS)
 }
 
 trait UsernameSource {
