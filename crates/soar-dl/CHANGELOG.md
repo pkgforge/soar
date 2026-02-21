@@ -1,4 +1,10 @@
 
+## [0.9.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.8.0...soar-dl-v0.9.0) - 2026-02-21
+
+### 🚜 Refactor
+
+- *(download)* Remove proxy api - ([1d3e0ac](https://github.com/pkgforge/soar/commit/1d3e0acc8346834009711cb9f1ad4fbd3454849e))
+
 ## [0.8.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.7.3...soar-dl-v0.8.0) - 2026-02-04
 
 ### ⛰️  Features

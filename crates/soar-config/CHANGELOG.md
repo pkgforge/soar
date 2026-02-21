@@ -1,4 +1,11 @@
 
+## [0.6.0](https://github.com/pkgforge/soar/compare/soar-config-v0.5.0...soar-config-v0.6.0) - 2026-02-21
+
+### 🚜 Refactor
+
+- *(repositories)* Add soarpkgs, drop bincache and pkgcache - ([d07d602](https://github.com/pkgforge/soar/commit/d07d602dc9e972944b7516ac798036e5ddcc689f))
+- *(system)* Add per-context system mode support - ([10544ac](https://github.com/pkgforge/soar/commit/10544ac8a2bd896152448f79650c6d98db0d960a))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-config-v0.4.0...soar-config-v0.5.0) - 2026-02-04
 
 ### ⛰️  Features
