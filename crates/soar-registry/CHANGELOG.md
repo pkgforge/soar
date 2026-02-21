@@ -1,4 +1,15 @@
 
+## [0.4.0](https://github.com/pkgforge/soar/compare/soar-registry-v0.3.0...soar-registry-v0.4.0) - 2026-02-21
+
+### 🐛 Bug Fixes
+
+- *(sync)* Properly respect sync_interval for repository updates - ([84a653c](https://github.com/pkgforge/soar/commit/84a653cbad7b84373301e44974a388fec8db9028))
+
+### 🚜 Refactor
+
+- *(cli)* Use operations from shared crate ([#158](https://github.com/pkgforge/soar/pull/158)) - ([2a2f1be](https://github.com/pkgforge/soar/commit/2a2f1be5db831de95c2d99e114d02c80870f2165))
+- *(db)* Add pkg_family, drop recurse_provides - ([1d97b6d](https://github.com/pkgforge/soar/commit/1d97b6d0f9dc230a306fee936dc6571a0a658be3))
+
 ## [0.3.0](https://github.com/pkgforge/soar/compare/soar-registry-v0.2.2...soar-registry-v0.3.0) - 2026-02-04
 
 ### ⛰️  Features

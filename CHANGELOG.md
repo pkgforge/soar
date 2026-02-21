@@ -1,4 +1,24 @@
 
+## [0.11.1](https://github.com/pkgforge/soar/compare/v0.11.0...v0.11.1) - 2026-02-21
+
+### ⛰️  Features
+
+- *(cli)* Add subcommand to convert json to sqlite db - ([16fdeca](https://github.com/pkgforge/soar/commit/16fdecae0898c1e15c5d0ca1ea67c5b414ef7c76))
+- *(lock)* Add locking for concurrent process safety ([#154](https://github.com/pkgforge/soar/pull/154)) - ([e3bef6a](https://github.com/pkgforge/soar/commit/e3bef6a09435e83a524b719f7b9f3e0d133c6b64))
+- *(provides)* Add @ prefix to symlink packages directly to bin - ([cc8458a](https://github.com/pkgforge/soar/commit/cc8458ab722f4287315fee7a457be0191c10a19d))
+
+### 🐛 Bug Fixes
+
+- *(substitute)* Normalize package version - ([c66c4c2](https://github.com/pkgforge/soar/commit/c66c4c23ff9f68c7926c3ffb81ac18553f9ce604))
+
+### 🚜 Refactor
+
+- *(cli)* Use operations from shared crate ([#158](https://github.com/pkgforge/soar/pull/158)) - ([2a2f1be](https://github.com/pkgforge/soar/commit/2a2f1be5db831de95c2d99e114d02c80870f2165))
+- *(db)* Add pkg_family, drop recurse_provides - ([1d97b6d](https://github.com/pkgforge/soar/commit/1d97b6d0f9dc230a306fee936dc6571a0a658be3))
+- *(download)* Remove proxy api - ([1d3e0ac](https://github.com/pkgforge/soar/commit/1d3e0acc8346834009711cb9f1ad4fbd3454849e))
+- *(repositories)* Add soarpkgs, drop bincache and pkgcache - ([d07d602](https://github.com/pkgforge/soar/commit/d07d602dc9e972944b7516ac798036e5ddcc689f))
+- *(system)* Add per-context system mode support - ([10544ac](https://github.com/pkgforge/soar/commit/10544ac8a2bd896152448f79650c6d98db0d960a))
+
 ## [0.11.0](https://github.com/pkgforge/soar/compare/v0.10.3...v0.11.0) - 2026-02-04
 
 ### ⛰️  Features
