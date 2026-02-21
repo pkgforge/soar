@@ -141,20 +141,23 @@ pub async fn fetch_metadata(
 
     let sync_interval = repo.sync_interval();
 
-    let etag = if metadata_db.exists() {
-        let etag = existing_etag.unwrap_or_default();
+    if metadata_db.exists() && !force {
+        if sync_interval == u128::MAX {
+            return Ok(None);
+        }
 
-        if !force && !etag.is_empty() {
-            let file_info = metadata_db
-                .metadata()
-                .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
-            if let Ok(created) = file_info.created() {
-                if sync_interval >= created.elapsed()?.as_millis() {
-                    return Ok(None);
-                }
+        let file_info = metadata_db
+            .metadata()
+            .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
+        if let Ok(modified) = file_info.modified() {
+            if sync_interval >= modified.elapsed()?.as_millis() {
+                return Ok(None);
             }
         }
-        etag
+    }
+
+    let etag = if metadata_db.exists() {
+        existing_etag.unwrap_or_default()
     } else {
         String::new()
     };
