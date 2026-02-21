@@ -866,6 +866,14 @@ impl PackageInstaller {
                                 }
                             }
                         }
+                        if provide.symlink_to_bin {
+                            let link_name = self.config.get_bin_path()?.join(&provide.name);
+                            if link_name.is_symlink() || link_name.is_file() {
+                                std::fs::remove_file(&link_name).with_context(|| {
+                                    format!("removing @provide {}", link_name.display())
+                                })?;
+                            }
+                        }
                     }
                 }
             }

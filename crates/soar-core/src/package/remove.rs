@@ -147,6 +147,16 @@ impl PackageRemover {
                             }
                         }
                     }
+                    if provide.symlink_to_bin {
+                        let link_name = bin_path.join(&provide.name);
+                        if link_name.exists() {
+                            trace!("removing @provide symlink: {}", link_name.display());
+                            std::fs::remove_file(&link_name).with_context(|| {
+                                format!("removing @provide {}", link_name.display())
+                            })?;
+                            removed_symlinks.push(link_name);
+                        }
+                    }
                 }
             }
 

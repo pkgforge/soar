@@ -117,7 +117,12 @@ pub async fn mangle_package_symlinks(
         let real_path = install_dir.join(provide.name.clone());
         let mut symlink_targets = Vec::new();
 
-        if let Some(ref target) = provide.target {
+        if provide.symlink_to_bin {
+            let link_path = bin_dir.join(&provide.name);
+            if processed_paths.insert(link_path.clone()) {
+                symlink_targets.push(link_path);
+            }
+        } else if let Some(ref target) = provide.target {
             if provide.strategy.is_some() {
                 let target_path = bin_dir.join(target);
                 if processed_paths.insert(target_path.clone()) {
@@ -126,10 +131,11 @@ pub async fn mangle_package_symlinks(
             }
         };
 
-        let needs_original_symlink = matches!(
-            (provide.target.as_ref(), provide.strategy.clone()),
-            (Some(_), Some(ProvideStrategy::KeepBoth)) | (None, _)
-        );
+        let needs_original_symlink = !provide.symlink_to_bin
+            && matches!(
+                (provide.target.as_ref(), provide.strategy.clone()),
+                (Some(_), Some(ProvideStrategy::KeepBoth)) | (None, _)
+            );
 
         if needs_original_symlink {
             let original_path = bin_dir.join(&provide.name);

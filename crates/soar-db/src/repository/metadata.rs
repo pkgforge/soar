@@ -509,10 +509,16 @@ impl MetadataRepository {
         let provides = package.provides.as_ref().map(|vec| {
             vec.iter()
                 .filter_map(|p| {
-                    let include = *p == package.pkg_name
-                        || p.strip_prefix(&package.pkg_name).is_some_and(|rest| {
-                            PROVIDES_DELIMITERS.iter().any(|d| rest.starts_with(d))
-                        });
+                    let has_at_prefix = p.starts_with('@');
+                    let p_stripped = p.strip_prefix('@').unwrap_or(p);
+
+                    let include = *p_stripped == package.pkg_name
+                        || p_stripped
+                            .strip_prefix(&package.pkg_name)
+                            .is_some_and(|rest| {
+                                PROVIDES_DELIMITERS.iter().any(|d| rest.starts_with(d))
+                            })
+                        || has_at_prefix;
 
                     include.then(|| PackageProvide::from_string(p))
                 })
