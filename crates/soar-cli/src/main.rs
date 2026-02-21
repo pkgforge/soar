@@ -1,10 +1,16 @@
-use std::{env, fs, io::Read, process::Command, sync::Arc};
+use std::{
+    env, fs,
+    io::Read,
+    process::Command,
+    sync::{Arc, Mutex},
+};
 
 use apply::apply_packages;
 use clap::Parser;
 use cli::Args;
 use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};
+use indicatif::ProgressBar;
 use inspect::{inspect_log, InspectType};
 use install::install_packages;
 use json2db::json_to_db;
@@ -335,10 +341,13 @@ async fn handle_cli() -> SoarResult<()> {
                     skip_existing,
                     force_overwrite,
                 } => {
-                    let pb = create_download_job("");
                     let progress_callback: Arc<dyn Fn(soar_dl::types::Progress) + Send + Sync> = {
-                        let pb = pb.clone();
-                        Arc::new(move |state| handle_download_progress(state, &pb))
+                        let pb: Arc<Mutex<Option<ProgressBar>>> = Arc::new(Mutex::new(None));
+                        Arc::new(move |state| {
+                            let mut guard = pb.lock().unwrap();
+                            let bar = guard.get_or_insert_with(|| create_download_job(""));
+                            handle_download_progress(state, bar);
+                        })
                     };
                     let regexes = create_regex_patterns(regexes)?;
                     let globs = globs.unwrap_or_default();

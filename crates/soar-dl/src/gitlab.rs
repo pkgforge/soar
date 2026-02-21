@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::{
     error::DownloadError,
-    platform::fetch_with_fallback,
+    platform::fetch_releases_json,
     traits::{Asset, Platform, Release},
 };
 
@@ -32,8 +32,7 @@ pub struct GitLabAsset {
 impl Platform for GitLab {
     type Release = GitLabRelease;
 
-    const API_PKGFORGE: &'static str = "https://api.gl.pkgforge.dev";
-    const API_UPSTREAM: &'static str = "https://gitlab.com";
+    const API_BASE: &'static str = "https://gitlab.com";
     const TOKEN_ENV: [&str; 2] = ["GITLAB_TOKEN", "GL_TOKEN"];
 
     /// Fetches releases for a GitLab project, optionally narrowing to a specific tag.
@@ -79,12 +78,7 @@ impl Platform for GitLab {
             _ => format!("/api/v4/projects/{}/releases", encoded_project),
         };
 
-        fetch_with_fallback::<Self::Release>(
-            &path,
-            Self::API_UPSTREAM,
-            Self::API_PKGFORGE,
-            Self::TOKEN_ENV,
-        )
+        fetch_releases_json::<Self::Release>(&path, Self::API_BASE, Self::TOKEN_ENV)
     }
 }
 

@@ -20,8 +20,7 @@ pub trait Release {
 pub trait Platform {
     type Release: Release;
 
-    const API_UPSTREAM: &'static str;
-    const API_PKGFORGE: &'static str;
+    const API_BASE: &'static str;
     const TOKEN_ENV: [&str; 2];
 
     fn fetch_releases(

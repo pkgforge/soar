@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::{
     error::DownloadError,
-    platform::fetch_with_fallback,
+    platform::fetch_releases_json,
     traits::{Asset, Platform, Release},
 };
 
@@ -28,8 +28,7 @@ pub struct GithubAsset {
 impl Platform for Github {
     type Release = GithubRelease;
 
-    const API_PKGFORGE: &'static str = "https://api.gh.pkgforge.dev";
-    const API_UPSTREAM: &'static str = "https://api.github.com";
+    const API_BASE: &'static str = "https://api.github.com";
     const TOKEN_ENV: [&str; 2] = ["GITHUB_TOKEN", "GH_TOKEN"];
 
     /// Fetches releases for the given GitHub repository, optionally filtered by a specific tag.
@@ -70,12 +69,7 @@ impl Platform for Github {
             None => format!("/repos/{project}/releases?per_page=100"),
         };
 
-        fetch_with_fallback::<Self::Release>(
-            &path,
-            Self::API_UPSTREAM,
-            Self::API_PKGFORGE,
-            Self::TOKEN_ENV,
-        )
+        fetch_releases_json::<Self::Release>(&path, Self::API_BASE, Self::TOKEN_ENV)
     }
 }
 

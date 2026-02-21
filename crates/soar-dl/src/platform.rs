@@ -7,12 +7,6 @@ use url::Url;
 
 use crate::{error::DownloadError, http_client::SHARED_AGENT};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ApiKind {
-    Pkgforge,
-    Primary,
-}
-
 #[derive(Debug)]
 pub enum PlatformUrl {
     Github {
@@ -135,93 +129,54 @@ impl PlatformUrl {
     }
 }
 
-/// Fetches JSON from a fallback base URL then, on retryable HTTP failures, from a primary base URL using an optional Bearer token, and returns the deserialized items as a Vec<T>.
+/// Fetches JSON from an API base URL with an optional Bearer token and returns the deserialized
+/// items as a `Vec<T>`.
 ///
-/// The function first requests `fallback + path` without a token. If that request fails with a status that qualifies for retry (429, 401, 403, or any 5xx), it retries `primary + path` and, if the environment variable named by `token_env` is set, includes it as a `Authorization: Bearer <token>` header. The response body must be either a JSON array (mapped to `Vec<T>`) or a single JSON object (mapped to a one-element `Vec<T>`); other shapes produce `DownloadError::InvalidResponse`. Non-success HTTP statuses produce `DownloadError::HttpError`.
-///
-/// # Examples
-///
-/// ```no_run
-/// use serde::Deserialize;
-/// use soar_dl::platform::fetch_with_fallback;
-///
-/// #[derive(Deserialize)]
-/// struct Item { id: u32 }
-///
-/// // Attempts fallback first, then primary with token from "API_TOKEN" if needed.
-/// let result: Result<Vec<Item>, _> = fetch_with_fallback("/api/items", "https://primary.example.com", "https://fallback.example.com", ["API_TOKEN", "API_TOKEN_FALLBACK"]);
-/// ```
-pub fn fetch_with_fallback<T>(
+/// If the environment variable named by `token_env[0]` (or `token_env[1]` as fallback) is set,
+/// it is included as an `Authorization: Bearer <token>` header. The response body must be either
+/// a JSON array (mapped to `Vec<T>`) or a single JSON object (mapped to a one-element `Vec<T>`);
+/// other shapes produce `DownloadError::InvalidResponse`. Non-success HTTP statuses produce
+/// `DownloadError::HttpError`.
+pub fn fetch_releases_json<T>(
     path: &str,
-    primary: &str,
-    fallback: &str,
+    base: &str,
     token_env: [&str; 2],
 ) -> Result<Vec<T>, DownloadError>
 where
     T: serde::de::DeserializeOwned,
 {
-    let try_fetch = |base: &str, use_token: bool| -> Result<Vec<T>, DownloadError> {
-        let url = format!("{}{}", base, path);
-        let mut req = SHARED_AGENT.get(&url);
+    let url = format!("{}{}", base, path);
+    let mut req = SHARED_AGENT.get(&url);
 
-        if use_token {
-            if let Ok(token) = env::var(token_env[0]).or_else(|_| env::var(token_env[1])) {
-                req = req.header(AUTHORIZATION, &format!("Bearer {}", token.trim()));
-            }
+    if let Ok(token) = env::var(token_env[0]).or_else(|_| env::var(token_env[1])) {
+        req = req.header(AUTHORIZATION, &format!("Bearer {}", token.trim()));
+    }
+
+    let mut resp = req.call()?;
+    let status = resp.status();
+
+    if !status.is_success() {
+        return Err(DownloadError::HttpError {
+            status: status.as_u16(),
+            url: url.clone(),
+        });
+    }
+
+    let json: serde_json::Value = resp
+        .body_mut()
+        .read_json()
+        .map_err(|_| DownloadError::InvalidResponse)?;
+
+    match json {
+        serde_json::Value::Array(_) => {
+            serde_json::from_value(json).map_err(|_| DownloadError::InvalidResponse)
         }
-
-        let mut resp = req.call()?;
-        let status = resp.status();
-
-        if !status.is_success() {
-            return Err(DownloadError::HttpError {
-                status: status.as_u16(),
-                url: url.clone(),
-            });
+        serde_json::Value::Object(_) => {
+            let single: T =
+                serde_json::from_value(json).map_err(|_| DownloadError::InvalidResponse)?;
+            Ok(vec![single])
         }
-
-        let json: serde_json::Value = resp
-            .body_mut()
-            .read_json()
-            .map_err(|_| DownloadError::InvalidResponse)?;
-
-        match json {
-            serde_json::Value::Array(_) => {
-                serde_json::from_value(json).map_err(|_| DownloadError::InvalidResponse)
-            }
-            serde_json::Value::Object(_) => {
-                let single: T =
-                    serde_json::from_value(json).map_err(|_| DownloadError::InvalidResponse)?;
-                Ok(vec![single])
-            }
-            _ => Err(DownloadError::InvalidResponse),
-        }
-    };
-
-    try_fetch(fallback, false).or_else(|e| {
-        if should_fallback_status(&e) {
-            try_fetch(primary, true)
-        } else {
-            Err(e)
-        }
-    })
-}
-
-/// Determines whether a download error status should cause a fallback attempt.
-///
-/// # Returns
-///
-/// `true` if the error is an HTTP status of 429, 401, 403, or any status >= 500; `false` otherwise.
-fn should_fallback_status(e: &DownloadError) -> bool {
-    match e {
-        DownloadError::HttpError {
-            status, ..
-        } => *status == 429 || *status == 401 || *status == 403 || *status >= 500,
-        DownloadError::Network(err) => {
-            matches!(err.as_ref(), ureq::Error::StatusCode(status)
-                if *status == 429 || *status == 401 || *status == 403 || *status >= 500)
-        }
-        _ => false,
+        _ => Err(DownloadError::InvalidResponse),
     }
 }
 
@@ -462,13 +417,6 @@ mod tests {
             }
             _ => panic!("Expected Github variant with complex tag"),
         }
-    }
-
-    #[test]
-    fn test_api_kind_equality() {
-        assert_eq!(ApiKind::Pkgforge, ApiKind::Pkgforge);
-        assert_eq!(ApiKind::Primary, ApiKind::Primary);
-        assert_ne!(ApiKind::Pkgforge, ApiKind::Primary);
     }
 
     #[test]
