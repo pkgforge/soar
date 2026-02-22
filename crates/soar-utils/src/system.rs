@@ -67,11 +67,11 @@ mod tests {
     fn test_platform() {
         #[cfg(target_arch = "x86_64")]
         #[cfg(target_os = "linux")]
-        assert_eq!(platform(), "x86_64-Linux");
+        assert_eq!(platform(), "x86_64-linux");
 
         #[cfg(target_arch = "aarch64")]
         #[cfg(target_os = "linux")]
-        assert_eq!(platform(), "aarch64-Linux");
+        assert_eq!(platform(), "aarch64-linux");
     }
 
     #[test]

@@ -437,14 +437,9 @@ impl Config {
 
             repo.enabled.get_or_insert(true);
 
-            if repo.pubkey.is_none() {
-                match repo.name.as_str() {
-                    "soarpkgs" => {
-                        repo.pubkey =
-                            Some("https://raw.githubusercontent.com/pkgforge/soarpkgs/refs/heads/main/keys/minisign.pub".to_string())
-                    }
-                    _ => {}
-                }
+            if repo.pubkey.is_none() && repo.name.as_str() == "soarpkgs" {
+                repo.pubkey =
+                    Some("https://raw.githubusercontent.com/pkgforge/soarpkgs/refs/heads/main/keys/minisign.pub".to_string())
             }
         }
 

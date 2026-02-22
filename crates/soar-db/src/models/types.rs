@@ -44,8 +44,8 @@ impl PackageProvide {
     }
 
     pub fn from_string(provide: &str) -> Self {
-        let (symlink_to_bin, provide) = if provide.starts_with('@') {
-            (true, &provide[1..])
+        let (symlink_to_bin, provide) = if let Some(stripped) = provide.strip_prefix('@') {
+            (true, stripped)
         } else {
             (false, provide)
         };
