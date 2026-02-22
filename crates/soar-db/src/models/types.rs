@@ -27,6 +27,22 @@ pub struct PackageProvide {
 }
 
 impl PackageProvide {
+    /// Returns the symlink names this provide creates in the bin directory,
+    /// mirroring the install logic in `setup_provide_symlinks`.
+    pub fn bin_symlink_names(&self) -> Vec<&str> {
+        if self.symlink_to_bin {
+            // @name -> bin/name
+            return vec![&self.name];
+        }
+        match (&self.target, &self.strategy) {
+            (Some(target), Some(ProvideStrategy::KeepBoth)) => vec![&self.name, target],
+            (Some(target), Some(ProvideStrategy::KeepTargetOnly | ProvideStrategy::Alias)) => {
+                vec![target]
+            }
+            _ => vec![&self.name],
+        }
+    }
+
     pub fn from_string(provide: &str) -> Self {
         let (symlink_to_bin, provide) = if provide.starts_with('@') {
             (true, &provide[1..])
@@ -63,5 +79,41 @@ impl PackageProvide {
                 symlink_to_bin,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bin_symlink_names_plain() {
+        let p = PackageProvide::from_string("clipcatd");
+        assert_eq!(p.bin_symlink_names(), vec!["clipcatd"]);
+    }
+
+    #[test]
+    fn test_bin_symlink_names_at_prefix() {
+        let p = PackageProvide::from_string("@clipcat-menu");
+        assert!(p.symlink_to_bin);
+        assert_eq!(p.bin_symlink_names(), vec!["clipcat-menu"]);
+    }
+
+    #[test]
+    fn test_bin_symlink_names_keep_both() {
+        let p = PackageProvide::from_string("clipcatd==clipcat");
+        assert_eq!(p.bin_symlink_names(), vec!["clipcatd", "clipcat"]);
+    }
+
+    #[test]
+    fn test_bin_symlink_names_keep_target_only() {
+        let p = PackageProvide::from_string("clipcatd=>clipcat");
+        assert_eq!(p.bin_symlink_names(), vec!["clipcat"]);
+    }
+
+    #[test]
+    fn test_bin_symlink_names_alias() {
+        let p = PackageProvide::from_string("clipcatd:clipcat");
+        assert_eq!(p.bin_symlink_names(), vec!["clipcat"]);
     }
 }

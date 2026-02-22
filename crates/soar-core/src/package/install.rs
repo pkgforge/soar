@@ -13,9 +13,8 @@ use soar_config::{
     config::Config,
     packages::{BinaryMapping, BuildConfig, PackageHooks, SandboxConfig},
 };
-use soar_db::{
-    models::types::ProvideStrategy,
-    repository::core::{CoreRepository, InstalledPackageWithPortable, NewInstalledPackage},
+use soar_db::repository::core::{
+    CoreRepository, InstalledPackageWithPortable, NewInstalledPackage,
 };
 use soar_dl::{
     download::Download,
@@ -850,27 +849,13 @@ impl PackageInstaller {
                 walk_dir(self.config.get_icons_path(), &mut remove_action)?;
 
                 if let Some(ref provides) = alt_pkg.provides {
+                    let bin_path = self.config.get_bin_path()?;
                     for provide in provides {
-                        if let Some(ref target) = provide.target {
-                            let is_symlink = matches!(
-                                provide.strategy,
-                                Some(ProvideStrategy::KeepTargetOnly)
-                                    | Some(ProvideStrategy::KeepBoth)
-                            );
-                            if is_symlink {
-                                let target_name = self.config.get_bin_path()?.join(target);
-                                if target_name.is_symlink() || target_name.is_file() {
-                                    std::fs::remove_file(&target_name).with_context(|| {
-                                        format!("removing provide {}", target_name.display())
-                                    })?;
-                                }
-                            }
-                        }
-                        if provide.symlink_to_bin {
-                            let link_name = self.config.get_bin_path()?.join(&provide.name);
-                            if link_name.is_symlink() || link_name.is_file() {
-                                std::fs::remove_file(&link_name).with_context(|| {
-                                    format!("removing @provide {}", link_name.display())
+                        for name in provide.bin_symlink_names() {
+                            let link = bin_path.join(name);
+                            if link.is_symlink() || link.is_file() {
+                                std::fs::remove_file(&link).with_context(|| {
+                                    format!("removing provide {}", link.display())
                                 })?;
                             }
                         }

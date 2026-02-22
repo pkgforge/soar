@@ -8,7 +8,7 @@ use soar_config::{
     config::Config,
     packages::{PackageHooks, SandboxConfig},
 };
-use soar_db::{models::types::ProvideStrategy, repository::core::CoreRepository};
+use soar_db::repository::core::CoreRepository;
 use soar_utils::{error::FileSystemResult, fs::walk_dir};
 use tracing::{debug, trace, warn};
 
@@ -121,42 +121,26 @@ impl PackageRemover {
         if self.package.is_installed {
             trace!("package was installed, removing binaries and links");
             let bin_path = self.config.get_bin_path()?;
-            let def_bin = bin_path.join(&self.package.pkg_name);
-            if def_bin.is_symlink() && def_bin.is_file() {
-                trace!("removing binary symlink: {}", def_bin.display());
-                fs::remove_file(&def_bin)
-                    .with_context(|| format!("removing binary {}", def_bin.display()))?;
-                removed_symlinks.push(def_bin);
-            }
 
             if let Some(provides) = &self.package.provides {
                 for provide in provides {
-                    if let Some(ref target) = provide.target {
-                        let is_symlink = matches!(
-                            provide.strategy,
-                            Some(ProvideStrategy::KeepTargetOnly) | Some(ProvideStrategy::KeepBoth)
-                        );
-                        if is_symlink {
-                            let target_name = bin_path.join(target);
-                            if target_name.exists() {
-                                trace!("removing provide symlink: {}", target_name.display());
-                                std::fs::remove_file(&target_name).with_context(|| {
-                                    format!("removing provide {}", target_name.display())
-                                })?;
-                                removed_symlinks.push(target_name);
-                            }
+                    for name in provide.bin_symlink_names() {
+                        let link = bin_path.join(name);
+                        if link.is_symlink() || link.is_file() {
+                            trace!("removing provide symlink: {}", link.display());
+                            fs::remove_file(&link)
+                                .with_context(|| format!("removing provide {}", link.display()))?;
+                            removed_symlinks.push(link);
                         }
                     }
-                    if provide.symlink_to_bin {
-                        let link_name = bin_path.join(&provide.name);
-                        if link_name.exists() {
-                            trace!("removing @provide symlink: {}", link_name.display());
-                            std::fs::remove_file(&link_name).with_context(|| {
-                                format!("removing @provide {}", link_name.display())
-                            })?;
-                            removed_symlinks.push(link_name);
-                        }
-                    }
+                }
+            } else {
+                let def_bin = bin_path.join(&self.package.pkg_name);
+                if def_bin.is_symlink() && def_bin.is_file() {
+                    trace!("removing binary symlink: {}", def_bin.display());
+                    fs::remove_file(&def_bin)
+                        .with_context(|| format!("removing binary {}", def_bin.display()))?;
+                    removed_symlinks.push(def_bin);
                 }
             }
 

@@ -777,7 +777,16 @@ async fn install_single_package(
     let install_dir = config
         .get_packages_path(target.profile.clone())?
         .join(format!("{}-{}-{}", pkg.pkg_name, pkg.pkg_id, dir_suffix));
-    let real_bin = install_dir.join(&pkg.pkg_name);
+    let main_binary_name = pkg
+        .provides
+        .as_ref()
+        .and_then(|p| {
+            p.iter()
+                .find(|p| !p.symlink_to_bin && p.name == pkg.pkg_name)
+        })
+        .map(|p| p.name.as_str())
+        .unwrap_or(&pkg.pkg_name);
+    let real_bin = install_dir.join(main_binary_name);
 
     let (
         unlinked,
