@@ -10,7 +10,7 @@ use std::{
 };
 
 use soar_config::repository::Repository;
-use soar_dl::{download::Download, http_client::SHARED_AGENT, types::OverwriteMode};
+use soar_dl::http_client::SHARED_AGENT;
 use tracing::debug;
 use ureq::http::{
     header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH, PRAGMA},
@@ -45,43 +45,10 @@ pub enum MetadataContent {
     Json(Vec<RemotePackage>),
 }
 
-/// Fetches the public key for package signature verification.
-///
-/// Downloads the minisign public key from the specified URL and saves it
-/// to the repository path. If the public key file already exists, this
-/// function returns immediately without re-downloading.
-///
-/// # Arguments
-///
-/// * `repo_path` - Directory where the public key will be stored as `minisign.pub`
-/// * `pubkey_url` - URL to fetch the public key from
-///
-/// # Errors
-///
-/// Returns [`RegistryError`] if the download fails.
-pub async fn fetch_public_key<P: AsRef<Path>>(repo_path: P, pubkey_url: &str) -> Result<()> {
-    let repo_path = repo_path.as_ref();
-    let pubkey_file = repo_path.join("minisign.pub");
-
-    if pubkey_file.exists() {
-        return Ok(());
-    }
-
-    debug!("Fetching public key from {}", pubkey_url);
-
-    Download::new(pubkey_url)
-        .output(pubkey_file.to_string_lossy().to_string())
-        .overwrite(OverwriteMode::Force)
-        .execute()?;
-
-    Ok(())
-}
-
 /// Fetches repository metadata from a remote source.
 ///
 /// This function retrieves package metadata for a configured repository, handling
-/// caching via ETags and respecting the repository's sync interval. It also
-/// fetches the repository's public key if configured.
+/// caching via ETags and respecting the repository's sync interval.
 ///
 /// # Arguments
 ///
@@ -163,10 +130,6 @@ pub async fn fetch_metadata(
     };
 
     Url::parse(&repo.url).map_err(|err| RegistryError::InvalidUrl(err.to_string()))?;
-
-    if let Some(ref pubkey_url) = repo.pubkey {
-        fetch_public_key(&repo_path, pubkey_url).await?;
-    }
 
     let mut req = SHARED_AGENT
         .get(&repo.url)

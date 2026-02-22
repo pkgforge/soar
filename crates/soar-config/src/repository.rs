@@ -19,7 +19,7 @@ pub struct Repository {
     /// Default: true
     pub desktop_integration: Option<bool>,
 
-    /// URL to the repository's public key (for signature verification).
+    /// Base64-encoded public key for signature verification (minisign format).
     pub pubkey: Option<String>,
 
     /// Whether the repository is enabled.
@@ -83,14 +83,15 @@ pub struct DefaultRepositoryInfo {
     pub platforms: Vec<&'static str>,
 }
 
+/// Base64-encoded minisign public key for the soarpkgs repository.
+pub const SOARPKGS_PUBKEY: &str = "RWQ109gKujRqohsA7RERlXFfeJi23EcHN3Dz8TxyPAywa5mLw/fbcbU4";
+
 pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
     vec![DefaultRepositoryInfo {
         name: "soarpkgs",
         url_template:
             "https://github.com/pkgforge/soarpkgs/releases/latest/download/metadata-{}.sdb.zstd",
-        pubkey: Some(
-            "https://raw.githubusercontent.com/pkgforge/soarpkgs/refs/heads/main/keys/minisign.pub",
-        ),
+        pubkey: Some(SOARPKGS_PUBKEY),
         desktop_integration: Some(true),
         platforms: vec!["aarch64-linux", "x86_64-linux"],
         ..DefaultRepositoryInfo::default()

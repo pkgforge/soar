@@ -39,7 +39,7 @@ pub mod package;
 
 pub use error::{ErrorContext, RegistryError, Result};
 pub use metadata::{
-    fetch_metadata, fetch_public_key, process_metadata_content, write_metadata_db, MetadataContent,
+    fetch_metadata, process_metadata_content, write_metadata_db, MetadataContent,
     SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES,
 };
 pub use package::RemotePackage;
