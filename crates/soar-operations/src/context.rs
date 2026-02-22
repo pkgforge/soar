@@ -112,7 +112,13 @@ impl SoarContext {
         );
         let mut tasks = Vec::new();
 
-        for repo in &self.inner.config.repositories {
+        for repo in self
+            .inner
+            .config
+            .repositories
+            .iter()
+            .filter(|r| r.is_enabled())
+        {
             trace!(repo_name = repo.name, "scheduling repository sync");
             let repo_clone = repo.clone();
             let etag = self.read_repo_etag(&repo_clone);
@@ -278,7 +284,13 @@ impl SoarContext {
         debug!(readonly = readonly, "creating metadata manager");
         let mut manager = MetadataManager::new();
 
-        for repo in &self.inner.config.repositories {
+        for repo in self
+            .inner
+            .config
+            .repositories
+            .iter()
+            .filter(|r| r.is_enabled())
+        {
             if let Ok(repo_path) = repo.get_path() {
                 let metadata_db = repo_path.join("metadata.db");
                 if metadata_db.is_file() {
