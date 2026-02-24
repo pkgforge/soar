@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use soar_core::{package::remove::PackageRemover, SoarResult};
 use soar_db::repository::core::CoreRepository;
 use soar_events::{RemoveStage, SoarEvent};
-use soar_utils::{error::FileSystemResult, fs::walk_dir};
+use soar_utils::{error::FileSystemResult, fs::walk_dir, path::resolve_path};
 use tracing::debug;
 
 use crate::{
@@ -20,7 +20,7 @@ pub fn check_health(ctx: &SoarContext) -> SoarResult<HealthReport> {
     let path_env = std::env::var("PATH").unwrap_or_default();
     let path_configured = path_env
         .split(':')
-        .any(|p| std::path::Path::new(p) == bin_path);
+        .any(|p| resolve_path(p).unwrap_or_default() == bin_path);
 
     let broken_packages = get_broken_packages(ctx)?;
     let broken_symlinks = get_broken_symlinks(ctx)?;
