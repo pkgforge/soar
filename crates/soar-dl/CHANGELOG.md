@@ -1,4 +1,18 @@
 
+## [0.9.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.8.0...soar-dl-v0.9.0) - 2026-02-24
+
+### 🚜 Refactor
+
+- *(download)* Remove proxy api - ([1d3e0ac](https://github.com/pkgforge/soar/commit/1d3e0acc8346834009711cb9f1ad4fbd3454849e))
+
+### 📚 Documentation
+
+- *(readme)* Update readme - ([4fc58a7](https://github.com/pkgforge/soar/commit/4fc58a774b4c968db8f4d69f7f809378573b4145))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(manifest)* Remove deprecated authors field - ([0bf1231](https://github.com/pkgforge/soar/commit/0bf123139798f2efb1674c8a14eaaf4f4640dc2a))
+
 ## [0.8.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.7.3...soar-dl-v0.8.0) - 2026-02-04
 
 ### ⛰️  Features

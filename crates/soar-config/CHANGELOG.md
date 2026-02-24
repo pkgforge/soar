@@ -1,4 +1,24 @@
 
+## [0.6.0](https://github.com/pkgforge/soar/compare/soar-config-v0.5.0...soar-config-v0.6.0) - 2026-02-24
+
+### 🐛 Bug Fixes
+
+- *(clippy)* Apply clippy suggestions - ([7b85532](https://github.com/pkgforge/soar/commit/7b85532d78baa32ee9541a2d764242656a8c07ba))
+
+### 🚜 Refactor
+
+- *(pubkey)* Use inline key string instead of fetching from URL - ([f2f3e5c](https://github.com/pkgforge/soar/commit/f2f3e5c1190fd79d18732ea2efb4b668d8130f03))
+- *(repositories)* Add soarpkgs, drop bincache and pkgcache - ([d07d602](https://github.com/pkgforge/soar/commit/d07d602dc9e972944b7516ac798036e5ddcc689f))
+- *(system)* Add per-context system mode support - ([10544ac](https://github.com/pkgforge/soar/commit/10544ac8a2bd896152448f79650c6d98db0d960a))
+
+### 📚 Documentation
+
+- *(readme)* Update readme - ([4fc58a7](https://github.com/pkgforge/soar/commit/4fc58a774b4c968db8f4d69f7f809378573b4145))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(manifest)* Remove deprecated authors field - ([0bf1231](https://github.com/pkgforge/soar/commit/0bf123139798f2efb1674c8a14eaaf4f4640dc2a))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-config-v0.4.0...soar-config-v0.5.0) - 2026-02-04
 
 ### ⛰️  Features
