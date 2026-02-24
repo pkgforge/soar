@@ -2319,11 +2319,11 @@ dependencies = [
 
 [[package]]
 name = "soar-events"
-version = "0.0.1"
+version = "0.1.0"
 
 [[package]]
 name = "soar-operations"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "fast-glob",
  "minisign-verify",
