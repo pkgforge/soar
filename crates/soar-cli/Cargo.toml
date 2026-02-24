@@ -3,7 +3,6 @@ name = "soar-cli"
 version = "0.11.0"
 description = "A modern package manager for Linux"
 default-run = "soar"
-authors.workspace = true
 license.workspace = true
 edition.workspace = true
 repository.workspace = true

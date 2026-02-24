@@ -2,7 +2,6 @@
 name = "soar-operations"
 version = "0.0.0"
 description = "Business logic for soar package manager"
-authors.workspace = true
 license.workspace = true
 edition.workspace = true
 repository.workspace = true

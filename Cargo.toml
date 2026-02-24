@@ -14,13 +14,13 @@ members = [
 ]
 
 [workspace.package]
-authors = ["Rabindra Dhakal <contact@qaidvoid.dev>"]
 edition = "2021"
 readme = "README.md"
 repository = "https://github.com/pkgforge/soar"
 license = "MIT"
 keywords = ["appimage", "binary", "linux", "package-manager", "portable"]
 categories = ["command-line-utilities"]
+rust-version = "1.88"
 
 [workspace.dependencies]
 blake3 = { version = "1.8.2", features = ["mmap"] }
