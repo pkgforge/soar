@@ -1,6 +1,6 @@
 [package]
 name = "soar-operations"
-version = "0.0.0"
+version = "0.1.0"
 description = "Business logic for soar package manager"
 license.workspace = true
 edition.workspace = true

@@ -1,4 +1,22 @@
 
+## [0.3.0](https://github.com/pkgforge/soar/compare/soar-package-v0.2.3...soar-package-v0.3.0) - 2026-02-24
+
+### 🐛 Bug Fixes
+
+- *(desktop)* Preserve flags/args in Exec/TryExec - ([465422d](https://github.com/pkgforge/soar/commit/465422ddef77b1d7d69015cb1bcfa5643d86845f))
+
+### 🚜 Refactor
+
+- *(system)* Add per-context system mode support - ([10544ac](https://github.com/pkgforge/soar/commit/10544ac8a2bd896152448f79650c6d98db0d960a))
+
+### 📚 Documentation
+
+- *(readme)* Update readme - ([4fc58a7](https://github.com/pkgforge/soar/commit/4fc58a774b4c968db8f4d69f7f809378573b4145))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(manifest)* Remove deprecated authors field - ([0bf1231](https://github.com/pkgforge/soar/commit/0bf123139798f2efb1674c8a14eaaf4f4640dc2a))
+
 ## [0.2.3](https://github.com/pkgforge/soar/compare/soar-package-v0.2.2...soar-package-v0.2.3) - 2026-02-04
 
 ### ⛰️  Features

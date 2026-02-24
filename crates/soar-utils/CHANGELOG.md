@@ -1,4 +1,26 @@
 
+## [0.4.0](https://github.com/pkgforge/soar/compare/soar-utils-v0.3.0...soar-utils-v0.4.0) - 2026-02-24
+
+### ⛰️  Features
+
+- *(lock)* Add locking for concurrent process safety ([#154](https://github.com/pkgforge/soar/pull/154)) - ([e3bef6a](https://github.com/pkgforge/soar/commit/e3bef6a09435e83a524b719f7b9f3e0d133c6b64))
+
+### 🐛 Bug Fixes
+
+- *(clippy)* Apply clippy suggestions - ([7b85532](https://github.com/pkgforge/soar/commit/7b85532d78baa32ee9541a2d764242656a8c07ba))
+
+### 🚜 Refactor
+
+- *(repositories)* Add soarpkgs, drop bincache and pkgcache - ([d07d602](https://github.com/pkgforge/soar/commit/d07d602dc9e972944b7516ac798036e5ddcc689f))
+
+### 📚 Documentation
+
+- *(readme)* Update readme - ([4fc58a7](https://github.com/pkgforge/soar/commit/4fc58a774b4c968db8f4d69f7f809378573b4145))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(manifest)* Remove deprecated authors field - ([0bf1231](https://github.com/pkgforge/soar/commit/0bf123139798f2efb1674c8a14eaaf4f4640dc2a))
+
 ## [0.3.0](https://github.com/pkgforge/soar/compare/soar-utils-v0.2.0...soar-utils-v0.3.0) - 2026-02-04
 
 ### ⛰️  Features
