@@ -3,7 +3,7 @@
 //! This module provides functionality to resolve package sources from
 //! GitHub or GitLab releases, fetching version and download URL automatically.
 
-use std::process::Command;
+use std::{collections::HashMap, process::Command};
 
 use soar_config::packages::ResolvedPackage;
 use soar_dl::{
@@ -30,6 +30,8 @@ pub enum ReleaseSource {
         include_prerelease: bool,
         /// Optional glob pattern to match tag names.
         tag_pattern: Option<String>,
+        /// Custom architecture name mapping.
+        arch_map: Option<HashMap<String, String>>,
     },
     /// GitLab releases source.
     GitLab {
@@ -41,6 +43,8 @@ pub enum ReleaseSource {
         include_prerelease: bool,
         /// Optional glob pattern to match tag names.
         tag_pattern: Option<String>,
+        /// Custom architecture name mapping.
+        arch_map: Option<HashMap<String, String>>,
     },
 }
 
@@ -67,6 +71,7 @@ impl ReleaseSource {
                 asset_pattern,
                 include_prerelease: pkg.include_prerelease.unwrap_or(false),
                 tag_pattern: pkg.tag_pattern.clone(),
+                arch_map: pkg.arch_map.clone(),
             });
         }
 
@@ -77,6 +82,7 @@ impl ReleaseSource {
                 asset_pattern,
                 include_prerelease: pkg.include_prerelease.unwrap_or(false),
                 tag_pattern: pkg.tag_pattern.clone(),
+                arch_map: pkg.arch_map.clone(),
             });
         }
 
@@ -103,6 +109,7 @@ impl ReleaseSource {
                 asset_pattern,
                 include_prerelease,
                 tag_pattern,
+                arch_map,
             } => {
                 resolve_github(
                     repo,
@@ -110,6 +117,7 @@ impl ReleaseSource {
                     *include_prerelease,
                     tag_pattern.as_deref(),
                     version,
+                    arch_map.as_ref(),
                 )
             }
             ReleaseSource::GitLab {
@@ -117,6 +125,7 @@ impl ReleaseSource {
                 asset_pattern,
                 include_prerelease,
                 tag_pattern,
+                arch_map,
             } => {
                 resolve_gitlab(
                     repo,
@@ -124,6 +133,7 @@ impl ReleaseSource {
                     *include_prerelease,
                     tag_pattern.as_deref(),
                     version,
+                    arch_map.as_ref(),
                 )
             }
         }
@@ -145,6 +155,7 @@ fn resolve_github(
     include_prerelease: bool,
     tag_pattern: Option<&str>,
     specific_version: Option<&str>,
+    arch_map: Option<&HashMap<String, String>>,
 ) -> SoarResult<ResolvedRelease> {
     let releases: Vec<GithubRelease> = Github::fetch_releases(repo, None).map_err(|e| {
         SoarError::Custom(format!(
@@ -185,7 +196,7 @@ fn resolve_github(
         })?;
 
     let assets: &[GithubAsset] = release.assets();
-    let asset_pattern = substitute_placeholders(asset_pattern, Some(release.tag()));
+    let asset_pattern = substitute_placeholders(asset_pattern, Some(release.tag()), arch_map);
     let asset = find_matching_asset(assets, &asset_pattern)?;
 
     Ok(ResolvedRelease {
@@ -202,6 +213,7 @@ fn resolve_gitlab(
     include_prerelease: bool,
     tag_pattern: Option<&str>,
     specific_version: Option<&str>,
+    arch_map: Option<&HashMap<String, String>>,
 ) -> SoarResult<ResolvedRelease> {
     let releases: Vec<GitLabRelease> = GitLab::fetch_releases(repo, None).map_err(|e| {
         SoarError::Custom(format!(
@@ -242,7 +254,7 @@ fn resolve_gitlab(
         })?;
 
     let assets: &[GitLabAsset] = release.assets();
-    let asset_pattern = substitute_placeholders(asset_pattern, Some(release.tag()));
+    let asset_pattern = substitute_placeholders(asset_pattern, Some(release.tag()), arch_map);
     let asset = find_matching_asset(assets, &asset_pattern)?;
 
     Ok(ResolvedRelease {
@@ -353,6 +365,7 @@ mod tests {
                 asset_pattern,
                 include_prerelease,
                 tag_pattern,
+                ..
             } => {
                 assert_eq!(repo, "user/repo");
                 assert_eq!(asset_pattern, "*.AppImage");
@@ -379,6 +392,7 @@ mod tests {
                 asset_pattern,
                 include_prerelease,
                 tag_pattern,
+                ..
             } => {
                 assert_eq!(repo, "group/project");
                 assert_eq!(asset_pattern, "*.tar.gz");

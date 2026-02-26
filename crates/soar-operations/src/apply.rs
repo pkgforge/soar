@@ -445,7 +445,9 @@ fn handle_local_package(
             Some(url) => url,
             None => {
                 match &pkg.url {
-                    Some(url) => substitute_placeholders(url, Some(&version)),
+                    Some(url) => {
+                        substitute_placeholders(url, Some(&version), pkg.arch_map.as_ref())
+                    }
                     None => {
                         diff.not_found.push(format!(
                             "{} (version_command returned no URL and no url field configured)",
@@ -538,7 +540,7 @@ fn handle_local_package(
             }
         }
 
-        let url = substitute_placeholders(url, pkg.version.as_deref());
+        let url = substitute_placeholders(url, pkg.version.as_deref(), pkg.arch_map.as_ref());
         let url_pkg = UrlPackage::from_remote(
             &url,
             Some(&pkg.name),
@@ -625,6 +627,7 @@ fn create_install_target(
         hooks: resolved.hooks.clone(),
         build: resolved.build.clone(),
         sandbox: resolved.sandbox.clone(),
+        arch_map: resolved.arch_map.clone(),
     }
 }
 
@@ -650,5 +653,6 @@ fn create_url_install_target(
         hooks: resolved.hooks.clone(),
         build: resolved.build.clone(),
         sandbox: resolved.sandbox.clone(),
+        arch_map: resolved.arch_map.clone(),
     }
 }

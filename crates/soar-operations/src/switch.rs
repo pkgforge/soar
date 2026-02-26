@@ -105,6 +105,7 @@ pub async fn switch_variant(
         &selected_package.version,
         None,
         None,
+        None,
     )
     .await?;
 

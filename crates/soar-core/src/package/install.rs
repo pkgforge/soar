@@ -125,6 +125,7 @@ pub struct PackageInstaller {
     hooks: Option<PackageHooks>,
     build: Option<BuildConfig>,
     sandbox: Option<SandboxConfig>,
+    arch_map: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -145,6 +146,7 @@ pub struct InstallTarget {
     pub hooks: Option<PackageHooks>,
     pub build: Option<BuildConfig>,
     pub sandbox: Option<SandboxConfig>,
+    pub arch_map: Option<std::collections::HashMap<String, String>>,
 }
 
 impl PackageInstaller {
@@ -263,6 +265,7 @@ impl PackageInstaller {
             hooks: target.hooks.clone(),
             build: target.build.clone(),
             sandbox: target.sandbox.clone(),
+            arch_map: target.arch_map.clone(),
         })
     }
 
@@ -618,7 +621,11 @@ impl PackageInstaller {
 
             // Handle extract_root: move contents from subdirectory to install root
             if let Some(ref root_dir) = self.extract_root {
-                let root_dir = substitute_placeholders(root_dir, Some(&self.package.version));
+                let root_dir = substitute_placeholders(
+                    root_dir,
+                    Some(&self.package.version),
+                    self.arch_map.as_ref(),
+                );
                 let root_path =
                     validate_path_containment(&self.install_dir, &root_dir, "extract_root")?;
 
@@ -656,8 +663,11 @@ impl PackageInstaller {
 
             // Handle nested_extract: extract an archive within the package
             if let Some(ref nested_archive) = self.nested_extract {
-                let nested_archive =
-                    substitute_placeholders(nested_archive, Some(&self.package.version));
+                let nested_archive = substitute_placeholders(
+                    nested_archive,
+                    Some(&self.package.version),
+                    self.arch_map.as_ref(),
+                );
                 let archive_path = validate_path_containment(
                     &self.install_dir,
                     &nested_archive,

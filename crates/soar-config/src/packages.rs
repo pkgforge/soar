@@ -215,6 +215,11 @@ pub struct PackageOptions {
 
     /// Whether to install binary only.
     pub binary_only: Option<bool>,
+
+    /// Custom architecture name mapping.
+    /// Maps standard architecture names (e.g., "x86_64", "aarch64") to custom values
+    /// used by the package source (e.g., "amd64", "arm64", "x64").
+    pub arch_map: Option<HashMap<String, String>>,
 }
 
 /// Portable directory configuration for a package.
@@ -263,6 +268,7 @@ pub struct ResolvedPackage {
     pub portable: Option<PortableConfig>,
     pub install_patterns: Option<Vec<String>>,
     pub binary_only: bool,
+    pub arch_map: Option<HashMap<String, String>>,
 }
 
 impl PackageSpec {
@@ -301,6 +307,7 @@ impl PackageSpec {
                     portable: None,
                     install_patterns: defaults.and_then(|d| d.install_patterns.clone()),
                     binary_only: defaults.and_then(|d| d.binary_only).unwrap_or(false),
+                    arch_map: None,
                 }
             }
             PackageSpec::Detailed(opts) => {
@@ -345,6 +352,7 @@ impl PackageSpec {
                         .binary_only
                         .or_else(|| defaults.and_then(|d| d.binary_only))
                         .unwrap_or(false),
+                    arch_map: opts.arch_map.clone(),
                 }
             }
         }

@@ -962,6 +962,7 @@ async fn install_single_package(
         &pkg.version,
         target.entrypoint.as_deref(),
         target.binaries.as_deref(),
+        target.arch_map.as_ref(),
     )
     .await?;
 

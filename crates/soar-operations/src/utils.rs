@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     os::{unix, unix::fs::PermissionsExt},
     path::{Path, PathBuf},
@@ -50,13 +50,15 @@ pub async fn mangle_package_symlinks(
     version: &str,
     entrypoint: Option<&str>,
     binaries: Option<&[BinaryMapping]>,
+    arch_map: Option<&HashMap<String, String>>,
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
     let mut symlinks = Vec::new();
 
     if let Some(bins) = binaries {
         if !bins.is_empty() {
             for mapping in bins {
-                let source_pattern = substitute_placeholders(&mapping.source, Some(version));
+                let source_pattern =
+                    substitute_placeholders(&mapping.source, Some(version), arch_map);
                 let source_paths: Vec<PathBuf> = fs::read_dir(install_dir)
                     .with_context(|| format!("reading directory {}", install_dir.display()))?
                     .filter_map(|entry| entry.ok())

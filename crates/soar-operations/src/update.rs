@@ -261,7 +261,12 @@ fn check_local_update(
                 Some(url) => (url, true),
                 None => {
                     match &resolved.url {
-                        Some(url) => (substitute_placeholders(url, Some(&v)), false),
+                        Some(url) => {
+                            (
+                                substitute_placeholders(url, Some(&v), resolved.arch_map.as_ref()),
+                                false,
+                            )
+                        }
                         None => {
                             warn!(
                             "version_command returned no URL and no url field configured for {}",
@@ -356,6 +361,7 @@ fn check_local_update(
         hooks: resolved.hooks.clone(),
         build: resolved.build.clone(),
         sandbox: resolved.sandbox.clone(),
+        arch_map: resolved.arch_map.clone(),
     };
 
     Ok(Some(UpdateInfo {

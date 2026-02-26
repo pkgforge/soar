@@ -1,6 +1,7 @@
 //! Utility functions for soar-core.
 
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -93,12 +94,21 @@ pub fn get_extract_dir<P: AsRef<Path>>(base_dir: P) -> PathBuf {
 /// Substitute placeholders in a string with system/package metadata.
 ///
 /// Supported placeholders:
-/// - `{arch}` - System architecture (e.g., "x86_64", "aarch64")
+/// - `{arch}` - System architecture (e.g., "x86_64", "aarch64"), can be overridden via `arch_map`
 /// - `{os}` - Operating system (e.g., "linux", "macos")
 /// - `{version}` - Package version (if provided)
-pub fn substitute_placeholders(template: &str, version: Option<&str>) -> String {
+pub fn substitute_placeholders(
+    template: &str,
+    version: Option<&str>,
+    arch_map: Option<&HashMap<String, String>>,
+) -> String {
+    let arch = arch_map
+        .and_then(|m| m.get(std::env::consts::ARCH))
+        .map(|s| s.as_str())
+        .unwrap_or(std::env::consts::ARCH);
+
     let result = template
-        .replace("{arch}", std::env::consts::ARCH)
+        .replace("{arch}", arch)
         .replace("{os}", std::env::consts::OS);
 
     match version {
