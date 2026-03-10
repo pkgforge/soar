@@ -574,11 +574,11 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
-        let serialized = toml::to_string_pretty(self)?;
+        let annotated_doc = self.to_annotated_document()?;
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&config_path, serialized)?;
+        fs::write(&config_path, annotated_doc.to_string())?;
         info!("Configuration saved to {}", config_path.display());
         Ok(())
     }

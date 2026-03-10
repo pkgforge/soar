@@ -8,6 +8,7 @@ pub mod health;
 pub mod install;
 pub mod list;
 pub mod remove;
+pub mod repo;
 pub mod run;
 pub mod search;
 pub mod switch;
