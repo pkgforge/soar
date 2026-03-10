@@ -64,6 +64,64 @@ pub struct Args {
 }
 
 #[derive(Subcommand)]
+pub enum RepoAction {
+    /// Add a new repository
+    Add {
+        /// Repository name
+        name: String,
+        /// Repository metadata URL
+        url: String,
+        /// Base64-encoded public key for signature verification
+        #[arg(long)]
+        pubkey: Option<String>,
+        /// Whether the repository is enabled
+        #[arg(long)]
+        enabled: Option<bool>,
+        /// Enable desktop integration
+        #[arg(long)]
+        desktop_integration: Option<bool>,
+        /// Enable signature verification
+        #[arg(long)]
+        signature_verification: Option<bool>,
+        /// Sync interval (e.g., "1h", "12h", "1d")
+        #[arg(long)]
+        sync_interval: Option<String>,
+    },
+    /// Update an existing repository
+    Update {
+        /// Repository name
+        name: String,
+        /// Repository metadata URL
+        #[arg(long)]
+        url: Option<String>,
+        /// Base64-encoded public key for signature verification
+        #[arg(long)]
+        pubkey: Option<String>,
+        /// Whether the repository is enabled
+        #[arg(long)]
+        enabled: Option<bool>,
+        /// Enable desktop integration
+        #[arg(long)]
+        desktop_integration: Option<bool>,
+        /// Enable signature verification
+        #[arg(long)]
+        signature_verification: Option<bool>,
+        /// Sync interval (e.g., "1h", "12h", "1d")
+        #[arg(long)]
+        sync_interval: Option<String>,
+    },
+    /// Remove a repository
+    #[clap(visible_alias = "del")]
+    Remove {
+        /// Repository name
+        name: String,
+    },
+    /// List configured repositories
+    #[clap(visible_alias = "ls")]
+    List,
+}
+
+#[derive(Subcommand)]
 pub enum SelfAction {
     /// Update soar
     Update {
@@ -402,6 +460,14 @@ pub enum Commands {
             value_parser = parse_default_repos_arg
         )]
         repositories: Vec<String>,
+    },
+
+    /// Manage repositories
+    #[command(arg_required_else_help = true)]
+    #[clap(name = "repo", visible_alias = "repository")]
+    Repo {
+        #[clap(subcommand)]
+        action: RepoAction,
     },
 
     /// View env

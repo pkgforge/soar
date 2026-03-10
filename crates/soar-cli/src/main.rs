@@ -49,6 +49,7 @@ mod list;
 mod logging;
 mod progress;
 mod remove;
+mod repo;
 mod run;
 mod update;
 #[path = "use.rs"]
@@ -372,6 +373,11 @@ async fn handle_cli() -> SoarResult<()> {
                     download(context, links, github, gitlab, ghcr).await?;
                 }
                 cli::Commands::Health => display_health(&ctx).await?,
+                cli::Commands::Repo {
+                    action,
+                } => {
+                    repo::handle_repo_action(&ctx, action)?;
+                }
                 cli::Commands::Env => {
                     let config = get_config();
 
