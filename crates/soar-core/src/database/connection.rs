@@ -60,7 +60,7 @@ impl DieselDatabase {
     /// Gets a mutable reference to the underlying connection.
     /// Locks the mutex and returns a guard.
     pub fn conn(&self) -> Result<std::sync::MutexGuard<'_, DbConnection>> {
-        self.conn.lock().map_err(|_| SoarError::PoisonError)
+        Ok(self.conn.lock().unwrap_or_else(|e| e.into_inner()))
     }
 
     /// Executes a function with the connection.
@@ -68,7 +68,7 @@ impl DieselDatabase {
     where
         F: FnOnce(&mut diesel::SqliteConnection) -> diesel::QueryResult<T>,
     {
-        let mut conn = self.conn.lock().map_err(|_| SoarError::PoisonError)?;
+        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         f(conn.conn()).map_err(|e| SoarError::Custom(format!("database error: {}", e)))
     }
 
@@ -77,7 +77,7 @@ impl DieselDatabase {
     where
         F: FnOnce(&mut diesel::SqliteConnection) -> diesel::QueryResult<T>,
     {
-        let mut conn = self.conn.lock().map_err(|_| SoarError::PoisonError)?;
+        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.conn()
             .transaction(f)
             .map_err(|e| SoarError::Custom(format!("transaction error: {}", e)))

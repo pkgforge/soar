@@ -293,36 +293,34 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     pkg_name,
                     pkg_id,
                     stage,
-                } => {
-                    if stage != InstallStage::Complete {
-                        let msg = match &stage {
-                            InstallStage::Extracting => {
-                                format!("{pkg_name}#{pkg_id}: extracting")
-                            }
-                            InstallStage::ExtractingNested => {
-                                format!("{pkg_name}#{pkg_id}: extracting nested")
-                            }
-                            InstallStage::LinkingBinaries => {
-                                format!("{pkg_name}#{pkg_id}: linking binaries")
-                            }
-                            InstallStage::DesktopIntegration => {
-                                format!("{pkg_name}#{pkg_id}: desktop integration")
-                            }
-                            InstallStage::SetupPortable => {
-                                format!("{pkg_name}#{pkg_id}: setting up portable")
-                            }
-                            InstallStage::RecordingDatabase => {
-                                format!("{pkg_name}#{pkg_id}: recording to db")
-                            }
-                            InstallStage::RunningHook(hook) => {
-                                format!("{pkg_name}#{pkg_id}: running {hook}")
-                            }
-                            InstallStage::Complete => unreachable!(),
-                        };
-                        let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
-                        pb.set_style(spinner_style());
-                        pb.set_message(msg);
-                    }
+                } if stage != InstallStage::Complete => {
+                    let msg = match &stage {
+                        InstallStage::Extracting => {
+                            format!("{pkg_name}#{pkg_id}: extracting")
+                        }
+                        InstallStage::ExtractingNested => {
+                            format!("{pkg_name}#{pkg_id}: extracting nested")
+                        }
+                        InstallStage::LinkingBinaries => {
+                            format!("{pkg_name}#{pkg_id}: linking binaries")
+                        }
+                        InstallStage::DesktopIntegration => {
+                            format!("{pkg_name}#{pkg_id}: desktop integration")
+                        }
+                        InstallStage::SetupPortable => {
+                            format!("{pkg_name}#{pkg_id}: setting up portable")
+                        }
+                        InstallStage::RecordingDatabase => {
+                            format!("{pkg_name}#{pkg_id}: recording to db")
+                        }
+                        InstallStage::RunningHook(hook) => {
+                            format!("{pkg_name}#{pkg_id}: running {hook}")
+                        }
+                        InstallStage::Complete => unreachable!(),
+                    };
+                    let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
+                    pb.set_style(spinner_style());
+                    pb.set_message(msg);
                 }
 
                 // ── Removal stages ─────────────────────────────────────

@@ -3,7 +3,10 @@ use std::{
     io::{Read as _, Seek as _, SeekFrom, Write as _},
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     thread,
 };
 
@@ -532,7 +535,7 @@ impl OciDownload {
         layers: &[&OciLayer],
         output_dir: &Path,
     ) -> Result<Vec<PathBuf>, DownloadError> {
-        let downloaded = Arc::new(Mutex::new(0u64));
+        let downloaded = Arc::new(AtomicU64::new(0));
         let paths = Arc::new(Mutex::new(Vec::new()));
         let errors = Arc::new(Mutex::new(Vec::new()));
 
@@ -568,16 +571,14 @@ impl OciDownload {
                         if path.is_file() {
                             if let Ok(metadata) = path.metadata() {
                                 if metadata.len() == layer.size {
-                                    {
-                                        let mut shared = downloaded.lock().unwrap();
-                                        *shared += layer.size;
-                                        let current = *shared;
-                                        if let Some(ref cb) = on_progress {
-                                            cb(Progress::Chunk {
-                                                current,
-                                                total: total_size,
-                                            });
-                                        }
+                                    let current = downloaded
+                                        .fetch_add(layer.size, Ordering::Relaxed)
+                                        + layer.size;
+                                    if let Some(ref cb) = on_progress {
+                                        cb(Progress::Chunk {
+                                            current,
+                                            total: total_size,
+                                        });
                                     }
                                     paths.lock().unwrap().push(path);
                                     continue;
@@ -795,7 +796,7 @@ impl OciDownload {
             path,
             downloaded,
             self.on_progress.as_ref(),
-            &Arc::new(Mutex::new(0u64)),
+            &Arc::new(AtomicU64::new(0)),
             total_size,
         )
     }
@@ -819,7 +820,7 @@ fn download_layer_impl(
     path: &Path,
     local_downloaded: &mut u64,
     on_progress: Option<&Arc<dyn Fn(Progress) + Send + Sync>>,
-    shared_downloaded: &Arc<Mutex<u64>>,
+    shared_downloaded: &Arc<AtomicU64>,
     total_size: u64,
 ) -> Result<(), DownloadError> {
     let url = format!(
@@ -901,8 +902,7 @@ fn download_layer_impl(
 
     // Add resume offset to shared counter so progress shows correct cumulative total
     if is_resuming {
-        let mut shared = shared_downloaded.lock().unwrap();
-        *shared += resume_offset;
+        shared_downloaded.fetch_add(resume_offset, Ordering::Relaxed);
     }
 
     loop {
@@ -914,11 +914,7 @@ fn download_layer_impl(
         file.write_all(&buffer[..n])?;
         *local_downloaded += n as u64;
 
-        let current_total = {
-            let mut shared = shared_downloaded.lock().unwrap();
-            *shared += n as u64;
-            *shared
-        };
+        let current_total = { shared_downloaded.fetch_add(n as u64, Ordering::Relaxed) + n as u64 };
 
         let checkpoint = *local_downloaded / (1024 * 1024);
         if checkpoint > last_checkpoint {
