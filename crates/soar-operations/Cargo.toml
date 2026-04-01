@@ -12,6 +12,7 @@ categories.workspace = true
 [dependencies]
 fast-glob = { workspace = true }
 minisign-verify = { workspace = true }
+nucleo-matcher = { workspace = true }
 once_cell = { workspace = true }
 rayon = { workspace = true }
 soar-config = { workspace = true }

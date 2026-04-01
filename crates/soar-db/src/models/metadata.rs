@@ -137,6 +137,18 @@ pub struct PackageListing {
     pub version: String,
 }
 
+/// Minimal package data for fuzzy search candidate matching.
+/// Only fetches fields needed for matching, avoiding expensive JSON deserialization.
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = packages)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct FuzzyCandidate {
+    pub id: i32,
+    pub pkg_name: String,
+    pub pkg_id: String,
+    pub description: Option<String>,
+}
+
 /// Package with repository name attached.
 /// This is used when querying across multiple repositories.
 #[derive(Debug, Clone)]

@@ -1,6 +1,6 @@
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
 use soar_core::{package::install::InstallTarget, SoarResult};
-use soar_operations::{install, InstallOptions, InstallReport, ResolveResult, SoarContext};
+use soar_operations::{install, search, InstallOptions, InstallReport, ResolveResult, SoarContext};
 use tabled::{
     builder::Builder,
     settings::{themes::BorderCorrection, Panel, Style},
@@ -89,6 +89,11 @@ pub async fn install_packages(
             }
             ResolveResult::NotFound(name) => {
                 error!("Package {} not found", name);
+                if let Ok(suggestions) = search::suggest_similar(ctx, &name, 3).await {
+                    if !suggestions.is_empty() {
+                        info!("Did you mean: {}?", suggestions.join(", "));
+                    }
+                }
             }
             ResolveResult::AlreadyInstalled {
                 pkg_name,
@@ -177,6 +182,11 @@ async fn install_with_show(
                     }
                     ResolveResult::NotFound(name) => {
                         error!("Package {} not found", name);
+                        if let Ok(suggestions) = search::suggest_similar(ctx, &name, 3).await {
+                            if !suggestions.is_empty() {
+                                info!("Did you mean: {}?", suggestions.join(", "));
+                            }
+                        }
                     }
                     ResolveResult::AlreadyInstalled {
                         pkg_name,
@@ -250,7 +260,13 @@ async fn install_with_show(
         };
 
         if repo_pkgs.is_empty() {
-            error!("Package {} not found", query.name.as_ref().unwrap());
+            let name = query.name.as_ref().unwrap();
+            error!("Package {} not found", name);
+            if let Ok(suggestions) = search::suggest_similar(ctx, name, 3).await {
+                if !suggestions.is_empty() {
+                    info!("Did you mean: {}?", suggestions.join(", "));
+                }
+            }
             continue;
         }
 

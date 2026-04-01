@@ -43,6 +43,7 @@ libsqlite3-sys = { version = ">=0.30.1,<0.36.0", features = [ "bundled" ]}
 miette = { version = "7.6.0", features = ["fancy"] }
 minisign-verify = "0.2.4"
 nix = { version = "0.30.1", features = ["fs", "ioctl", "term", "user"] }
+nucleo-matcher = "0.3.1"
 nu-ansi-term = "0.50.3"
 once_cell = "1.21"
 percent-encoding = "2.3.2"

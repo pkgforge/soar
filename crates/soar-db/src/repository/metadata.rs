@@ -15,8 +15,8 @@ use super::core::SortDirection;
 use crate::{
     models::{
         metadata::{
-            Maintainer, NewMaintainer, NewPackage, NewPackageMaintainer, NewRepository, Package,
-            PackageListing,
+            FuzzyCandidate, Maintainer, NewMaintainer, NewPackage, NewPackageMaintainer,
+            NewRepository, Package, PackageListing,
         },
         types::PackageProvide,
     },
@@ -59,6 +59,26 @@ impl MetadataRepository {
             debug!(count = packages.len(), "listed all packages (minimal)");
         }
         result
+    }
+
+    /// Loads lightweight package data for fuzzy matching.
+    /// Returns only (id, pkg_name, pkg_id, description) to minimize memory and deserialization.
+    pub fn load_fuzzy_candidates(conn: &mut SqliteConnection) -> QueryResult<Vec<FuzzyCandidate>> {
+        trace!("loading fuzzy candidates");
+        packages::table
+            .select(FuzzyCandidate::as_select())
+            .load(conn)
+    }
+
+    /// Fetches full package details for a set of package IDs.
+    pub fn find_by_ids(conn: &mut SqliteConnection, ids: &[i32]) -> QueryResult<Vec<Package>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        packages::table
+            .filter(packages::id.eq_any(ids))
+            .select(Package::as_select())
+            .load(conn)
     }
 
     /// Lists packages with pagination and sorting using Diesel DSL.

@@ -11,6 +11,7 @@ use soar_db::repository::{
     metadata::MetadataRepository,
 };
 use soar_dl::http_client::SHARED_AGENT;
+use soar_operations::search;
 use soar_utils::bytes::format_bytes;
 use tracing::{error, info};
 use ureq::http::header::CONTENT_LENGTH;
@@ -115,6 +116,11 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
 
     if packages.is_empty() {
         error!("Package {} not found", package);
+        if let Ok(suggestions) = search::suggest_similar(&ctx, package, 3).await {
+            if !suggestions.is_empty() {
+                info!("Did you mean: {}?", suggestions.join(", "));
+            }
+        }
     } else {
         let selected_pkg = if packages.len() > 1 {
             &select_package_interactively(packages, &query.name.unwrap_or(package.to_string()))?
