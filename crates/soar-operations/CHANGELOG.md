@@ -1,4 +1,13 @@
 
+## [0.2.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.1.0...soar-operations-v0.2.0) - 2026-04-01
+
+### ⛰️  Features
+
+- *(cli)* Add `soar repo` subcommand for repository management - ([08d7c18](https://github.com/pkgforge/soar/commit/08d7c18697ff7a8467c5d60475877db1dff45636))
+- *(packages)* Add arch_map for custom arch name mapping - ([61c0efb](https://github.com/pkgforge/soar/commit/61c0efb1e95127bde2574480a3971ff2f57e125a))
+- *(repo)* Add repository management operations (add, update, remove) - ([fc76b6f](https://github.com/pkgforge/soar/commit/fc76b6f9b97d3ae53b760d33fd1a2cf258eb165a))
+- *(search)* Add fuzzy search and "did you mean?" suggestions - ([934b0ff](https://github.com/pkgforge/soar/commit/934b0ffe6f9014a833f9c9bbe1b41772298932c5))
+
 ## [0.1.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.0.0...soar-operations-v0.1.0) - 2026-02-24
 
 ### ⛰️  Features

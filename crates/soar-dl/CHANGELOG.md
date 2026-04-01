@@ -1,4 +1,10 @@
 
+## [0.9.1](https://github.com/pkgforge/soar/compare/soar-dl-v0.9.0...soar-dl-v0.9.1) - 2026-04-01
+
+### ⚡ Performance
+
+- *(dl,core)* Fix mutex contention in parallel downloads and database - ([084979d](https://github.com/pkgforge/soar/commit/084979d848174c23fde6b59669f75e58adbc36f3))
+
 ## [0.9.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.8.0...soar-dl-v0.9.0) - 2026-02-24
 
 ### 🚜 Refactor

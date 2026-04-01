@@ -1,4 +1,10 @@
 
+## [0.5.1](https://github.com/pkgforge/soar/compare/soar-db-v0.5.0...soar-db-v0.5.1) - 2026-04-01
+
+### ⛰️  Features
+
+- *(search)* Add fuzzy search and "did you mean?" suggestions - ([934b0ff](https://github.com/pkgforge/soar/commit/934b0ffe6f9014a833f9c9bbe1b41772298932c5))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-db-v0.4.0...soar-db-v0.5.0) - 2026-02-24
 
 ### ⛰️  Features
