@@ -1,4 +1,14 @@
 
+## [0.15.0](https://github.com/pkgforge/soar/compare/soar-core-v0.14.0...soar-core-v0.15.0) - 2026-04-10
+
+### ⛰️  Features
+
+- *(packages)* Add arch_map for custom arch name mapping - ([61c0efb](https://github.com/pkgforge/soar/commit/61c0efb1e95127bde2574480a3971ff2f57e125a))
+
+### ⚡ Performance
+
+- *(dl,core)* Fix mutex contention in parallel downloads and database - ([084979d](https://github.com/pkgforge/soar/commit/084979d848174c23fde6b59669f75e58adbc36f3))
+
 ## [0.14.0](https://github.com/pkgforge/soar/compare/soar-core-v0.13.0...soar-core-v0.14.0) - 2026-02-24
 
 ### ⛰️  Features
