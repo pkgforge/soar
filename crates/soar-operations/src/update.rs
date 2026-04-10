@@ -141,7 +141,8 @@ fn check_repo_update(
         })?
         .flatten()
         .map(|p| {
-            let mut package: Package = p.into();
+            let package: Package = p.into();
+            let mut package = package.resolve(None);
             package.repo_name = pkg.repo_name.clone();
             package
         });
