@@ -751,24 +751,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dwarfs"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f3693d0282f0db67b1a113d74ea641e530fbe7b5e535c200b6ebcba5e6b2ab5"
-dependencies = [
- "bstr",
- "log",
- "lru",
- "measure_time",
- "positioned-io",
- "serde",
- "sha2",
- "xxhash-rust",
- "zerocopy",
- "zstd-safe",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1413,15 +1395,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
  "regex-automata",
-]
-
-[[package]]
-name = "measure_time"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51c55d61e72fc3ab704396c5fa16f4c184db37978ae4e94ca8959693a235fc0e"
-dependencies = [
- "log",
 ]
 
 [[package]]
@@ -2421,15 +2394,22 @@ dependencies = [
 
 [[package]]
 name = "squishy"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f95cf19d6dfe5900900732e7bd6ac14b0613c599c73074b646f32c18c596de3e"
+checksum = "fc4b346e9ccc1a5034f30f300a2a9227ebe85ca4cc6ee68d5eda2fbeb4879fd9"
 dependencies = [
  "backhand",
- "dwarfs",
+ "bstr",
  "goblin",
+ "lru",
+ "positioned-io",
  "rayon",
+ "serde",
+ "sha2",
  "thiserror",
+ "xxhash-rust",
+ "zerocopy",
+ "zstd-safe",
 ]
 
 [[package]]
