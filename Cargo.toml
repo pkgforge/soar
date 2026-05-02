@@ -25,6 +25,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 blake3 = { version = "1.8.2", features = ["mmap"] }
 clap = { version = "4.5.54", features = ["cargo", "derive"] }
+clap_complete = "4.6.3"
 chrono = "0.4"
 compak = "0.1.2"
 diesel = { version = "2.3.5", features = [

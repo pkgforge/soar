@@ -19,6 +19,7 @@ self = []
 
 [dependencies]
 clap = { workspace = true }
+clap_complete = { workspace = true }
 indicatif = { workspace = true }
 miette = { workspace = true }
 nix = { workspace = true }

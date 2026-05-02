@@ -6,7 +6,8 @@ use std::{
 };
 
 use apply::apply_packages;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete;
 use cli::Args;
 use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};
@@ -474,6 +475,12 @@ async fn handle_cli() -> SoarResult<()> {
                     repo,
                 } => {
                     json_to_db(&input, &output, repo.as_deref())?;
+                }
+                cli::Commands::Completions {
+                    shell,
+                } => {
+                    let mut cmd = cli::Args::command();
+                    clap_complete::generate(shell, &mut cmd, "soar", &mut std::io::stdout());
                 }
                 _ => unreachable!(),
             }

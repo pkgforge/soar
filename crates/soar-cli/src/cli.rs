@@ -1,4 +1,5 @@
 use clap::{ArgAction, Parser, Subcommand, ValueHint};
+use clap_complete::Shell;
 
 use crate::utils::parse_default_repos_arg;
 
@@ -526,6 +527,14 @@ pub enum Commands {
     /// Generate default packages configuration
     #[clap(name = "defpackages")]
     DefPackages,
+
+    /// Generate shell completions
+    #[clap(name = "completions")]
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 
     /// Convert JSON metadata to SQLite database
     #[clap(name = "json2db")]
