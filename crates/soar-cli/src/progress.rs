@@ -8,7 +8,8 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use nu_ansi_term::Color::{Cyan, Green, Red};
 use soar_dl::types::Progress;
 use soar_events::{
-    InstallStage, OperationId, RemoveStage, SoarEvent, SyncStage, UpdateCleanupStage, VerifyStage,
+    BuildStage, InstallStage, OperationId, RemoveStage, SoarEvent, SyncStage, UpdateCleanupStage,
+    VerifyStage,
 };
 
 use crate::utils::{display_settings, progress_enabled};
@@ -321,6 +322,50 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
                     pb.set_style(spinner_style());
                     pb.set_message(msg);
+                }
+
+                // ── Build stages ───────────────────────────────────────
+                // Clear the spinner before each command so cargo/make/etc
+                // output flows to a clean terminal instead of interleaving
+                // with the steady-tick spinner. Subsequent stage events
+                // (LinkingBinaries, etc.) recreate the spinner.
+                SoarEvent::Building {
+                    op_id,
+                    pkg_name,
+                    pkg_id,
+                    stage,
+                } => {
+                    match stage {
+                        BuildStage::Sandboxing => {
+                            if let Some(pb) = jobs.remove(&op_id) {
+                                pb.finish_and_clear();
+                            }
+                        }
+                        BuildStage::Running {
+                            command_index,
+                            total_commands,
+                        } => {
+                            if let Some(pb) = jobs.remove(&op_id) {
+                                pb.finish_and_clear();
+                            }
+                            MULTI.suspend(|| {
+                                eprintln!(
+                                    " {} {}#{}: {}",
+                                    Cyan.paint("⚙"),
+                                    Cyan.paint(&pkg_name),
+                                    Cyan.paint(&pkg_id),
+                                    nu_ansi_term::Style::new().dimmed().paint(format!(
+                                        "build ({}/{})",
+                                        command_index + 1,
+                                        total_commands
+                                    ))
+                                );
+                            });
+                        }
+                        BuildStage::CommandComplete {
+                            ..
+                        } => {}
+                    }
                 }
 
                 // ── Removal stages ─────────────────────────────────────

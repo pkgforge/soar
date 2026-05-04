@@ -27,6 +27,7 @@ serde_json = { workspace = true }
 soar-config = { workspace = true }
 soar-db = { workspace = true }
 soar-dl = { workspace = true }
+soar-events = { workspace = true }
 soar-package = { workspace = true }
 soar-utils = { workspace = true }
 thiserror = { workspace = true }

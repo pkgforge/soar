@@ -2265,6 +2265,7 @@ dependencies = [
  "soar-config",
  "soar-db",
  "soar-dl",
+ "soar-events",
  "soar-package",
  "soar-utils",
  "thiserror",

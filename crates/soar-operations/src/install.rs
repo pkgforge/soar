@@ -873,6 +873,8 @@ async fn install_single_package(
         core_db.clone(),
         install_patterns.to_vec(),
         config.clone(),
+        events.clone(),
+        op_id,
     )
     .await?;
 

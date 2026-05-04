@@ -23,6 +23,7 @@ use soar_dl::{
     oci::OciDownload,
     types::{OverwriteMode, Progress},
 };
+use soar_events::{BuildStage, EventSinkHandle, InstallStage, OperationId, SoarEvent};
 use soar_utils::{
     error::FileSystemResult,
     fs::{safe_remove, walk_dir},
@@ -126,6 +127,8 @@ pub struct PackageInstaller {
     build: Option<BuildConfig>,
     sandbox: Option<SandboxConfig>,
     arch_map: Option<std::collections::HashMap<String, String>>,
+    events: EventSinkHandle,
+    op_id: OperationId,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -157,6 +160,8 @@ impl PackageInstaller {
         db: DieselDatabase,
         globs: Vec<String>,
         config: Config,
+        events: EventSinkHandle,
+        op_id: OperationId,
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
@@ -266,6 +271,8 @@ impl PackageInstaller {
             build: target.build.clone(),
             sandbox: target.sandbox.clone(),
             arch_map: target.arch_map.clone(),
+            events,
+            op_id,
         })
     }
 
@@ -279,6 +286,13 @@ impl PackageInstaller {
             pkg_id: &self.package.pkg_id,
             pkg_version: &self.package.version,
         };
+
+        self.events.emit(SoarEvent::Installing {
+            op_id: self.op_id,
+            pkg_name: self.package.pkg_name.clone(),
+            pkg_id: self.package.pkg_id.clone(),
+            stage: InstallStage::RunningHook(hook_name.to_string()),
+        });
 
         run_hook(hook_name, command, &env, self.sandbox.as_ref())
     }
@@ -375,13 +389,34 @@ impl PackageInstaller {
             );
         }
 
+        let total_commands = build_config.commands.len();
+
+        if use_sandbox {
+            self.events.emit(SoarEvent::Building {
+                op_id: self.op_id,
+                pkg_name: self.package.pkg_name.clone(),
+                pkg_id: self.package.pkg_id.clone(),
+                stage: BuildStage::Sandboxing,
+            });
+        }
+
         for (i, cmd) in build_config.commands.iter().enumerate() {
             debug!(
                 "running build command {}/{}: {}",
                 i + 1,
-                build_config.commands.len(),
+                total_commands,
                 cmd
             );
+
+            self.events.emit(SoarEvent::Building {
+                op_id: self.op_id,
+                pkg_name: self.package.pkg_name.clone(),
+                pkg_id: self.package.pkg_id.clone(),
+                stage: BuildStage::Running {
+                    command_index: i,
+                    total_commands,
+                },
+            });
 
             let status = if use_sandbox {
                 let env_vars: Vec<(&str, String)> = vec![
@@ -438,6 +473,15 @@ impl PackageInstaller {
                     status.code().unwrap_or(-1)
                 )));
             }
+
+            self.events.emit(SoarEvent::Building {
+                op_id: self.op_id,
+                pkg_name: self.package.pkg_name.clone(),
+                pkg_id: self.package.pkg_id.clone(),
+                stage: BuildStage::CommandComplete {
+                    command_index: i,
+                },
+            });
         }
 
         debug!("build completed successfully");
