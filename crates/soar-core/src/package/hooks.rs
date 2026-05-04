@@ -35,7 +35,8 @@ pub fn run_hook(
         ("PKG_VERSION", env.pkg_version),
     ];
 
-    let use_sandbox = sandbox::is_landlock_supported();
+    let sandbox_enabled = sandbox_config.is_none_or(|s| s.is_enabled());
+    let use_sandbox = sandbox_enabled && sandbox::is_landlock_supported();
 
     let status = if use_sandbox {
         debug!("running {} hook with Landlock sandbox", hook_name);
@@ -45,7 +46,7 @@ pub fn run_hook(
             .envs(env_vars);
 
         if let Some(s) = sandbox_config {
-            let config = sandbox::SandboxConfig::new().with_network(if s.network {
+            let config = sandbox::SandboxConfig::new().with_network(if s.allows_network() {
                 sandbox::NetworkConfig::allow_all()
             } else {
                 sandbox::NetworkConfig::default()
@@ -60,7 +61,7 @@ pub fn run_hook(
         }
         cmd.run()?
     } else {
-        if sandbox_config.is_some_and(|s| s.require) {
+        if sandbox_enabled && sandbox_config.is_some_and(|s| s.is_required()) {
             return Err(SoarError::Custom(format!(
                 "{} hook requires sandbox but Landlock is not available on this system. \
                  Either upgrade to Linux 5.13+ or set sandbox.require = false.",
@@ -68,10 +69,17 @@ pub fn run_hook(
             )));
         }
 
-        warn!(
-            "Landlock not supported, running {} hook without sandbox",
-            hook_name
-        );
+        if !sandbox_enabled {
+            debug!(
+                "sandbox explicitly disabled, running {} hook without sandbox",
+                hook_name
+            );
+        } else {
+            warn!(
+                "Landlock not supported, running {} hook without sandbox",
+                hook_name
+            );
+        }
         Command::new("sh")
             .arg("-c")
             .arg(command)

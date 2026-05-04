@@ -7,7 +7,6 @@ use std::{
 
 use apply::apply_packages;
 use clap::{CommandFactory, Parser};
-use clap_complete;
 use cli::Args;
 use download::{create_regex_patterns, download, DownloadContext};
 use health::{display_health, remove_broken_packages};

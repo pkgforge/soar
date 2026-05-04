@@ -48,6 +48,11 @@ pub struct PackageDefaults {
 
     /// Default install patterns.
     pub install_patterns: Option<Vec<String>>,
+
+    /// Default sandbox configuration applied to all packages.
+    /// Per-package `sandbox` blocks override individual fields, and
+    /// `fs_read` / `fs_write` lists are concatenated with these defaults.
+    pub sandbox: Option<SandboxConfig>,
 }
 
 /// Flexible package specification.
@@ -114,10 +119,14 @@ pub struct BuildConfig {
 /// Uses Landlock (Linux 5.13+) to restrict filesystem access.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Documented, DocumentedFields)]
 pub struct SandboxConfig {
+    /// Whether sandboxing is enabled. Defaults to `true` when Landlock is
+    /// available. Set to `false` to skip sandboxing entirely (overrides
+    /// `require`).
+    pub enabled: Option<bool>,
+
     /// Require sandbox - fail if Landlock is not available instead of falling back
     /// to unsandboxed execution. Use this for builds you don't trust to run unsandboxed.
-    #[serde(default)]
-    pub require: bool,
+    pub require: Option<bool>,
 
     /// Additional paths that can be read (beyond defaults like /usr, /lib, etc).
     #[serde(default)]
@@ -128,8 +137,51 @@ pub struct SandboxConfig {
     pub fs_write: Vec<String>,
 
     /// Whether to allow network access (requires Landlock V4+, kernel 6.7+).
-    #[serde(default)]
-    pub network: bool,
+    pub network: Option<bool>,
+}
+
+impl SandboxConfig {
+    /// Whether the sandbox should be active. `None` means "yes, when Landlock
+    /// is available" — only an explicit `Some(false)` disables it.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
+    }
+
+    /// Whether the sandbox is required (i.e. fail if Landlock is unavailable).
+    pub fn is_required(&self) -> bool {
+        self.require.unwrap_or(false)
+    }
+
+    /// Whether outbound network access is permitted.
+    pub fn allows_network(&self) -> bool {
+        self.network.unwrap_or(false)
+    }
+
+    /// Field-level merge: per-package fields override globals; path lists are
+    /// concatenated (globals first, then per-package).
+    pub fn merge(
+        global: Option<&SandboxConfig>,
+        package: Option<&SandboxConfig>,
+    ) -> Option<SandboxConfig> {
+        match (global, package) {
+            (None, None) => None,
+            (Some(g), None) => Some(g.clone()),
+            (None, Some(p)) => Some(p.clone()),
+            (Some(g), Some(p)) => {
+                let mut fs_read = g.fs_read.clone();
+                fs_read.extend(p.fs_read.iter().cloned());
+                let mut fs_write = g.fs_write.clone();
+                fs_write.extend(p.fs_write.iter().cloned());
+                Some(SandboxConfig {
+                    enabled: p.enabled.or(g.enabled),
+                    require: p.require.or(g.require),
+                    fs_read,
+                    fs_write,
+                    network: p.network.or(g.network),
+                })
+            }
+        }
+    }
 }
 
 /// Full package options for detailed specification.
@@ -301,7 +353,7 @@ impl PackageSpec {
                     extract_root: None,
                     hooks: None,
                     build: None,
-                    sandbox: None,
+                    sandbox: defaults.and_then(|d| d.sandbox.clone()),
                     pinned,
                     profile: defaults.and_then(|d| d.profile.clone()),
                     portable: None,
@@ -337,7 +389,10 @@ impl PackageSpec {
                     extract_root: opts.extract_root.clone(),
                     hooks: opts.hooks.clone(),
                     build: opts.build.clone(),
-                    sandbox: opts.sandbox.clone(),
+                    sandbox: SandboxConfig::merge(
+                        defaults.and_then(|d| d.sandbox.as_ref()),
+                        opts.sandbox.as_ref(),
+                    ),
                     pinned,
                     profile: opts
                         .profile
@@ -393,6 +448,7 @@ impl PackagesConfig {
                 profile: Some("default".to_string()),
                 binary_only: Some(false),
                 install_patterns: None,
+                sandbox: None,
             }),
             packages: HashMap::new(),
         }

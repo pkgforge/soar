@@ -153,6 +153,7 @@ pub struct InstallTarget {
 }
 
 impl PackageInstaller {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new<P: AsRef<Path>>(
         target: &InstallTarget,
         install_dir: P,
@@ -371,12 +372,18 @@ impl PackageInstaller {
             .map(|p| p.get().to_string())
             .unwrap_or_else(|_| "1".to_string());
 
-        let use_sandbox = sandbox::is_landlock_supported();
+        let sandbox_enabled = self.sandbox.as_ref().is_none_or(|s| s.is_enabled());
+        let use_sandbox = sandbox_enabled && sandbox::is_landlock_supported();
 
         if use_sandbox {
             debug!("running build with Landlock sandbox");
+        } else if !sandbox_enabled {
+            debug!(
+                "sandbox explicitly disabled, running build without sandbox ({} commands)",
+                build_config.commands.len()
+            );
         } else {
-            if self.sandbox.as_ref().is_some_and(|s| s.require) {
+            if self.sandbox.as_ref().is_some_and(|s| s.is_required()) {
                 return Err(SoarError::Custom(
                     "Build requires sandbox but Landlock is not available on this system. \
                      Either upgrade to Linux 5.13+ or set sandbox.require = false."
@@ -437,11 +444,12 @@ impl PackageInstaller {
                     .envs(env_vars);
 
                 if let Some(s) = &self.sandbox {
-                    let config = sandbox::SandboxConfig::new().with_network(if s.network {
-                        sandbox::NetworkConfig::allow_all()
-                    } else {
-                        sandbox::NetworkConfig::default()
-                    });
+                    let config =
+                        sandbox::SandboxConfig::new().with_network(if s.allows_network() {
+                            sandbox::NetworkConfig::allow_all()
+                        } else {
+                            sandbox::NetworkConfig::default()
+                        });
                     sandbox_cmd = sandbox_cmd.config(config);
                     for path in &s.fs_read {
                         sandbox_cmd = sandbox_cmd.read_path(path);
