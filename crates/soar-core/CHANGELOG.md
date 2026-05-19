@@ -1,4 +1,14 @@
 
+## [0.16.0](https://github.com/pkgforge/soar/compare/soar-core-v0.15.0...soar-core-v0.16.0) - 2026-05-19
+
+### ⛰️  Features
+
+- *(sandbox)* Add enabled flag and global defaults - ([a3a4431](https://github.com/pkgforge/soar/commit/a3a4431873a79da17e1c4026846ebd44ea24ab71))
+
+### 🐛 Bug Fixes
+
+- *(progress)* Emit build/hook events to clear spinner during build - ([306f001](https://github.com/pkgforge/soar/commit/306f00120e23834658d17b82bfc3eec6f22280d3))
+
 ## [0.15.0](https://github.com/pkgforge/soar/compare/soar-core-v0.14.0...soar-core-v0.15.0) - 2026-04-10
 
 ### ⛰️  Features
