@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
@@ -157,13 +157,18 @@ pub async fn suggest_similar(
 
     let scored = score_candidates(query, &candidates);
 
+    // `scored` is sorted by score descending, so the first time we see a
+    // package name is its best-scoring occurrence. Dedup by name to avoid
+    // showing the same package once per repo that provides it.
+    let mut seen = HashSet::new();
     let suggestions: Vec<String> = scored
         .into_iter()
-        .take(max)
-        .map(|(_, idx)| {
+        .filter_map(|(_, idx)| {
             let (_, candidate) = &candidates[idx];
-            candidate.pkg_name.clone()
+            seen.insert(candidate.pkg_name.clone())
+                .then(|| candidate.pkg_name.clone())
         })
+        .take(max)
         .collect();
 
     Ok(suggestions)
