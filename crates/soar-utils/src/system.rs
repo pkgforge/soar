@@ -7,7 +7,7 @@ use nix::unistd::{geteuid, User};
 /// This function combines the architecture (e.g., `x86_64`) and the operating
 /// system (e.g., `linux`) into a single string to identify the platform.
 pub fn platform() -> String {
-    format!("{}-{}", std::env::consts::ARCH, &std::env::consts::OS)
+    format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS)
 }
 
 trait UsernameSource {

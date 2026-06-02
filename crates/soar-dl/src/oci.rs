@@ -516,6 +516,7 @@ impl OciDownload {
             if path.is_file() {
                 if let Ok(metadata) = path.metadata() {
                     if metadata.len() == layer.size {
+                        verify_layer_digest(&path, &layer.digest)?;
                         downloaded += layer.size;
                         if let Some(ref cb) = self.on_progress {
                             cb(Progress::Chunk {
@@ -623,6 +624,10 @@ impl OciDownload {
                         if path.is_file() {
                             if let Ok(metadata) = path.metadata() {
                                 if metadata.len() == layer.size {
+                                    if let Err(e) = verify_layer_digest(&path, &layer.digest) {
+                                        errors.lock().unwrap().push(format!("{e}"));
+                                        continue;
+                                    }
                                     let current = downloaded
                                         .fetch_add(layer.size, Ordering::Relaxed)
                                         + layer.size;
@@ -798,6 +803,8 @@ impl OciDownload {
         };
 
         let path = dl.execute()?;
+
+        verify_layer_digest(&path, &self.reference.tag)?;
 
         Ok(vec![path])
     }
