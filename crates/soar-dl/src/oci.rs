@@ -148,6 +148,19 @@ impl OciLayer {
     }
 }
 
+/// Resolves an untrusted OCI layer title into a path confined to `output_dir`.
+///
+/// Only the final path component of the title is used, so titles such as
+/// `../../etc/passwd`, `/etc/passwd`, or `..` cannot escape `output_dir`.
+fn safe_layer_path(output_dir: &Path, title: &str) -> Result<PathBuf, DownloadError> {
+    let name = Path::new(title)
+        .file_name()
+        .ok_or_else(|| DownloadError::UnsafeLayerPath {
+            title: title.to_string(),
+        })?;
+    Ok(output_dir.join(name))
+}
+
 #[derive(Clone)]
 pub struct OciDownload {
     reference: OciReference,
@@ -465,7 +478,7 @@ impl OciDownload {
 
         for layer in layers {
             let filename = layer.title().unwrap();
-            let path = output_dir.join(filename);
+            let path = safe_layer_path(output_dir, filename)?;
 
             if path.is_file() {
                 if let Ok(metadata) = path.metadata() {
@@ -566,7 +579,13 @@ impl OciDownload {
                             Some(f) => f,
                             None => continue,
                         };
-                        let path = output_dir.join(filename);
+                        let path = match safe_layer_path(&output_dir, filename) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                errors.lock().unwrap().push(format!("{e}"));
+                                continue;
+                            }
+                        };
 
                         if path.is_file() {
                             if let Ok(metadata) = path.metadata() {
@@ -955,6 +974,43 @@ fn download_layer_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn safe_layer_path_keeps_plain_name_inside_output_dir() {
+        let out = Path::new("/tmp/soar-out");
+        let path = safe_layer_path(out, "tool.AppImage").unwrap();
+        assert_eq!(path, out.join("tool.AppImage"));
+    }
+
+    #[test]
+    fn safe_layer_path_strips_traversal_and_absolute_titles() {
+        let out = Path::new("/tmp/soar-out");
+        // `..`, nested escapes, and absolute paths all collapse to the final
+        // component joined under the output dir.
+        assert_eq!(
+            safe_layer_path(out, "../../etc/passwd").unwrap(),
+            out.join("passwd")
+        );
+        assert_eq!(
+            safe_layer_path(out, "/etc/cron.d/evil").unwrap(),
+            out.join("evil")
+        );
+        assert_eq!(safe_layer_path(out, "a/b/c").unwrap(), out.join("c"));
+    }
+
+    #[test]
+    fn safe_layer_path_rejects_titles_without_a_final_component() {
+        let out = Path::new("/tmp/soar-out");
+        for bad in ["", "..", "foo/..", "/", "."] {
+            assert!(
+                matches!(
+                    safe_layer_path(out, bad),
+                    Err(DownloadError::UnsafeLayerPath { .. })
+                ),
+                "expected {bad:?} to be rejected"
+            );
+        }
+    }
 
     #[test]
     fn test_oci_reference_from_str_simple() {

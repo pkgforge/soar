@@ -41,6 +41,10 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::layer_not_found))]
     LayerNotFound,
 
+    #[error("Unsafe layer path in manifest: {title}")]
+    #[diagnostic(code(soar_dl::unsafe_layer_path))]
+    UnsafeLayerPath { title: String },
+
     #[error("Invalid response from server")]
     #[diagnostic(code(soar_dl::invalid_response))]
     InvalidResponse,
