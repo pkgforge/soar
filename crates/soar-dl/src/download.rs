@@ -577,7 +577,9 @@ mod tests {
         let f = temp_with(b"hello soar");
         let dl = Download::new("https://example.com/x").checksum("deadbeef");
         match dl.verify_checksum(f.path()) {
-            Err(DownloadError::ChecksumMismatch { expected, .. }) => {
+            Err(DownloadError::ChecksumMismatch {
+                expected, ..
+            }) => {
                 assert_eq!(expected, "deadbeef");
             }
             other => panic!("expected ChecksumMismatch, got {other:?}"),

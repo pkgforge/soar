@@ -154,11 +154,11 @@ impl OciLayer {
 /// Only the final path component of the title is used, so titles such as
 /// `../../etc/passwd`, `/etc/passwd`, or `..` cannot escape `output_dir`.
 fn safe_layer_path(output_dir: &Path, title: &str) -> Result<PathBuf, DownloadError> {
-    let name = Path::new(title)
-        .file_name()
-        .ok_or_else(|| DownloadError::UnsafeLayerPath {
+    let name = Path::new(title).file_name().ok_or_else(|| {
+        DownloadError::UnsafeLayerPath {
             title: title.to_string(),
-        })?;
+        }
+    })?;
     Ok(output_dir.join(name))
 }
 
@@ -177,7 +177,11 @@ fn verify_layer_digest(path: &Path, digest: &str) -> Result<(), DownloadError> {
         }
         hasher.update(&buffer[..n]);
     }
-    let got: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let got: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
 
     if got.eq_ignore_ascii_case(expected) {
         Ok(())
@@ -1019,13 +1023,19 @@ mod tests {
 
         let mut hasher = Sha256::new();
         hasher.update(b"layer-bytes");
-        let hex: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        let hex: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
 
         assert!(verify_layer_digest(&path, &format!("sha256:{hex}")).is_ok());
         assert!(path.exists());
 
         match verify_layer_digest(&path, "sha256:00ff") {
-            Err(DownloadError::DigestMismatch { .. }) => {}
+            Err(DownloadError::DigestMismatch {
+                ..
+            }) => {}
             other => panic!("expected DigestMismatch, got {other:?}"),
         }
         assert!(!path.exists(), "file should be removed on digest mismatch");
