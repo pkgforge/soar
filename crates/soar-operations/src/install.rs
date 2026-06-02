@@ -764,6 +764,19 @@ async fn install_single_package(
     let config = ctx.config();
     let bin_dir = config.get_bin_path()?;
 
+    if !no_verify && pkg.bsum.is_none() {
+        let has_signing = config
+            .get_repository(&pkg.repo_name)
+            .map(|repo| repo.signature_verification() && repo.pubkey.is_some())
+            .unwrap_or(false);
+        if !has_signing {
+            return Err(SoarError::Custom(format!(
+                "Refusing to install {}#{}: no checksum or signature available to verify integrity (use --no-verify to override)",
+                pkg.pkg_name, pkg.pkg_id
+            )));
+        }
+    }
+
     let dir_suffix: String = pkg
         .bsum
         .as_ref()
@@ -943,6 +956,18 @@ async fn install_single_package(
                     pkg_id: pkg.pkg_id.clone(),
                     stage: VerifyStage::Passed,
                 });
+            }
+            (None, Some(_)) => {
+                events.emit(SoarEvent::Verifying {
+                    op_id,
+                    pkg_name: pkg.pkg_name.clone(),
+                    pkg_id: pkg.pkg_id.clone(),
+                    stage: VerifyStage::Failed("checksum unavailable".into()),
+                });
+                return Err(SoarError::Custom(format!(
+                    "Could not verify {}#{}: expected a checksum but none could be computed",
+                    pkg.pkg_name, pkg.pkg_id
+                )));
             }
             _ => {}
         }

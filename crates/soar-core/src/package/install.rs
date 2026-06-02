@@ -634,6 +634,10 @@ impl PackageInstaller {
                 .extract(should_extract)
                 .extract_to(&extract_dir);
 
+            if let Some(ref bsum) = self.package.bsum {
+                dl = dl.checksum(bsum);
+            }
+
             if let Some(ref cb) = self.progress_callback {
                 let cb = cb.clone();
                 dl = dl.progress(move |p| {

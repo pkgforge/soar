@@ -45,6 +45,14 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::unsafe_layer_path))]
     UnsafeLayerPath { title: String },
 
+    #[error("Checksum mismatch: expected {expected}, got {got}")]
+    #[diagnostic(code(soar_dl::checksum_mismatch))]
+    ChecksumMismatch { expected: String, got: String },
+
+    #[error("Digest mismatch: expected {expected}, got {got}")]
+    #[diagnostic(code(soar_dl::digest_mismatch))]
+    DigestMismatch { expected: String, got: String },
+
     #[error("Invalid response from server")]
     #[diagnostic(code(soar_dl::invalid_response))]
     InvalidResponse,

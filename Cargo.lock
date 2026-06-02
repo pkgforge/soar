@@ -2302,6 +2302,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "soar-utils",
  "tempfile",
  "thiserror",
