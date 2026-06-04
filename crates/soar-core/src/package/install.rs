@@ -576,11 +576,13 @@ impl PackageInstaller {
                         callback(Progress::Aborted);
                     }
                     // Return error after max retries
-                    return Err(last_error.unwrap_or_else(|| {
-                        DownloadError::Multiple {
-                            errors: vec!["Download failed after 5 retries".into()],
-                        }
-                    }))?;
+                    return Err(last_error
+                        .unwrap_or_else(|| {
+                            DownloadError::Multiple {
+                                errors: vec!["Download failed after 5 retries".into()],
+                            }
+                        })
+                        .into());
                 }
                 match dl.clone().execute() {
                     Ok(_) => {
@@ -605,7 +607,7 @@ impl PackageInstaller {
                             }
                             last_error = Some(err);
                         } else {
-                            return Err(err)?;
+                            return Err(err.into());
                         }
                     }
                 }
@@ -633,6 +635,10 @@ impl PackageInstaller {
                 .overwrite(OverwriteMode::Skip)
                 .extract(should_extract)
                 .extract_to(&extract_dir);
+
+            if let Some(ref bsum) = self.package.bsum {
+                dl = dl.checksum(bsum);
+            }
 
             if let Some(ref cb) = self.progress_callback {
                 let cb = cb.clone();

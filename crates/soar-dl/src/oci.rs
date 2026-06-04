@@ -11,6 +11,7 @@ use std::{
 };
 
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use soar_utils::fs::is_elf;
 use tracing::{debug, trace};
 use ureq::http::header::{ACCEPT, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
@@ -153,12 +154,44 @@ impl OciLayer {
 /// Only the final path component of the title is used, so titles such as
 /// `../../etc/passwd`, `/etc/passwd`, or `..` cannot escape `output_dir`.
 fn safe_layer_path(output_dir: &Path, title: &str) -> Result<PathBuf, DownloadError> {
-    let name = Path::new(title)
-        .file_name()
-        .ok_or_else(|| DownloadError::UnsafeLayerPath {
+    let name = Path::new(title).file_name().ok_or_else(|| {
+        DownloadError::UnsafeLayerPath {
             title: title.to_string(),
-        })?;
+        }
+    })?;
     Ok(output_dir.join(name))
+}
+
+/// Verifies the file at `path` against an OCI content-addressable digest
+/// (e.g. `sha256:<hex>`). On mismatch the file is removed and an error returned.
+fn verify_layer_digest(path: &Path, digest: &str) -> Result<(), DownloadError> {
+    let expected = digest.strip_prefix("sha256:").unwrap_or(digest);
+
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    let got: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+
+    if got.eq_ignore_ascii_case(expected) {
+        Ok(())
+    } else {
+        std::fs::remove_file(path).ok();
+        Err(DownloadError::DigestMismatch {
+            expected: expected.to_string(),
+            got,
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -483,6 +516,7 @@ impl OciDownload {
             if path.is_file() {
                 if let Ok(metadata) = path.metadata() {
                     if metadata.len() == layer.size {
+                        verify_layer_digest(&path, &layer.digest)?;
                         downloaded += layer.size;
                         if let Some(ref cb) = self.on_progress {
                             cb(Progress::Chunk {
@@ -590,6 +624,10 @@ impl OciDownload {
                         if path.is_file() {
                             if let Ok(metadata) = path.metadata() {
                                 if metadata.len() == layer.size {
+                                    if let Err(e) = verify_layer_digest(&path, &layer.digest) {
+                                        errors.lock().unwrap().push(format!("{e}"));
+                                        continue;
+                                    }
                                     let current = downloaded
                                         .fetch_add(layer.size, Ordering::Relaxed)
                                         + layer.size;
@@ -765,6 +803,8 @@ impl OciDownload {
         };
 
         let path = dl.execute()?;
+
+        verify_layer_digest(&path, &self.reference.tag)?;
 
         Ok(vec![path])
     }
@@ -957,6 +997,8 @@ fn download_layer_impl(
         }
     }
 
+    verify_layer_digest(path, &layer.digest)?;
+
     if is_elf(path) {
         trace!(path = %path.display(), "setting executable permissions on ELF binary");
         std::fs::set_permissions(path, Permissions::from_mode(0o755))?;
@@ -974,6 +1016,37 @@ fn download_layer_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verify_layer_digest_accepts_correct_and_rejects_wrong() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("layer.bin");
+        {
+            let mut f = File::create(&path).unwrap();
+            f.write_all(b"layer-bytes").unwrap();
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"layer-bytes");
+        let hex: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+
+        assert!(verify_layer_digest(&path, &format!("sha256:{hex}")).is_ok());
+        assert!(path.exists());
+
+        match verify_layer_digest(&path, "sha256:00ff") {
+            Err(DownloadError::DigestMismatch {
+                ..
+            }) => {}
+            other => panic!("expected DigestMismatch, got {other:?}"),
+        }
+        assert!(!path.exists(), "file should be removed on digest mismatch");
+    }
 
     #[test]
     fn safe_layer_path_keeps_plain_name_inside_output_dir() {

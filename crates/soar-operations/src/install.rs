@@ -764,6 +764,19 @@ async fn install_single_package(
     let config = ctx.config();
     let bin_dir = config.get_bin_path()?;
 
+    if !no_verify && pkg.bsum.is_none() {
+        let has_signing = config
+            .get_repository(&pkg.repo_name)
+            .map(|repo| repo.signature_verification() && repo.pubkey.is_some())
+            .unwrap_or(false);
+        if !has_signing {
+            return Err(SoarError::Custom(format!(
+                "Refusing to install {}#{}: no checksum or signature available to verify integrity (use --no-verify to override)",
+                pkg.pkg_name, pkg.pkg_id
+            )));
+        }
+    }
+
     let dir_suffix: String = pkg
         .bsum
         .as_ref()
@@ -882,6 +895,7 @@ async fn install_single_package(
     let downloaded_checksum = installer.download_package().await?;
 
     // Signature verification
+    let mut verified_sig_count = 0usize;
     if let Some(repository) = config.get_repository(&pkg.repo_name) {
         if repository.signature_verification() {
             events.emit(SoarEvent::Verifying {
@@ -892,7 +906,7 @@ async fn install_single_package(
             });
 
             if let Some(ref pubkey) = repository.pubkey {
-                verify_signatures(pubkey, &install_dir)?;
+                verified_sig_count = verify_signatures(pubkey, &install_dir)?;
             } else {
                 warn!(
                     "{}#{} - Signature verification skipped as no pubkey was found.",
@@ -903,6 +917,13 @@ async fn install_single_package(
     } else {
         // Clean up .sig files for packages without signature verification
         cleanup_sig_files(&install_dir);
+    }
+
+    if !no_verify && pkg.bsum.is_none() && verified_sig_count == 0 {
+        return Err(SoarError::Custom(format!(
+            "Refusing to install {}#{}: no checksum and no valid signature found to verify integrity (use --no-verify to override)",
+            pkg.pkg_name, pkg.pkg_id
+        )));
     }
 
     // Checksum verification
@@ -943,6 +964,18 @@ async fn install_single_package(
                     pkg_id: pkg.pkg_id.clone(),
                     stage: VerifyStage::Passed,
                 });
+            }
+            (None, Some(_)) => {
+                events.emit(SoarEvent::Verifying {
+                    op_id,
+                    pkg_name: pkg.pkg_name.clone(),
+                    pkg_id: pkg.pkg_id.clone(),
+                    stage: VerifyStage::Failed("checksum unavailable".into()),
+                });
+                return Err(SoarError::Custom(format!(
+                    "Could not verify {}#{}: expected a checksum but none could be computed",
+                    pkg.pkg_name, pkg.pkg_id
+                )));
             }
             _ => {}
         }
@@ -1028,13 +1061,14 @@ async fn install_single_package(
     Ok((install_dir, symlinks))
 }
 
-fn verify_signatures(pubkey_str: &str, install_dir: &Path) -> SoarResult<()> {
+fn verify_signatures(pubkey_str: &str, install_dir: &Path) -> SoarResult<usize> {
     let pubkey = PublicKey::from_base64(pubkey_str.trim())
         .map_err(|err| SoarError::Custom(format!("Failed to parse public key: {}", err)))?;
 
     let entries = fs::read_dir(install_dir)
         .with_context(|| format!("reading package directory {}", install_dir.display()))?;
 
+    let mut verified = 0usize;
     for entry in entries {
         let path = entry
             .with_context(|| format!("reading entry from directory {}", install_dir.display()))?
@@ -1082,10 +1116,11 @@ fn verify_signatures(pubkey_str: &str, install_dir: &Path) -> SoarResult<()> {
 
             fs::remove_file(&path)
                 .with_context(|| format!("removing minisign file {}", path.display()))?;
+            verified += 1;
         }
     }
 
-    Ok(())
+    Ok(verified)
 }
 
 fn cleanup_sig_files(install_dir: &Path) {

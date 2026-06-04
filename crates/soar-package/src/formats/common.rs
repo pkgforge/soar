@@ -183,7 +183,7 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
                 "Exec" | "TryExec" => {
                     let old_cmd = &caps[2];
                     let parts: Vec<&str> = old_cmd.split_whitespace().collect();
-                    let new_cmd = format!("{}/{}", &bin_path.display(), pkg_name);
+                    let new_cmd = format!("{}/{}", bin_path.display(), pkg_name);
 
                     if old_cmd.contains("{{pkg_path}}") {
                         caps[0].replace("{{pkg_path}}", &new_cmd)

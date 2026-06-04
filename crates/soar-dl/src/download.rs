@@ -33,6 +33,7 @@ pub struct Download {
     pub extract_to: Option<PathBuf>,
     pub on_progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
     pub ghcr_blob: bool,
+    pub expected_checksum: Option<String>,
 }
 
 impl Download {
@@ -63,7 +64,23 @@ impl Download {
             extract_to: None,
             on_progress: None,
             ghcr_blob: false,
+            expected_checksum: None,
         }
+    }
+
+    /// Sets the expected blake3 checksum (hex) to verify the downloaded file
+    /// against before it is made executable or extracted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use soar_dl::download::Download;
+    ///
+    /// let _ = Download::new("https://example.com/file").checksum("abcdef123456");
+    /// ```
+    pub fn checksum(mut self, checksum: impl Into<String>) -> Self {
+        self.expected_checksum = Some(checksum.into());
+        self
     }
 
     /// Turns on GHCR blob support.
@@ -257,10 +274,16 @@ impl Download {
                     // Only skip if there's no resume info (complete download)
                     // If resume info exists, it's a partial download that should continue
                     if resume_info.is_none() {
-                        debug!(path = %output_path.display(), "file exists, skipping download");
-                        return Ok(output_path);
+                        if self.verify_checksum(&output_path).is_ok() {
+                            debug!(path = %output_path.display(), "file exists, skipping download");
+                            return Ok(output_path);
+                        }
+                        warn!(path = %output_path.display(), "cached file failed checksum, re-downloading");
+                        fs::remove_file(&output_path)?;
+                        resume_info = None;
+                    } else {
+                        debug!(path = %output_path.display(), "file exists but is partial, resuming download");
                     }
-                    debug!(path = %output_path.display(), "file exists but is partial, resuming download");
                 }
                 OverwriteMode::Force => {
                     debug!(path = %output_path.display(), "file exists, forcing overwrite");
@@ -287,6 +310,11 @@ impl Download {
 
         self.download_to_file(&output_path, resume_info)?;
 
+        if let Err(e) = self.verify_checksum(&output_path) {
+            fs::remove_file(&output_path).ok();
+            return Err(e);
+        }
+
         if is_elf(&output_path) {
             trace!(path = %output_path.display(), "detected ELF binary, setting executable permissions");
             std::fs::set_permissions(&output_path, Permissions::from_mode(0o755))?;
@@ -308,6 +336,22 @@ impl Download {
 
         debug!(path = %output_path.display(), "download completed successfully");
         Ok(output_path)
+    }
+
+    fn verify_checksum(&self, path: &Path) -> Result<(), DownloadError> {
+        let Some(ref expected) = self.expected_checksum else {
+            return Ok(());
+        };
+        let actual = soar_utils::hash::calculate_checksum(path)
+            .map_err(|e| DownloadError::Io(std::io::Error::other(e.to_string())))?;
+        if actual.eq_ignore_ascii_case(expected) {
+            Ok(())
+        } else {
+            Err(DownloadError::ChecksumMismatch {
+                expected: expected.clone(),
+                got: actual,
+            })
+        }
     }
 
     /// Streams the HTTP response body for this download's URL to standard output.
@@ -501,4 +545,44 @@ fn prompt_overwrite(path: &Path) -> std::io::Result<bool> {
     std::io::stdin().read_line(&mut line)?;
 
     Ok(matches!(line.trim().to_lowercase().as_str(), "y" | "yes"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use super::*;
+
+    fn temp_with(contents: &[u8]) -> tempfile::NamedTempFile {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(contents).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn verify_checksum_ok_when_absent_or_matching() {
+        let f = temp_with(b"hello soar");
+        let expected = soar_utils::hash::calculate_checksum(f.path()).unwrap();
+
+        let dl = Download::new("https://example.com/x");
+        assert!(dl.verify_checksum(f.path()).is_ok());
+
+        let dl = Download::new("https://example.com/x").checksum(expected.to_uppercase());
+        assert!(dl.verify_checksum(f.path()).is_ok());
+    }
+
+    #[test]
+    fn verify_checksum_rejects_mismatch() {
+        let f = temp_with(b"hello soar");
+        let dl = Download::new("https://example.com/x").checksum("deadbeef");
+        match dl.verify_checksum(f.path()) {
+            Err(DownloadError::ChecksumMismatch {
+                expected, ..
+            }) => {
+                assert_eq!(expected, "deadbeef");
+            }
+            other => panic!("expected ChecksumMismatch, got {other:?}"),
+        }
+    }
 }
