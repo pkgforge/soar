@@ -1,4 +1,11 @@
 
+## [0.3.2](https://github.com/pkgforge/soar/compare/soar-package-v0.3.1...soar-package-v0.3.2) - 2026-06-04
+
+### 🐛 Bug Fixes
+
+- *(dl)* Verify download integrity ([#168](https://github.com/pkgforge/soar/pull/168)) - ([336f2dd](https://github.com/pkgforge/soar/commit/336f2dde6cb8d1c112f4f558129ed53bf0888d03))
+- *(integrate)* Don't treat package binary as desktop file - ([a7d8a4f](https://github.com/pkgforge/soar/commit/a7d8a4fd89a3c31d4b00cc9dc43acdeb13d293bd))
+
 ## [0.3.1](https://github.com/pkgforge/soar/compare/soar-package-v0.3.0...soar-package-v0.3.1) - 2026-04-10
 
 ### ⚙️ Miscellaneous Tasks

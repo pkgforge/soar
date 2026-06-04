@@ -1,4 +1,11 @@
 
+## [0.10.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.9.1...soar-dl-v0.10.0) - 2026-06-04
+
+### 🐛 Bug Fixes
+
+- *(dl)* Verify download integrity ([#168](https://github.com/pkgforge/soar/pull/168)) - ([336f2dd](https://github.com/pkgforge/soar/commit/336f2dde6cb8d1c112f4f558129ed53bf0888d03))
+- *(oci)* Confine untrusted layer titles to the output directory - ([c9db71d](https://github.com/pkgforge/soar/commit/c9db71d4cf31e343e06c8b1079eec154c459b571))
+
 ## [0.9.1](https://github.com/pkgforge/soar/compare/soar-dl-v0.9.0...soar-dl-v0.9.1) - 2026-04-10
 
 ### ⚡ Performance

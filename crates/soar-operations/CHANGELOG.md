@@ -1,4 +1,12 @@
 
+## [0.2.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.2.0...soar-operations-v0.2.1) - 2026-06-04
+
+### 🐛 Bug Fixes
+
+- *(dl)* Verify download integrity ([#168](https://github.com/pkgforge/soar/pull/168)) - ([336f2dd](https://github.com/pkgforge/soar/commit/336f2dde6cb8d1c112f4f558129ed53bf0888d03))
+- *(progress)* Emit build/hook events to clear spinner during build - ([306f001](https://github.com/pkgforge/soar/commit/306f00120e23834658d17b82bfc3eec6f22280d3))
+- *(search)* Dedup "did you mean?" suggestions across repos - ([85d5b8e](https://github.com/pkgforge/soar/commit/85d5b8ee205c26dc307a5f3354571b6ddb322377))
+
 ## [0.2.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.1.0...soar-operations-v0.2.0) - 2026-04-10
 
 ### ⛰️  Features
