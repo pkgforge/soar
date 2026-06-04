@@ -1,4 +1,10 @@
 
+## [0.8.0](https://github.com/pkgforge/soar/compare/soar-config-v0.7.0...soar-config-v0.8.0) - 2026-06-04
+
+### ⛰️  Features
+
+- *(sandbox)* Add enabled flag and global defaults - ([a3a4431](https://github.com/pkgforge/soar/commit/a3a4431873a79da17e1c4026846ebd44ea24ab71))
+
 ## [0.7.0](https://github.com/pkgforge/soar/compare/soar-config-v0.6.0...soar-config-v0.7.0) - 2026-04-10
 
 ### ⛰️  Features

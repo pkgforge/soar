@@ -1,4 +1,10 @@
 
+## [0.4.1](https://github.com/pkgforge/soar/compare/soar-utils-v0.4.0...soar-utils-v0.4.1) - 2026-06-04
+
+### 🐛 Bug Fixes
+
+- *(dl)* Verify download integrity ([#168](https://github.com/pkgforge/soar/pull/168)) - ([336f2dd](https://github.com/pkgforge/soar/commit/336f2dde6cb8d1c112f4f558129ed53bf0888d03))
+
 ## [0.4.0](https://github.com/pkgforge/soar/compare/soar-utils-v0.3.0...soar-utils-v0.4.0) - 2026-02-24
 
 ### ⛰️  Features
