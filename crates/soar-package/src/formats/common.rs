@@ -378,6 +378,11 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     let mut has_desktop = false;
     let mut has_icon = false;
     let mut symlink_action = |path: &Path| -> Result<()> {
+        // Never treat the package binary itself as a desktop file. Its name can
+        // legitimately end in `.desktop`, but its contents are the executable.
+        if path == bin_path.as_path() {
+            return Ok(());
+        }
         let ext = path.extension();
         if ext == Some(OsStr::new("desktop")) {
             has_desktop = true;
@@ -388,6 +393,9 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     walk_dir(install_dir, &mut symlink_action)?;
 
     let mut symlink_action = |path: &Path| -> Result<()> {
+        if path == bin_path.as_path() {
+            return Ok(());
+        }
         let ext = path.extension();
         if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
             has_icon = true;
