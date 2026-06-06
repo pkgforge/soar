@@ -1,4 +1,10 @@
 
+## [0.2.2](https://github.com/pkgforge/soar/compare/soar-operations-v0.2.1...soar-operations-v0.2.2) - 2026-06-06
+
+### ⛰️  Features
+
+- *(install)* Implicit-trust model for user-declared sources + checksum pinning ([#171](https://github.com/pkgforge/soar/pull/171)) - ([d395448](https://github.com/pkgforge/soar/commit/d395448ffd10a54f28287fefe86380bbda71c674))
+
 ## [0.2.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.2.0...soar-operations-v0.2.1) - 2026-06-04
 
 ### 🐛 Bug Fixes
