@@ -636,8 +636,10 @@ fn create_url_install_target(
     resolved: &ResolvedPackage,
     existing: Option<InstalledPackage>,
 ) -> InstallTarget {
+    let mut package = url_pkg.to_package();
+    package.bsum = resolved.bsum.as_ref().map(|s| s.trim().to_lowercase());
     InstallTarget {
-        package: url_pkg.to_package(),
+        package,
         existing_install: existing,
         pinned: resolved.pinned,
         profile: resolved.profile.clone(),

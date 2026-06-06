@@ -690,6 +690,14 @@ pub async fn perform_installation(
     })
 }
 
+/// Whether the registry-style "checksum or signature required" integrity gate is
+/// inapplicable to this package's source.
+/// Exemption only skips the gate; an explicit `bsum` (e.g. a user-provided pin) is still
+/// enforced by checksum verification.
+fn source_skips_integrity_gate(pkg: &Package) -> bool {
+    pkg.repo_name == "local" || pkg.ghcr_pkg.is_some()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn install_single_package(
     ctx: &SoarContext,
@@ -764,7 +772,9 @@ async fn install_single_package(
     let config = ctx.config();
     let bin_dir = config.get_bin_path()?;
 
-    if !no_verify && pkg.bsum.is_none() {
+    let skip_integrity_gate = source_skips_integrity_gate(pkg);
+
+    if !no_verify && !skip_integrity_gate && pkg.bsum.is_none() {
         let has_signing = config
             .get_repository(&pkg.repo_name)
             .map(|repo| repo.signature_verification() && repo.pubkey.is_some())
@@ -919,7 +929,7 @@ async fn install_single_package(
         cleanup_sig_files(&install_dir);
     }
 
-    if !no_verify && pkg.bsum.is_none() && verified_sig_count == 0 {
+    if !no_verify && !skip_integrity_gate && pkg.bsum.is_none() && verified_sig_count == 0 {
         return Err(SoarError::Custom(format!(
             "Refusing to install {}#{}: no checksum and no valid signature found to verify integrity (use --no-verify to override)",
             pkg.pkg_name, pkg.pkg_id
@@ -1131,5 +1141,57 @@ fn cleanup_sig_files(install_dir: &Path) {
                 fs::remove_file(&path).ok();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pkg(repo_name: &str, ghcr: Option<&str>, bsum: Option<&str>) -> Package {
+        Package {
+            repo_name: repo_name.to_string(),
+            ghcr_pkg: ghcr.map(String::from),
+            bsum: bsum.map(String::from),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn local_source_skips_integrity_gate() {
+        assert!(source_skips_integrity_gate(&pkg("local", None, None)));
+    }
+
+    #[test]
+    fn ghcr_source_skips_integrity_gate() {
+        assert!(source_skips_integrity_gate(&pkg(
+            "local",
+            Some("ghcr.io/org/repo:tag"),
+            None
+        )));
+        assert!(source_skips_integrity_gate(&pkg(
+            "some-repo",
+            Some("ghcr.io/org/repo:tag"),
+            None
+        )));
+    }
+
+    #[test]
+    fn registry_source_is_subject_to_integrity_gate() {
+        assert!(!source_skips_integrity_gate(&pkg("soarpkgs", None, None)));
+    }
+
+    #[test]
+    fn integrity_gate_exemption_is_independent_of_pinned_bsum() {
+        assert!(source_skips_integrity_gate(&pkg(
+            "local",
+            None,
+            Some("deadbeef")
+        )));
+        assert!(!source_skips_integrity_gate(&pkg(
+            "soarpkgs",
+            None,
+            Some("deadbeef")
+        )));
     }
 }
