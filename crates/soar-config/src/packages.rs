@@ -199,6 +199,13 @@ pub struct PackageOptions {
     /// Direct URL to download the package from (makes it a "local" package).
     pub url: Option<String>,
 
+    /// Expected BLAKE3 checksum (hex) of the downloaded artifact, for `url`/`github`/
+    /// `gitlab` packages. When set, soar verifies the download against it and refuses to
+    /// install on mismatch.
+    /// Without it, these user-declared sources install on implicit trust.
+    /// Has no effect on registry packages, which already ship their own checksum.
+    pub bsum: Option<String>,
+
     /// GitHub repository in "owner/repo" format for installing from releases.
     /// When set, soar fetches the latest release and downloads the matching asset.
     pub github: Option<String>,
@@ -301,6 +308,7 @@ pub struct ResolvedPackage {
     pub version: Option<String>,
     pub repo: Option<String>,
     pub url: Option<String>,
+    pub bsum: Option<String>,
     pub github: Option<String>,
     pub gitlab: Option<String>,
     pub asset_pattern: Option<String>,
@@ -340,6 +348,7 @@ impl PackageSpec {
                     version,
                     repo: None,
                     url: None,
+                    bsum: None,
                     github: None,
                     gitlab: None,
                     asset_pattern: None,
@@ -376,6 +385,7 @@ impl PackageSpec {
                     version,
                     repo: opts.repo.clone(),
                     url: opts.url.clone(),
+                    bsum: opts.bsum.clone(),
                     github: opts.github.clone(),
                     gitlab: opts.gitlab.clone(),
                     asset_pattern: opts.asset_pattern.clone(),
@@ -661,6 +671,34 @@ special = { profile = "isolated" }
         let resolved = config.resolved_packages();
 
         assert_eq!(resolved[0].profile, Some("isolated".to_string()));
+    }
+
+    #[test]
+    fn test_bsum_pin_resolved() {
+        let toml_str = r#"
+[packages]
+myapp = { url = "https://example.com/myapp-1.0.AppImage", bsum = "abc123" }
+nopin = { url = "https://example.com/nopin-1.0.AppImage" }
+"#;
+        let config: PackagesConfig = toml::from_str(toml_str).unwrap();
+        let resolved = config.resolved_packages();
+
+        let myapp = resolved.iter().find(|p| p.name == "myapp").unwrap();
+        let nopin = resolved.iter().find(|p| p.name == "nopin").unwrap();
+
+        assert_eq!(myapp.bsum, Some("abc123".to_string()));
+        assert_eq!(nopin.bsum, None);
+    }
+
+    #[test]
+    fn test_bsum_none_for_simple_spec() {
+        let toml_str = r#"
+[packages]
+curl = "*"
+"#;
+        let config: PackagesConfig = toml::from_str(toml_str).unwrap();
+        let resolved = config.resolved_packages();
+        assert_eq!(resolved[0].bsum, None);
     }
 
     #[test]
