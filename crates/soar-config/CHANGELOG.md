@@ -1,4 +1,10 @@
 
+## [0.9.0](https://github.com/pkgforge/soar/compare/soar-config-v0.8.0...soar-config-v0.9.0) - 2026-06-06
+
+### ⛰️  Features
+
+- *(install)* Implicit-trust model for user-declared sources + checksum pinning ([#171](https://github.com/pkgforge/soar/pull/171)) - ([d395448](https://github.com/pkgforge/soar/commit/d395448ffd10a54f28287fefe86380bbda71c674))
+
 ## [0.8.0](https://github.com/pkgforge/soar/compare/soar-config-v0.7.0...soar-config-v0.8.0) - 2026-06-04
 
 ### ⛰️  Features

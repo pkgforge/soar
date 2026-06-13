@@ -1,4 +1,10 @@
 
+## [0.12.3](https://github.com/pkgforge/soar/compare/v0.12.2...v0.12.3) - 2026-06-06
+
+### ⛰️  Features
+
+- *(install)* Implicit-trust model for user-declared sources + checksum pinning ([#171](https://github.com/pkgforge/soar/pull/171)) - ([d395448](https://github.com/pkgforge/soar/commit/d395448ffd10a54f28287fefe86380bbda71c674))
+
 ## [0.12.2](https://github.com/pkgforge/soar/compare/v0.12.1...v0.12.2) - 2026-06-04
 
 ### ⛰️  Features

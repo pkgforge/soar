@@ -1,6 +1,6 @@
 [package]
 name = "soar-package"
-version = "0.3.2"
+version = "0.3.3"
 description = "Package format handling for soar package manager"
 edition.workspace = true
 readme.workspace = true
