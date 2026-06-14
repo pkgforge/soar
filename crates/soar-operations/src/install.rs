@@ -19,6 +19,7 @@ use soar_core::{
     error::{ErrorContext, SoarError},
     package::{
         install::{InstallMarker, InstallTarget, PackageInstaller},
+        local::LocalPackage,
         query::PackageQuery,
         update::remove_old_versions,
         url::UrlPackage,
@@ -61,6 +62,11 @@ pub async fn resolve_packages(
     let mut results = Vec::with_capacity(packages.len());
 
     for package in packages {
+        if LocalPackage::is_local(package) {
+            results.push(resolve_local_package(diesel_db, package, options)?);
+            continue;
+        }
+
         if UrlPackage::is_remote(package) {
             results.push(resolve_url_package(diesel_db, package, options)?);
             continue;
@@ -113,13 +119,40 @@ fn resolve_url_package(
         options.pkg_id_override.as_deref(),
     )?;
 
+    resolve_synthetic_target(diesel_db, url_pkg.to_package(), options)
+}
+
+fn resolve_local_package(
+    diesel_db: &DieselDatabase,
+    package: &str,
+    options: &InstallOptions,
+) -> SoarResult<ResolveResult> {
+    let local_pkg = LocalPackage::from_path(
+        package,
+        options.name_override.as_deref(),
+        options.version_override.as_deref(),
+        options.pkg_type_override.as_deref(),
+        options.pkg_id_override.as_deref(),
+    )?;
+
+    resolve_synthetic_target(diesel_db, local_pkg.to_package(), options)
+}
+
+/// Build an install target for a synthetic (`local` repo) package, honoring
+/// the already-installed / `--force` checks. Shared by URL/GHCR and local-file
+/// installs.
+fn resolve_synthetic_target(
+    diesel_db: &DieselDatabase,
+    package: Package,
+    options: &InstallOptions,
+) -> SoarResult<ResolveResult> {
     let installed_packages: Vec<InstalledPackage> = diesel_db
         .with_conn(|conn| {
             CoreRepository::list_filtered(
                 conn,
                 Some("local"),
-                Some(&url_pkg.pkg_name),
-                Some(&url_pkg.pkg_id),
+                Some(&package.pkg_name),
+                Some(&package.pkg_id),
                 None,
                 None,
                 None,
@@ -149,7 +182,7 @@ fn resolve_url_package(
         .or_else(|| installed_packages.into_iter().next());
 
     Ok(ResolveResult::Resolved(vec![InstallTarget {
-        package: url_pkg.to_package(),
+        package,
         existing_install,
         pinned: false,
         profile: None,

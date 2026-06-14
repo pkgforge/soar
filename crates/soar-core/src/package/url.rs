@@ -280,7 +280,7 @@ fn extract_pkg_id_from_url(url: &str) -> Option<String> {
 }
 
 /// Detect package type from filename extension.
-fn detect_pkg_type(filename: &str) -> Option<String> {
+pub(crate) fn detect_pkg_type(filename: &str) -> Option<String> {
     let lower = filename.to_lowercase();
 
     if lower.ends_with(".appimage") {
@@ -310,7 +310,7 @@ fn detect_pkg_type(filename: &str) -> Option<String> {
 /// - `Name-Version-platform.ext`
 /// - `name_version.ext`
 /// - `name-version.ext`
-fn parse_filename(filename: &str) -> (String, String) {
+pub(crate) fn parse_filename(filename: &str) -> (String, String) {
     static VERSION_RE: OnceLock<Regex> = OnceLock::new();
     let re = VERSION_RE.get_or_init(|| {
         // Match: Name[-_.]v?Version (where version is purely numeric like 1.2.3)

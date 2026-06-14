@@ -1,6 +1,7 @@
 use std::{
     env, fs,
-    io::Write,
+    io::{Read, Write},
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
     thread::sleep,
@@ -35,9 +36,22 @@ use crate::{
     constants::INSTALL_MARKER_FILE,
     database::{connection::DieselDatabase, models::Package},
     error::{ErrorContext, SoarError},
+    package::local::local_path_from_url,
     utils::get_extract_dir,
     SoarResult,
 };
+
+/// Returns `true` if the file at `path` starts with the ELF magic bytes.
+///
+/// AppImages and plain binaries are ELF and need the executable bit; archives
+/// are not and are extracted instead.
+fn is_elf(path: &Path) -> bool {
+    let mut magic = [0u8; 4];
+    fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut magic))
+        .is_ok()
+        && magic == *b"\x7fELF"
+}
 
 /// Early validation of relative paths before download.
 /// Rejects paths containing `..` or absolute paths.
@@ -527,6 +541,67 @@ impl PackageInstaller {
         Ok(())
     }
 
+    /// Install a package from a local file by copying it into the install
+    /// directory (and extracting it when it is an archive), mirroring the
+    /// relevant post-download steps of [`Download::execute`].
+    fn copy_local_source(
+        &self,
+        src: &Path,
+        dest: &Path,
+        extract: bool,
+        extract_dir: &Path,
+    ) -> SoarResult<PathBuf> {
+        if !src.is_file() {
+            return Err(SoarError::Custom(format!(
+                "Local source is not a file: {}",
+                src.display()
+            )));
+        }
+
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("creating directory {}", parent.display()))?;
+        }
+
+        fs::copy(src, dest).with_context(|| {
+            format!("copying {} to {}", src.display(), dest.display())
+        })?;
+
+        // Honor checksum pinning the same way the direct-download path does.
+        if let Some(ref bsum) = self.package.bsum {
+            let actual = calculate_checksum(dest)?;
+            if &actual != bsum {
+                fs::remove_file(dest).ok();
+                return Err(SoarError::Custom(format!(
+                    "Checksum mismatch for {}: expected {}, got {}",
+                    src.display(),
+                    bsum,
+                    actual
+                )));
+            }
+        }
+
+        // ELF binaries (including AppImages) need the executable bit; archives
+        // are extracted below instead of being run directly.
+        if is_elf(dest) {
+            fs::set_permissions(dest, std::fs::Permissions::from_mode(0o755))
+                .with_context(|| format!("setting permissions on {}", dest.display()))?;
+        }
+
+        if extract {
+            debug!(archive = %dest.display(), dest = %extract_dir.display(), "extracting local archive");
+            compak::extract_archive(dest, extract_dir).map_err(|e| {
+                SoarError::Custom(format!(
+                    "Failed to extract archive {}: {}",
+                    dest.display(),
+                    e
+                ))
+            })?;
+        }
+
+        Ok(dest.to_path_buf())
+    }
+
     pub async fn download_package(&self) -> SoarResult<Option<String>> {
         debug!(
             pkg_name = self.package.pkg_name,
@@ -621,7 +696,6 @@ impl PackageInstaller {
 
             Ok(None)
         } else {
-            trace!(url = url.as_str(), "using direct download");
             let extract_dir = get_extract_dir(&self.install_dir);
 
             let should_extract = self
@@ -630,24 +704,30 @@ impl PackageInstaller {
                 .as_deref()
                 .is_some_and(|t| t == "archive");
 
-            let mut dl = Download::new(url.as_str())
-                .output(output_path.to_string_lossy())
-                .overwrite(OverwriteMode::Skip)
-                .extract(should_extract)
-                .extract_to(&extract_dir);
+            let file_path = if let Some(local_src) = local_path_from_url(url) {
+                trace!(source = %local_src.display(), "installing from local file");
+                self.copy_local_source(local_src, output_path, should_extract, &extract_dir)?
+            } else {
+                trace!(url = url.as_str(), "using direct download");
+                let mut dl = Download::new(url.as_str())
+                    .output(output_path.to_string_lossy())
+                    .overwrite(OverwriteMode::Skip)
+                    .extract(should_extract)
+                    .extract_to(&extract_dir);
 
-            if let Some(ref bsum) = self.package.bsum {
-                dl = dl.checksum(bsum);
-            }
+                if let Some(ref bsum) = self.package.bsum {
+                    dl = dl.checksum(bsum);
+                }
 
-            if let Some(ref cb) = self.progress_callback {
-                let cb = cb.clone();
-                dl = dl.progress(move |p| {
-                    cb(p);
-                });
-            }
+                if let Some(ref cb) = self.progress_callback {
+                    let cb = cb.clone();
+                    dl = dl.progress(move |p| {
+                        cb(p);
+                    });
+                }
 
-            let file_path = dl.execute()?;
+                dl.execute()?
+            };
 
             self.run_post_download_hook()?;
 

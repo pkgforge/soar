@@ -149,6 +149,37 @@ async fn install_with_show(
     let mut install_targets = Vec::new();
 
     for package in packages {
+        // Local files and remote URLs/GHCR refs aren't registry queries and
+        // have nothing to select; resolve them directly.
+        if soar_core::package::local::LocalPackage::is_local(package)
+            || soar_core::package::url::UrlPackage::is_remote(package)
+        {
+            let results =
+                install::resolve_packages(ctx, std::slice::from_ref(package), options).await?;
+            for result in results {
+                match result {
+                    ResolveResult::Resolved(targets) => install_targets.extend(targets),
+                    ResolveResult::AlreadyInstalled {
+                        pkg_name,
+                        pkg_id,
+                        repo_name,
+                        version,
+                    } => {
+                        warn!(
+                            "{}#{}:{} ({}) is already installed - skipping",
+                            pkg_name, pkg_id, repo_name, version,
+                        );
+                        if !force {
+                            info!("Hint: Use --force to reinstall");
+                        }
+                    }
+                    ResolveResult::NotFound(name) => error!("Package {} not found", name),
+                    ResolveResult::Ambiguous(_) => {}
+                }
+            }
+            continue;
+        }
+
         let query = PackageQuery::try_from(package.as_str())?;
 
         // --show requires a name and no pkg_id
