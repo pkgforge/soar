@@ -46,6 +46,10 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     let pkg_name = package.pkg_name();
     let mut appimage = AppImage::new(None, &file_path, None)?;
 
+    // Track whether an icon ends up available for the extracted desktop file.
+    // Both the extracted icon and desktop file are named after `pkg_name`, so
+    // their stems match.
+    let mut icon_available = has_icon;
     if !has_icon {
         if let Some(entry) = appimage.find_icon() {
             if entry.kind == AppImageEntryKind::File {
@@ -63,6 +67,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
                     .with_context(|| format!("renaming from {dest} to {final_path}"))?;
 
                 symlink_icon_with_mode(final_path, config.is_system())?;
+                icon_available = true;
             }
         }
     }
@@ -72,7 +77,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
             if entry.kind == AppImageEntryKind::File {
                 let dest = format!("{}/{}.desktop", install_dir.display(), pkg_name);
                 let _ = appimage.write_entry(&entry, &dest);
-                symlink_desktop_with_config(dest, package, config)?;
+                symlink_desktop_with_config(dest, package, icon_available, config)?;
             }
         }
     }

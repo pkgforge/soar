@@ -4,6 +4,7 @@
 //! icon handling, desktop file creation, and portable directory setup.
 
 use std::{
+    collections::HashSet,
     env,
     ffi::OsStr,
     fs::{self, File},
@@ -133,14 +134,17 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(real_path: P, system_mode: bool) -
 
 /// Creates a symlink for a desktop file with modified fields.
 ///
-/// Updates the Icon, Exec, and TryExec fields in the desktop file to point
-/// to the installed package, then creates a symlink in the applications
-/// directory.
+/// Updates the Exec and TryExec fields in the desktop file to point to the
+/// installed package, then creates a symlink in the applications directory.
+/// The Icon field is rewritten to the soar-managed icon only when the package
+/// ships a matching icon (`has_icon`); otherwise it is left untouched so that
+/// references to generic system icons keep working.
 ///
 /// # Arguments
 ///
 /// * `real_path` - Path to the desktop file
 /// * `package` - Package metadata
+/// * `has_icon` - Whether a matching soar-managed icon exists for this desktop file
 ///
 /// # Returns
 ///
@@ -152,8 +156,9 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(real_path: P, system_mode: bool) -
 pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     real_path: P,
     package: &T,
+    has_icon: bool,
 ) -> Result<PathBuf> {
-    symlink_desktop_with_config(real_path, package, &get_config())
+    symlink_desktop_with_config(real_path, package, has_icon, &get_config())
 }
 
 /// Creates a symlink for a desktop file using the provided config.
@@ -163,6 +168,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
 pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
     real_path: P,
     package: &T,
+    has_icon: bool,
     config: &soar_config::config::Config,
 ) -> Result<PathBuf> {
     let pkg_name = package.pkg_name();
@@ -179,7 +185,8 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
 
         re.replace_all(&content, |caps: &regex::Captures| {
             match &caps[1] {
-                "Icon" => format!("Icon={}-soar", file_name.to_string_lossy()),
+                "Icon" if has_icon => format!("Icon={}-soar", file_name.to_string_lossy()),
+                "Icon" => caps[0].to_string(),
                 "Exec" | "TryExec" => {
                     let old_cmd = &caps[2];
                     let parts: Vec<&str> = old_cmd.split_whitespace().collect();
@@ -375,8 +382,25 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
 
     let system_mode = config.is_system();
 
-    let mut has_desktop = false;
     let mut has_icon = false;
+    let mut icon_stems: HashSet<String> = HashSet::new();
+    let mut symlink_action = |path: &Path| -> Result<()> {
+        if path == bin_path.as_path() {
+            return Ok(());
+        }
+        let ext = path.extension();
+        if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
+            has_icon = true;
+            if let Some(stem) = path.file_stem() {
+                icon_stems.insert(stem.to_string_lossy().into_owned());
+            }
+            symlink_icon_with_mode(path, system_mode)?;
+        }
+        Ok(())
+    };
+    walk_dir(install_dir, &mut symlink_action)?;
+
+    let mut has_desktop = false;
     let mut symlink_action = |path: &Path| -> Result<()> {
         // Never treat the package binary itself as a desktop file. Its name can
         // legitimately end in `.desktop`, but its contents are the executable.
@@ -386,20 +410,13 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         let ext = path.extension();
         if ext == Some(OsStr::new("desktop")) {
             has_desktop = true;
-            symlink_desktop_with_config(path, package, config)?;
-        }
-        Ok(())
-    };
-    walk_dir(install_dir, &mut symlink_action)?;
-
-    let mut symlink_action = |path: &Path| -> Result<()> {
-        if path == bin_path.as_path() {
-            return Ok(());
-        }
-        let ext = path.extension();
-        if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
-            has_icon = true;
-            symlink_icon_with_mode(path, system_mode)?;
+            // Only rewrite the Icon field when this desktop file has a matching
+            // icon shipped by the package (matched by file stem).
+            let desktop_has_icon = path
+                .file_stem()
+                .map(|stem| icon_stems.contains(&*stem.to_string_lossy()))
+                .unwrap_or(false);
+            symlink_desktop_with_config(path, package, desktop_has_icon, config)?;
         }
         Ok(())
     };
