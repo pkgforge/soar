@@ -1,4 +1,10 @@
 
+## [0.4.0](https://github.com/pkgforge/soar/compare/soar-package-v0.3.3...soar-package-v0.4.0) - 2026-06-14
+
+### 🐛 Bug Fixes
+
+- *(integrate)* Don't clobber desktop Icon field when package ships no matching icon - ([caf1ba6](https://github.com/pkgforge/soar/commit/caf1ba6dd7df4cb227161dfa2530acc985e04dd3))
+
 ## [0.3.3](https://github.com/pkgforge/soar/compare/soar-package-v0.3.2...soar-package-v0.3.3) - 2026-06-06
 
 ### ⚙️ Miscellaneous Tasks
