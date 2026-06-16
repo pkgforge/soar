@@ -60,12 +60,12 @@ serde_json = { version = "1.0.149", features = ["indexmap"] }
 serial_test = "3.3.1"
 sha2 = "0.10.9"
 soar-config = { version = "0.9.0", path = "crates/soar-config" }
-soar-core = { version = "0.16.1", path = "crates/soar-core" }
+soar-core = { version = "0.16.2", path = "crates/soar-core" }
 soar-db = { version = "0.5.3", path = "crates/soar-db" }
 soar-dl = { version = "0.10.0", path = "crates/soar-dl" }
 soar-events = { version = "0.1.0", path = "crates/soar-events" }
-soar-operations = { version = "0.2.2", path = "crates/soar-operations" }
-soar-package = { version = "0.3.3", path = "crates/soar-package" }
+soar-operations = { version = "0.2.3", path = "crates/soar-operations" }
+soar-package = { version = "0.4.0", path = "crates/soar-package" }
 soar-registry = { version = "0.4.3", path = "crates/soar-registry" }
 soar-utils = { version = "0.4.1", path = "crates/soar-utils" }
 squishy = { version = "0.5.0", features = ["appimage", "dwarfs"] }

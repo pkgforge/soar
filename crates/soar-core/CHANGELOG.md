@@ -1,4 +1,10 @@
 
+## [0.16.2](https://github.com/pkgforge/soar/compare/soar-core-v0.16.1...soar-core-v0.16.2) - 2026-06-14
+
+### ⛰️  Features
+
+- *(install)* Install packages from a local file path - ([20ce381](https://github.com/pkgforge/soar/commit/20ce38171ac2fd58862ba862f304fb1757cdbaf2))
+
 ## [0.16.1](https://github.com/pkgforge/soar/compare/soar-core-v0.16.0...soar-core-v0.16.1) - 2026-06-06
 
 ### ⚙️ Miscellaneous Tasks

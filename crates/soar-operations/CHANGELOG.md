@@ -1,4 +1,10 @@
 
+## [0.2.3](https://github.com/pkgforge/soar/compare/soar-operations-v0.2.2...soar-operations-v0.2.3) - 2026-06-14
+
+### ⛰️  Features
+
+- *(install)* Install packages from a local file path - ([20ce381](https://github.com/pkgforge/soar/commit/20ce38171ac2fd58862ba862f304fb1757cdbaf2))
+
 ## [0.2.2](https://github.com/pkgforge/soar/compare/soar-operations-v0.2.1...soar-operations-v0.2.2) - 2026-06-06
 
 ### ⛰️  Features
