@@ -9,6 +9,7 @@ use std::{
     path::Path,
 };
 
+use minisign_verify::{PublicKey, Signature};
 use soar_config::repository::Repository;
 use soar_dl::http_client::SHARED_AGENT;
 use tracing::debug;
@@ -28,6 +29,14 @@ pub const SQLITE_MAGIC_BYTES: [u8; 4] = [0x53, 0x51, 0x4c, 0x69];
 
 /// Magic bytes for Zstandard compressed files.
 pub const ZST_MAGIC_BYTES: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
+
+/// Maximum size, in bytes, allowed for metadata in either form.
+///
+/// This bounds both the downloaded body (which would otherwise be capped at
+/// ureq's 10 MB default, truncating a large catalog) and the zstd-decompressed
+/// output (so a decompression bomb cannot exhaust the disk). 256 MB leaves ample
+/// headroom for catalog growth while keeping a malicious response bounded.
+pub const MAX_METADATA_SIZE: u64 = 256 * 1024 * 1024;
 
 /// Represents the processed content of fetched metadata.
 ///
@@ -129,7 +138,11 @@ pub async fn fetch_metadata(
         String::new()
     };
 
-    Url::parse(&repo.url).map_err(|err| RegistryError::InvalidUrl(err.to_string()))?;
+    let parsed_url =
+        Url::parse(&repo.url).map_err(|err| RegistryError::InvalidUrl(err.to_string()))?;
+    if parsed_url.scheme() != "https" {
+        return Err(RegistryError::InsecureUrl(repo.url.clone()));
+    }
 
     let mut req = SHARED_AGENT
         .get(&repo.url)
@@ -162,10 +175,89 @@ pub async fn fetch_metadata(
 
     debug!("Fetching metadata from {}", repo.url);
 
-    let content = resp.into_body().read_to_vec()?;
+    let content = resp
+        .into_body()
+        .into_with_config()
+        .limit(MAX_METADATA_SIZE)
+        .read_to_vec()?;
+
+    verify_metadata_signature(repo, &content)?;
+
     let metadata_content = process_metadata_content(content, &metadata_db)?;
 
     Ok(Some((etag, metadata_content)))
+}
+
+/// Verifies the authenticity of fetched metadata against the repository pubkey.
+///
+/// When the repository has signature verification enabled, this fetches the
+/// detached minisign signature published next to the metadata (`<url>.sig`)
+/// and verifies it over the raw fetched bytes, before the metadata is
+/// decompressed, parsed, or persisted. A missing or invalid signature is a hard
+/// error so a tampered metadata source cannot supply both the package
+/// `download_url` and its expected checksum.
+fn verify_metadata_signature(repo: &Repository, content: &[u8]) -> Result<()> {
+    if !repo.signature_verification() {
+        return Ok(());
+    }
+
+    let pubkey = repo.pubkey.as_deref().ok_or_else(|| {
+        RegistryError::MetadataSignatureInvalid {
+            repo: repo.name.clone(),
+            reason: "signature verification is enabled but no public key is configured".to_string(),
+        }
+    })?;
+
+    let sig_url = format!("{}.sig", repo.url);
+    let sig_text = fetch_signature_text(&sig_url).map_err(|reason| {
+        RegistryError::MetadataSignatureMissing {
+            repo: repo.name.clone(),
+            reason,
+        }
+    })?;
+
+    let public_key = PublicKey::from_base64(pubkey.trim()).map_err(|err| {
+        RegistryError::MetadataSignatureInvalid {
+            repo: repo.name.clone(),
+            reason: format!("invalid public key: {err}"),
+        }
+    })?;
+    let signature = Signature::decode(&sig_text).map_err(|err| {
+        RegistryError::MetadataSignatureInvalid {
+            repo: repo.name.clone(),
+            reason: format!("malformed signature: {err}"),
+        }
+    })?;
+
+    public_key
+        .verify(content, &signature, true)
+        .map_err(|err| {
+            RegistryError::MetadataSignatureInvalid {
+                repo: repo.name.clone(),
+                reason: err.to_string(),
+            }
+        })?;
+
+    debug!("Verified metadata signature for {}", repo.name);
+    Ok(())
+}
+
+/// Fetches the textual contents of a detached minisign signature.
+fn fetch_signature_text(url: &str) -> std::result::Result<String, String> {
+    let resp = SHARED_AGENT
+        .get(url)
+        .header(CACHE_CONTROL, "no-cache")
+        .header(PRAGMA, "no-cache")
+        .call()
+        .map_err(|err| err.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("{} [{}]", url, resp.status()));
+    }
+
+    resp.into_body()
+        .read_to_string()
+        .map_err(|err| err.to_string())
 }
 
 /// Processes raw metadata content and determines its format.
@@ -204,10 +296,18 @@ pub fn process_metadata_content(
         let mut tmp_file = File::create(&tmp_path)
             .with_context(|| format!("creating temporary file {tmp_path}"))?;
 
-        let mut decoder = zstd::Decoder::new(content.as_slice())
+        let decoder = zstd::Decoder::new(content.as_slice())
             .map_err(|e| RegistryError::Custom(format!("creating zstd decoder: {e}")))?;
-        io::copy(&mut decoder, &mut tmp_file)
+        let mut limited = io::Read::take(decoder, MAX_METADATA_SIZE + 1);
+        let written = io::copy(&mut limited, &mut tmp_file)
             .with_context(|| format!("decoding zstd from {tmp_path}"))?;
+        if written > MAX_METADATA_SIZE {
+            drop(tmp_file);
+            let _ = fs::remove_file(&tmp_path);
+            return Err(RegistryError::MetadataTooLarge {
+                limit: MAX_METADATA_SIZE,
+            });
+        }
 
         let magic_bytes = soar_utils::fs::read_file_signature(&tmp_path, 4).map_err(|e| {
             RegistryError::IoError {

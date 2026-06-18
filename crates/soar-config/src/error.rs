@@ -82,6 +82,13 @@ pub enum ConfigError {
     )]
     DuplicateRepositoryName(String),
 
+    #[error("Repository '{0}' has signature verification enabled but no pubkey configured")]
+    #[diagnostic(
+        code(soar_config::missing_pubkey),
+        help("Provide a pubkey for the repository or disable signature_verification")
+    )]
+    MissingPubkey(String),
+
     #[error(transparent)]
     #[diagnostic(code(soar_config::io))]
     IoError(#[from] std::io::Error),

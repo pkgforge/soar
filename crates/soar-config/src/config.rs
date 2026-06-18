@@ -440,6 +440,12 @@ impl Config {
             if repo.pubkey.is_none() && repo.name.as_str() == "soarpkgs" {
                 repo.pubkey = Some(SOARPKGS_PUBKEY.to_string())
             }
+
+            let explicitly_enabled = self.signature_verification == Some(true)
+                || repo.signature_verification == Some(true);
+            if explicitly_enabled && repo.pubkey.is_none() {
+                return Err(ConfigError::MissingPubkey(repo.name.clone()));
+            }
         }
 
         Ok(())
@@ -683,6 +689,23 @@ mod tests {
 
         let result = config.resolve();
         assert!(matches!(result, Err(ConfigError::ReservedRepositoryName)));
+    }
+
+    #[test]
+    fn test_config_resolve_signature_verification_without_pubkey() {
+        let mut config = Config::default_config::<&str>(&[]);
+        config.repositories.push(Repository {
+            name: "needs-key".to_string(),
+            url: "https://example.com".to_string(),
+            desktop_integration: None,
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: Some(true),
+            sync_interval: None,
+        });
+
+        let result = config.resolve();
+        assert!(matches!(result, Err(ConfigError::MissingPubkey(_))));
     }
 
     #[test]

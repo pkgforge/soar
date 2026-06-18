@@ -2356,6 +2356,7 @@ name = "soar-registry"
 version = "0.4.3"
 dependencies = [
  "miette",
+ "minisign-verify",
  "serde",
  "serde_json",
  "soar-config",

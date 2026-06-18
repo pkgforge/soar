@@ -304,6 +304,7 @@ async fn handle_cli() -> SoarResult<()> {
                 } => inspect_log(&package, InspectType::BuildScript).await?,
                 cli::Commands::Run {
                     yes,
+                    no_verify,
                     command,
                     pkg_id,
                     repo_name,
@@ -312,6 +313,7 @@ async fn handle_cli() -> SoarResult<()> {
                         &ctx,
                         command.as_ref(),
                         yes,
+                        no_verify,
                         repo_name.as_deref(),
                         pkg_id.as_deref(),
                     )

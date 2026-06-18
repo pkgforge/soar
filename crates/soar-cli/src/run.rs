@@ -7,6 +7,7 @@ pub async fn run_package(
     ctx: &SoarContext,
     command: &[String],
     yes: bool,
+    no_verify: bool,
     repo_name: Option<&str>,
     pkg_id: Option<&str>,
 ) -> SoarResult<i32> {
@@ -17,7 +18,7 @@ pub async fn run_package(
         &[]
     };
 
-    let result = run::prepare_run(ctx, package_name, repo_name, pkg_id).await?;
+    let result = run::prepare_run(ctx, package_name, repo_name, pkg_id, no_verify).await?;
 
     let output_path = match result {
         PrepareRunResult::Ready(path) => path,
@@ -33,9 +34,14 @@ pub async fn run_package(
             };
 
             // Re-run with selected package
-            let result =
-                run::prepare_run(ctx, package_name, Some(&pkg.repo_name), Some(&pkg.pkg_id))
-                    .await?;
+            let result = run::prepare_run(
+                ctx,
+                package_name,
+                Some(&pkg.repo_name),
+                Some(&pkg.pkg_id),
+                no_verify,
+            )
+            .await?;
 
             match result {
                 PrepareRunResult::Ready(path) => path,

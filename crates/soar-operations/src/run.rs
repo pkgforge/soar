@@ -9,7 +9,6 @@ use soar_core::{
 };
 use soar_db::repository::metadata::MetadataRepository;
 use soar_dl::{download::Download, oci::OciDownload, types::OverwriteMode};
-use soar_events::SoarEvent;
 use soar_utils::hash::calculate_checksum;
 use tracing::debug;
 
@@ -27,6 +26,7 @@ pub async fn prepare_run(
     package_name: &str,
     repo_name: Option<&str>,
     pkg_id: Option<&str>,
+    no_verify: bool,
 ) -> SoarResult<PrepareRunResult> {
     debug!(package_name = package_name, "preparing run");
     let config = ctx.config();
@@ -39,9 +39,6 @@ pub async fn prepare_run(
     let version = query.version.as_deref();
 
     let output_path = cache_bin.join(package_name);
-    if output_path.exists() {
-        return Ok(PrepareRunResult::Ready(output_path));
-    }
 
     let metadata_mgr = ctx.metadata_manager().await?;
 
@@ -108,6 +105,34 @@ pub async fn prepare_run(
 
     let package = packages.into_iter().next().unwrap().resolve(version);
 
+    // Refuse to execute a package whose integrity cannot be checked. OCI
+    // artifacts are digest-verified during download, so they are exempt.
+    if !no_verify && package.bsum.is_none() && package.ghcr_blob.is_none() {
+        return Err(SoarError::Custom(format!(
+            "Refusing to run {}#{}: no checksum to verify integrity (use --no-verify to override)",
+            package.pkg_name, package.pkg_id
+        )));
+    }
+
+    // Reuse a cached binary only after re-verifying it against the expected
+    // checksum, so a stale or tampered cache entry is never executed blindly.
+    if output_path.exists() {
+        match package.bsum {
+            Some(ref bsum) if !no_verify => {
+                let checksum = calculate_checksum(&output_path)?;
+                if checksum == *bsum {
+                    return Ok(PrepareRunResult::Ready(output_path));
+                }
+                debug!(
+                    package = %package.pkg_name,
+                    "cached binary checksum mismatch; re-downloading"
+                );
+                fs::remove_file(&output_path).ok();
+            }
+            _ => return Ok(PrepareRunResult::Ready(output_path)),
+        }
+    }
+
     fs::create_dir_all(&cache_bin)
         .with_context(|| format!("creating directory {}", cache_bin.display()))?;
 
@@ -119,22 +144,13 @@ pub async fn prepare_run(
         package.pkg_id.clone(),
     );
 
-    download_to_cache(&package, &output_path, &cache_bin, progress_callback)?;
-
-    // Checksum verification
-    let checksum = calculate_checksum(&output_path)?;
-    if let Some(ref bsum) = package.bsum {
-        if checksum != *bsum {
-            ctx.events().emit(SoarEvent::Log {
-                level: soar_events::LogLevel::Warning,
-                message: format!(
-                    "Checksum mismatch for {}: expected {}, got {}",
-                    package.pkg_name, bsum, checksum
-                ),
-            });
-            return Err(SoarError::InvalidChecksum);
-        }
-    }
+    download_to_cache(
+        &package,
+        &output_path,
+        &cache_bin,
+        no_verify,
+        progress_callback,
+    )?;
 
     Ok(PrepareRunResult::Ready(output_path))
 }
@@ -157,6 +173,7 @@ fn download_to_cache(
     package: &Package,
     output_path: &Path,
     cache_bin: &Path,
+    no_verify: bool,
     progress_callback: Arc<dyn Fn(soar_dl::types::Progress) + Send + Sync>,
 ) -> SoarResult<()> {
     if let Some(ref url) = package.ghcr_blob {
@@ -176,6 +193,11 @@ fn download_to_cache(
             .overwrite(OverwriteMode::Force)
             .extract(true)
             .extract_to(&extract_dir);
+        if !no_verify {
+            if let Some(ref bsum) = package.bsum {
+                dl = dl.checksum(bsum.clone());
+            }
+        }
         dl = dl.progress(move |p| {
             cb(p);
         });

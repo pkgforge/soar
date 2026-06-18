@@ -356,6 +356,10 @@ pub enum Commands {
         #[arg(required = false, short, long)]
         yes: bool,
 
+        /// Skip checksum verification before running
+        #[arg(required = false, long)]
+        no_verify: bool,
+
         /// Command to execute
         #[arg(required = true)]
         command: Vec<String>,

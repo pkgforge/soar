@@ -69,6 +69,36 @@ pub enum RegistryError {
     )]
     MissingEtag,
 
+    #[error("Insecure repository URL: {0}")]
+    #[diagnostic(
+        code(soar_registry::insecure_url),
+        help("Repository metadata must be served over https")
+    )]
+    InsecureUrl(String),
+
+    #[error("Could not fetch metadata signature for {repo}: {reason}")]
+    #[diagnostic(
+        code(soar_registry::signature_missing),
+        help(
+            "Signature verification is enabled but the detached signature could not be retrieved"
+        )
+    )]
+    MetadataSignatureMissing { repo: String, reason: String },
+
+    #[error("Metadata signature verification failed for {repo}: {reason}")]
+    #[diagnostic(
+        code(soar_registry::signature_invalid),
+        help("The metadata may be tampered with or signed by a different key")
+    )]
+    MetadataSignatureInvalid { repo: String, reason: String },
+
+    #[error("Metadata exceeds the maximum decompressed size of {limit} bytes")]
+    #[diagnostic(
+        code(soar_registry::metadata_too_large),
+        help("The metadata file is unexpectedly large and may be a decompression bomb")
+    )]
+    MetadataTooLarge { limit: u64 },
+
     #[error("{0}")]
     #[diagnostic(code(soar_registry::custom))]
     Custom(String),
