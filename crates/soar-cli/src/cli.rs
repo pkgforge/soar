@@ -407,7 +407,7 @@ pub enum Commands {
         #[arg(required = false, short, long = "match")]
         match_keywords: Option<Vec<String>>,
 
-        /// Check if the asset contains given string
+        /// Exclude assets that contain the given string
         #[arg(required = false, short, long = "exclude")]
         exclude_keywords: Option<Vec<String>>,
 

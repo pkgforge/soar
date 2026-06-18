@@ -563,9 +563,8 @@ impl PackageInstaller {
                 .with_context(|| format!("creating directory {}", parent.display()))?;
         }
 
-        fs::copy(src, dest).with_context(|| {
-            format!("copying {} to {}", src.display(), dest.display())
-        })?;
+        fs::copy(src, dest)
+            .with_context(|| format!("copying {} to {}", src.display(), dest.display()))?;
 
         // Honor checksum pinning the same way the direct-download path does.
         if let Some(ref bsum) = self.package.bsum {

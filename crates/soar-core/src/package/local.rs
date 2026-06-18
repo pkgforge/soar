@@ -57,9 +57,7 @@ impl LocalPackage {
             return false;
         }
 
-        resolve_path(candidate)
-            .map(|p| p.exists())
-            .unwrap_or(false)
+        resolve_path(candidate).map(|p| p.exists()).unwrap_or(false)
     }
 
     /// Parse a local file path and extract package metadata.
@@ -87,7 +85,10 @@ impl LocalPackage {
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .ok_or_else(|| {
-                SoarError::Custom(format!("Could not extract filename from {}", path.display()))
+                SoarError::Custom(format!(
+                    "Could not extract filename from {}",
+                    path.display()
+                ))
             })?;
 
         let size = path.metadata().ok().map(|m| m.len());
@@ -156,9 +157,7 @@ impl LocalPackage {
 /// Strip the `file://` scheme from a download URL, returning the local path
 /// if the URL refers to a local source.
 pub fn local_path_from_url(download_url: &str) -> Option<&Path> {
-    download_url
-        .strip_prefix(LOCAL_SCHEME)
-        .map(Path::new)
+    download_url.strip_prefix(LOCAL_SCHEME).map(Path::new)
 }
 
 #[cfg(test)]
@@ -190,8 +189,7 @@ mod tests {
         let tmp = std::env::temp_dir().join("MyApp-2.0.1-x86_64.AppImage");
         std::fs::write(&tmp, b"\x7fELF").unwrap();
 
-        let pkg =
-            LocalPackage::from_path(&tmp.to_string_lossy(), None, None, None, None).unwrap();
+        let pkg = LocalPackage::from_path(&tmp.to_string_lossy(), None, None, None, None).unwrap();
 
         assert_eq!(pkg.pkg_name, "myapp");
         assert_eq!(pkg.version, "2.0.1");
@@ -211,8 +209,7 @@ mod tests {
         let tmp = std::env::temp_dir().join("soar_local_test_blob.bin");
         std::fs::write(&tmp, [0x1f, 0x8b, 0x08, 0x00]).unwrap();
 
-        let pkg =
-            LocalPackage::from_path(&tmp.to_string_lossy(), None, None, None, None).unwrap();
+        let pkg = LocalPackage::from_path(&tmp.to_string_lossy(), None, None, None, None).unwrap();
         assert_eq!(pkg.pkg_type, Some("archive".to_string()));
 
         std::fs::remove_file(&tmp).ok();
@@ -223,8 +220,7 @@ mod tests {
         let tmp = std::env::temp_dir().join("soar_local_test_binary");
         std::fs::write(&tmp, b"\x7fELF\x02\x01\x01\x00").unwrap();
 
-        let pkg =
-            LocalPackage::from_path(&tmp.to_string_lossy(), None, None, None, None).unwrap();
+        let pkg = LocalPackage::from_path(&tmp.to_string_lossy(), None, None, None, None).unwrap();
         assert_eq!(pkg.pkg_type, None);
 
         std::fs::remove_file(&tmp).ok();
