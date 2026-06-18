@@ -1,0 +1,398 @@
+/* ============================================================
+   Nightsky theme for Soar documentation.
+   A dark, twilight-inspired skin over the VitePress default
+   theme: deep charcoal background, cyan/blue accents, amber
+   inline code.
+   ============================================================ */
+
+/* --- Fonts --- */
+:root {
+  --vp-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code',
+    'Source Code Pro', ui-monospace, monospace;
+}
+
+/* --- Light palette (Daysky) --- */
+:root {
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #f6f8fa;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f6f8fa;
+
+  --vp-c-default-1: #d0d7de;
+  --vp-c-default-2: #e1e6eb;
+  --vp-c-default-3: #f0f3f6;
+  --vp-c-default-soft: rgba(208, 215, 222, 0.4);
+
+  --vp-c-divider: #e1e6eb;
+  --vp-c-border: #d0d7de;
+  --vp-c-gutter: #e1e6eb;
+
+  --vp-c-text-1: #1f2328;
+  --vp-c-text-2: #59636e;
+  --vp-c-text-3: #818b98;
+
+  --vp-c-brand-1: #0969da;
+  --vp-c-brand-2: #0860c4;
+  --vp-c-brand-3: #0757b3;
+  --vp-c-brand-soft: rgba(9, 105, 218, 0.1);
+
+  --vp-c-tip-1: #1a7f6e;
+  --vp-c-tip-2: #16705f;
+  --vp-c-tip-3: #136052;
+  --vp-c-tip-soft: rgba(26, 127, 110, 0.1);
+
+  --vp-c-warning-1: #9a6700;
+  --vp-c-warning-2: #855800;
+  --vp-c-warning-3: #714b00;
+  --vp-c-warning-soft: rgba(154, 103, 0, 0.1);
+
+  --vp-c-danger-1: #cf222e;
+  --vp-c-danger-2: #b91c28;
+  --vp-c-danger-3: #a01722;
+  --vp-c-danger-soft: rgba(207, 34, 46, 0.1);
+
+  --soar-inline-code: #bc4c00;
+  --soar-inline-code-bg: rgba(188, 76, 0, 0.08);
+
+  color-scheme: light;
+}
+
+/* --- Dark palette (Nightsky, default) --- */
+.dark {
+  --vp-c-bg: #0d1117;
+  --vp-c-bg-alt: #0a0d12;
+  --vp-c-bg-elv: #161b22;
+  --vp-c-bg-soft: #161b22;
+
+  --vp-c-default-1: #30363d;
+  --vp-c-default-2: #21262d;
+  --vp-c-default-3: #161b22;
+  --vp-c-default-soft: rgba(48, 54, 61, 0.4);
+
+  --vp-c-divider: #21262d;
+  --vp-c-border: #30363d;
+  --vp-c-gutter: #21262d;
+
+  --vp-c-text-1: #e6edf3;
+  --vp-c-text-2: #9aa4af;
+  --vp-c-text-3: #6e7681;
+
+  /* Brand: cyan/blue twilight accent */
+  --vp-c-brand-1: #58a6ff;
+  --vp-c-brand-2: #4f96ec;
+  --vp-c-brand-3: #388bfd;
+  --vp-c-brand-soft: rgba(56, 139, 253, 0.14);
+
+  --vp-c-tip-1: #3fb9a2;
+  --vp-c-tip-2: #38a08c;
+  --vp-c-tip-3: #2f8576;
+  --vp-c-tip-soft: rgba(63, 185, 162, 0.14);
+
+  --vp-c-warning-1: #d29922;
+  --vp-c-warning-2: #bd8a1f;
+  --vp-c-warning-3: #a8791b;
+  --vp-c-warning-soft: rgba(210, 153, 34, 0.14);
+
+  --vp-c-danger-1: #f85149;
+  --vp-c-danger-2: #e0443d;
+  --vp-c-danger-3: #c83a34;
+  --vp-c-danger-soft: rgba(248, 81, 73, 0.14);
+
+  --soar-inline-code: #f0883e;
+  --soar-inline-code-bg: rgba(240, 136, 62, 0.1);
+
+  color-scheme: dark;
+}
+
+/* --- Buttons --- */
+:root {
+  --vp-button-brand-bg: var(--vp-c-brand-3);
+  --vp-button-brand-hover-bg: var(--vp-c-brand-2);
+  --vp-button-brand-active-bg: var(--vp-c-brand-1);
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-hover-text: #ffffff;
+}
+
+/* Dark mode uses the lighter accent blue, so the button needs dark text */
+.dark {
+  --vp-button-brand-text: #06101f;
+  --vp-button-brand-hover-text: #06101f;
+}
+
+/* --- Home hero --- */
+:root {
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(
+    120deg,
+    #58a6ff 20%,
+    #3fb9a2 60%,
+    #d29922 100%
+  );
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(88, 166, 255, 0.4),
+    rgba(63, 185, 162, 0.3)
+  );
+  --vp-home-hero-image-filter: blur(48px);
+}
+
+.VPHero .name {
+  font-size: clamp(3rem, 8vw, 4.5rem);
+  letter-spacing: -0.03em;
+}
+
+.VPHero .text {
+  color: var(--vp-c-text-1);
+  letter-spacing: -0.01em;
+}
+
+.VPHero .tagline {
+  color: var(--vp-c-text-2);
+  max-width: 600px;
+}
+
+/* --- Feature cards --- */
+.VPFeature {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+}
+
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px -12px rgba(56, 139, 253, 0.35);
+}
+
+.VPFeature .title {
+  color: var(--vp-c-text-1);
+}
+
+/* --- Install command (under hero) --- */
+.install-command {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 48px 8px;
+}
+
+@media (max-width: 768px) {
+  .install-command {
+    padding: 0 24px 8px;
+  }
+}
+
+.install-command-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  font-family: var(--vp-font-family-mono);
+  overflow-x: auto;
+}
+
+.install-prompt {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+  user-select: none;
+}
+
+.install-text {
+  flex: 1;
+  color: var(--vp-c-text-1);
+  background: none;
+  padding: 0;
+  white-space: nowrap;
+  font-size: 0.95em;
+}
+
+.install-copy {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: var(--vp-font-family-base);
+  color: var(--vp-c-text-2);
+  background: var(--vp-c-default-3);
+  border: 1px solid var(--vp-c-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.install-copy:hover,
+.install-copy:focus-visible {
+  color: var(--vp-c-text-1);
+  border-color: var(--vp-c-brand-1);
+}
+
+.install-copy.copied {
+  color: var(--vp-c-tip-1);
+  border-color: var(--vp-c-tip-1);
+}
+
+.install-hint {
+  margin: 12px 2px 0;
+  font-size: 0.85rem;
+  color: var(--vp-c-text-3);
+  text-align: center;
+}
+
+.install-hint code {
+  font-size: 0.82em;
+  color: var(--vp-c-text-2);
+}
+
+/* --- Quick navigation (after features) --- */
+.quick-nav {
+  padding: 16px 24px 64px;
+}
+
+.quick-nav-container {
+  max-width: 1152px;
+  margin: 0 auto;
+}
+
+.quick-nav-heading {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 24px;
+  color: var(--vp-c-text-1);
+}
+
+.quick-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+.quick-nav-card {
+  padding: 20px 22px;
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  transition: border-color 0.25s;
+}
+
+.quick-nav-card:hover {
+  border-color: var(--vp-c-border);
+}
+
+.quick-nav-card h3 {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vp-c-text-3);
+}
+
+.quick-nav-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.quick-nav-card li {
+  margin: 0;
+}
+
+.quick-nav-card li + li {
+  margin-top: 8px;
+}
+
+.quick-nav-card a {
+  color: var(--vp-c-text-1);
+  font-weight: 500;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.quick-nav-card a:hover,
+.quick-nav-card a:focus-visible {
+  color: var(--vp-c-brand-1);
+}
+
+/* --- Content typography --- */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4 {
+  letter-spacing: -0.015em;
+}
+
+.vp-doc h2 {
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--vp-c-divider);
+  padding-top: 1.6rem;
+}
+
+/* Inline code: amber, the Nightsky signature */
+.vp-doc :not(pre) > code {
+  color: var(--soar-inline-code);
+  background: var(--soar-inline-code-bg);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-size: 0.84em;
+}
+
+.vp-doc a {
+  font-weight: 500;
+  text-underline-offset: 3px;
+}
+
+/* Tables */
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc tr:nth-child(2n) {
+  background: var(--vp-c-bg-soft);
+}
+
+.dark .vp-doc tr:nth-child(2n) {
+  background: rgba(22, 27, 34, 0.4);
+}
+
+/* Blockquote callouts (> **Note** style from the source docs) */
+.vp-doc blockquote {
+  border-left: 3px solid var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+  border-radius: 0 8px 8px 0;
+  padding: 2px 18px;
+  margin: 18px 0;
+}
+
+.vp-doc blockquote > p {
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc blockquote strong:first-child {
+  color: var(--vp-c-text-1);
+}
+
+/* --- Code blocks --- */
+.dark {
+  --vp-code-block-bg: #0a0d12;
+}
+
+.vp-doc div[class*='language-'] {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+}
+
+/* --- Navbar polish --- */
+.VPNavBar {
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.VPNavBar.has-sidebar .content {
+  backdrop-filter: blur(8px);
+}
