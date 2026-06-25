@@ -1,4 +1,10 @@
 
+## [0.3.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.2.3...soar-operations-v0.3.0) - 2026-06-25
+
+### ⛰️  Features
+
+- *(metadata)* Add metadata signature verification - ([ebd1b2f](https://github.com/pkgforge/soar/commit/ebd1b2fc2efea85cbb60289c910325d619c28fe0))
+
 ## [0.2.3](https://github.com/pkgforge/soar/compare/soar-operations-v0.2.2...soar-operations-v0.2.3) - 2026-06-14
 
 ### ⛰️  Features

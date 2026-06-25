@@ -1,4 +1,10 @@
 
+## [0.10.1](https://github.com/pkgforge/soar/compare/soar-dl-v0.10.0...soar-dl-v0.10.1) - 2026-06-25
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.toml dependencies - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.10.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.9.1...soar-dl-v0.10.0) - 2026-06-04
 
 ### 🐛 Bug Fixes
