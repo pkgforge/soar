@@ -1,4 +1,10 @@
 
+## [0.10.0](https://github.com/pkgforge/soar/compare/soar-config-v0.9.0...soar-config-v0.10.0) - 2026-06-25
+
+### ⛰️  Features
+
+- *(metadata)* Add metadata signature verification - ([ebd1b2f](https://github.com/pkgforge/soar/commit/ebd1b2fc2efea85cbb60289c910325d619c28fe0))
+
 ## [0.9.0](https://github.com/pkgforge/soar/compare/soar-config-v0.8.0...soar-config-v0.9.0) - 2026-06-06
 
 ### ⛰️  Features

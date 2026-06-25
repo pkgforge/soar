@@ -1,4 +1,10 @@
 
+## [0.5.0](https://github.com/pkgforge/soar/compare/soar-registry-v0.4.3...soar-registry-v0.5.0) - 2026-06-25
+
+### ⛰️  Features
+
+- *(metadata)* Add metadata signature verification - ([ebd1b2f](https://github.com/pkgforge/soar/commit/ebd1b2fc2efea85cbb60289c910325d619c28fe0))
+
 ## [0.4.3](https://github.com/pkgforge/soar/compare/soar-registry-v0.4.2...soar-registry-v0.4.3) - 2026-06-06
 
 ### ⚙️ Miscellaneous Tasks

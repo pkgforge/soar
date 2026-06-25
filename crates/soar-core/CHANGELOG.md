@@ -1,4 +1,10 @@
 
+## [0.16.3](https://github.com/pkgforge/soar/compare/soar-core-v0.16.2...soar-core-v0.16.3) - 2026-06-25
+
+### 🐛 Bug Fixes
+
+- *(cli)* Fix exclude help and fmt - ([5ce4514](https://github.com/pkgforge/soar/commit/5ce45141ba5be6bcdc3f907375f5fd98accd4dbe))
+
 ## [0.16.2](https://github.com/pkgforge/soar/compare/soar-core-v0.16.1...soar-core-v0.16.2) - 2026-06-14
 
 ### ⛰️  Features

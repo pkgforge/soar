@@ -1,4 +1,14 @@
 
+## [0.12.5](https://github.com/pkgforge/soar/compare/v0.12.4...v0.12.5) - 2026-06-25
+
+### ⛰️  Features
+
+- *(metadata)* Add metadata signature verification - ([ebd1b2f](https://github.com/pkgforge/soar/commit/ebd1b2fc2efea85cbb60289c910325d619c28fe0))
+
+### 🐛 Bug Fixes
+
+- *(cli)* Fix exclude help and fmt - ([5ce4514](https://github.com/pkgforge/soar/commit/5ce45141ba5be6bcdc3f907375f5fd98accd4dbe))
+
 ## [0.12.4](https://github.com/pkgforge/soar/compare/v0.12.3...v0.12.4) - 2026-06-14
 
 ### ⛰️  Features
