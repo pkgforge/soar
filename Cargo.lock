@@ -2211,7 +2211,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "soar-cli"
-version = "0.12.5"
+version = "0.12.6"
 dependencies = [
  "clap",
  "clap_complete",
@@ -2326,7 +2326,7 @@ version = "0.1.0"
 
 [[package]]
 name = "soar-operations"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "fast-glob",
  "minisign-verify",

@@ -1,4 +1,10 @@
 
+## [0.3.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.3.0...soar-operations-v0.3.1) - 2026-06-27
+
+### 🐛 Bug Fixes
+
+- *(install)* Resolve package URLs on declarative installs - ([50c200f](https://github.com/pkgforge/soar/commit/50c200f3571a769e36a7bdf8c6aa8e45294b876e))
+
 ## [0.3.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.2.3...soar-operations-v0.3.0) - 2026-06-25
 
 ### ⛰️  Features
