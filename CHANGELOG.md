@@ -1,4 +1,10 @@
 
+## [0.12.6](https://github.com/pkgforge/soar/compare/v0.12.5...v0.12.6) - 2026-06-27
+
+### ⚙️ Miscellaneous Tasks
+
+- Updated the following local packages: soar-operations - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.12.5](https://github.com/pkgforge/soar/compare/v0.12.4...v0.12.5) - 2026-06-25
 
 ### ⛰️  Features
