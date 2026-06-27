@@ -141,7 +141,8 @@ pub async fn compute_diff(
                     existing.pkg_name, existing.pkg_id, existing.version
                 ));
             } else if !existing.pinned || pkg.version.is_some() {
-                let target = create_install_target(pkg, metadata_pkg, Some(existing.clone()));
+                let resolved_pkg = metadata_pkg.resolve(pkg.version.as_deref());
+                let target = create_install_target(pkg, resolved_pkg, Some(existing.clone()));
                 diff.to_update.push((pkg.clone(), target));
             } else {
                 diff.in_sync.push(format!(
@@ -150,7 +151,8 @@ pub async fn compute_diff(
                 ));
             }
         } else {
-            let target = create_install_target(pkg, metadata_pkg, None);
+            let resolved_pkg = metadata_pkg.resolve(pkg.version.as_deref());
+            let target = create_install_target(pkg, resolved_pkg, None);
             diff.to_install.push((pkg.clone(), target));
         }
     }
