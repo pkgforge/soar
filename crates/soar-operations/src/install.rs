@@ -836,10 +836,7 @@ async fn install_single_package(
     let main_binary_name = pkg
         .provides
         .as_ref()
-        .and_then(|p| {
-            p.iter()
-                .find(|p| !p.symlink_to_bin && p.name == pkg.pkg_name)
-        })
+        .and_then(|provides| provides.iter().find(|p| !p.symlink_to_bin))
         .map(|p| p.name.as_str())
         .unwrap_or(&pkg.pkg_name);
     let real_bin = install_dir.join(main_binary_name);
@@ -979,8 +976,11 @@ async fn install_single_package(
         });
 
         let final_checksum = if pkg.ghcr_pkg.is_some() {
+            let fallback_bin = install_dir.join(&pkg.pkg_name);
             if real_bin.exists() {
                 Some(calculate_checksum(&real_bin)?)
+            } else if fallback_bin.exists() {
+                Some(calculate_checksum(&fallback_bin)?)
             } else {
                 None
             }
