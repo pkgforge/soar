@@ -23,7 +23,14 @@ git_tag_name = "v{{ version }}"
 git_release_enable = true
 changelog_include=[
   "soar-config",
-  "soar-core"
+  "soar-core",
+  "soar-db",
+  "soar-dl",
+  "soar-events",
+  "soar-operations",
+  "soar-package",
+  "soar-registry",
+  "soar-utils"
 ]
 changelog_path="./CHANGELOG.md"
 
