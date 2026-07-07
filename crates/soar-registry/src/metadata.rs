@@ -149,18 +149,16 @@ pub async fn fetch_metadata(
 
     let parsed_url =
         Url::parse(&repo.url).map_err(|err| RegistryError::InvalidUrl(err.to_string()))?;
-    match parsed_url.scheme() {
-        "https" => {}
-        "http" => warn!(
+    ensure_remote_scheme_allowed(
+        &repo.url,
+        parsed_url.scheme(),
+        repo.signature_verification(),
+    )?;
+    if parsed_url.scheme() == "http" {
+        warn!(
             "repository '{}' fetches metadata over insecure http; authenticity relies on signature verification",
             repo.name
-        ),
-        other => {
-            return Err(RegistryError::InsecureUrl(format!(
-                "{} (unsupported scheme '{other}')",
-                repo.url
-            )))
-        }
+        );
     }
 
     let mut req = SHARED_AGENT
@@ -224,6 +222,24 @@ fn local_metadata_path(url: &str) -> Option<PathBuf> {
         return resolve_path(trimmed).ok();
     }
     None
+}
+
+/// Validates the scheme of a remote metadata URL.
+///
+/// `https` is always allowed. Cleartext `http` is only allowed when the metadata
+/// will be authenticated by signature verification, so a network attacker cannot
+/// substitute unverifiable metadata. Any other scheme is rejected.
+fn ensure_remote_scheme_allowed(url: &str, scheme: &str, signature_verified: bool) -> Result<()> {
+    match scheme {
+        "https" => Ok(()),
+        "http" if signature_verified => Ok(()),
+        "http" => Err(RegistryError::InsecureUrl(format!(
+            "{url}: http metadata is only allowed when signature verification is enabled with a configured pubkey"
+        ))),
+        _ => Err(RegistryError::InsecureUrl(format!(
+            "{url}: metadata must be served over https"
+        ))),
+    }
 }
 
 /// Reads and verifies repository metadata from a local file.
@@ -486,5 +502,28 @@ mod tests {
             local_metadata_path("/srv/repo/metadata.sdb.zstd"),
             Some(PathBuf::from("/srv/repo/metadata.sdb.zstd"))
         );
+    }
+
+    #[test]
+    fn https_is_always_allowed() {
+        assert!(ensure_remote_scheme_allowed("https://x/m.sdb", "https", false).is_ok());
+        assert!(ensure_remote_scheme_allowed("https://x/m.sdb", "https", true).is_ok());
+    }
+
+    #[test]
+    fn http_requires_signature_verification() {
+        assert!(ensure_remote_scheme_allowed("http://x/m.sdb", "http", true).is_ok());
+        assert!(matches!(
+            ensure_remote_scheme_allowed("http://x/m.sdb", "http", false),
+            Err(RegistryError::InsecureUrl(_))
+        ));
+    }
+
+    #[test]
+    fn unknown_schemes_are_rejected() {
+        assert!(matches!(
+            ensure_remote_scheme_allowed("ftp://x/m.sdb", "ftp", true),
+            Err(RegistryError::InsecureUrl(_))
+        ));
     }
 }
