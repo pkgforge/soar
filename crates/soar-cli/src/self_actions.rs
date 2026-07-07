@@ -12,11 +12,12 @@ use soar_core::{
 use soar_dl::{
     download::Download,
     github::Github,
+    http_client::SHARED_AGENT,
     traits::{Asset as _, Platform as _, Release as _},
     types::OverwriteMode,
 };
 use soar_utils::bytes::format_bytes;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     cli::SelfAction,
@@ -150,17 +151,62 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
 
                 let pb = create_download_job("Downloading");
 
-                let dl = Download::new(asset.url())
-                    .output(self_bin.to_string_lossy())
+                // Stage the download next to the target and swap it in atomically,
+                // so an interrupted or corrupt update never replaces the running
+                // binary with a truncated file.
+                let staging = {
+                    let mut path = self_bin.clone();
+                    let mut name = path.file_name().unwrap_or_default().to_os_string();
+                    name.push(".update.part");
+                    path.set_file_name(name);
+                    path
+                };
+
+                let checksum_asset = assets
+                    .iter()
+                    .find(|a| a.name() == format!("{}.b3sum", asset.name()));
+                let expected_checksum = match checksum_asset {
+                    Some(a) => {
+                        Some(fetch_expected_checksum(a.url()).ok_or_else(|| {
+                            SoarError::Custom(format!(
+                                "Failed to fetch published checksum {}; aborting update",
+                                a.name()
+                            ))
+                        })?)
+                    }
+                    None => {
+                        warn!(
+                            "No checksum published for {}; updating without integrity verification",
+                            asset.name()
+                        );
+                        None
+                    }
+                };
+
+                let mut dl = Download::new(asset.url())
+                    .output(staging.to_string_lossy())
                     .overwrite(OverwriteMode::Force)
                     .progress({
                         let pb = pb.clone();
                         move |p| handle_download_progress(p, &pb)
                     });
+                if let Some(ref checksum) = expected_checksum {
+                    dl = dl.checksum(checksum.clone());
+                }
 
                 debug!("Downloading update from: {}", asset.url());
-                dl.execute()?;
-                info!("Soar updated to {}", release.tag());
+                match dl.execute() {
+                    Ok(_) => {
+                        fs::rename(&staging, &self_bin).with_context(|| {
+                            format!("replacing {} with the updated binary", self_bin.display())
+                        })?;
+                        info!("Soar updated to {}", release.tag());
+                    }
+                    Err(err) => {
+                        let _ = fs::remove_file(&staging);
+                        return Err(err.into());
+                    }
+                }
             } else {
                 eprintln!("No updates found.");
             }
@@ -179,4 +225,18 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
     };
 
     Ok(())
+}
+
+/// Fetches a published `.b3sum` asset and extracts the BLAKE3 hex digest.
+///
+/// The file follows the `b3sum` convention of `<hex>  <filename>`, so only the
+/// leading token is taken. Returns `None` when the asset cannot be fetched or is
+/// empty, leaving the update to proceed without checksum verification.
+fn fetch_expected_checksum(url: &str) -> Option<String> {
+    let resp = SHARED_AGENT.get(url).call().ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let body = resp.into_body().read_to_string().ok()?;
+    body.split_whitespace().next().map(str::to_string)
 }
