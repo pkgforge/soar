@@ -162,16 +162,26 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                     path
                 };
 
-                let expected_checksum = assets
+                let checksum_asset = assets
                     .iter()
-                    .find(|a| a.name() == format!("{}.b3sum", asset.name()))
-                    .and_then(|a| fetch_expected_checksum(a.url()));
-                if expected_checksum.is_none() {
-                    warn!(
-                        "No checksum published for {}; updating without integrity verification",
-                        asset.name()
-                    );
-                }
+                    .find(|a| a.name() == format!("{}.b3sum", asset.name()));
+                let expected_checksum = match checksum_asset {
+                    Some(a) => {
+                        Some(fetch_expected_checksum(a.url()).ok_or_else(|| {
+                            SoarError::Custom(format!(
+                                "Failed to fetch published checksum {}; aborting update",
+                                a.name()
+                            ))
+                        })?)
+                    }
+                    None => {
+                        warn!(
+                            "No checksum published for {}; updating without integrity verification",
+                            asset.name()
+                        );
+                        None
+                    }
+                };
 
                 let mut dl = Download::new(asset.url())
                     .output(staging.to_string_lossy())
