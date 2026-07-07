@@ -6,13 +6,15 @@
 use std::{
     fs::{self, File},
     io::{self, BufReader, BufWriter, Write},
-    path::Path,
+    path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
 use minisign_verify::{PublicKey, Signature};
 use soar_config::repository::Repository;
 use soar_dl::http_client::SHARED_AGENT;
-use tracing::debug;
+use soar_utils::path::resolve_path;
+use tracing::{debug, warn};
 use ureq::http::{
     header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH, PRAGMA},
     StatusCode,
@@ -138,10 +140,25 @@ pub async fn fetch_metadata(
         String::new()
     };
 
+    // A repository URL can point at a local file (`file://` or a filesystem
+    // path) or a remote http(s) endpoint. Local sources are read from disk;
+    // remote sources are fetched over HTTP.
+    if let Some(path) = local_metadata_path(&repo.url) {
+        return fetch_local_metadata(repo, &path, &metadata_db, &etag, force);
+    }
+
     let parsed_url =
         Url::parse(&repo.url).map_err(|err| RegistryError::InvalidUrl(err.to_string()))?;
-    if parsed_url.scheme() != "https" {
-        return Err(RegistryError::InsecureUrl(repo.url.clone()));
+    ensure_remote_scheme_allowed(
+        &repo.url,
+        parsed_url.scheme(),
+        repo.signature_verification(),
+    )?;
+    if parsed_url.scheme() == "http" {
+        warn!(
+            "repository '{}' fetches metadata over insecure http; authenticity relies on signature verification",
+            repo.name
+        );
     }
 
     let mut req = SHARED_AGENT
@@ -181,22 +198,115 @@ pub async fn fetch_metadata(
         .limit(MAX_METADATA_SIZE)
         .read_to_vec()?;
 
-    verify_metadata_signature(repo, &content)?;
+    verify_metadata_signature(repo, &content, || {
+        fetch_signature_text(&format!("{}.sig", repo.url))
+    })?;
 
     let metadata_content = process_metadata_content(content, &metadata_db)?;
 
     Ok(Some((etag, metadata_content)))
 }
 
+/// Resolves a repository URL to a local filesystem path when it is a local
+/// source (a `file://` URL or a filesystem path), or `None` for http(s) URLs.
+fn local_metadata_path(url: &str) -> Option<PathBuf> {
+    let trimmed = url.trim();
+    if let Some(rest) = trimmed.strip_prefix("file://") {
+        return resolve_path(rest).ok();
+    }
+    if trimmed.starts_with('/')
+        || trimmed.starts_with('~')
+        || trimmed.starts_with('.')
+        || trimmed.starts_with('$')
+    {
+        return resolve_path(trimmed).ok();
+    }
+    None
+}
+
+/// Validates the scheme of a remote metadata URL.
+///
+/// `https` is always allowed. Cleartext `http` is only allowed when the metadata
+/// will be authenticated by signature verification, so a network attacker cannot
+/// substitute unverifiable metadata. Any other scheme is rejected.
+fn ensure_remote_scheme_allowed(url: &str, scheme: &str, signature_verified: bool) -> Result<()> {
+    match scheme {
+        "https" => Ok(()),
+        "http" if signature_verified => Ok(()),
+        "http" => Err(RegistryError::InsecureUrl(format!(
+            "{url}: http metadata is only allowed when signature verification is enabled with a configured pubkey"
+        ))),
+        _ => Err(RegistryError::InsecureUrl(format!(
+            "{url}: metadata must be served over https"
+        ))),
+    }
+}
+
+/// Reads and verifies repository metadata from a local file.
+///
+/// Uses the file modification time as the change-detection token so an unchanged
+/// file returns `Ok(None)` on subsequent syncs, mirroring the ETag behaviour of
+/// the remote path.
+fn fetch_local_metadata(
+    repo: &Repository,
+    path: &Path,
+    metadata_db: &Path,
+    existing_etag: &str,
+    force: bool,
+) -> Result<Option<(String, MetadataContent)>> {
+    let file_info =
+        fs::metadata(path).with_context(|| format!("reading metadata file {}", path.display()))?;
+
+    let mtime_tag = file_info
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_default();
+
+    if !force && !mtime_tag.is_empty() && existing_etag == mtime_tag {
+        return Ok(None);
+    }
+
+    if file_info.len() > MAX_METADATA_SIZE {
+        return Err(RegistryError::MetadataTooLarge {
+            limit: MAX_METADATA_SIZE,
+        });
+    }
+
+    debug!("Reading metadata from {}", path.display());
+
+    let content =
+        fs::read(path).with_context(|| format!("reading metadata file {}", path.display()))?;
+
+    verify_metadata_signature(repo, &content, || read_local_signature(path))?;
+
+    let metadata_content = process_metadata_content(content, metadata_db)?;
+
+    Ok(Some((mtime_tag, metadata_content)))
+}
+
+/// Reads the detached signature published next to a local metadata file.
+fn read_local_signature(metadata_path: &Path) -> std::result::Result<String, String> {
+    let mut sig_path = metadata_path.as_os_str().to_os_string();
+    sig_path.push(".sig");
+    let sig_path = PathBuf::from(sig_path);
+    fs::read_to_string(&sig_path).map_err(|err| format!("{}: {err}", sig_path.display()))
+}
+
 /// Verifies the authenticity of fetched metadata against the repository pubkey.
 ///
-/// When the repository has signature verification enabled, this fetches the
-/// detached minisign signature published next to the metadata (`<url>.sig`)
-/// and verifies it over the raw fetched bytes, before the metadata is
-/// decompressed, parsed, or persisted. A missing or invalid signature is a hard
-/// error so a tampered metadata source cannot supply both the package
-/// `download_url` and its expected checksum.
-fn verify_metadata_signature(repo: &Repository, content: &[u8]) -> Result<()> {
+/// When the repository has signature verification enabled, this loads the
+/// detached minisign signature published next to the metadata (`<url>.sig`, over
+/// HTTP or from disk depending on the source) and verifies it over the raw
+/// fetched bytes, before the metadata is decompressed, parsed, or persisted. A
+/// missing or invalid signature is a hard error so a tampered metadata source
+/// cannot supply both the package `download_url` and its expected checksum.
+fn verify_metadata_signature(
+    repo: &Repository,
+    content: &[u8],
+    load_signature: impl FnOnce() -> std::result::Result<String, String>,
+) -> Result<()> {
     if !repo.signature_verification() {
         return Ok(());
     }
@@ -208,8 +318,7 @@ fn verify_metadata_signature(repo: &Repository, content: &[u8]) -> Result<()> {
         }
     })?;
 
-    let sig_url = format!("{}.sig", repo.url);
-    let sig_text = fetch_signature_text(&sig_url).map_err(|reason| {
+    let sig_text = load_signature().map_err(|reason| {
         RegistryError::MetadataSignatureMissing {
             repo: repo.name.clone(),
             reason,
@@ -371,4 +480,50 @@ pub fn write_metadata_db<P: AsRef<Path>>(content: &[u8], path: P) -> Result<()> 
         .write_all(content)
         .with_context(|| format!("writing to metadata file {}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_urls_are_not_local() {
+        assert!(local_metadata_path("https://example.com/metadata.sdb.zstd").is_none());
+        assert!(local_metadata_path("http://example.com/metadata.sdb.zstd").is_none());
+    }
+
+    #[test]
+    fn file_scheme_and_paths_are_local() {
+        assert_eq!(
+            local_metadata_path("file:///tmp/metadata.sdb.zstd"),
+            Some(PathBuf::from("/tmp/metadata.sdb.zstd"))
+        );
+        assert_eq!(
+            local_metadata_path("/srv/repo/metadata.sdb.zstd"),
+            Some(PathBuf::from("/srv/repo/metadata.sdb.zstd"))
+        );
+    }
+
+    #[test]
+    fn https_is_always_allowed() {
+        assert!(ensure_remote_scheme_allowed("https://x/m.sdb", "https", false).is_ok());
+        assert!(ensure_remote_scheme_allowed("https://x/m.sdb", "https", true).is_ok());
+    }
+
+    #[test]
+    fn http_requires_signature_verification() {
+        assert!(ensure_remote_scheme_allowed("http://x/m.sdb", "http", true).is_ok());
+        assert!(matches!(
+            ensure_remote_scheme_allowed("http://x/m.sdb", "http", false),
+            Err(RegistryError::InsecureUrl(_))
+        ));
+    }
+
+    #[test]
+    fn unknown_schemes_are_rejected() {
+        assert!(matches!(
+            ensure_remote_scheme_allowed("ftp://x/m.sdb", "ftp", true),
+            Err(RegistryError::InsecureUrl(_))
+        ));
+    }
 }
