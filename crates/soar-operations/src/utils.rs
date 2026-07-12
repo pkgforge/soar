@@ -15,8 +15,9 @@ use soar_core::{
     utils::substitute_placeholders,
     SoarResult,
 };
-use soar_db::models::types::{PackageProvide, ProvideStrategy};
+use soar_db::models::types::PackageProvide;
 use soar_utils::fs::is_elf;
+use tracing::warn;
 
 /// Check if a package should have desktop integration (desktop files, icons).
 pub fn has_desktop_integration(package: &Package, config: &Config) -> bool {
@@ -39,6 +40,51 @@ pub fn get_package_hooks(pkg_name: &str) -> (Option<PackageHooks>, Option<Sandbo
         .find(|p| p.name == pkg_name)
         .map(|p| (p.hooks, p.sandbox))
         .unwrap_or((None, None))
+}
+
+/// Creates the bin-directory symlinks declared by a package's `provides`.
+///
+/// Provides whose name or target is not a safe single path component are skipped
+/// (see [`PackageProvide::is_safe`]) so untrusted metadata cannot escape
+/// `install_dir`/`bin_dir` when building symlink paths. Returns the created
+/// `(source, link)` pairs.
+fn create_provide_symlinks(
+    install_dir: &Path,
+    bin_dir: &Path,
+    provides: &[PackageProvide],
+) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
+    let mut symlinks = Vec::new();
+    let mut processed_paths = HashSet::new();
+    for provide in provides {
+        if !provide.is_safe() {
+            warn!(
+                provide = provide.name,
+                "skipping provide with unsafe path component"
+            );
+            continue;
+        }
+        let real_path = install_dir.join(provide.name.clone());
+
+        for name in provide.bin_symlink_names() {
+            let target_path = bin_dir.join(name);
+            if !processed_paths.insert(target_path.clone()) {
+                continue;
+            }
+            if target_path.is_symlink() || target_path.is_file() {
+                std::fs::remove_file(&target_path)
+                    .with_context(|| format!("removing provide {}", target_path.display()))?;
+            }
+            unix::fs::symlink(&real_path, &target_path).with_context(|| {
+                format!(
+                    "creating symlink {} -> {}",
+                    real_path.display(),
+                    target_path.display()
+                )
+            })?;
+            symlinks.push((real_path.clone(), target_path));
+        }
+    }
+    Ok(symlinks)
 }
 
 /// Creates symlinks from installed package binaries to the bin directory.
@@ -114,54 +160,8 @@ pub async fn mangle_package_symlinks(
         }
     }
 
-    let mut processed_paths = HashSet::new();
     let provides = provides.unwrap_or_default();
-    for provide in provides {
-        let real_path = install_dir.join(provide.name.clone());
-        let mut symlink_targets = Vec::new();
-
-        if provide.symlink_to_bin {
-            let link_path = bin_dir.join(&provide.name);
-            if processed_paths.insert(link_path.clone()) {
-                symlink_targets.push(link_path);
-            }
-        } else if let Some(ref target) = provide.target {
-            if provide.strategy.is_some() {
-                let target_path = bin_dir.join(target);
-                if processed_paths.insert(target_path.clone()) {
-                    symlink_targets.push(target_path);
-                }
-            }
-        };
-
-        let needs_original_symlink = !provide.symlink_to_bin
-            && matches!(
-                (provide.target.as_ref(), provide.strategy.clone()),
-                (Some(_), Some(ProvideStrategy::KeepBoth)) | (None, _)
-            );
-
-        if needs_original_symlink {
-            let original_path = bin_dir.join(&provide.name);
-            if processed_paths.insert(original_path.clone()) {
-                symlink_targets.push(original_path);
-            }
-        }
-
-        for target_path in symlink_targets {
-            if target_path.is_symlink() || target_path.is_file() {
-                std::fs::remove_file(&target_path)
-                    .with_context(|| format!("removing provide {}", target_path.display()))?;
-            }
-            unix::fs::symlink(&real_path, &target_path).with_context(|| {
-                format!(
-                    "creating symlink {} -> {}",
-                    real_path.display(),
-                    target_path.display()
-                )
-            })?;
-            symlinks.push((real_path.clone(), target_path));
-        }
-    }
+    symlinks.extend(create_provide_symlinks(install_dir, bin_dir, provides)?);
 
     if provides.is_empty() {
         let soar_syms = install_dir.join("SOAR_SYMS");
@@ -326,4 +326,88 @@ fn find_matching_executable(
             })
         })
         .cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::{self, File},
+        path::PathBuf,
+    };
+
+    use soar_db::models::types::PackageProvide;
+    use tempfile::{tempdir, TempDir};
+
+    use super::create_provide_symlinks;
+
+    fn setup() -> (TempDir, PathBuf, PathBuf) {
+        let root = tempdir().unwrap();
+        let install = root.path().join("install");
+        let bin = root.path().join("bin");
+        fs::create_dir_all(&install).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        (root, install, bin)
+    }
+
+    fn is_symlink(path: &std::path::Path) -> bool {
+        path.symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn creates_symlink_for_plain_provide() {
+        let (_root, install, bin) = setup();
+        File::create(install.join("clipcat")).unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcat")];
+        let created = create_provide_symlinks(&install, &bin, &provides).unwrap();
+
+        let link = bin.join("clipcat");
+        assert_eq!(created, vec![(install.join("clipcat"), link.clone())]);
+        assert_eq!(fs::read_link(&link).unwrap(), install.join("clipcat"));
+    }
+
+    #[test]
+    fn creates_both_symlinks_for_keep_both() {
+        let (_root, install, bin) = setup();
+        File::create(install.join("clipcatd")).unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcatd==clipcat")];
+        let created = create_provide_symlinks(&install, &bin, &provides).unwrap();
+
+        assert_eq!(created.len(), 2);
+        assert!(is_symlink(&bin.join("clipcatd")));
+        assert!(is_symlink(&bin.join("clipcat")));
+    }
+
+    #[test]
+    fn skips_unsafe_target() {
+        let (root, install, bin) = setup();
+        // bin.join("../victim") resolves to root/victim, outside bin.
+        let victim = root.path().join("victim");
+        File::create(&victim).unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcat=>../victim")];
+        let created = create_provide_symlinks(&install, &bin, &provides).unwrap();
+
+        assert!(created.is_empty());
+        assert!(
+            victim.symlink_metadata().unwrap().file_type().is_file(),
+            "unsafe target must not be replaced by a symlink"
+        );
+    }
+
+    #[test]
+    fn skips_unsafe_symlink_to_bin_name() {
+        let (root, install, bin) = setup();
+        let victim = root.path().join("evil");
+        File::create(&victim).unwrap();
+
+        let provides = vec![PackageProvide::from_string("@../evil")];
+        let created = create_provide_symlinks(&install, &bin, &provides).unwrap();
+
+        assert!(created.is_empty());
+        assert!(victim.symlink_metadata().unwrap().file_type().is_file());
+    }
 }

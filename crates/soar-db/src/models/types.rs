@@ -1,4 +1,17 @@
+use std::path::{Component, Path};
+
 use serde::{Deserialize, Serialize};
+
+/// Returns `true` if `name` is a single, normal path component that is safe to
+/// join onto a directory.
+///
+/// Rejects empty strings, absolute paths, `.`/`..`, and any value containing a
+/// path separator. Used to keep untrusted `provides` metadata from escaping the
+/// bin directory when it is turned into a symlink path.
+pub fn is_safe_component(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProvideStrategy {
@@ -41,6 +54,13 @@ impl PackageProvide {
             }
             _ => vec![&self.name],
         }
+    }
+
+    /// Returns `true` if the provide's name and target are safe single path
+    /// components, i.e. they cannot escape the bin directory when used as
+    /// symlink paths.
+    pub fn is_safe(&self) -> bool {
+        is_safe_component(&self.name) && self.target.as_deref().is_none_or(is_safe_component)
     }
 
     pub fn from_string(provide: &str) -> Self {
@@ -115,5 +135,31 @@ mod tests {
     fn test_bin_symlink_names_alias() {
         let p = PackageProvide::from_string("clipcatd:clipcat");
         assert_eq!(p.bin_symlink_names(), vec!["clipcat"]);
+    }
+
+    #[test]
+    fn test_is_safe_component() {
+        assert!(is_safe_component("clipcat"));
+        assert!(is_safe_component("clip-cat.1"));
+
+        assert!(!is_safe_component(""));
+        assert!(!is_safe_component("."));
+        assert!(!is_safe_component(".."));
+        assert!(!is_safe_component("a/b"));
+        assert!(!is_safe_component("../etc"));
+        assert!(!is_safe_component("../../home/user/.bashrc"));
+        assert!(!is_safe_component("/etc/passwd"));
+    }
+
+    #[test]
+    fn test_provide_is_safe() {
+        assert!(PackageProvide::from_string("clipcatd").is_safe());
+        assert!(PackageProvide::from_string("clipcatd==clipcat").is_safe());
+        assert!(PackageProvide::from_string("@clipcat-menu").is_safe());
+
+        assert!(!PackageProvide::from_string("clipcatd=>../../../../home/user/.bashrc").is_safe());
+        assert!(!PackageProvide::from_string("../evil").is_safe());
+        assert!(!PackageProvide::from_string("ok==../evil").is_safe());
+        assert!(!PackageProvide::from_string("@../evil").is_safe());
     }
 }

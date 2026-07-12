@@ -2276,6 +2276,7 @@ dependencies = [
  "soar-events",
  "soar-package",
  "soar-utils",
+ "tempfile",
  "thiserror",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
@@ -2341,6 +2342,7 @@ dependencies = [
  "soar-package",
  "soar-registry",
  "soar-utils",
+ "tempfile",
  "tokio",
  "tracing",
 ]

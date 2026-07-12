@@ -8,11 +8,44 @@ use soar_config::{
     config::Config,
     packages::{PackageHooks, SandboxConfig},
 };
-use soar_db::repository::core::CoreRepository;
+use soar_db::{models::types::PackageProvide, repository::core::CoreRepository};
 use soar_utils::{error::FileSystemResult, fs::walk_dir};
 use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
+
+/// Removes the bin-directory symlinks a package's `provides` created, keeping
+/// only those that live directly in `bin_path` and resolve into
+/// `installed_path`.
+///
+/// Untrusted provide names could otherwise escape `bin_path` via path traversal
+/// or collide with another package's identically named symlink; both cases are
+/// skipped here. Returns the links that were actually removed.
+pub(crate) fn remove_provide_symlinks(
+    bin_path: &Path,
+    provides: &[PackageProvide],
+    installed_path: &Path,
+) -> SoarResult<Vec<PathBuf>> {
+    let mut removed = Vec::new();
+    for provide in provides {
+        for name in provide.bin_symlink_names() {
+            let link = bin_path.join(name);
+            if link.parent() != Some(bin_path) {
+                continue;
+            }
+            match fs::read_link(&link) {
+                Ok(target) if target.starts_with(installed_path) => {
+                    trace!("removing provide symlink: {}", link.display());
+                    fs::remove_file(&link)
+                        .with_context(|| format!("removing provide {}", link.display()))?;
+                    removed.push(link);
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(removed)
+}
 
 /// Formats bytes into human-readable string (e.g., "1.5 MiB")
 fn format_size(bytes: u64) -> String {
@@ -121,19 +154,11 @@ impl PackageRemover {
         if self.package.is_installed {
             trace!("package was installed, removing binaries and links");
             let bin_path = self.config.get_bin_path()?;
+            let installed_path = PathBuf::from(&self.package.installed_path);
 
             if let Some(provides) = &self.package.provides {
-                for provide in provides {
-                    for name in provide.bin_symlink_names() {
-                        let link = bin_path.join(name);
-                        if link.is_symlink() || link.is_file() {
-                            trace!("removing provide symlink: {}", link.display());
-                            fs::remove_file(&link)
-                                .with_context(|| format!("removing provide {}", link.display()))?;
-                            removed_symlinks.push(link);
-                        }
-                    }
-                }
+                let removed = remove_provide_symlinks(&bin_path, provides, &installed_path)?;
+                removed_symlinks.extend(removed);
             } else {
                 let def_bin = bin_path.join(&self.package.pkg_name);
                 if def_bin.is_symlink() && def_bin.is_file() {
@@ -143,8 +168,6 @@ impl PackageRemover {
                     removed_symlinks.push(def_bin);
                 }
             }
-
-            let installed_path = PathBuf::from(&self.package.installed_path);
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                 if path.extension() == Some(&OsString::from("desktop")) {
@@ -226,5 +249,91 @@ impl PackageRemover {
             size_str
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::{self, File},
+        os::unix::fs::symlink,
+    };
+
+    use soar_db::models::types::PackageProvide;
+    use tempfile::tempdir;
+
+    use super::remove_provide_symlinks;
+
+    #[test]
+    fn removes_owned_provide_symlink() {
+        let install = tempdir().unwrap();
+        let bin = tempdir().unwrap();
+        let target = install.path().join("clipcat");
+        File::create(&target).unwrap();
+        let link = bin.path().join("clipcat");
+        symlink(&target, &link).unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcat")];
+        let removed = remove_provide_symlinks(bin.path(), &provides, install.path()).unwrap();
+
+        assert_eq!(removed, vec![link.clone()]);
+        assert!(link.symlink_metadata().is_err());
+        assert!(target.exists(), "only the symlink should be removed");
+    }
+
+    #[test]
+    fn skips_symlink_owned_by_another_package() {
+        let install = tempdir().unwrap();
+        let other = tempdir().unwrap();
+        let bin = tempdir().unwrap();
+        let other_target = other.path().join("clipcat");
+        File::create(&other_target).unwrap();
+        let link = bin.path().join("clipcat");
+        symlink(&other_target, &link).unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcat")];
+        let removed = remove_provide_symlinks(bin.path(), &provides, install.path()).unwrap();
+
+        assert!(removed.is_empty());
+        assert!(
+            link.symlink_metadata().is_ok(),
+            "another package's link stays"
+        );
+    }
+
+    #[test]
+    fn skips_regular_file() {
+        let install = tempdir().unwrap();
+        let bin = tempdir().unwrap();
+        let file = bin.path().join("clipcat");
+        File::create(&file).unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcat")];
+        let removed = remove_provide_symlinks(bin.path(), &provides, install.path()).unwrap();
+
+        assert!(removed.is_empty());
+        assert!(file.exists(), "a non-symlink file is never removed");
+    }
+
+    #[test]
+    fn rejects_path_traversal_in_provide_name() {
+        let root = tempdir().unwrap();
+        let bin = root.path().join("bin");
+        let install = root.path().join("install");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&install).unwrap();
+
+        // bin.join("../victim") resolves to root/victim, outside bin.
+        let victim = root.path().join("victim");
+        File::create(&victim).unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcat=>../victim")];
+        let removed = remove_provide_symlinks(&bin, &provides, &install).unwrap();
+
+        assert!(removed.is_empty());
+        assert!(
+            victim.exists(),
+            "traversal must not touch files outside bin"
+        );
     }
 }

@@ -6,7 +6,7 @@ use diesel::{dsl::sql, prelude::*, sql_types::Text};
 use regex::Regex;
 use serde_json::json;
 use soar_registry::RemotePackage;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 /// Regex for extracting name and contact from maintainer string format "Name (contact)".
 static MAINTAINER_RE: OnceLock<Regex> = OnceLock::new();
@@ -527,6 +527,18 @@ impl MetadataRepository {
         let provides = package.provides.as_ref().map(|vec| {
             vec.iter()
                 .map(|p| PackageProvide::from_string(p))
+                .filter(|provide| {
+                    let safe = provide.is_safe();
+                    if !safe {
+                        warn!(
+                            pkg_id = package.pkg_id,
+                            pkg_name = package.pkg_name,
+                            provide = provide.name,
+                            "skipping provide with unsafe path component"
+                        );
+                    }
+                    safe
+                })
                 .collect::<Vec<_>>()
         });
 
