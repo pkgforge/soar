@@ -36,7 +36,7 @@ use crate::{
     constants::INSTALL_MARKER_FILE,
     database::{connection::DieselDatabase, models::Package},
     error::{ErrorContext, SoarError},
-    package::local::local_path_from_url,
+    package::{local::local_path_from_url, remove::remove_provide_symlinks},
     utils::get_extract_dir,
     SoarResult,
 };
@@ -997,16 +997,7 @@ impl PackageInstaller {
 
                 if let Some(ref provides) = alt_pkg.provides {
                     let bin_path = self.config.get_bin_path()?;
-                    for provide in provides {
-                        for name in provide.bin_symlink_names() {
-                            let link = bin_path.join(name);
-                            if link.is_symlink() || link.is_file() {
-                                std::fs::remove_file(&link).with_context(|| {
-                                    format!("removing provide {}", link.display())
-                                })?;
-                            }
-                        }
-                    }
+                    remove_provide_symlinks(&bin_path, provides, &installed_path)?;
                 }
             }
         }
