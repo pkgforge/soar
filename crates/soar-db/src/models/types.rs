@@ -1,17 +1,5 @@
-use std::path::{Component, Path};
-
 use serde::{Deserialize, Serialize};
-
-/// Returns `true` if `name` is a single, normal path component that is safe to
-/// join onto a directory.
-///
-/// Rejects empty strings, absolute paths, `.`/`..`, and any value containing a
-/// path separator. Used to keep untrusted `provides` metadata from escaping the
-/// bin directory when it is turned into a symlink path.
-pub fn is_safe_component(name: &str) -> bool {
-    let mut components = Path::new(name).components();
-    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
-}
+use soar_utils::path::is_safe_component;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProvideStrategy {
@@ -135,20 +123,6 @@ mod tests {
     fn test_bin_symlink_names_alias() {
         let p = PackageProvide::from_string("clipcatd:clipcat");
         assert_eq!(p.bin_symlink_names(), vec!["clipcat"]);
-    }
-
-    #[test]
-    fn test_is_safe_component() {
-        assert!(is_safe_component("clipcat"));
-        assert!(is_safe_component("clip-cat.1"));
-
-        assert!(!is_safe_component(""));
-        assert!(!is_safe_component("."));
-        assert!(!is_safe_component(".."));
-        assert!(!is_safe_component("a/b"));
-        assert!(!is_safe_component("../etc"));
-        assert!(!is_safe_component("../../home/user/.bashrc"));
-        assert!(!is_safe_component("/etc/passwd"));
     }
 
     #[test]
