@@ -4,9 +4,9 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  push:
-    tags:
-      - nightly
+  schedule:
+    # 03:00 UTC every day
+    - cron: "0 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -15,19 +15,36 @@ permissions:
   id-token: write
 
 jobs:
-  remove-nightly-tag:
+  check-changes:
+    name: Check for new commits
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Remove existing nightly tag
+      - name: Compare HEAD with nightly tag
+        id: check
+        shell: bash
         run: |
-          gh release delete nightly --cleanup-tag || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  publish-nightly:
-    name: Publish nightly binaries
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch origin tag nightly --no-tags || true
+          tag_commit=$(git rev-parse -q --verify 'nightly^{commit}' || true)
+          if [ -n "$tag_commit" ] && [ "$tag_commit" = "$(git rev-parse HEAD)" ]; then
+            echo "No new commits since last nightly; skipping"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-nightly:
+    name: Build nightly binaries
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -48,12 +65,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Get version info
-        id: version
-        run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          echo "version=nightly-${SHORT_SHA}" >> $GITHUB_OUTPUT
 
       - name: Install dependencies
         shell: bash
@@ -101,17 +112,6 @@ jobs:
           bash -c 'realpath "${ARTIFACT}" ; realpath "${ARTIFACT}.tar.gz"' | xargs -I "{}" bash -c \
            'printf "\nFile: $(basename {})\n  Type: $(file -b {})\n  B3sum: $(b3sum {} | cut -d" " -f1)\n  SHA256sum: $(sha256sum {} | cut -d" " -f1)\n  Size: $(du -bh {} | cut -f1)\n"'
 
-      - name: Publish to GitHub (nightly)
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: soar-${{ matrix.build.NAME }}*
-          file_glob: true
-          overwrite: true
-          tag: nightly
-          release_name: "${{ steps.version.outputs.version }}"
-          prerelease: true
-
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v3.0.0
         with:
@@ -119,3 +119,67 @@ jobs:
           subject-path: |
             soar-${{ matrix.build.NAME }}*
           show-summary: true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: soar-${{ matrix.build.NAME }}
+          path: soar-${{ matrix.build.NAME }}*
+
+  publish-nightly:
+    name: Republish nightly release
+    needs: [check-changes, build-nightly]
+    if: ${{ !cancelled() && needs.check-changes.outputs.changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: soar-*
+          merge-multiple: true
+          path: dist
+
+      - name: Check artifacts
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(dist/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No artifacts produced; nothing to publish" >&2
+            exit 1
+          fi
+
+      - name: Compose release notes
+        shell: bash
+        run: |
+          {
+            echo "Rolling nightly build from \`main\`, rebuilt every day."
+            echo
+            echo "**Commit:** [\`$(git rev-parse --short HEAD)\`](https://github.com/${GITHUB_REPOSITORY}/commit/$(git rev-parse HEAD)) — $(git log -1 --pretty=%s)"
+            echo "**Built:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            echo "These binaries track \`main\` and may be unstable. For stable builds see https://github.com/${GITHUB_REPOSITORY}/releases/latest."
+          } > NIGHTLY_NOTES.md
+
+      - name: Refresh nightly tag
+        run: |
+          git tag -f nightly
+          git push origin nightly --force
+
+      - name: Delete previous nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete nightly --yes || true
+
+      - name: Publish nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create nightly \
+            --title "nightly-$(git rev-parse --short HEAD)" \
+            --prerelease \
+            --notes-file NIGHTLY_NOTES.md \
+            dist/*
