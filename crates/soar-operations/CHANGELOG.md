@@ -1,4 +1,13 @@
 
+## [0.3.2](https://github.com/pkgforge/soar/compare/soar-operations-v0.3.1...soar-operations-v0.3.2) - 2026-07-16
+
+### 🐛 Bug Fixes
+
+- *(install)* Resolve main binary from provides for checksum - ([51da135](https://github.com/pkgforge/soar/commit/51da1359bac2fa78c454b690b9d767b58c5d42b7))
+- *(security)* Validate pkg_name and pkg_id as path components ([#184](https://github.com/pkgforge/soar/pull/184)) - ([97a0f57](https://github.com/pkgforge/soar/commit/97a0f57e3a4bd398dbf98c50be060a928e1aacff))
+- *(security)* Validate repository names to block path traversal ([#183](https://github.com/pkgforge/soar/pull/183)) - ([c4b34f9](https://github.com/pkgforge/soar/commit/c4b34f9e0755ee43f2598dc4da783866394ea5fd))
+- *(security)* Validate provides names to block path traversal ([#182](https://github.com/pkgforge/soar/pull/182)) - ([034b085](https://github.com/pkgforge/soar/commit/034b085b8938fd9b8e724d43372c3ef93b9ef411))
+
 ## [0.3.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.3.0...soar-operations-v0.3.1) - 2026-06-27
 
 ### 🐛 Bug Fixes

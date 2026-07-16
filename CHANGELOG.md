@@ -1,4 +1,18 @@
 
+## [0.12.7](https://github.com/pkgforge/soar/compare/v0.12.6...v0.12.7) - 2026-07-16
+
+### ⛰️  Features
+
+- *(metadata)* Support local metadata source ([#181](https://github.com/pkgforge/soar/pull/181)) - ([487850d](https://github.com/pkgforge/soar/commit/487850d4dc589d7456558c833b587f0921ed6e2a))
+
+### 🐛 Bug Fixes
+
+- *(install)* Resolve main binary from provides for checksum - ([51da135](https://github.com/pkgforge/soar/commit/51da1359bac2fa78c454b690b9d767b58c5d42b7))
+- *(security)* Validate repository names to block path traversal ([#183](https://github.com/pkgforge/soar/pull/183)) - ([c4b34f9](https://github.com/pkgforge/soar/commit/c4b34f9e0755ee43f2598dc4da783866394ea5fd))
+- *(security)* Validate pkg_name and pkg_id as path components ([#184](https://github.com/pkgforge/soar/pull/184)) - ([97a0f57](https://github.com/pkgforge/soar/commit/97a0f57e3a4bd398dbf98c50be060a928e1aacff))
+- *(security)* Validate provides names to block path traversal ([#182](https://github.com/pkgforge/soar/pull/182)) - ([034b085](https://github.com/pkgforge/soar/commit/034b085b8938fd9b8e724d43372c3ef93b9ef411))
+- *(self)* Update atomacially to avoid bricking on failure ([#180](https://github.com/pkgforge/soar/pull/180)) - ([c4afeb3](https://github.com/pkgforge/soar/commit/c4afeb308ccf7a9aef24e47270352f3f2d129930))
+
 ## [0.12.6](https://github.com/pkgforge/soar/compare/v0.12.5...v0.12.6) - 2026-06-27
 
 ### 🐛 Bug Fixes

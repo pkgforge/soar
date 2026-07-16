@@ -1,6 +1,6 @@
 [package]
 name = "soar-db"
-version = "0.5.4"
+version = "0.5.5"
 description = "Database operations for soar package manager"
 license.workspace = true
 edition.workspace = true

@@ -1,4 +1,12 @@
 
+## [0.5.5](https://github.com/pkgforge/soar/compare/soar-db-v0.5.4...soar-db-v0.5.5) - 2026-07-16
+
+### 🐛 Bug Fixes
+
+- *(security)* Validate pkg_name and pkg_id as path components ([#184](https://github.com/pkgforge/soar/pull/184)) - ([97a0f57](https://github.com/pkgforge/soar/commit/97a0f57e3a4bd398dbf98c50be060a928e1aacff))
+- *(security)* Validate repository names to block path traversal ([#183](https://github.com/pkgforge/soar/pull/183)) - ([c4b34f9](https://github.com/pkgforge/soar/commit/c4b34f9e0755ee43f2598dc4da783866394ea5fd))
+- *(security)* Validate provides names to block path traversal ([#182](https://github.com/pkgforge/soar/pull/182)) - ([034b085](https://github.com/pkgforge/soar/commit/034b085b8938fd9b8e724d43372c3ef93b9ef411))
+
 ## [0.5.4](https://github.com/pkgforge/soar/compare/soar-db-v0.5.3...soar-db-v0.5.4) - 2026-06-25
 
 ### ⚙️ Miscellaneous Tasks
