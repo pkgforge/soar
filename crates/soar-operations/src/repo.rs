@@ -113,9 +113,20 @@ impl SoarContext {
                         )
                         .into());
                     }
-                    fs::remove_dir_all(&target).with_context(|| {
-                        format!("removing repository data at {}", target.display())
-                    })?;
+                    // Remove the configured path rather than the canonicalized
+                    // target: when the repo dir is a symlink, drop the link
+                    // itself instead of the directory it points at.
+                    let meta = fs::symlink_metadata(&repo_path)
+                        .with_context(|| format!("reading metadata for {}", repo_path.display()))?;
+                    if meta.file_type().is_symlink() {
+                        fs::remove_file(&repo_path).with_context(|| {
+                            format!("removing repository symlink at {}", repo_path.display())
+                        })?;
+                    } else {
+                        fs::remove_dir_all(&repo_path).with_context(|| {
+                            format!("removing repository data at {}", repo_path.display())
+                        })?;
+                    }
                 }
             }
 
