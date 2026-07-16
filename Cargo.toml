@@ -69,7 +69,7 @@ soar-package = { version = "0.4.2", path = "crates/soar-package" }
 soar-registry = { version = "0.5.1", path = "crates/soar-registry" }
 soar-utils = { version = "0.4.3", path = "crates/soar-utils" }
 squishy = { version = "0.5.1", features = ["appimage", "dwarfs"] }
-tabled = { version = "0.21", features = ["ansi"] }
+tabled = { version = "0.21", default-features = false, features = ["ansi"] }
 terminal_size = "0.4"
 tempfile = "3.27.0"
 thiserror = "2.0.18"
