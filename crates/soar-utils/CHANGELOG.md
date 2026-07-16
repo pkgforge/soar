@@ -1,4 +1,10 @@
 
+## [0.4.3](https://github.com/pkgforge/soar/compare/soar-utils-v0.4.2...soar-utils-v0.4.3) - 2026-07-16
+
+### 🐛 Bug Fixes
+
+- *(security)* Validate repository names to block path traversal ([#183](https://github.com/pkgforge/soar/pull/183)) - ([c4b34f9](https://github.com/pkgforge/soar/commit/c4b34f9e0755ee43f2598dc4da783866394ea5fd))
+
 ## [0.4.2](https://github.com/pkgforge/soar/compare/soar-utils-v0.4.1...soar-utils-v0.4.2) - 2026-06-25
 
 ### ⚙️ Miscellaneous Tasks

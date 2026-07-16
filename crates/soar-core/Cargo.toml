@@ -1,6 +1,6 @@
 [package]
 name = "soar-core"
-version = "0.16.3"
+version = "0.16.4"
 description = "Core library for soar package manager"
 license.workspace = true
 edition.workspace = true

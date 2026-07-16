@@ -1,4 +1,11 @@
 
+## [0.16.4](https://github.com/pkgforge/soar/compare/soar-core-v0.16.3...soar-core-v0.16.4) - 2026-07-16
+
+### 🐛 Bug Fixes
+
+- *(security)* Validate pkg_name and pkg_id as path components ([#184](https://github.com/pkgforge/soar/pull/184)) - ([97a0f57](https://github.com/pkgforge/soar/commit/97a0f57e3a4bd398dbf98c50be060a928e1aacff))
+- *(security)* Validate provides names to block path traversal ([#182](https://github.com/pkgforge/soar/pull/182)) - ([034b085](https://github.com/pkgforge/soar/commit/034b085b8938fd9b8e724d43372c3ef93b9ef411))
+
 ## [0.16.3](https://github.com/pkgforge/soar/compare/soar-core-v0.16.2...soar-core-v0.16.3) - 2026-06-25
 
 ### 🐛 Bug Fixes

@@ -1,4 +1,10 @@
 
+## [0.5.1](https://github.com/pkgforge/soar/compare/soar-registry-v0.5.0...soar-registry-v0.5.1) - 2026-07-16
+
+### ⛰️  Features
+
+- *(metadata)* Support local metadata source ([#181](https://github.com/pkgforge/soar/pull/181)) - ([487850d](https://github.com/pkgforge/soar/commit/487850d4dc589d7456558c833b587f0921ed6e2a))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-registry-v0.4.3...soar-registry-v0.5.0) - 2026-06-25
 
 ### ⛰️  Features

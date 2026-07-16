@@ -1,4 +1,10 @@
 
+## [0.10.2](https://github.com/pkgforge/soar/compare/soar-dl-v0.10.1...soar-dl-v0.10.2) - 2026-07-16
+
+### ⚙️ Miscellaneous Tasks
+
+- Updated the following local packages: soar-utils - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.10.1](https://github.com/pkgforge/soar/compare/soar-dl-v0.10.0...soar-dl-v0.10.1) - 2026-06-25
 
 ### ⚙️ Miscellaneous Tasks
