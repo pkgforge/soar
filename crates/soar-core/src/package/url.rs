@@ -3,6 +3,7 @@
 use std::sync::OnceLock;
 
 use regex::Regex;
+use soar_utils::path::is_safe_component;
 
 use crate::{database::models::Package, error::SoarError, SoarResult};
 
@@ -84,6 +85,27 @@ impl UrlPackage {
         }
     }
 
+    /// Rejects a name or id that is not usable as a single path component.
+    ///
+    /// Both are joined into the install dir and interpolated into resource
+    /// paths, so a caller-supplied override containing `/` or `..` would escape
+    /// it. The derived defaults are always dot-separated and unaffected.
+    fn validate_names(pkg_name: &str, pkg_id: &str) -> SoarResult<()> {
+        if !is_safe_component(pkg_name) {
+            return Err(SoarError::Custom(format!(
+                "Invalid package name '{}': must be a single path component",
+                pkg_name
+            )));
+        }
+        if !is_safe_component(pkg_id) {
+            return Err(SoarError::Custom(format!(
+                "Invalid package id '{}': must be a single path component",
+                pkg_id
+            )));
+        }
+        Ok(())
+    }
+
     /// Parse a GHCR reference and extract package metadata.
     pub fn from_ghcr(
         reference: &str,
@@ -128,6 +150,8 @@ impl UrlPackage {
             .unwrap_or_else(|| package.replace('/', "."));
 
         let pkg_type = pkg_type_override.map(|s| s.to_lowercase());
+
+        Self::validate_names(&pkg_name, &pkg_id)?;
 
         Ok(Self {
             url: reference.to_string(),
@@ -206,6 +230,8 @@ impl UrlPackage {
                     pkg_name.clone()
                 }
             });
+
+        Self::validate_names(&pkg_name, &pkg_id)?;
 
         Ok(Self {
             url: url.to_string(),
@@ -562,6 +588,25 @@ mod tests {
         assert_eq!(pkg.version, "2.0.0");
         assert_eq!(pkg.pkg_id, "custom-id");
         assert!(pkg.is_ghcr);
+    }
+
+    #[test]
+    fn test_ghcr_rejects_traversal_overrides() {
+        let ghcr = "ghcr.io/org/repo:v1.0";
+
+        assert!(UrlPackage::from_ghcr(ghcr, Some("../../evil"), None, None, None).is_err());
+        assert!(UrlPackage::from_ghcr(ghcr, None, None, None, Some("../../evil")).is_err());
+        assert!(UrlPackage::from_ghcr(ghcr, None, None, None, Some("/abs/evil")).is_err());
+        assert!(UrlPackage::from_ghcr(ghcr, Some(".."), None, None, None).is_err());
+    }
+
+    #[test]
+    fn test_url_rejects_traversal_overrides() {
+        let url = "https://github.com/user/repo/releases/download/v1.0/app";
+
+        assert!(UrlPackage::from_url(url, Some("../../evil"), None, None, None).is_err());
+        assert!(UrlPackage::from_url(url, None, None, None, Some("../../evil")).is_err());
+        assert!(UrlPackage::from_url(url, None, None, None, Some("a/b")).is_err());
     }
 
     #[test]

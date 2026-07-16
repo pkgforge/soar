@@ -35,6 +35,7 @@ use soar_package::integrate_package;
 use soar_utils::{
     hash::{calculate_checksum, hash_string},
     lock::FileLock,
+    path::is_safe_component,
     pattern::apply_sig_variants,
 };
 use tokio::sync::Semaphore;
@@ -829,6 +830,15 @@ async fn install_single_package(
             let input = format!("{}:{}:{}", pkg.pkg_id, pkg.pkg_name, pkg.version);
             hash_string(&input)[..12].to_string()
         });
+
+    // pkg_name/pkg_id are joined into install_dir and interpolated into resource
+    // paths downstream, so they must not be able to escape the packages dir.
+    if !is_safe_component(&pkg.pkg_name) || !is_safe_component(&pkg.pkg_id) {
+        return Err(SoarError::Custom(format!(
+            "Refusing to install {}#{}: package name or id is not a valid path component",
+            pkg.pkg_name, pkg.pkg_id
+        )));
+    }
 
     let install_dir = config
         .get_packages_path(target.profile.clone())?

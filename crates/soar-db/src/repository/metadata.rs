@@ -6,6 +6,7 @@ use diesel::{dsl::sql, prelude::*, sql_types::Text};
 use regex::Regex;
 use serde_json::json;
 use soar_registry::RemotePackage;
+use soar_utils::path::is_safe_component;
 use tracing::{debug, trace, warn};
 
 /// Regex for extracting name and contact from maintainer string format "Name (contact)".
@@ -524,6 +525,18 @@ impl MetadataRepository {
             version = package.version,
             "inserting remote package"
         );
+
+        // pkg_name and pkg_id are joined into the install dir and interpolated
+        // into resource paths, so a name with separators or '..' would escape it.
+        if !is_safe_component(&package.pkg_name) || !is_safe_component(&package.pkg_id) {
+            warn!(
+                pkg_id = package.pkg_id,
+                pkg_name = package.pkg_name,
+                "skipping package with unsafe path component in pkg_name/pkg_id"
+            );
+            return Ok(());
+        }
+
         let provides = package.provides.as_ref().map(|vec| {
             vec.iter()
                 .map(|p| PackageProvide::from_string(p))
