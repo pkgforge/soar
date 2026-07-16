@@ -60,9 +60,24 @@ pub enum ConfigError {
     )]
     MissingProfile(String),
 
-    #[error("Invalid repository name: {0}")]
-    #[diagnostic(code(soar_config::invalid_repository))]
-    InvalidRepository(String),
+    #[error("Repository '{0}' is not configured")]
+    #[diagnostic(
+        code(soar_config::repository_not_found),
+        help("Run `soar repo list` to see the configured repositories.")
+    )]
+    RepositoryNotFound(String),
+
+    #[error("Repository name '{0}' is not a valid directory name")]
+    #[diagnostic(
+        code(soar_config::invalid_repository_name),
+        help(
+            "A repository's data is stored in a directory named after it, under the \
+             repositories path, so the name must be a single path component. It cannot be \
+             empty, contain '/', be '.' or '..', or be an absolute path. Try a plain name, \
+             e.g. `soar repo add personal https://personal.repo`."
+        )
+    )]
+    InvalidRepositoryName(String),
 
     #[error("Invalid repository URL: {0}")]
     #[diagnostic(code(soar_config::invalid_repository_url))]

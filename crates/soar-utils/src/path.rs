@@ -1,9 +1,33 @@
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Component, Path, PathBuf},
+};
 
 use crate::{
     error::{PathError, PathResult},
     system::get_username,
 };
+
+/// Returns `true` if `name` is a single, normal path component that is safe to
+/// join onto a directory.
+///
+/// Rejects empty strings, absolute paths, `.`/`..`, and any value containing a
+/// path separator. Use this for untrusted values that become a path component,
+/// such as repository names or package `provides` entries, where a join must
+/// not escape its base directory.
+///
+/// # Example
+///
+/// ```
+/// use soar_utils::path::is_safe_component;
+///
+/// assert!(is_safe_component("soarpkgs"));
+/// assert!(!is_safe_component("../etc"));
+/// ```
+pub fn is_safe_component(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+}
 
 /// Resolves a path string that may contain environment variables
 ///
@@ -236,6 +260,21 @@ fn expand_env_var(var_name: &str, result: &mut String, original: &str) -> PathRe
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_is_safe_component() {
+        assert!(super::is_safe_component("clipcat"));
+        assert!(super::is_safe_component("clip-cat.1"));
+        assert!(super::is_safe_component("soarpkgs"));
+
+        assert!(!super::is_safe_component(""));
+        assert!(!super::is_safe_component("."));
+        assert!(!super::is_safe_component(".."));
+        assert!(!super::is_safe_component("a/b"));
+        assert!(!super::is_safe_component("../etc"));
+        assert!(!super::is_safe_component("../../home/user/.bashrc"));
+        assert!(!super::is_safe_component("/etc/passwd"));
+    }
+
     use std::env;
 
     use serial_test::serial;

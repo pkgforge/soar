@@ -8,7 +8,7 @@ use std::{
 use documented::{Documented, DocumentedFields};
 use serde::{Deserialize, Serialize};
 use soar_utils::{
-    path::{resolve_path, xdg_config_home, xdg_data_home},
+    path::{is_safe_component, resolve_path, xdg_config_home, xdg_data_home},
     system::platform,
 };
 use toml_edit::DocumentMut;
@@ -428,6 +428,11 @@ impl Config {
         let mut seen_repos = HashSet::new();
 
         for repo in &mut self.repositories {
+            // The name becomes a directory under the repositories path, so it
+            // must not be able to escape it.
+            if !is_safe_component(&repo.name) {
+                return Err(ConfigError::InvalidRepositoryName(repo.name.clone()));
+            }
             if repo.name == "local" {
                 return Err(ConfigError::ReservedRepositoryName);
             }
@@ -672,6 +677,40 @@ mod tests {
 
         let result = config.resolve();
         assert!(matches!(result, Err(ConfigError::MissingDefaultProfile(_))));
+    }
+
+    fn repo_named(name: &str) -> Repository {
+        Repository {
+            name: name.to_string(),
+            url: "https://example.com".to_string(),
+            desktop_integration: None,
+            pubkey: None,
+            enabled: Some(true),
+            signature_verification: None,
+            sync_interval: None,
+        }
+    }
+
+    #[test]
+    fn test_config_resolve_rejects_traversal_repo_name() {
+        for name in ["..", "a/b", "/home/user/Documents", "", "."] {
+            let mut config = Config::default_config::<&str>(&[]);
+            config.repositories.push(repo_named(name));
+
+            let result = config.resolve();
+            assert!(
+                matches!(result, Err(ConfigError::InvalidRepositoryName(_))),
+                "name {name:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_config_resolve_accepts_normal_repo_name() {
+        let mut config = Config::default_config::<&str>(&[]);
+        config.repositories.push(repo_named("my-repo"));
+
+        assert!(config.resolve().is_ok());
     }
 
     #[test]
