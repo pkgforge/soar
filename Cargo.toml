@@ -46,6 +46,7 @@ minisign-verify = "0.2.5"
 nix = { version = "0.31.3", features = ["fs", "ioctl", "term", "user"] }
 nucleo-matcher = "0.3.1"
 nu-ansi-term = "0.50.3"
+onelf-format = "0.2.8"
 once_cell = "1.21"
 percent-encoding = "2.3.2"
 rayon = "1.12.0"
@@ -81,6 +82,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 ureq = { version = "3.3.0", features = ["json"] }
 url = "2.5.8"
 xattr = "1.6.1"
+xxhash-rust = { version = "0.8.15", features = ["xxh32"] }
 zstd = "0.13.3"
 
 [profile.release]

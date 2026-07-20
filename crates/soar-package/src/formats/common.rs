@@ -22,7 +22,8 @@ use soar_utils::{
 use tracing::{debug, trace};
 
 use super::{
-    appimage::integrate_appimage, get_file_type, wrappe::setup_wrappe_portable_dir, PackageFormat,
+    appimage::integrate_appimage, get_file_type, onelf::integrate_onelf,
+    wrappe::setup_wrappe_portable_dir, PackageFormat,
 };
 use crate::{
     error::{ErrorContext, PackageError, Result},
@@ -464,6 +465,18 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                 None,
                 None,
             )?;
+        }
+        PackageFormat::Onelf => {
+            trace!("integrating onelf resources");
+            let _ = integrate_onelf(
+                install_dir,
+                &bin_path,
+                package,
+                has_icon,
+                has_desktop,
+                config,
+            )
+            .await;
         }
         PackageFormat::Wrappe => {
             trace!("setting up Wrappe portable directory");

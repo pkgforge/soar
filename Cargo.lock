@@ -1616,6 +1616,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "onelf-format"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2ab81a56b7ab8d442e15c75e489ea4b12a938627dde8ca749a3db03936f5fe4"
+
+[[package]]
 name = "optfield"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2332,12 +2338,15 @@ version = "0.4.2"
 dependencies = [
  "image",
  "miette",
+ "onelf-format",
  "regex",
  "soar-config",
  "soar-utils",
  "squishy",
  "thiserror",
  "tracing",
+ "xxhash-rust",
+ "zstd",
 ]
 
 [[package]]

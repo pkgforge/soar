@@ -12,9 +12,12 @@ categories.workspace = true
 [dependencies]
 image = { workspace = true }
 miette = { workspace = true }
+onelf-format = { workspace = true }
 regex = { workspace = true }
 soar-config = { workspace = true }
 soar-utils = { workspace = true }
 squishy = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+xxhash-rust = { workspace = true }
+zstd = { workspace = true }

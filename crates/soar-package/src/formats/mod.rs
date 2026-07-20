@@ -5,9 +5,14 @@
 
 pub mod appimage;
 pub mod common;
+pub mod onelf;
 pub mod wrappe;
 
 use std::io::{BufReader, Read, Seek, SeekFrom};
+
+use onelf_format::{
+    END_MAGIC as ONELF_END_MAGIC, FOOTER_SIZE as ONELF_FOOTER_SIZE, MAGIC as ONELF_MAGIC,
+};
 
 use crate::error::{PackageError, Result};
 
@@ -43,6 +48,8 @@ pub enum PackageFormat {
     RunImage,
     /// Wrappe format - Windows PE wrapper.
     Wrappe,
+    /// onelf format - self-extracting single binary.
+    Onelf,
     /// Standard ELF executable.
     ELF,
     /// Unknown or unsupported format.
@@ -99,6 +106,20 @@ where
         if wrappe_magic == WRAPPE_MAGIC_BYTES {
             file.rewind().map_err(|_| PackageError::SeekError)?;
             return Ok(PackageFormat::Wrappe);
+        }
+    }
+
+    // onelf packages are ELF binaries with a trailing footer. Detect the footer
+    // at (file_size - FOOTER_SIZE) so they resolve to Onelf rather than ELF.
+    if file_size >= ONELF_FOOTER_SIZE as u64 {
+        file.seek(SeekFrom::Start(file_size - ONELF_FOOTER_SIZE as u64))
+            .map_err(|_| PackageError::SeekError)?;
+        let mut footer = [0u8; ONELF_FOOTER_SIZE];
+        file.read_exact(&mut footer)
+            .map_err(|_| PackageError::MagicBytesError)?;
+        if footer[..8] == ONELF_MAGIC && footer[68..76] == ONELF_END_MAGIC {
+            file.rewind().map_err(|_| PackageError::SeekError)?;
+            return Ok(PackageFormat::Onelf);
         }
     }
 
