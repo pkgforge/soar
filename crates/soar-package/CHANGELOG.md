@@ -1,4 +1,10 @@
 
+## [0.5.0](https://github.com/pkgforge/soar/compare/soar-package-v0.4.2...soar-package-v0.5.0) - 2026-07-20
+
+### ⛰️  Features
+
+- *(package)* Add onelf support - ([0059732](https://github.com/pkgforge/soar/commit/0059732adb754a15505f6345c86a3cf693ed8d23))
+
 ## [0.4.2](https://github.com/pkgforge/soar/compare/soar-package-v0.4.1...soar-package-v0.4.2) - 2026-07-16
 
 ### ⚙️ Miscellaneous Tasks

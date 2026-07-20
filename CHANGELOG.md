@@ -1,4 +1,14 @@
 
+## [0.12.8](https://github.com/pkgforge/soar/compare/v0.12.7...v0.12.8) - 2026-07-20
+
+### ⛰️  Features
+
+- *(package)* Add onelf support - ([0059732](https://github.com/pkgforge/soar/commit/0059732adb754a15505f6345c86a3cf693ed8d23))
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.toml dependencies - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.12.7](https://github.com/pkgforge/soar/compare/v0.12.6...v0.12.7) - 2026-07-16
 
 ### ⛰️  Features
