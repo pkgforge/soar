@@ -484,7 +484,7 @@ impl MetadataRepository {
         conn: &mut SqliteConnection,
         metadata: &[RemotePackage],
         repo_name: &str,
-    ) -> QueryResult<()> {
+    ) -> QueryResult<usize> {
         debug!(
             repo_name = repo_name,
             count = metadata.len(),
@@ -502,23 +502,29 @@ impl MetadataRepository {
                 .execute(conn)?;
             trace!(repo_name = repo_name, "repository record upserted");
 
+            let mut imported = 0usize;
             for package in metadata {
-                Self::insert_remote_package(conn, package)?;
+                if Self::insert_remote_package(conn, package)? {
+                    imported += 1;
+                }
             }
             debug!(
                 repo_name = repo_name,
-                count = metadata.len(),
+                offered = metadata.len(),
+                imported,
                 "package import completed"
             );
-            Ok(())
+            Ok(imported)
         })
     }
 
     /// Inserts a single remote package.
+    /// Returns whether the package was accepted; rejected entries are skipped
+    /// rather than failing the whole import.
     fn insert_remote_package(
         conn: &mut SqliteConnection,
         package: &RemotePackage,
-    ) -> QueryResult<()> {
+    ) -> QueryResult<bool> {
         trace!(
             pkg_id = package.pkg_id,
             pkg_name = package.pkg_name,
@@ -526,15 +532,25 @@ impl MetadataRepository {
             "inserting remote package"
         );
 
+        // An absent or empty pkg_id falls back to the name rather than
+        // rejecting the package: it only ever existed to disambiguate
+        // identical names, so a repository whose names are unique has nothing
+        // to say here.
+        let pkg_id = package
+            .pkg_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&package.pkg_name);
+
         // pkg_name and pkg_id are joined into the install dir and interpolated
         // into resource paths, so a name with separators or '..' would escape it.
-        if !is_safe_component(&package.pkg_name) || !is_safe_component(&package.pkg_id) {
+        if !is_safe_component(&package.pkg_name) || !is_safe_component(pkg_id) {
             warn!(
-                pkg_id = package.pkg_id,
+                pkg_id,
                 pkg_name = package.pkg_name,
                 "skipping package with unsafe path component in pkg_name/pkg_id"
             );
-            return Ok(());
+            return Ok(false);
         }
 
         let provides = package.provides.as_ref().map(|vec| {
@@ -556,11 +572,10 @@ impl MetadataRepository {
         });
 
         let new_package = NewPackage {
-            pkg_id: &package.pkg_id,
+            pkg_id,
             pkg_name: &package.pkg_name,
             pkg_family: package.pkg_family.as_deref(),
             pkg_type: package.pkg_type.as_deref(),
-            pkg_webpage: package.pkg_webpage.as_deref(),
             app_id: package.app_id.as_deref(),
             description: Some(&package.description),
             version: &package.version,
@@ -578,7 +593,6 @@ impl MetadataRepository {
             homepages: Some(json!(package.homepages)),
             notes: Some(json!(package.notes)),
             source_urls: Some(json!(package.src_urls)),
-            tags: Some(json!(&package.tags)),
             categories: Some(json!(package.categories)),
             build_id: package.build_id.as_deref(),
             build_date: package.build_date.as_deref(),
@@ -591,6 +605,8 @@ impl MetadataRepository {
             soar_syms: package.soar_syms.unwrap_or(false),
             desktop_integration: package.desktop_integration,
             portable: package.portable,
+            binaries: package.binaries.as_ref().map(|b| json!(b)),
+            extra: package.extra.as_ref().map(|e| json!(e)),
         };
 
         let inserted = diesel::insert_into(packages::table)
@@ -600,8 +616,8 @@ impl MetadataRepository {
             .execute(conn)?;
 
         if inserted == 0 {
-            trace!(pkg_id = package.pkg_id, "package already exists, skipping");
-            return Ok(());
+            trace!(pkg_id, "package already exists, skipping");
+            return Ok(false);
         }
 
         let package_id = Self::last_insert_id(conn)?;
@@ -615,7 +631,7 @@ impl MetadataRepository {
             }
         }
 
-        Ok(())
+        Ok(true)
     }
 
     /// Extracts name and contact from maintainer string format "Name (contact)".

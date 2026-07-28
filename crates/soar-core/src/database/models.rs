@@ -3,7 +3,10 @@
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
-use soar_db::{models::types::PackageProvide, repository::core::InstalledPackageWithPortable};
+use soar_db::{
+    models::types::{PackageBinary, PackageExtra, PackageProvide},
+    repository::core::InstalledPackageWithPortable,
+};
 use soar_package::PackageExt;
 
 /// Package maintainer information.
@@ -30,7 +33,6 @@ pub struct Package {
     pub pkg_name: String,
     pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
-    pub pkg_webpage: Option<String>,
     pub app_id: Option<String>,
     pub description: String,
     pub version: String,
@@ -46,7 +48,6 @@ pub struct Package {
     pub homepages: Option<Vec<String>>,
     pub notes: Option<Vec<String>>,
     pub source_urls: Option<Vec<String>>,
-    pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub icon: Option<String>,
     pub desktop: Option<String>,
@@ -65,6 +66,10 @@ pub struct Package {
     pub deprecated: bool,
     pub desktop_integration: Option<bool>,
     pub portable: Option<bool>,
+    /// Executables inside the artifact, as source path -> installed name.
+    pub binaries: Option<Vec<PackageBinary>>,
+    /// Pinned side files installed alongside the artifact.
+    pub extra: Option<Vec<PackageExtra>>,
 }
 
 impl PackageExt for Package {
@@ -244,7 +249,6 @@ impl From<soar_db::models::metadata::Package> for Package {
             pkg_name: pkg.pkg_name,
             pkg_family: pkg.pkg_family,
             pkg_type: pkg.pkg_type,
-            pkg_webpage: pkg.pkg_webpage,
             app_id: pkg.app_id,
             description: pkg.description.unwrap_or_default(),
             version: pkg.version,
@@ -260,7 +264,6 @@ impl From<soar_db::models::metadata::Package> for Package {
             homepages: pkg.homepages,
             notes: pkg.notes,
             source_urls: pkg.source_urls,
-            tags: pkg.tags,
             categories: pkg.categories,
             icon: pkg.icon,
             desktop: pkg.desktop,
@@ -279,6 +282,8 @@ impl From<soar_db::models::metadata::Package> for Package {
             deprecated: false,
             desktop_integration: pkg.desktop_integration,
             portable: pkg.portable,
+            binaries: pkg.binaries,
+            extra: pkg.extra,
         }
     }
 }

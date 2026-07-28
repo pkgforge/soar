@@ -137,3 +137,29 @@ mod tests {
         assert!(!PackageProvide::from_string("@../evil").is_safe());
     }
 }
+
+/// One executable inside a package artifact.
+///
+/// `source` is a path relative to the extracted artifact and may be a glob,
+/// since archives often wrap their contents in a versioned directory.
+/// `link_as` is the name to install it under, defaulting to the file's own.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PackageBinary {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_as: Option<String>,
+}
+
+/// A side file installed alongside the artifact, pinned by hash.
+///
+/// Exists because some artifacts are a bare binary with no room for a licence,
+/// and a package manager that redistributes them still owes one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PackageExtra {
+    pub url: String,
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blake3: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+}
