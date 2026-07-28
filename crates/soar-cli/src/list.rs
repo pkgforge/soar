@@ -237,13 +237,6 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
             ]);
         }
 
-        if let Some(ref webindex) = package.pkg_webpage {
-            builder.push_record([
-                format!("{} Index", Icons::LINK),
-                Colored(Blue, webindex).to_string(),
-            ]);
-        }
-
         let table = builder
             .build()
             .with(Style::rounded())
@@ -273,7 +266,6 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
             build_script = package.build_script,
             ghcr_blob = package.ghcr_blob,
             ghcr_pkg = package.ghcr_pkg,
-            pkg_webpage = package.pkg_webpage,
             "\n{table}"
         );
     }

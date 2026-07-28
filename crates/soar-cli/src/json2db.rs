@@ -8,7 +8,7 @@ use soar_db::{
     connection::DbConnection, migration::DbType, repository::metadata::MetadataRepository,
 };
 use soar_registry::RemotePackage;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Converts JSON metadata file to SQLite database.
 pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) -> SoarResult<()> {
@@ -49,11 +49,26 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
     let mut conn = DbConnection::open(output_path, DbType::Metadata)
         .map_err(|e| SoarError::Custom(format!("opening database: {}", e)))?;
 
-    MetadataRepository::import_packages(conn.conn(), &packages, repo_name)
+    // Packages with an unsafe pkg_name/pkg_id are skipped during import.
+    // Reporting success while writing nothing hides that entirely, which is
+    // how an empty pkg_id silently produced an empty database.
+    let imported = MetadataRepository::import_packages(conn.conn(), &packages, repo_name)
         .map_err(|e| SoarError::Custom(format!("importing packages: {}", e)))?;
 
+    let skipped = packages.len() - imported;
+    if imported == 0 {
+        return Err(SoarError::Custom(format!(
+            "imported 0 of {} packages; every entry was rejected, most likely \
+             an unsafe or empty pkg_name/pkg_id",
+            packages.len()
+        )));
+    }
+    if skipped > 0 {
+        warn!(skipped, "some packages were rejected during import");
+    }
+
     info!(
-        count = packages.len(),
+        count = imported,
         output = %output_path.display(),
         "Successfully converted JSON to SQLite database"
     );
