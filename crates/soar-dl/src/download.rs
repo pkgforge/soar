@@ -322,16 +322,37 @@ impl Download {
 
         remove_resume(&output_path)?;
 
+        // Extraction is driven by what the file actually is, not by what the
+        // caller guessed it would be. compak detects by magic number, so an
+        // ELF (an AppImage, say) is never mistaken for an archive even when
+        // extraction was requested.
         if self.extract {
-            let extract_dir = self.extract_to.unwrap_or_else(|| {
-                output_path
-                    .parent()
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("."))
-            });
-            debug!(archive = %output_path.display(), dest = %extract_dir.display(), "extracting archive");
-
-            compak::extract_archive(&output_path, &extract_dir)?;
+            match compak::detect_from_file(&output_path) {
+                Ok(format) => {
+                    let extract_dir = self.extract_to.unwrap_or_else(|| {
+                        output_path
+                            .parent()
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("."))
+                    });
+                    debug!(archive = %output_path.display(), dest = %extract_dir.display(),
+                           ?format, "extracting archive");
+                    // A bare .gz or .bz2 of a single file shares its magic
+                    // number with the tar-wrapped form, so detection can be
+                    // right about the compression and wrong about the
+                    // container. Leave the download in place rather than
+                    // failing the install outright.
+                    if let Err(e) = compak::extract_archive(&output_path, &extract_dir) {
+                        warn!(archive = %output_path.display(), error = %e,
+                              "extraction failed, installing the download as-is");
+                        std::fs::remove_dir_all(&extract_dir).ok();
+                    }
+                }
+                Err(_) => {
+                    trace!(path = %output_path.display(),
+                           "not an archive, installing as-is");
+                }
+            }
         }
 
         debug!(path = %output_path.display(), "download completed successfully");
