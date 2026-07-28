@@ -130,7 +130,11 @@ pub struct RemotePackage {
     #[serde(alias = "_disabled_reason")]
     pub disabled_reason: Option<serde_json::Value>,
 
-    pub pkg_id: String,
+    /// Optional. It exists to disambiguate identically-named packages within
+    /// one repository; where names are already unique a repository can omit
+    /// it, and the name is used instead.
+    #[serde(default)]
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
 
     #[serde(default, deserialize_with = "empty_is_none")]
@@ -139,15 +143,15 @@ pub struct RemotePackage {
     #[serde(default, deserialize_with = "empty_is_none")]
     pub pkg_type: Option<String>,
 
-    #[serde(default, deserialize_with = "empty_is_none")]
-    pub pkg_webpage: Option<String>,
 
     pub description: String,
     pub version: String,
 
     pub download_url: String,
 
-    #[serde(default, deserialize_with = "optional_number")]
+    /// Bytes. Named `size` in the port format; `size_raw` is the older
+    /// spelling, still accepted so existing repositories keep working.
+    #[serde(default, alias = "size", deserialize_with = "optional_number")]
     pub size_raw: Option<u64>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
@@ -179,8 +183,6 @@ pub struct RemotePackage {
     #[serde(alias = "note")]
     pub notes: Option<Vec<String>>,
 
-    #[serde(alias = "tag")]
-    pub tags: Option<Vec<String>>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
     pub bsum: Option<String>,
@@ -232,6 +234,14 @@ pub struct RemotePackage {
     pub repology: Option<Vec<String>>,
     pub snapshots: Option<Vec<String>>,
     pub replaces: Option<Vec<String>>,
+    /// Executables inside the artifact, as source path -> installed name.
+    /// Lets a package whose binary is named differently from the package
+    /// itself be installed from the index alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binaries: Option<Vec<RemoteBinary>>,
+    /// Pinned side files to install alongside the artifact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra: Option<Vec<RemoteExtra>>,
 }
 
 #[cfg(test)]
@@ -249,9 +259,23 @@ mod tests {
         }"#;
 
         let pkg: RemotePackage = serde_json::from_str(json).unwrap();
-        assert_eq!(pkg.pkg_id, "test-pkg");
+        assert_eq!(pkg.pkg_id.as_deref(), Some("test-pkg"));
         assert_eq!(pkg.pkg_name, "test");
         assert_eq!(pkg.version, "1.0.0");
+    }
+
+    #[test]
+    fn test_pkg_id_is_optional() {
+        let json = r#"{
+            "pkg_name": "test",
+            "description": "A test package",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test.tar.gz"
+        }"#;
+
+        let pkg: RemotePackage = serde_json::from_str(json).unwrap();
+        assert_eq!(pkg.pkg_id, None);
+        assert_eq!(pkg.pkg_name, "test");
     }
 
     #[test]
@@ -268,4 +292,26 @@ mod tests {
         let pkg: RemotePackage = serde_json::from_str(json).unwrap();
         assert_eq!(pkg.disabled, Some(true));
     }
+}
+
+/// One executable inside a package artifact, as published in the index.
+///
+/// `source` is relative to the extracted artifact and may be a glob, since
+/// archives commonly wrap their contents in a versioned directory.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemoteBinary {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_as: Option<String>,
+}
+
+/// A pinned side file as published in the index.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemoteExtra {
+    pub url: String,
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blake3: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
