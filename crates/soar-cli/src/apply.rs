@@ -88,9 +88,9 @@ fn display_diff(diff: &ApplyDiff, prune: bool) {
             builder.push_record([
                 format!("{}", Colored(Green, icon_or("+", "+"))),
                 format!(
-                    "{}#{}",
+                    "{}",
                     Colored(Blue, &pkg.pkg_name),
-                    Colored(Cyan, &pkg.pkg_id)
+
                 ),
                 format!("{}", Colored(Green, &pkg.version)),
                 format!("{}", Colored(Magenta, &pkg.repo_name)),
@@ -106,9 +106,9 @@ fn display_diff(diff: &ApplyDiff, prune: bool) {
             builder.push_record([
                 format!("{}", Colored(Yellow, icon_or("~", "~"))),
                 format!(
-                    "{}#{}",
+                    "{}",
                     Colored(Blue, &pkg.pkg_name),
-                    Colored(Cyan, &pkg.pkg_id)
+
                 ),
                 format!(
                     "{} -> {}",
@@ -124,9 +124,9 @@ fn display_diff(diff: &ApplyDiff, prune: bool) {
                 builder.push_record([
                     format!("{}", Colored(Red, icon_or("-", "-"))),
                     format!(
-                        "{}#{}",
+                        "{}",
                         Colored(Blue, &pkg.pkg_name),
-                        Colored(Cyan, &pkg.pkg_id)
+
                     ),
                     format!("{}", Colored(Yellow, &pkg.version)),
                     format!("{}", Colored(Magenta, &pkg.repo_name)),

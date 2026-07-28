@@ -153,6 +153,7 @@ pub async fn handle_direct_downloads(
                             MetadataRepository::find_filtered(
                                 conn,
                                 query.name.as_deref(),
+                                None,
                                 query.pkg_id.as_deref(),
                                 None,
                                 None,
@@ -173,6 +174,7 @@ pub async fn handle_direct_downloads(
                             conn,
                             query.name.as_deref(),
                             query.pkg_id.as_deref(),
+                            query.family.as_deref(),
                             None,
                             None,
                             None,
@@ -211,8 +213,8 @@ pub async fn handle_direct_downloads(
                 let package = package.resolve(query.version.as_deref());
 
                 info!(
-                    "Downloading package: {}#{}",
-                    package.pkg_name, package.pkg_id
+                    "Downloading package: {}",
+                    package.pkg_name
                 );
                 if let Some(ref url) = package.ghcr_blob {
                     let mut dl = OciDownload::new(url.as_str()).overwrite(ctx.get_overwrite_mode());

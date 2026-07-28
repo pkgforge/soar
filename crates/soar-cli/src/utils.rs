@@ -4,7 +4,7 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta, Red};
+use nu_ansi_term::Color::{self, Blue, Green, LightRed, Magenta, Red};
 use serde::Serialize;
 use soar_config::{
     config::get_config, display::DisplaySettings, repository::get_platform_repositories,
@@ -142,10 +142,9 @@ pub fn select_package_interactively_with_installed<T: PackageExt>(
             String::new()
         };
         info!(
-            "[{}] {}#{}:{} | {}{}",
+            "[{}] {}:{} | {}{}",
             idx + 1,
             Colored(Blue, &pkg.pkg_name()),
-            Colored(Cyan, &pkg.pkg_id()),
             Colored(Green, pkg.repo_name()),
             Colored(LightRed, pkg.version()),
             installed_marker
@@ -180,9 +179,8 @@ pub fn ask_target_action(targets: &[InstallTarget], action: &str) -> SoarResult<
     );
     for target in targets {
         info!(
-            "{}#{}:{} ({})",
+            "{}:{} ({})",
             Colored(Blue, &target.package.pkg_name),
-            Colored(Cyan, &target.package.pkg_id),
             Colored(Green, &target.package.repo_name),
             Colored(LightRed, &target.package.version)
         )

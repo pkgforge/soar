@@ -149,10 +149,15 @@ pub struct RemotePackage {
 
     pub download_url: String,
 
-    /// Bytes. Named `size` in the port format; `size_raw` is the older
-    /// spelling, still accepted so existing repositories keep working.
-    #[serde(default, alias = "size", deserialize_with = "optional_number")]
+    /// Bytes, as the older format publishes them.
+    #[serde(default, deserialize_with = "optional_number")]
     pub size_raw: Option<u64>,
+
+    /// Bytes, as the port format publishes them. The older format uses this
+    /// name for a human-readable string, which parses as no value, so the two
+    /// can coexist in one index without either being mistaken for the other.
+    #[serde(default, deserialize_with = "optional_number")]
+    pub size: Option<u64>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
     pub ghcr_pkg: Option<String>,

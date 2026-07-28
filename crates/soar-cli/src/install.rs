@@ -77,7 +77,7 @@ pub async fn install_packages(
                 if let Some(pkg) = pkg {
                     // Re-resolve with the specific selected package
                     let specific_query =
-                        format!("{}#{}:{}", pkg.pkg_name, pkg.pkg_id, pkg.repo_name);
+                        format!("{}:{}", pkg.pkg_name, pkg.repo_name);
                     let re_results =
                         install::resolve_packages(ctx, &[specific_query], &options).await?;
                     for r in re_results {
@@ -97,13 +97,13 @@ pub async fn install_packages(
             }
             ResolveResult::AlreadyInstalled {
                 pkg_name,
-                pkg_id,
                 repo_name,
                 version,
+                ..
             } => {
                 warn!(
-                    "{}#{}:{} ({}) is already installed - skipping",
-                    pkg_name, pkg_id, repo_name, version,
+                    "{}:{} ({}) is already installed - skipping",
+                    pkg_name, repo_name, version,
                 );
                 if !force {
                     info!("Hint: Use --force to reinstall, or --show to see other variants");
@@ -161,13 +161,13 @@ async fn install_with_show(
                     ResolveResult::Resolved(targets) => install_targets.extend(targets),
                     ResolveResult::AlreadyInstalled {
                         pkg_name,
-                        pkg_id,
                         repo_name,
                         version,
+                        ..
                     } => {
                         warn!(
-                            "{}#{}:{} ({}) is already installed - skipping",
-                            pkg_name, pkg_id, repo_name, version,
+                            "{}:{} ({}) is already installed - skipping",
+                            pkg_name, repo_name, version,
                         );
                         if !force {
                             info!("Hint: Use --force to reinstall");
@@ -201,7 +201,7 @@ async fn install_with_show(
 
                         if let Some(pkg) = pkg {
                             let specific_query =
-                                format!("{}#{}:{}", pkg.pkg_name, pkg.pkg_id, pkg.repo_name);
+                                format!("{}:{}", pkg.pkg_name, pkg.repo_name);
                             let re_results =
                                 install::resolve_packages(ctx, &[specific_query], options).await?;
                             for r in re_results {
@@ -221,13 +221,13 @@ async fn install_with_show(
                     }
                     ResolveResult::AlreadyInstalled {
                         pkg_name,
-                        pkg_id,
                         repo_name,
                         version,
+                        ..
                     } => {
                         warn!(
-                            "{}#{}:{} ({}) is already installed - skipping",
-                            pkg_name, pkg_id, repo_name, version,
+                            "{}:{} ({}) is already installed - skipping",
+                            pkg_name, repo_name, version,
                         );
                         if !force {
                             info!(
@@ -249,6 +249,7 @@ async fn install_with_show(
                         None,
                         None,
                         None,
+                        None,
                         Some(SortDirection::Asc),
                     )
                 })?
@@ -265,6 +266,7 @@ async fn install_with_show(
                 let pkgs = MetadataRepository::find_filtered(
                     conn,
                     query.name.as_deref(),
+                    None,
                     None,
                     None,
                     None,
@@ -352,9 +354,8 @@ async fn install_with_show(
         if let Some(ref existing) = existing_install {
             if existing.is_installed {
                 warn!(
-                    "{}#{}:{} ({}) is already installed - {}",
+                    "{}:{} ({}) is already installed - {}",
                     existing.pkg_name,
-                    existing.pkg_id,
                     existing.repo_name,
                     existing.version,
                     if force { "reinstalling" } else { "skipping" }
@@ -402,10 +403,9 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
 
     for info in &report.installed {
         info!(
-            "\n{} {}#{}:{} [{}]",
+            "\n{} {}:{} [{}]",
             icon_or(Icons::CHECK, "*"),
             Colored(Blue, &info.pkg_name),
-            Colored(Cyan, &info.pkg_id),
             Colored(Green, &info.repo_name),
             Colored(Magenta, info.install_dir.display())
         );
@@ -424,7 +424,9 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
         }
 
         if !no_notes {
-            if let Some(ref notes) = info.notes {
+            // Most packages have nothing to say, and an empty list would
+            // otherwise print a heading with no content under it.
+            if let Some(notes) = info.notes.as_ref().filter(|n| !n.is_empty()) {
                 info!(
                     "  {} Notes:\n    {}",
                     icon_or("📝", "-"),
@@ -436,8 +438,8 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
 
     for err_info in &report.failed {
         error!(
-            "Failed to install {}#{}: {}",
-            err_info.pkg_name, err_info.pkg_id, err_info.error
+            "Failed to install {}: {}",
+            err_info.pkg_name, err_info.error
         );
     }
 

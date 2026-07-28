@@ -26,9 +26,8 @@ pub async fn update_packages(
     // Display update info
     for update_info in &updates {
         info!(
-            "{}#{}: {} -> {}",
+            "{}: {} -> {}",
             Colored(Blue, &update_info.pkg_name),
-            Colored(Cyan, &update_info.pkg_id),
             Colored(Red, &update_info.current_version),
             Colored(Green, &update_info.new_version),
         );
@@ -51,8 +50,8 @@ fn display_update_report(report: &UpdateReport) {
 
     for err_info in &report.failed {
         error!(
-            "Failed to update {}#{}: {}",
-            err_info.pkg_name, err_info.pkg_id, err_info.error
+            "Failed to update {}: {}",
+            err_info.pkg_name, err_info.error
         );
     }
 

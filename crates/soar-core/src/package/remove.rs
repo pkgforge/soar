@@ -137,9 +137,8 @@ impl PackageRemover {
             version = self.package.version,
             repo = self.package.repo_name,
             installed_path = self.package.installed_path,
-            "removing {}#{}:{} ({})",
+            "removing {}:{} ({})",
             self.package.pkg_name,
-            self.package.pkg_id,
             self.package.repo_name,
             self.package.version
         );
@@ -241,9 +240,8 @@ impl PackageRemover {
         }
 
         debug!(
-            "removed {}#{}:{} ({}) - reclaimed {}",
+            "removed {}:{} ({}) - reclaimed {}",
             self.package.pkg_name,
-            self.package.pkg_id,
             self.package.repo_name,
             self.package.version,
             size_str

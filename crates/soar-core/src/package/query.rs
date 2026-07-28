@@ -1,15 +1,20 @@
 use std::sync::OnceLock;
 
 use regex::Regex;
+use tracing::warn;
 
 use crate::error::SoarError;
 
 /// Parsed package query string.
-/// Supports format: `name#pkg_id@version:repo`
+///
+/// Supports `family/name@version:repo`, where the family narrows a name that
+/// more than one project publishes.
 #[derive(Debug)]
 pub struct PackageQuery {
     pub name: Option<String>,
+    pub family: Option<String>,
     pub repo_name: Option<String>,
+    /// Deprecated. Repositories no longer publish a package id.
     pub pkg_id: Option<String>,
     pub version: Option<String>,
 }
@@ -22,8 +27,9 @@ impl TryFrom<&str> for PackageQuery {
         let re = PACKAGE_RE.get_or_init(|| {
             Regex::new(
                 r"(?x)
+            (?:(?P<family>[^\/\#\@:]+)\/)?      # optional family before /
             (?P<name>[^\/\#\@:]+)?              # optional package name
-            (?:\#(?P<pkg_id>[^@:]+))?           # optional pkg_id after #
+            (?:\#(?P<pkg_id>[^@:]+))?           # deprecated pkg_id after #
             (?:@(?P<version>[^:]+))?            # optional version after @
             (?::(?P<repo>[^:]+))?$              # optional repo after :
             ",
@@ -43,7 +49,11 @@ impl TryFrom<&str> for PackageQuery {
         ))?;
 
         let name = caps.name("name").map(|m| m.as_str().to_string());
+        let family = caps.name("family").map(|m| m.as_str().to_string());
         let pkg_id = caps.name("pkg_id").map(|m| m.as_str().to_string());
+        if pkg_id.is_some() {
+            warn!("#pkg_id is deprecated and will be removed; use family/name instead");
+        }
         if pkg_id.is_none() && name.is_none() {
             return Err(SoarError::InvalidPackageQuery(
                 "Either package name or pkg_id is required".into(),
@@ -60,6 +70,7 @@ impl TryFrom<&str> for PackageQuery {
 
         Ok(PackageQuery {
             repo_name: caps.name("repo").map(|m| m.as_str().to_string()),
+            family,
             pkg_id,
             name,
             version: caps.name("version").map(|m| m.as_str().to_string()),

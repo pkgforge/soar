@@ -53,10 +53,9 @@ pub async fn search_packages(
             version = package.version,
             description = package.description,
             size = package.ghcr_size.or(package.size),
-            "[{}] {}#{}:{} | {} | {} - {} ({})",
+            "[{}] {}:{} | {} | {} - {} ({})",
             state_icon,
             Colored(Blue, &package.pkg_name),
-            Colored(Cyan, &package.pkg_id),
             Colored(Green, &package.repo_name),
             Colored(LightRed, &package.version),
             package
@@ -124,9 +123,8 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
         builder.push_record([
             format!("{} Name", Icons::PACKAGE),
             format!(
-                "{}#{}:{}",
+                "{}:{}",
                 Colored(Blue, &package.pkg_name),
-                Colored(Cyan, &package.pkg_id),
                 Colored(Green, &package.repo_name)
             ),
         ]);
@@ -298,10 +296,9 @@ pub async fn list_packages(ctx: &SoarContext, repo_name: Option<String>) -> Soar
             repo_name = package.repo_name,
             pkg_type = package.pkg_type,
             version = package.version,
-            "[{}] {}#{}:{} | {} | {}",
+            "[{}] {}:{} | {} | {}",
             state_icon,
             Colored(Blue, &package.pkg_name),
-            Colored(Cyan, &package.pkg_id),
             Colored(Cyan, &package.repo_name),
             Colored(LightRed, &package.version),
             package

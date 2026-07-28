@@ -206,6 +206,7 @@ fn resolve_all_variants(
                     None,
                     None,
                     None,
+                    None,
                     Some(SortDirection::Asc),
                 )
             })?
@@ -222,6 +223,7 @@ fn resolve_all_variants(
             let pkgs = MetadataRepository::find_filtered(
                 conn,
                 query.name.as_deref(),
+                None,
                 None,
                 None,
                 None,
@@ -268,6 +270,7 @@ fn resolve_all_variants(
                     Some(&target_pkg_id),
                     None,
                     None,
+                    None,
                     Some(SortDirection::Asc),
                 )
             })?
@@ -285,6 +288,7 @@ fn resolve_all_variants(
                 conn,
                 None,
                 Some(&target_pkg_id),
+                None,
                 None,
                 None,
                 Some(SortDirection::Asc),
@@ -376,6 +380,7 @@ fn resolve_by_pkg_id(
                     conn,
                     None,
                     query.pkg_id.as_deref(),
+                    query.family.as_deref(),
                     None,
                     None,
                     None,
@@ -395,6 +400,7 @@ fn resolve_by_pkg_id(
                 conn,
                 None,
                 query.pkg_id.as_deref(),
+                query.family.as_deref(),
                 None,
                 None,
                 None,
@@ -537,6 +543,7 @@ fn find_packages(
                 MetadataRepository::find_filtered(
                     conn,
                     Some(&existing.pkg_name),
+                    None,
                     Some(&existing.pkg_id),
                     None,
                     None,
@@ -564,6 +571,7 @@ fn find_packages(
                     conn,
                     query.name.as_deref(),
                     query.pkg_id.as_deref(),
+                    query.family.as_deref(),
                     None,
                     None,
                     None,
@@ -583,6 +591,7 @@ fn find_packages(
                 conn,
                 query.name.as_deref(),
                 query.pkg_id.as_deref(),
+                query.family.as_deref(),
                 None,
                 None,
                 None,
@@ -815,8 +824,8 @@ async fn install_single_package(
             .unwrap_or(false);
         if !has_signing {
             return Err(SoarError::Custom(format!(
-                "Refusing to install {}#{}: no checksum or signature available to verify integrity (use --no-verify to override)",
-                pkg.pkg_name, pkg.pkg_id
+                "Refusing to install {}: no checksum or signature available to verify integrity (use --no-verify to override)",
+                pkg.pkg_name
             )));
         }
     }
@@ -827,22 +836,22 @@ async fn install_single_package(
         .filter(|s| s.len() >= 12)
         .map(|s| s[..12].to_string())
         .unwrap_or_else(|| {
-            let input = format!("{}:{}:{}", pkg.pkg_id, pkg.pkg_name, pkg.version);
+            let input = format!("{}:{}", pkg.pkg_name, pkg.version);
             hash_string(&input)[..12].to_string()
         });
 
-    // pkg_name/pkg_id are joined into install_dir and interpolated into resource
-    // paths downstream, so they must not be able to escape the packages dir.
-    if !is_safe_component(&pkg.pkg_name) || !is_safe_component(&pkg.pkg_id) {
+    // pkg_name is joined into install_dir and interpolated into resource paths
+    // downstream, so it must not be able to escape the packages dir.
+    if !is_safe_component(&pkg.pkg_name) {
         return Err(SoarError::Custom(format!(
-            "Refusing to install {}#{}: package name or id is not a valid path component",
-            pkg.pkg_name, pkg.pkg_id
+            "Refusing to install {}: package name is not a valid path component",
+            pkg.pkg_name
         )));
     }
 
     let install_dir = config
         .get_packages_path(target.profile.clone())?
-        .join(format!("{}-{}-{}", pkg.pkg_name, pkg.pkg_id, dir_suffix));
+        .join(format!("{}-{}", pkg.pkg_name, dir_suffix));
     let main_binary_name = pkg
         .provides
         .as_ref()
@@ -924,8 +933,8 @@ async fn install_single_package(
     let progress_callback = create_progress_bridge(
         events.clone(),
         op_id,
-        pkg.pkg_name.clone(),
         pkg.pkg_id.clone(),
+        pkg.pkg_name.clone(),
     );
 
     trace!(install_dir = %install_dir.display(), "creating package installer");
@@ -959,8 +968,8 @@ async fn install_single_package(
                 verified_sig_count = verify_signatures(pubkey, &install_dir)?;
             } else {
                 warn!(
-                    "{}#{} - Signature verification skipped as no pubkey was found.",
-                    pkg.pkg_name, pkg.pkg_id
+                    "{} - Signature verification skipped as no pubkey was found.",
+                    pkg.pkg_name
                 );
             }
         }
@@ -971,8 +980,8 @@ async fn install_single_package(
 
     if !no_verify && !skip_integrity_gate && pkg.bsum.is_none() && verified_sig_count == 0 {
         return Err(SoarError::Custom(format!(
-            "Refusing to install {}#{}: no checksum and no valid signature found to verify integrity (use --no-verify to override)",
-            pkg.pkg_name, pkg.pkg_id
+            "Refusing to install {}: no checksum and no valid signature found to verify integrity (use --no-verify to override)",
+            pkg.pkg_name
         )));
     }
 
@@ -1026,8 +1035,8 @@ async fn install_single_package(
                     stage: VerifyStage::Failed("checksum unavailable".into()),
                 });
                 return Err(SoarError::Custom(format!(
-                    "Could not verify {}#{}: expected a checksum but none could be computed",
-                    pkg.pkg_name, pkg.pkg_id
+                    "Could not verify {}: expected a checksum but none could be computed",
+                    pkg.pkg_name
                 )));
             }
             _ => {}

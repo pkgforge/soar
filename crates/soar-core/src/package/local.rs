@@ -126,8 +126,8 @@ impl LocalPackage {
 
         Ok(Self {
             path,
-            pkg_name,
             pkg_id,
+            pkg_name,
             version,
             pkg_type,
             size,

@@ -70,6 +70,7 @@ pub async fn compute_diff(
                     MetadataRepository::find_filtered(
                         conn,
                         Some(&pkg.name),
+                        None,
                         pkg.pkg_id.as_deref(),
                         pkg.version.as_deref(),
                         None,
@@ -90,6 +91,7 @@ pub async fn compute_diff(
                     conn,
                     Some(&pkg.name),
                     pkg.pkg_id.as_deref(),
+                    None,
                     pkg.version.as_deref(),
                     None,
                     Some(SortDirection::Asc),
@@ -137,8 +139,8 @@ pub async fn compute_diff(
 
             if version_matches && existing.version == metadata_pkg.version {
                 diff.in_sync.push(format!(
-                    "{}#{}@{}",
-                    existing.pkg_name, existing.pkg_id, existing.version
+                    "{}@{}",
+                    existing.pkg_name, existing.version
                 ));
             } else if !existing.pinned || pkg.version.is_some() {
                 let resolved_pkg = metadata_pkg.resolve(pkg.version.as_deref());
@@ -146,8 +148,8 @@ pub async fn compute_diff(
                 diff.to_update.push((pkg.clone(), target));
             } else {
                 diff.in_sync.push(format!(
-                    "{}#{}@{} (pinned)",
-                    existing.pkg_name, existing.pkg_id, existing.version
+                    "{}@{} (pinned)",
+                    existing.pkg_name, existing.version
                 ));
             }
         } else {

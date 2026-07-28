@@ -390,10 +390,12 @@ impl MetadataRepository {
     }
 
     /// Finds packages with flexible filtering using Diesel DSL.
+    #[allow(clippy::too_many_arguments)]
     pub fn find_filtered(
         conn: &mut SqliteConnection,
         pkg_name: Option<&str>,
         pkg_id: Option<&str>,
+        pkg_family: Option<&str>,
         version: Option<&str>,
         limit: Option<i64>,
         sort_by_name: Option<SortDirection>,
@@ -402,6 +404,11 @@ impl MetadataRepository {
 
         if let Some(name) = pkg_name {
             query = query.filter(packages::pkg_name.eq(name));
+        }
+        if let Some(family) = pkg_family {
+            if family != "all" {
+                query = query.filter(packages::pkg_family.eq(family));
+            }
         }
         if let Some(id) = pkg_id {
             if id != "all" {
@@ -464,8 +471,8 @@ impl MetadataRepository {
             .optional();
         if let Ok(Some(ref p)) = result {
             debug!(
-                "newer version available: {}#{} -> {}",
-                pkg_name, pkg_id, p.version
+                "newer version available: {} -> {}",
+                pkg_name, p.version
             );
         }
         result
@@ -546,7 +553,6 @@ impl MetadataRepository {
         // into resource paths, so a name with separators or '..' would escape it.
         if !is_safe_component(&package.pkg_name) || !is_safe_component(pkg_id) {
             warn!(
-                pkg_id,
                 pkg_name = package.pkg_name,
                 "skipping package with unsafe path component in pkg_name/pkg_id"
             );
@@ -581,7 +587,7 @@ impl MetadataRepository {
             version: &package.version,
             licenses: Some(json!(package.licenses)),
             download_url: &package.download_url,
-            size: package.size_raw.map(|s| s as i64),
+            size: package.size_raw.or(package.size).map(|s| s as i64),
             ghcr_pkg: package.ghcr_pkg.as_deref(),
             ghcr_size: package.ghcr_size_raw.map(|s| s as i64),
             ghcr_blob: package.ghcr_blob.as_deref(),

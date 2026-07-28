@@ -155,8 +155,8 @@ impl UrlPackage {
 
         Ok(Self {
             url: reference.to_string(),
-            pkg_name,
             pkg_id,
+            pkg_name,
             version,
             pkg_type,
             is_ghcr: true,
@@ -235,8 +235,8 @@ impl UrlPackage {
 
         Ok(Self {
             url: url.to_string(),
-            pkg_name,
             pkg_id,
+            pkg_name,
             version,
             pkg_type,
             is_ghcr: false,

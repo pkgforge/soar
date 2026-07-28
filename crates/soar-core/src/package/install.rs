@@ -1049,8 +1049,8 @@ impl PackageInstaller {
 
         let record_id = record_id.ok_or_else(|| {
             SoarError::Custom(format!(
-                "Failed to record installation for {}#{}: package not found in database",
-                pkg_name, pkg_id
+                "Failed to record installation for {}: package not found in database",
+                pkg_name
             ))
         })?;
 

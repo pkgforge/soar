@@ -24,10 +24,9 @@ pub async fn use_alternate_package(ctx: &SoarContext, name: &str) -> SoarResult<
             pkg_type = package.pkg_type,
             version = package.version,
             size = package.size,
-            "[{}] {}#{}:{} ({}-{}) ({}){}",
+            "[{}] {}:{} ({}-{}) ({}){}",
             idx + 1,
             Colored(Blue, &package.pkg_name),
-            Colored(Cyan, &package.pkg_id),
             Colored(Cyan, &package.repo_name),
             package
                 .pkg_type
@@ -52,8 +51,8 @@ pub async fn use_alternate_package(ctx: &SoarContext, name: &str) -> SoarResult<
     switch::switch_variant(ctx, name, selection).await?;
 
     info!(
-        "Switched to {}#{}",
-        variants[selection].package.pkg_name, variants[selection].package.pkg_id
+        "Switched to {}",
+        variants[selection].package.pkg_name
     );
 
     Ok(())

@@ -36,6 +36,7 @@ pub async fn prepare_run(
     let package_name = query.name.as_deref().unwrap_or(package_name);
     let repo_name = query.repo_name.as_deref().or(repo_name);
     let pkg_id = query.pkg_id.as_deref().or(pkg_id);
+    let family = query.family.as_deref();
     let version = query.version.as_deref();
 
     let output_path = cache_bin.join(package_name);
@@ -49,7 +50,8 @@ pub async fn prepare_run(
                     conn,
                     Some(package_name),
                     pkg_id,
-                    None,
+                    family,
+                    version,
                     None,
                     None,
                 )
@@ -68,7 +70,8 @@ pub async fn prepare_run(
                 conn,
                 Some(package_name),
                 pkg_id,
-                None,
+                family,
+                version,
                 None,
                 None,
             )?;
@@ -109,8 +112,8 @@ pub async fn prepare_run(
     // artifacts are digest-verified during download, so they are exempt.
     if !no_verify && package.bsum.is_none() && package.ghcr_blob.is_none() {
         return Err(SoarError::Custom(format!(
-            "Refusing to run {}#{}: no checksum to verify integrity (use --no-verify to override)",
-            package.pkg_name, package.pkg_id
+            "Refusing to run {}: no checksum to verify integrity (use --no-verify to override)",
+            package.pkg_name
         )));
     }
 
@@ -140,8 +143,8 @@ pub async fn prepare_run(
     let progress_callback = create_progress_bridge(
         ctx.events().clone(),
         op_id,
-        package.pkg_name.clone(),
         package.pkg_id.clone(),
+        package.pkg_name.clone(),
     );
 
     download_to_cache(

@@ -1,4 +1,4 @@
-use nu_ansi_term::Color::{Blue, Cyan, Green, Red, Yellow};
+use nu_ansi_term::Color::{Blue, Green, Red, Yellow};
 use soar_core::SoarResult;
 use soar_operations::{health, SoarContext};
 use tabled::{
@@ -61,10 +61,9 @@ pub async fn display_health(ctx: &SoarContext) -> SoarResult<()> {
         info!("\nBroken packages:");
         for pkg in &report.broken_packages {
             info!(
-                "  {} {}#{}: {}",
+                "  {} {}: {}",
                 Icons::ARROW,
                 Colored(Blue, &pkg.pkg_name),
-                Colored(Cyan, &pkg.pkg_id),
                 Colored(Yellow, &pkg.installed_path)
             );
         }
@@ -94,14 +93,13 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
     }
 
     for removed in &report.removed {
-        info!("Removed {}#{}", removed.pkg_name, removed.pkg_id);
+        info!("Removed {}", removed.pkg_name);
     }
 
     for failed in &report.failed {
         tracing::error!(
-            "Failed to remove {}#{}: {}",
+            "Failed to remove {}: {}",
             failed.pkg_name,
-            failed.pkg_id,
             failed.error
         );
     }
@@ -114,7 +112,7 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
             report
                 .failed
                 .iter()
-                .map(|f| format!("{}#{}", f.pkg_name, f.pkg_id))
+                .map(|f| format!("{}", f.pkg_name))
                 .collect::<Vec<_>>()
                 .join(", ")
         );

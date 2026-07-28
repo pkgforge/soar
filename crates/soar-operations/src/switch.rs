@@ -118,6 +118,7 @@ pub async fn switch_variant(
             MetadataRepository::find_filtered(
                 conn,
                 Some(name),
+                None,
                 Some(&selected_package.pkg_id),
                 None,
                 Some(1),
