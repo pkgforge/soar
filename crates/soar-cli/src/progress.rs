@@ -5,11 +5,11 @@ use std::{
 };
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use nu_ansi_term::Color::{Cyan, Green, Red};
+use nu_ansi_term::Color::{Cyan, Green, Red, Yellow};
 use soar_dl::types::Progress;
 use soar_events::{
-    BuildStage, InstallStage, OperationId, RemoveStage, SoarEvent, SyncStage, UpdateCleanupStage,
-    VerifyStage,
+    BuildStage, InstallStage, LogLevel, OperationId, RemoveStage, SoarEvent, SyncStage,
+    UpdateCleanupStage, VerifyStage,
 };
 
 use crate::utils::{display_settings, progress_enabled};
@@ -521,6 +521,22 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     if let Some(pb) = jobs.remove(&op_id) {
                         pb.finish_and_clear();
                     }
+                }
+
+                // Emitted for things that fail without aborting the run, a
+                // repository that could not be synced most of all. Without a
+                // handler these were dropped and the failure looked like
+                // nothing happening.
+                SoarEvent::Log { level, message } => {
+                    // Printed directly rather than through tracing: the
+                    // subscriber writes via this same progress handle, so
+                    // logging from inside suspend() deadlocks.
+                    MULTI.suspend(|| match level {
+                        LogLevel::Error => eprintln!(" {} {}", Red.paint("✗"), Red.paint(&message)),
+                        LogLevel::Warning => eprintln!(" {} {}", Yellow.paint("!"), message),
+                        LogLevel::Info => eprintln!(" {message}"),
+                        LogLevel::Debug => {}
+                    });
                 }
 
                 _ => {}
