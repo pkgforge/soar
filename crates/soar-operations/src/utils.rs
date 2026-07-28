@@ -89,6 +89,27 @@ fn create_provide_symlinks(
 
 /// Creates symlinks from installed package binaries to the bin directory.
 #[allow(clippy::too_many_arguments)]
+/// Every regular file under `dir`, recursively, skipping symlinks and the
+/// bookkeeping entries soar writes alongside a package.
+fn walk_files(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_symlink() {
+            continue;
+        }
+        if path.is_dir() {
+            out.extend(walk_files(&path));
+        } else if !entry.file_name().to_string_lossy().starts_with('.') {
+            out.push(path);
+        }
+    }
+    out
+}
+
 pub async fn mangle_package_symlinks(
     install_dir: &Path,
     bin_dir: &Path,
@@ -106,15 +127,47 @@ pub async fn mangle_package_symlinks(
             for mapping in bins {
                 let source_pattern =
                     substitute_placeholders(&mapping.source, Some(version), arch_map);
-                let source_paths: Vec<PathBuf> = fs::read_dir(install_dir)
-                    .with_context(|| format!("reading directory {}", install_dir.display()))?
-                    .filter_map(|entry| entry.ok())
-                    .filter(|entry| {
-                        let name = entry.file_name();
-                        fast_glob::glob_match(&source_pattern, name.to_string_lossy().to_string())
-                    })
-                    .map(|entry| entry.path())
-                    .collect();
+                // Try the most specific reading of the pattern first. Falling
+                // straight back to the file name would pick an arbitrary one
+                // when an archive ships the same binary for several
+                // architectures, each under its own directory.
+                let files = walk_files(install_dir);
+                let rel_of = |path: &PathBuf| {
+                    path.strip_prefix(install_dir)
+                        .unwrap_or(path)
+                        .to_string_lossy()
+                        .to_string()
+                };
+                let matching = |pat: &str| -> Vec<PathBuf> {
+                    files
+                        .iter()
+                        .filter(|p| fast_glob::glob_match(pat, rel_of(p)))
+                        .cloned()
+                        .collect()
+                };
+
+                let mut source_paths = matching(&source_pattern);
+                // An archive with a single top-level directory has it promoted
+                // away, so the recorded path still carries a component the
+                // installed tree no longer has.
+                if source_paths.is_empty() {
+                    if let Some((_, rest)) = source_pattern.split_once('/') {
+                        source_paths = matching(rest);
+                    }
+                }
+                // Last resort: the artifact was rearranged and only the name
+                // survives. Ambiguity here is handled below.
+                if source_paths.is_empty() {
+                    source_paths = files
+                        .iter()
+                        .filter(|p| {
+                            p.file_name()
+                                .map(|n| fast_glob::glob_match(&source_pattern, n.to_string_lossy().to_string()))
+                                .unwrap_or(false)
+                        })
+                        .cloned()
+                        .collect();
+                }
 
                 if source_paths.is_empty() {
                     return Err(SoarError::Custom(format!(
