@@ -29,6 +29,7 @@ use soar_utils::{
     error::FileSystemResult,
     fs::{safe_remove, walk_dir},
     hash::calculate_checksum,
+    path::is_safe_component,
 };
 use tracing::{debug, trace, warn};
 
@@ -45,6 +46,77 @@ use crate::{
 ///
 /// AppImages and plain binaries are ELF and need the executable bit; archives
 /// are not and are extracted instead.
+/// Fetch the pinned side files an artifact does not carry itself.
+///
+/// Each is verified against the hash the index published, on the same footing
+/// as the artifact: a licence fetched without checking it would be an
+/// unverified download in the middle of an otherwise verified install.
+async fn install_extras(
+    package: &Package,
+    install_dir: &Path,
+) -> SoarResult<()> {
+    let Some(extras) = &package.extra else {
+        return Ok(());
+    };
+    for e in extras {
+        if !is_safe_component(&e.to) {
+            warn!(to = e.to, "skipping side file with unsafe name");
+            continue;
+        }
+        let dest = install_dir.join(&e.to);
+        if dest.exists() {
+            continue;
+        }
+        let mut dl = Download::new(&e.url)
+            .output(dest.to_string_lossy())
+            .overwrite(OverwriteMode::Skip);
+        if let Some(sum) = e.blake3.as_ref() {
+            dl = dl.checksum(sum);
+        }
+        match dl.execute() {
+            Ok(_) => {
+                // A side file is usually a licence, but it can be a binary an
+                // upstream ships separately, and that has to be runnable to be
+                // worth linking.
+                if is_elf(&dest) {
+                    fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755)).ok();
+                }
+                debug!(file = %dest.display(), "installed side file")
+            }
+            Err(err) => {
+                // A missing licence should not abandon a working install, but
+                // it must not pass unnoticed either.
+                fs::remove_file(&dest).ok();
+                warn!(url = e.url, error = %err, "could not install side file");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Give every ELF under `dir` the executable bit.
+///
+/// Archive members carry whatever permissions the upstream tarball recorded,
+/// and some ship binaries as 0644. The downloaded file is chmodded on the way
+/// in, but files that only appear after extraction were being left
+/// unexecutable.
+fn mark_elfs_executable(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_symlink() {
+            continue;
+        }
+        if path.is_dir() {
+            mark_elfs_executable(&path);
+        } else if is_elf(&path) {
+            fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).ok();
+        }
+    }
+}
+
 fn is_elf(path: &Path) -> bool {
     let mut magic = [0u8; 4];
     fs::File::open(path)
@@ -697,11 +769,11 @@ impl PackageInstaller {
         } else {
             let extract_dir = get_extract_dir(&self.install_dir);
 
-            let should_extract = self
-                .package
-                .pkg_type
-                .as_deref()
-                .is_some_and(|t| t == "archive");
+            // Offer extraction unconditionally: the downloader detects the
+            // format by magic number and leaves non-archives alone. Relying
+            // on pkg_type meant an archive published as "static" installed
+            // as an unusable compressed file.
+            let should_extract = true;
 
             let file_path = if let Some(local_src) = local_path_from_url(url) {
                 trace!(source = %local_src.display(), "installing from local file");
@@ -737,7 +809,8 @@ impl PackageInstaller {
             };
 
             let extract_path = PathBuf::from(&extract_dir);
-            if extract_path.exists() {
+            let extracted = extract_path.exists();
+            if extracted {
                 fs::remove_file(file_path).ok();
 
                 for entry in fs::read_dir(&extract_path)
@@ -748,6 +821,19 @@ impl PackageInstaller {
                     })?;
                     let from = entry.path();
                     let to = self.install_dir.join(entry.file_name());
+                    // Renaming a directory rewrites its `..`, so the directory
+                    // itself needs the write bit; archives shipping 0555 dirs
+                    // would otherwise fail to promote.
+                    if let Ok(meta) = fs::metadata(&from) {
+                        let mode = meta.permissions().mode();
+                        if meta.is_dir() && mode & 0o200 == 0 {
+                            fs::set_permissions(
+                                &from,
+                                std::fs::Permissions::from_mode(mode | 0o200),
+                            )
+                            .ok();
+                        }
+                    }
                     fs::rename(&from, &to).with_context(|| {
                         format!("renaming {} to {}", from.display(), to.display())
                     })?;
@@ -756,8 +842,38 @@ impl PackageInstaller {
                 fs::remove_dir_all(&extract_path).ok();
             }
 
+            // Archives conventionally wrap everything in one versioned
+            // directory (foo-1.2.3-x86_64/). Nothing downstream can guess that
+            // name, so when extraction leaves exactly one directory behind and
+            // no extract_root was given, treat it as the root.
+            let auto_root = if self.extract_root.is_none() && extracted {
+                let mut dirs = Vec::new();
+                let mut files = 0usize;
+                if let Ok(rd) = fs::read_dir(&self.install_dir) {
+                    for entry in rd.flatten() {
+                        let name = entry.file_name();
+                        if name.to_string_lossy().starts_with('.') {
+                            continue;
+                        }
+                        if entry.path().is_dir() {
+                            dirs.push(name.to_string_lossy().to_string());
+                        } else {
+                            files += 1;
+                        }
+                    }
+                }
+                if files == 0 && dirs.len() == 1 {
+                    debug!(root = %dirs[0], "auto-detected single extract root");
+                    Some(dirs.remove(0))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             // Handle extract_root: move contents from subdirectory to install root
-            if let Some(ref root_dir) = self.extract_root {
+            if let Some(ref root_dir) = self.extract_root.clone().or(auto_root) {
                 let root_dir = substitute_placeholders(
                     root_dir,
                     Some(&self.package.version),
@@ -772,6 +888,19 @@ impl PackageInstaller {
                         root_path.display(),
                         self.install_dir.display()
                     );
+
+                    // A file inside the root can share the root's own name
+                    // (age/age). Promoting it would target the directory
+                    // currently being drained, and the clobber below would
+                    // delete the rest of the package. Move the root aside
+                    // first so source and destination can never collide.
+                    let staged = self.install_dir.join(".soar_extract_root");
+                    fs::remove_dir_all(&staged).ok();
+                    fs::rename(&root_path, &staged).with_context(|| {
+                        format!("staging {} for promotion", root_path.display())
+                    })?;
+                    let root_path = staged;
+
                     // Move all contents from root_path to install_dir
                     for entry in fs::read_dir(&root_path).with_context(|| {
                         format!("reading extract_root directory {}", root_path.display())
@@ -797,6 +926,12 @@ impl PackageInstaller {
                     warn!("extract_root '{}' not found in package", root_dir);
                 }
             }
+
+            if extracted {
+                mark_elfs_executable(&self.install_dir);
+            }
+
+            install_extras(&self.package, &self.install_dir).await?;
 
             // Handle nested_extract: extract an archive within the package
             if let Some(ref nested_archive) = self.nested_extract {
