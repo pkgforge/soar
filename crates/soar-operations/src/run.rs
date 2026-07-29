@@ -143,7 +143,6 @@ pub async fn prepare_run(
     let progress_callback = create_progress_bridge(
         ctx.events().clone(),
         op_id,
-        package.pkg_id.clone(),
         package.pkg_name.clone(),
     );
 

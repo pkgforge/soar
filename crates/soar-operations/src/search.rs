@@ -60,7 +60,16 @@ pub async fn search_packages(
             CoreRepository::list_filtered(conn, None, None, None, None, None, None, None, None)
         })?
         .into_par_iter()
-        .map(|pkg| ((pkg.repo_name, pkg.pkg_id, pkg.pkg_name), pkg.is_installed))
+        .map(|pkg| {
+            (
+                (
+                    pkg.repo_name,
+                    pkg.pkg_id.unwrap_or_default(),
+                    pkg.pkg_name,
+                ),
+                pkg.is_installed,
+            )
+        })
         .collect();
 
     let total_count = packages.len();
@@ -71,7 +80,7 @@ pub async fn search_packages(
         .map(|package| {
             let key = (
                 package.repo_name.clone(),
-                package.pkg_id.clone(),
+                package.pkg_id.clone().unwrap_or_default(),
                 package.pkg_name.clone(),
             );
             let installed = installed_pkgs.get(&key).copied().unwrap_or(false);

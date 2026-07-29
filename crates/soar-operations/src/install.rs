@@ -153,7 +153,7 @@ fn resolve_synthetic_target(
                 conn,
                 Some("local"),
                 Some(&package.pkg_name),
-                Some(&package.pkg_id),
+                package.pkg_id.as_deref(),
                 None,
                 None,
                 None,
@@ -171,7 +171,6 @@ fn resolve_synthetic_target(
         if !options.force {
             return Ok(ResolveResult::AlreadyInstalled {
                 pkg_name: installed.pkg_name.clone(),
-                pkg_id: installed.pkg_id.clone(),
                 repo_name: installed.repo_name.clone(),
                 version: installed.version.clone(),
             });
@@ -267,7 +266,7 @@ fn resolve_all_variants(
                 MetadataRepository::find_filtered(
                     conn,
                     None,
-                    Some(&target_pkg_id),
+                    target_pkg_id.as_deref(),
                     None,
                     None,
                     None,
@@ -287,7 +286,7 @@ fn resolve_all_variants(
             let pkgs = MetadataRepository::find_filtered(
                 conn,
                 None,
-                Some(&target_pkg_id),
+                target_pkg_id.as_deref(),
                 None,
                 None,
                 None,
@@ -310,7 +309,7 @@ fn resolve_all_variants(
                 conn,
                 query.repo_name.as_deref(),
                 None,
-                Some(&target_pkg_id),
+                target_pkg_id.as_deref(),
                 None,
                 None,
                 None,
@@ -500,7 +499,6 @@ fn resolve_normal(
                 if !options.force {
                     return Ok(ResolveResult::AlreadyInstalled {
                         pkg_name: installed.pkg_name.clone(),
-                        pkg_id: installed.pkg_id.clone(),
                         repo_name: installed.repo_name.clone(),
                         version: installed.version.clone(),
                     });
@@ -544,7 +542,7 @@ fn find_packages(
                     conn,
                     Some(&existing.pkg_name),
                     None,
-                    Some(&existing.pkg_id),
+                    existing.pkg_id.as_deref(),
                     None,
                     None,
                     None,
@@ -669,7 +667,6 @@ pub async fn perform_installation(
                     if !install_dir.as_os_str().is_empty() {
                         installed.lock().unwrap().push(InstalledInfo {
                             pkg_name: target.package.pkg_name.clone(),
-                            pkg_id: target.package.pkg_id.clone(),
                             repo_name: target.package.repo_name.clone(),
                             version: target.package.version.clone(),
                             install_dir,
@@ -690,12 +687,10 @@ pub async fn perform_installation(
                             ctx.events().emit(SoarEvent::OperationFailed {
                                 op_id,
                                 pkg_name: target.package.pkg_name.clone(),
-                                pkg_id: target.package.pkg_id.clone(),
                                 error: err.to_string(),
                             });
                             failed.lock().unwrap().push(FailedInfo {
                                 pkg_name: target.package.pkg_name.clone(),
-                                pkg_id: target.package.pkg_id.clone(),
                                 error: err.to_string(),
                             });
                             failed_count.fetch_add(1, Ordering::Relaxed);
@@ -797,7 +792,7 @@ async fn install_single_package(
                 conn,
                 Some(&pkg.repo_name),
                 Some(&pkg.pkg_name),
-                Some(&pkg.pkg_id),
+                pkg.pkg_id.as_deref(),
                 Some(&pkg.version),
                 Some(true),
                 None,
@@ -933,7 +928,6 @@ async fn install_single_package(
     let progress_callback = create_progress_bridge(
         events.clone(),
         op_id,
-        pkg.pkg_id.clone(),
         pkg.pkg_name.clone(),
     );
 
@@ -960,7 +954,6 @@ async fn install_single_package(
             events.emit(SoarEvent::Verifying {
                 op_id,
                 pkg_name: pkg.pkg_name.clone(),
-                pkg_id: pkg.pkg_id.clone(),
                 stage: VerifyStage::Signature,
             });
 
@@ -990,7 +983,6 @@ async fn install_single_package(
         events.emit(SoarEvent::Verifying {
             op_id,
             pkg_name: pkg.pkg_name.clone(),
-            pkg_id: pkg.pkg_id.clone(),
             stage: VerifyStage::Checksum,
         });
 
@@ -1012,7 +1004,6 @@ async fn install_single_package(
                 events.emit(SoarEvent::Verifying {
                     op_id,
                     pkg_name: pkg.pkg_name.clone(),
-                    pkg_id: pkg.pkg_id.clone(),
                     stage: VerifyStage::Failed("checksum mismatch".into()),
                 });
                 return Err(SoarError::Custom(
@@ -1023,7 +1014,6 @@ async fn install_single_package(
                 events.emit(SoarEvent::Verifying {
                     op_id,
                     pkg_name: pkg.pkg_name.clone(),
-                    pkg_id: pkg.pkg_id.clone(),
                     stage: VerifyStage::Passed,
                 });
             }
@@ -1031,7 +1021,6 @@ async fn install_single_package(
                 events.emit(SoarEvent::Verifying {
                     op_id,
                     pkg_name: pkg.pkg_name.clone(),
-                    pkg_id: pkg.pkg_id.clone(),
                     stage: VerifyStage::Failed("checksum unavailable".into()),
                 });
                 return Err(SoarError::Custom(format!(
@@ -1047,7 +1036,6 @@ async fn install_single_package(
     events.emit(SoarEvent::Installing {
         op_id,
         pkg_name: pkg.pkg_name.clone(),
-        pkg_id: pkg.pkg_id.clone(),
         stage: InstallStage::LinkingBinaries,
     });
 
@@ -1081,7 +1069,6 @@ async fn install_single_package(
         events.emit(SoarEvent::Installing {
             op_id,
             pkg_name: pkg.pkg_name.clone(),
-            pkg_id: pkg.pkg_id.clone(),
             stage: InstallStage::DesktopIntegration,
         });
 
@@ -1104,7 +1091,6 @@ async fn install_single_package(
     events.emit(SoarEvent::Installing {
         op_id,
         pkg_name: pkg.pkg_name.clone(),
-        pkg_id: pkg.pkg_id.clone(),
         stage: InstallStage::RecordingDatabase,
     });
 
@@ -1124,7 +1110,6 @@ async fn install_single_package(
     events.emit(SoarEvent::OperationComplete {
         op_id,
         pkg_name: pkg.pkg_name.clone(),
-        pkg_id: pkg.pkg_id.clone(),
     });
 
     debug!(

@@ -22,7 +22,7 @@ pub fn remove_old_versions(package: &Package, db: &DieselDatabase, force: bool) 
     } = package;
 
     let old_packages = db.with_conn(|conn| {
-        CoreRepository::get_old_package_paths(conn, pkg_id, pkg_name, repo_name, force)
+        CoreRepository::get_old_package_paths(conn, pkg_id.as_deref(), pkg_name, repo_name, force)
     })?;
 
     for (_id, installed_path) in &old_packages {
@@ -34,7 +34,7 @@ pub fn remove_old_versions(package: &Package, db: &DieselDatabase, force: bool) 
     }
 
     db.with_conn(|conn| {
-        CoreRepository::delete_old_packages(conn, pkg_id, pkg_name, repo_name, force)
+        CoreRepository::delete_old_packages(conn, pkg_id.as_deref(), pkg_name, repo_name, force)
     })?;
 
     Ok(())

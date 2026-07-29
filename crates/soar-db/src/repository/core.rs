@@ -1,6 +1,10 @@
 //! Core database repository for installed packages.
 
-use diesel::{prelude::*, sql_types::Bool, sqlite::Sqlite};
+use diesel::{
+    prelude::*,
+    sql_types::{Bool, Nullable},
+    sqlite::Sqlite,
+};
 
 use crate::{
     models::{
@@ -9,6 +13,20 @@ use crate::{
     },
     schema::core::{packages, portable_package},
 };
+
+/// Matches a row's package id, including rows that have none.
+///
+/// A repository publishing the declarative format produces no package id, so
+/// `pkg_id = ?` would never match those rows and `pkg_id != ?` would never
+/// exclude them. Asking for no id has to mean the row has none either.
+fn match_pkg_id(
+    pkg_id: Option<&str>,
+) -> Box<dyn BoxableExpression<packages::table, Sqlite, SqlType = Nullable<Bool>>> {
+    match pkg_id {
+        Some(id) => Box::new(packages::pkg_id.eq(id.to_string())),
+        None => Box::new(packages::pkg_id.is_null().nullable()),
+    }
+}
 
 /// Sort direction for queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +45,7 @@ pub type NewInstalledPackage<'a> = NewPackage<'a>;
 pub struct InstalledPackageWithPortable {
     pub id: i32,
     pub repo_name: String,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
     pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
@@ -175,15 +193,22 @@ impl CoreRepository {
         conn: &mut SqliteConnection,
         repo_name: &str,
         pkg_name: &str,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         version: &str,
     ) -> QueryResult<Option<InstalledPackageWithPortable>> {
-        let result: Option<(Package, Option<PortablePackage>)> = packages::table
+        // The boxed predicate is typed for the bare table, so the join builds
+        // its own two-branch filter.
+        let mut query = packages::table
             .left_join(portable_package::table)
             .filter(packages::repo_name.eq(repo_name))
             .filter(packages::pkg_name.eq(pkg_name))
-            .filter(packages::pkg_id.eq(pkg_id))
             .filter(packages::version.eq(version))
+            .into_boxed();
+        query = match pkg_id {
+            Some(id) => query.filter(packages::pkg_id.eq(id.to_string())),
+            None => query.filter(packages::pkg_id.is_null()),
+        };
+        let result: Option<(Package, Option<PortablePackage>)> = query
             .select((Package::as_select(), Option::<PortablePackage>::as_select()))
             .first(conn)
             .optional()?;
@@ -302,13 +327,17 @@ impl CoreRepository {
     pub fn find_alternates(
         conn: &mut SqliteConnection,
         pkg_name: &str,
-        exclude_pkg_id: &str,
+        exclude_pkg_id: Option<&str>,
         exclude_version: &str,
     ) -> QueryResult<Vec<InstalledPackageWithPortable>> {
         let results: Vec<(Package, Option<PortablePackage>)> = packages::table
             .left_join(portable_package::table)
             .filter(packages::pkg_name.eq(pkg_name))
-            .filter(packages::pkg_id.ne(exclude_pkg_id))
+            .filter(
+                packages::pkg_id
+                    .is_null()
+                    .or(packages::pkg_id.ne(exclude_pkg_id)),
+            )
             .filter(packages::version.ne(exclude_version))
             .select((Package::as_select(), Option::<PortablePackage>::as_select()))
             .load(conn)?;
@@ -319,11 +348,11 @@ impl CoreRepository {
     /// Finds an installed package by pkg_id and repo_name.
     pub fn find_by_pkg_id_and_repo(
         conn: &mut SqliteConnection,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         repo_name: &str,
     ) -> QueryResult<Option<Package>> {
         packages::table
-            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(match_pkg_id(pkg_id))
             .filter(packages::repo_name.eq(repo_name))
             .select(Package::as_select())
             .first(conn)
@@ -333,12 +362,12 @@ impl CoreRepository {
     /// Finds an installed package by pkg_id, pkg_name, and repo_name.
     pub fn find_by_pkg_id_name_and_repo(
         conn: &mut SqliteConnection,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         pkg_name: &str,
         repo_name: &str,
     ) -> QueryResult<Option<Package>> {
         packages::table
-            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(match_pkg_id(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
             .select(Package::as_select())
@@ -372,7 +401,7 @@ impl CoreRepository {
         conn: &mut SqliteConnection,
         repo_name: &str,
         pkg_name: &str,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         version: &str,
         size: i64,
         provides: Option<Vec<PackageProvide>>,
@@ -385,7 +414,7 @@ impl CoreRepository {
             packages::table
                 .filter(packages::repo_name.eq(repo_name))
                 .filter(packages::pkg_name.eq(pkg_name))
-                .filter(packages::pkg_id.eq(pkg_id))
+                .filter(match_pkg_id(pkg_id))
                 .filter(packages::version.eq(version))
                 .filter(packages::is_installed.eq(false)),
         )
@@ -424,7 +453,7 @@ impl CoreRepository {
     pub fn unlink_others(
         conn: &mut SqliteConnection,
         pkg_name: &str,
-        keep_pkg_id: &str,
+        keep_pkg_id: Option<&str>,
         keep_version: &str,
     ) -> QueryResult<usize> {
         diesel::update(
@@ -432,7 +461,8 @@ impl CoreRepository {
                 .filter(packages::pkg_name.eq(pkg_name))
                 .filter(
                     packages::pkg_id
-                        .ne(keep_pkg_id)
+                        .is_null()
+                        .or(packages::pkg_id.ne(keep_pkg_id))
                         .or(packages::version.ne(keep_version)),
                 ),
         )
@@ -444,13 +474,13 @@ impl CoreRepository {
     pub fn update_pkg_id(
         conn: &mut SqliteConnection,
         repo_name: &str,
-        old_pkg_id: &str,
+        old_pkg_id: Option<&str>,
         new_pkg_id: &str,
     ) -> QueryResult<usize> {
         diesel::update(
             packages::table
                 .filter(packages::repo_name.eq(repo_name))
-                .filter(packages::pkg_id.eq(old_pkg_id)),
+                .filter(match_pkg_id(old_pkg_id)),
         )
         .set(packages::pkg_id.eq(new_pkg_id))
         .execute(conn)
@@ -465,13 +495,13 @@ impl CoreRepository {
     /// Used to check if we can resume a partial install.
     pub fn has_pending_install(
         conn: &mut SqliteConnection,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         pkg_name: &str,
         repo_name: &str,
         version: &str,
     ) -> QueryResult<bool> {
         let count: i64 = packages::table
-            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(match_pkg_id(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
             .filter(packages::version.eq(version))
@@ -485,12 +515,12 @@ impl CoreRepository {
     /// Used to clean up orphaned partial installs before starting a new install.
     pub fn delete_pending_installs(
         conn: &mut SqliteConnection,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         pkg_name: &str,
         repo_name: &str,
     ) -> QueryResult<Vec<String>> {
         let paths: Vec<String> = packages::table
-            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(match_pkg_id(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
             .filter(packages::is_installed.eq(false))
@@ -499,7 +529,7 @@ impl CoreRepository {
 
         diesel::delete(
             packages::table
-                .filter(packages::pkg_id.eq(pkg_id))
+                .filter(match_pkg_id(pkg_id))
                 .filter(packages::pkg_name.eq(pkg_name))
                 .filter(packages::repo_name.eq(repo_name))
                 .filter(packages::is_installed.eq(false)),
@@ -580,13 +610,13 @@ impl CoreRepository {
     /// If `force` is true, includes pinned packages. Otherwise only unpinned packages.
     pub fn get_old_package_paths(
         conn: &mut SqliteConnection,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         pkg_name: &str,
         repo_name: &str,
         force: bool,
     ) -> QueryResult<Vec<(i32, String)>> {
         let latest: Option<(i32, String)> = packages::table
-            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(match_pkg_id(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
             .order(packages::id.desc())
@@ -599,7 +629,7 @@ impl CoreRepository {
         };
 
         let query = packages::table
-            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(match_pkg_id(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
             .filter(packages::id.ne(latest_id))
@@ -621,13 +651,13 @@ impl CoreRepository {
     /// If `force` is true, deletes pinned packages too. Otherwise only unpinned packages.
     pub fn delete_old_packages(
         conn: &mut SqliteConnection,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         pkg_name: &str,
         repo_name: &str,
         force: bool,
     ) -> QueryResult<usize> {
         let latest_id: Option<i32> = packages::table
-            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(match_pkg_id(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
             .order(packages::id.desc())
@@ -647,7 +677,7 @@ impl CoreRepository {
             };
 
         let query = packages::table
-            .filter(packages::pkg_id.eq(pkg_id))
+            .filter(match_pkg_id(pkg_id))
             .filter(packages::pkg_name.eq(pkg_name))
             .filter(packages::repo_name.eq(repo_name))
             .filter(packages::id.ne(latest_id))
@@ -661,14 +691,18 @@ impl CoreRepository {
     pub fn unlink_others_by_checksum(
         conn: &mut SqliteConnection,
         pkg_name: &str,
-        keep_pkg_id: &str,
+        keep_pkg_id: Option<&str>,
         keep_checksum: Option<&str>,
     ) -> QueryResult<usize> {
         if let Some(checksum) = keep_checksum {
             diesel::update(
                 packages::table
                     .filter(packages::pkg_name.eq(pkg_name))
-                    .filter(packages::pkg_id.ne(keep_pkg_id))
+                    .filter(
+                        packages::pkg_id
+                            .is_null()
+                            .or(packages::pkg_id.ne(keep_pkg_id)),
+                    )
                     .filter(packages::checksum.ne(checksum)),
             )
             .set(packages::unlinked.eq(true))
@@ -677,7 +711,11 @@ impl CoreRepository {
             diesel::update(
                 packages::table
                     .filter(packages::pkg_name.eq(pkg_name))
-                    .filter(packages::pkg_id.ne(keep_pkg_id)),
+                    .filter(
+                        packages::pkg_id
+                            .is_null()
+                            .or(packages::pkg_id.ne(keep_pkg_id)),
+                    ),
             )
             .set(packages::unlinked.eq(true))
             .execute(conn)
@@ -689,14 +727,14 @@ impl CoreRepository {
     pub fn link_by_checksum(
         conn: &mut SqliteConnection,
         pkg_name: &str,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         checksum: Option<&str>,
     ) -> QueryResult<usize> {
         if let Some(checksum) = checksum {
             diesel::update(
                 packages::table
                     .filter(packages::pkg_name.eq(pkg_name))
-                    .filter(packages::pkg_id.eq(pkg_id))
+                    .filter(match_pkg_id(pkg_id))
                     .filter(packages::checksum.eq(checksum)),
             )
             .set(packages::unlinked.eq(false))
@@ -705,7 +743,7 @@ impl CoreRepository {
             diesel::update(
                 packages::table
                     .filter(packages::pkg_name.eq(pkg_name))
-                    .filter(packages::pkg_id.eq(pkg_id)),
+                    .filter(match_pkg_id(pkg_id)),
             )
             .set(packages::unlinked.eq(false))
             .execute(conn)

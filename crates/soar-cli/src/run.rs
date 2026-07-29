@@ -38,7 +38,7 @@ pub async fn run_package(
                 ctx,
                 package_name,
                 Some(&pkg.repo_name),
-                Some(&pkg.pkg_id),
+                pkg.pkg_id.as_deref(),
                 no_verify,
             )
             .await?;

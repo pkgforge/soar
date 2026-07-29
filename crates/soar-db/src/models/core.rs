@@ -7,7 +7,7 @@ use crate::{json_vec, models::types::PackageProvide, schema::core::*};
 pub struct Package {
     pub id: i32,
     pub repo_name: String,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
     pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
@@ -29,7 +29,7 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
     type Row = (
         i32,
         String,
-        String,
+        Option<String>,
         String,
         Option<String>,
         Option<String>,
@@ -87,7 +87,7 @@ pub struct PortablePackage {
 #[diesel(table_name = packages)]
 pub struct NewPackage<'a> {
     pub repo_name: &'a str,
-    pub pkg_id: &'a str,
+    pub pkg_id: Option<&'a str>,
     pub pkg_name: &'a str,
     pub pkg_family: Option<&'a str>,
     pub pkg_type: Option<&'a str>,

@@ -62,7 +62,16 @@ pub async fn list_packages(
             CoreRepository::list_filtered(conn, None, None, None, None, None, None, None, None)
         })?
         .into_par_iter()
-        .map(|pkg| ((pkg.repo_name, pkg.pkg_id, pkg.pkg_name), pkg.is_installed))
+        .map(|pkg| {
+            (
+                (
+                    pkg.repo_name,
+                    pkg.pkg_id.unwrap_or_default(),
+                    pkg.pkg_name,
+                ),
+                pkg.is_installed,
+            )
+        })
         .collect();
 
     let total = packages.len();
@@ -80,7 +89,6 @@ pub async fn list_packages(
             // Build a minimal Package for the entry
             let package = Package {
                 repo_name: entry.repo_name,
-                pkg_id: entry.pkg.pkg_id,
                 pkg_name: entry.pkg.pkg_name,
                 pkg_type: entry.pkg.pkg_type,
                 version: entry.pkg.version,

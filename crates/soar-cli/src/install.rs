@@ -319,7 +319,7 @@ async fn install_with_show(
                 )
             })?
             .into_iter()
-            .map(|p| (p.pkg_id, p.repo_name, p.version))
+            .map(|p| (p.pkg_id.unwrap_or_default(), p.repo_name, p.version))
             .collect();
 
         let pkg = select_package_interactively_with_installed(
@@ -339,7 +339,7 @@ async fn install_with_show(
                     conn,
                     Some(&pkg.repo_name),
                     Some(&pkg.pkg_name),
-                    Some(&pkg.pkg_id),
+                    pkg.pkg_id.as_deref(),
                     None,
                     None,
                     None,

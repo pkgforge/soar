@@ -82,7 +82,7 @@ pub async fn switch_variant(
         .ok_or_else(|| SoarError::Custom("Invalid variant index".into()))?;
 
     let pkg_name = &selected_package.pkg_name;
-    let pkg_id = &selected_package.pkg_id;
+    let pkg_id = selected_package.pkg_id.as_deref();
     let checksum = selected_package.checksum.as_deref();
 
     // Atomically unlink other variants and link the selected one so the DB
@@ -119,7 +119,7 @@ pub async fn switch_variant(
                 conn,
                 Some(name),
                 None,
-                Some(&selected_package.pkg_id),
+                selected_package.pkg_id.as_deref(),
                 None,
                 Some(1),
                 None,

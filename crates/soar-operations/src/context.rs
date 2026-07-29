@@ -230,12 +230,18 @@ impl SoarContext {
         })?;
 
         for pkg in installed_packages {
-            let exists = metadata_db
-                .with_conn(|conn| MetadataRepository::exists_by_pkg_id(conn, &pkg.pkg_id))?;
+            // Replacement tracking is keyed by package id, which the
+            // declarative format does not produce. Those rows have nothing to
+            // look up here.
+            let Some(pkg_id) = pkg.pkg_id.as_deref() else {
+                continue;
+            };
+            let exists =
+                metadata_db.with_conn(|conn| MetadataRepository::exists_by_pkg_id(conn, pkg_id))?;
 
             if !exists {
                 let replacement = metadata_db.with_conn(|conn| {
-                    MetadataRepository::find_replacement_pkg_id(conn, &pkg.pkg_id)
+                    MetadataRepository::find_replacement_pkg_id(conn, pkg_id)
                 })?;
 
                 if let Some(new_pkg_id) = replacement {
@@ -243,12 +249,12 @@ impl SoarContext {
                         level: LogLevel::Info,
                         message: format!(
                             "{} is replaced by {} in {}",
-                            pkg.pkg_id, new_pkg_id, repo_name
+                            pkg_id, new_pkg_id, repo_name
                         ),
                     });
 
                     diesel_core_db.with_conn(|conn| {
-                        CoreRepository::update_pkg_id(conn, &repo_name, &pkg.pkg_id, &new_pkg_id)
+                        CoreRepository::update_pkg_id(conn, &repo_name, Some(pkg_id), &new_pkg_id)
                     })?;
                 }
             }

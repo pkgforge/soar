@@ -398,7 +398,11 @@ pub async fn list_installed_packages(
 
                 if entry.is_healthy {
                     let unique_count = unique_pkgs
-                        .insert(format!("{}-{}", package.pkg_id, package.pkg_name))
+                        .insert(format!(
+                            "{}-{}",
+                            package.pkg_id.as_deref().unwrap_or_default(),
+                            package.pkg_name
+                        ))
                         as u32
                         + unique_count;
                     (

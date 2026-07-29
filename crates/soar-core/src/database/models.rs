@@ -29,7 +29,7 @@ pub struct Package {
     pub repo_name: String,
     pub disabled: Option<bool>,
     pub disabled_reason: Option<String>,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
     pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
@@ -77,8 +77,8 @@ impl PackageExt for Package {
         &self.pkg_name
     }
 
-    fn pkg_id(&self) -> &str {
-        &self.pkg_id
+    fn pkg_id(&self) -> Option<&str> {
+        self.pkg_id.as_deref()
     }
 
     fn version(&self) -> &str {
@@ -137,7 +137,7 @@ impl Package {
 pub struct InstalledPackage {
     pub id: u64,
     pub repo_name: String,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
     pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
@@ -165,8 +165,8 @@ impl PackageExt for InstalledPackage {
         &self.pkg_name
     }
 
-    fn pkg_id(&self) -> &str {
-        &self.pkg_id
+    fn pkg_id(&self) -> Option<&str> {
+        self.pkg_id.as_deref()
     }
 
     fn version(&self) -> &str {
@@ -248,7 +248,7 @@ impl From<soar_db::models::metadata::Package> for Package {
             repo_name: String::new(), // Set by caller
             disabled: None,
             disabled_reason: None,
-            pkg_id: pkg.pkg_id,
+            pkg_id: Some(pkg.pkg_id),
             pkg_name: pkg.pkg_name,
             pkg_family: pkg.pkg_family,
             pkg_type: pkg.pkg_type,

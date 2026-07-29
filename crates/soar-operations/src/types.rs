@@ -35,7 +35,6 @@ pub enum ResolveResult {
     /// Already installed (and not --force).
     AlreadyInstalled {
         pkg_name: String,
-        pkg_id: String,
         repo_name: String,
         version: String,
     },
@@ -58,7 +57,6 @@ pub struct InstallReport {
 #[derive(Debug)]
 pub struct InstalledInfo {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub repo_name: String,
     pub version: String,
     pub install_dir: PathBuf,
@@ -70,7 +68,6 @@ pub struct InstalledInfo {
 #[derive(Debug)]
 pub struct FailedInfo {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub error: String,
 }
 
@@ -93,7 +90,6 @@ pub struct RemoveReport {
 
 pub struct RemovedInfo {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub repo_name: String,
     pub version: String,
 }
@@ -102,7 +98,6 @@ pub struct RemovedInfo {
 
 pub struct UpdateInfo {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub repo_name: String,
     pub current_version: String,
     pub new_version: String,
@@ -168,7 +163,6 @@ pub struct HealthReport {
 
 pub struct BrokenPackage {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub installed_path: String,
 }
 

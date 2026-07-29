@@ -181,7 +181,8 @@ use crate::utils::substitute_placeholders;
 /// Marker content to verify partial install matches current package
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct InstallMarker {
-    pub pkg_id: String,
+    #[serde(default)]
+    pub pkg_id: Option<String>,
     pub version: String,
     pub bsum: Option<String>,
 }
@@ -272,7 +273,7 @@ impl PackageInstaller {
         let has_pending = db.with_conn(|conn| {
             CoreRepository::has_pending_install(
                 conn,
-                &package.pkg_id,
+                package.pkg_id.as_deref(),
                 &package.pkg_name,
                 &package.repo_name,
                 &package.version,
@@ -304,7 +305,7 @@ impl PackageInstaller {
                 package.version
             );
             let repo_name = &package.repo_name;
-            let pkg_id = &package.pkg_id;
+            let pkg_id = package.pkg_id.as_deref();
             let pkg_name = &package.pkg_name;
             let pkg_type = package.pkg_type.as_deref();
             let version = &package.version;
@@ -325,7 +326,7 @@ impl PackageInstaller {
 
             let new_package = NewInstalledPackage {
                 repo_name,
-                pkg_id,
+                pkg_id: pkg_id.as_deref(),
                 pkg_name,
                 pkg_family: package.pkg_family.as_deref(),
                 pkg_type,
@@ -369,16 +370,15 @@ impl PackageInstaller {
         use super::hooks::{run_hook, HookEnv};
 
         let env = HookEnv {
+            pkg_id: self.package.pkg_id.as_deref().unwrap_or_default(),
             install_dir: &self.install_dir,
             pkg_name: &self.package.pkg_name,
-            pkg_id: &self.package.pkg_id,
             pkg_version: &self.package.version,
         };
 
         self.events.emit(SoarEvent::Installing {
             op_id: self.op_id,
             pkg_name: self.package.pkg_name.clone(),
-            pkg_id: self.package.pkg_id.clone(),
             stage: InstallStage::RunningHook(hook_name.to_string()),
         });
 
@@ -489,7 +489,6 @@ impl PackageInstaller {
             self.events.emit(SoarEvent::Building {
                 op_id: self.op_id,
                 pkg_name: self.package.pkg_name.clone(),
-                pkg_id: self.package.pkg_id.clone(),
                 stage: BuildStage::Sandboxing,
             });
         }
@@ -505,7 +504,6 @@ impl PackageInstaller {
             self.events.emit(SoarEvent::Building {
                 op_id: self.op_id,
                 pkg_name: self.package.pkg_name.clone(),
-                pkg_id: self.package.pkg_id.clone(),
                 stage: BuildStage::Running {
                     command_index: i,
                     total_commands,
@@ -520,7 +518,7 @@ impl PackageInstaller {
                     ),
                     ("BIN_DIR", bin_dir.to_string_lossy().to_string()),
                     ("PKG_NAME", self.package.pkg_name.clone()),
-                    ("PKG_ID", self.package.pkg_id.clone()),
+                    ("PKG_ID", self.package.pkg_id.clone().unwrap_or_default()),
                     ("PKG_VERSION", self.package.version.clone()),
                     ("NPROC", nproc.clone()),
                 ];
@@ -553,7 +551,7 @@ impl PackageInstaller {
                     .env("INSTALL_DIR", &self.install_dir)
                     .env("BIN_DIR", &bin_dir)
                     .env("PKG_NAME", &self.package.pkg_name)
-                    .env("PKG_ID", &self.package.pkg_id)
+                    .env("PKG_ID", self.package.pkg_id.as_deref().unwrap_or_default())
                     .env("PKG_VERSION", &self.package.version)
                     .env("NPROC", &nproc)
                     .current_dir(&self.install_dir)
@@ -572,7 +570,6 @@ impl PackageInstaller {
             self.events.emit(SoarEvent::Building {
                 op_id: self.op_id,
                 pkg_name: self.package.pkg_name.clone(),
-                pkg_id: self.package.pkg_id.clone(),
                 stage: BuildStage::CommandComplete {
                     command_index: i,
                 },
@@ -1024,7 +1021,7 @@ impl PackageInstaller {
         let package = &self.package;
         let repo_name = &package.repo_name;
         let pkg_name = &package.pkg_name;
-        let pkg_id = &package.pkg_id;
+        let pkg_id = package.pkg_id.as_deref();
         let version = &package.version;
         let size = package.ghcr_size.unwrap_or(package.size.unwrap_or(0)) as i64;
         let checksum = package.bsum.as_deref();

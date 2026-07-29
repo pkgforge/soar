@@ -110,9 +110,9 @@ impl PackageRemover {
     fn run_hook(&self, hook_name: &str, command: &str) -> SoarResult<()> {
         let install_dir = PathBuf::from(&self.package.installed_path);
         let env = HookEnv {
+            pkg_id: self.package.pkg_id.as_deref().unwrap_or_default(),
             install_dir: &install_dir,
             pkg_name: &self.package.pkg_name,
-            pkg_id: &self.package.pkg_id,
             pkg_version: &self.package.version,
         };
 

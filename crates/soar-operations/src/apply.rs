@@ -120,7 +120,7 @@ pub async fn compute_diff(
                     conn,
                     Some(&metadata_pkg.repo_name),
                     Some(&metadata_pkg.pkg_name),
-                    Some(&metadata_pkg.pkg_id),
+                    metadata_pkg.pkg_id.as_deref(),
                     None,
                     None,
                     None,
@@ -182,7 +182,9 @@ pub async fn compute_diff(
         for installed in all_installed {
             let is_declared = declared_keys.iter().any(|(name, pkg_id, repo)| {
                 let name_matches = *name == installed.pkg_name;
-                let pkg_id_matches = pkg_id.as_ref().is_none_or(|id| *id == installed.pkg_id);
+                let pkg_id_matches = pkg_id
+                    .as_deref()
+                    .is_none_or(|id| Some(id) == installed.pkg_id.as_deref());
                 let repo_matches = repo.as_ref().is_none_or(|r| *r == installed.repo_name);
                 name_matches && pkg_id_matches && repo_matches
             });
@@ -322,7 +324,6 @@ pub async fn execute_apply(
             ctx.events().emit(SoarEvent::Removing {
                 op_id,
                 pkg_name: pkg.pkg_name.clone(),
-                pkg_id: pkg.pkg_id.clone(),
                 stage: RemoveStage::RunningHook("pre_remove".into()),
             });
 
@@ -338,7 +339,6 @@ pub async fn execute_apply(
                     ctx.events().emit(SoarEvent::Removing {
                         op_id,
                         pkg_name: pkg.pkg_name.clone(),
-                        pkg_id: pkg.pkg_id.clone(),
                         stage: RemoveStage::Complete {
                             size_freed: None,
                         },
@@ -349,7 +349,6 @@ pub async fn execute_apply(
                     ctx.events().emit(SoarEvent::OperationFailed {
                         op_id,
                         pkg_name: pkg.pkg_name.clone(),
-                        pkg_id: pkg.pkg_id.clone(),
                         error: e.to_string(),
                     });
                     failed_count += 1;
@@ -575,7 +574,7 @@ fn check_url_package_status(
                 conn,
                 Some("local"),
                 Some(&url_pkg.pkg_name),
-                Some(&url_pkg.pkg_id),
+                Some(url_pkg.pkg_id.as_str()),
                 None,
                 None,
                 None,

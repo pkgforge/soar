@@ -46,14 +46,12 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
     for package in broken {
         let op_id = next_op_id();
         let pkg_name = package.pkg_name.clone();
-        let pkg_id = package.pkg_id.clone();
         let repo_name = package.repo_name.clone();
         let version = package.version.clone();
 
         ctx.events().emit(SoarEvent::Removing {
             op_id,
             pkg_name: pkg_name.clone(),
-            pkg_id: pkg_id.clone(),
             stage: RemoveStage::RemovingDirectory,
         });
 
@@ -69,14 +67,12 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
                 ctx.events().emit(SoarEvent::Removing {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                     stage: RemoveStage::Complete {
                         size_freed: None,
                     },
                 });
                 removed.push(RemovedInfo {
                     pkg_name,
-                    pkg_id,
                     repo_name,
                     version,
                 });
@@ -85,12 +81,10 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
                 ctx.events().emit(SoarEvent::OperationFailed {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                     error: err.to_string(),
                 });
                 failed.push(FailedInfo {
                     pkg_name,
-                    pkg_id,
                     error: err.to_string(),
                 });
             }
@@ -126,7 +120,6 @@ fn get_broken_packages(ctx: &SoarContext) -> SoarResult<Vec<BrokenPackage>> {
         .map(|p| {
             BrokenPackage {
                 pkg_name: p.pkg_name,
-                pkg_id: p.pkg_id,
                 installed_path: p.installed_path,
             }
         })

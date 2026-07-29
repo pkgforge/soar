@@ -439,7 +439,7 @@ impl MetadataRepository {
     pub fn find_newer_version(
         conn: &mut SqliteConnection,
         pkg_name: &str,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
         current_version: &str,
     ) -> QueryResult<Option<Package>> {
         trace!(
@@ -455,9 +455,14 @@ impl MetadataRepository {
             String::new()
         };
 
-        let result = packages::table
-            .filter(packages::pkg_name.eq(pkg_name))
-            .filter(packages::pkg_id.eq(pkg_id))
+        // An installed package without an id is matched by name alone: the
+        // declarative format publishes no id to compare against.
+        let mut query = packages::table.into_boxed();
+        query = query.filter(packages::pkg_name.eq(pkg_name));
+        if let Some(id) = pkg_id {
+            query = query.filter(packages::pkg_id.eq(id.to_string()));
+        }
+        let result = query
             .filter(
                 sql::<diesel::sql_types::Bool>("(version > ")
                     .bind::<Text, _>(current_version)

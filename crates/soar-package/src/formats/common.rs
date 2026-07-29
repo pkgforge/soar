@@ -291,11 +291,12 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     portable_share: Option<&str>,
     portable_cache: Option<&str>,
 ) -> Result<()> {
-    let portable_dir_base = get_config().get_portable_dirs()?.join(format!(
-        "{}-{}",
-        package.pkg_name(),
-        package.pkg_id()
-    ));
+    // Packages that carry an id keep their existing directory name; those
+    // without one are named by package alone.
+    let portable_dir_base = get_config().get_portable_dirs()?.join(match package.pkg_id() {
+        Some(pkg_id) => format!("{}-{}", package.pkg_name(), pkg_id),
+        None => package.pkg_name().to_string(),
+    });
     let bin_path = bin_path.as_ref();
 
     let pkg_name = package.pkg_name();
