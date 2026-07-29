@@ -250,6 +250,7 @@ impl UrlPackage {
             Package {
                 id: 0,
                 repo_name: "local".to_string(),
+                pkg_id: Some(self.pkg_id.clone()),
                 pkg_name: self.pkg_name.clone(),
                 pkg_type: self.pkg_type.clone(),
                 version: self.version.clone(),
@@ -263,6 +264,7 @@ impl UrlPackage {
             Package {
                 id: 0,
                 repo_name: "local".to_string(),
+                pkg_id: Some(self.pkg_id.clone()),
                 pkg_name: self.pkg_name.clone(),
                 pkg_type: self.pkg_type.clone(),
                 version: self.version.clone(),
@@ -466,7 +468,7 @@ mod tests {
         assert_eq!(pkg.repo_name, "local");
         assert_eq!(pkg.pkg_name, "test");
         assert_eq!(pkg.version, "1.0");
-        assert_eq!(pkg.pkg_id, "github.com.user.testrepo");
+        assert_eq!(pkg.pkg_id.as_deref(), Some("github.com.user.testrepo"));
         assert_eq!(pkg.download_url, url);
     }
 
@@ -616,7 +618,7 @@ mod tests {
         assert_eq!(pkg.repo_name, "local");
         assert_eq!(pkg.pkg_name, "soar");
         assert_eq!(pkg.version, "0.8.1"); // 'v' prefix stripped
-        assert_eq!(pkg.pkg_id, "pkgforge.soar");
+        assert_eq!(pkg.pkg_id.as_deref(), Some("pkgforge.soar"));
         assert_eq!(pkg.download_url, "");
         assert_eq!(
             pkg.ghcr_pkg,
