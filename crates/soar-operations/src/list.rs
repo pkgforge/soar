@@ -57,21 +57,15 @@ pub async fn list_packages(
         })?
     };
 
-    let installed_pkgs: HashMap<(String, String, String), bool> = diesel_db
+    let installed_pkgs: HashMap<(String, String), bool> = diesel_db
         .with_conn(|conn| {
             CoreRepository::list_filtered(conn, None, None, None, None, None, None, None, None)
         })?
         .into_par_iter()
-        .map(|pkg| {
-            (
-                (
-                    pkg.repo_name,
-                    pkg.pkg_id.unwrap_or_default(),
-                    pkg.pkg_name,
-                ),
-                pkg.is_installed,
-            )
-        })
+        // Keyed by name, not id: a package installed before ids became
+        // optional still carries one, while its metadata no longer does, and
+        // keying on both would stop matching the two.
+        .map(|pkg| ((pkg.repo_name, pkg.pkg_name), pkg.is_installed))
         .collect();
 
     let total = packages.len();
@@ -79,11 +73,7 @@ pub async fn list_packages(
     let entries: Vec<PackageListEntry> = packages
         .into_iter()
         .map(|entry| {
-            let key = (
-                entry.repo_name.clone(),
-                entry.pkg.pkg_id.clone().unwrap_or_default(),
-                entry.pkg.pkg_name.clone(),
-            );
+            let key = (entry.repo_name.clone(), entry.pkg.pkg_name.clone());
             let installed = installed_pkgs.get(&key).copied().unwrap_or(false);
 
             // Build a minimal Package for the entry

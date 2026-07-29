@@ -55,21 +55,15 @@ pub async fn search_packages(
         fuzzy_search(ctx, query, search_limit).await?
     };
 
-    let installed_pkgs: HashMap<(String, String, String), bool> = diesel_db
+    let installed_pkgs: HashMap<(String, String), bool> = diesel_db
         .with_conn(|conn| {
             CoreRepository::list_filtered(conn, None, None, None, None, None, None, None, None)
         })?
         .into_par_iter()
-        .map(|pkg| {
-            (
-                (
-                    pkg.repo_name,
-                    pkg.pkg_id.unwrap_or_default(),
-                    pkg.pkg_name,
-                ),
-                pkg.is_installed,
-            )
-        })
+        // Keyed by name, not id: a package installed before ids became
+        // optional still carries one, while its metadata no longer does, and
+        // keying on both would stop matching the two.
+        .map(|pkg| ((pkg.repo_name, pkg.pkg_name), pkg.is_installed))
         .collect();
 
     let total_count = packages.len();
@@ -78,11 +72,7 @@ pub async fn search_packages(
         .into_iter()
         .take(search_limit)
         .map(|package| {
-            let key = (
-                package.repo_name.clone(),
-                package.pkg_id.clone().unwrap_or_default(),
-                package.pkg_name.clone(),
-            );
+            let key = (package.repo_name.clone(), package.pkg_name.clone());
             let installed = installed_pkgs.get(&key).copied().unwrap_or(false);
             SearchEntry {
                 package,
