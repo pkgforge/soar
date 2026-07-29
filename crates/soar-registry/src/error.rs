@@ -12,6 +12,12 @@ use thiserror::Error;
 /// processing, or storing package metadata.
 #[derive(Error, Diagnostic, Debug)]
 pub enum RegistryError {
+    #[error(
+        "repository index is format {found}, but this soar understands up to \
+         {supported}; upgrade soar to use this repository"
+    )]
+    UnsupportedFormat { found: u32, supported: u32 },
+
     #[error("Error while {action}: {source}")]
     #[diagnostic(code(soar_registry::io))]
     IoError {

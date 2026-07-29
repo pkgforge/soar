@@ -21,6 +21,8 @@ use ureq::http::{
 };
 use url::Url;
 
+use serde::Deserialize;
+
 use crate::{
     error::{ErrorContext, RegistryError, Result},
     package::RemotePackage,
@@ -435,7 +437,8 @@ pub fn process_metadata_content(
             let tmp_file = File::open(&tmp_path)
                 .with_context(|| format!("opening temporary file {tmp_path}"))?;
             let reader = BufReader::new(tmp_file);
-            let metadata: Vec<RemotePackage> = serde_json::from_reader(reader)?;
+            let metadata =
+                serde_json::from_reader::<_, MetadataDocument>(reader)?.into_packages()?;
             fs::remove_file(&tmp_path)
                 .with_context(|| format!("removing temporary file {tmp_path}"))?;
             Ok(MetadataContent::Json(metadata))
@@ -443,8 +446,49 @@ pub fn process_metadata_content(
     } else if content[..4] == SQLITE_MAGIC_BYTES {
         Ok(MetadataContent::SqliteDb(content))
     } else {
-        let metadata: Vec<RemotePackage> = serde_json::from_slice(&content)?;
+        let metadata = serde_json::from_slice::<MetadataDocument>(&content)?.into_packages()?;
         Ok(MetadataContent::Json(metadata))
+    }
+}
+
+/// The highest index format this build understands.
+pub const SUPPORTED_FORMAT: u32 = 1;
+
+/// A metadata index, in either shape it may arrive in.
+///
+/// The original form is a bare array of packages. The versioned form wraps it
+/// so a client can tell an index it cannot read from one that merely lacks a
+/// field, and say so instead of failing on whichever field it noticed first.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum MetadataDocument {
+    Versioned {
+        format: u32,
+        packages: Vec<RemotePackage>,
+    },
+    Legacy(Vec<RemotePackage>),
+}
+
+/// Parse an index in either shape, refusing one newer than this build.
+pub fn parse_index(bytes: &[u8]) -> Result<Vec<RemotePackage>> {
+    serde_json::from_slice::<MetadataDocument>(bytes)?.into_packages()
+}
+
+impl MetadataDocument {
+    /// Unwrap to the packages, refusing an index newer than this build.
+    fn into_packages(self) -> Result<Vec<RemotePackage>> {
+        match self {
+            MetadataDocument::Legacy(packages) => Ok(packages),
+            MetadataDocument::Versioned { format, packages } => {
+                if format > SUPPORTED_FORMAT {
+                    return Err(RegistryError::UnsupportedFormat {
+                        found: format,
+                        supported: SUPPORTED_FORMAT,
+                    });
+                }
+                Ok(packages)
+            }
+        }
     }
 }
 

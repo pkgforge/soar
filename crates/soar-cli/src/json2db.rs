@@ -23,7 +23,7 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
     let json_content = fs::read_to_string(input_path)
         .with_context(|| format!("reading JSON metadata from {}", input_path))?;
 
-    let packages: Vec<RemotePackage> = serde_json::from_str(&json_content)
+    let packages: Vec<RemotePackage> = soar_registry::parse_index(json_content.as_bytes())
         .map_err(|e| SoarError::Custom(format!("parsing JSON from {}: {}", input_path, e)))?;
 
     info!(count = packages.len(), "Parsed JSON metadata");

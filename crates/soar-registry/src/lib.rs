@@ -39,6 +39,7 @@ pub mod package;
 
 pub use error::{ErrorContext, RegistryError, Result};
 pub use metadata::{
+    parse_index, SUPPORTED_FORMAT,
     fetch_metadata, process_metadata_content, write_metadata_db, MetadataContent,
     SQLITE_MAGIC_BYTES, ZST_MAGIC_BYTES,
 };
