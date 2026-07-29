@@ -46,11 +46,12 @@ use crate::{
 ///
 /// AppImages and plain binaries are ELF and need the executable bit; archives
 /// are not and are extracted instead.
-/// Fetch the pinned side files an artifact does not carry itself.
+/// Fetch the side files an artifact does not carry itself.
 ///
-/// Each is verified against the hash the index published, on the same footing
-/// as the artifact: a licence fetched without checking it would be an
-/// unverified download in the middle of an otherwise verified install.
+/// One that published a hash is verified against it, on the same footing as
+/// the artifact. A licence publishes none, because it is served from a branch
+/// and is documentation rather than something that runs: pinning it would turn
+/// an upstream copyright-year edit into a failed download.
 async fn install_extras(
     package: &Package,
     install_dir: &Path,
