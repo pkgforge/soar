@@ -52,10 +52,7 @@ use crate::{
 /// the artifact. A licence publishes none, because it is served from a branch
 /// and is documentation rather than something that runs: pinning it would turn
 /// an upstream copyright-year edit into a failed download.
-async fn install_extras(
-    package: &Package,
-    install_dir: &Path,
-) -> SoarResult<()> {
+async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()> {
     let Some(extras) = &package.extra else {
         return Ok(());
     };

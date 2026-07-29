@@ -57,10 +57,7 @@ pub async fn use_alternate_package(ctx: &SoarContext, name: &str) -> SoarResult<
     let selection = get_valid_selection(variants.len())?;
     switch::switch_variant(ctx, name, selection).await?;
 
-    info!(
-        "Switched to {}",
-        variants[selection].package.pkg_name
-    );
+    info!("Switched to {}", variants[selection].package.pkg_name);
 
     Ok(())
 }

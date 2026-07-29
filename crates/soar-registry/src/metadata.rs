@@ -11,6 +11,7 @@ use std::{
 };
 
 use minisign_verify::{PublicKey, Signature};
+use serde::Deserialize;
 use soar_config::repository::Repository;
 use soar_dl::http_client::SHARED_AGENT;
 use soar_utils::path::resolve_path;
@@ -20,8 +21,6 @@ use ureq::http::{
     StatusCode,
 };
 use url::Url;
-
-use serde::Deserialize;
 
 use crate::{
     error::{ErrorContext, RegistryError, Result},
@@ -479,7 +478,10 @@ impl MetadataDocument {
     fn into_packages(self) -> Result<Vec<RemotePackage>> {
         match self {
             MetadataDocument::Legacy(packages) => Ok(packages),
-            MetadataDocument::Versioned { format, packages } => {
+            MetadataDocument::Versioned {
+                format,
+                packages,
+            } => {
                 if format > SUPPORTED_FORMAT {
                     return Err(RegistryError::UnsupportedFormat {
                         found: format,

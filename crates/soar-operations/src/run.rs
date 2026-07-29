@@ -140,11 +140,8 @@ pub async fn prepare_run(
         .with_context(|| format!("creating directory {}", cache_bin.display()))?;
 
     let op_id = next_op_id();
-    let progress_callback = create_progress_bridge(
-        ctx.events().clone(),
-        op_id,
-        package.pkg_name.clone(),
-    );
+    let progress_callback =
+        create_progress_bridge(ctx.events().clone(), op_id, package.pkg_name.clone());
 
     download_to_cache(
         &package,

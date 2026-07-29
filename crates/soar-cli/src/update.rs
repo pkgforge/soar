@@ -49,10 +49,7 @@ fn display_update_report(report: &UpdateReport) {
     let use_icons = settings.icons();
 
     for err_info in &report.failed {
-        error!(
-            "Failed to update {}: {}",
-            err_info.pkg_name, err_info.error
-        );
+        error!("Failed to update {}: {}", err_info.pkg_name, err_info.error);
     }
 
     let updated_count = report.updated.len();

@@ -162,7 +162,12 @@ pub async fn mangle_package_symlinks(
                         .iter()
                         .filter(|p| {
                             p.file_name()
-                                .map(|n| fast_glob::glob_match(&source_pattern, n.to_string_lossy().to_string()))
+                                .map(|n| {
+                                    fast_glob::glob_match(
+                                        &source_pattern,
+                                        n.to_string_lossy().to_string(),
+                                    )
+                                })
                                 .unwrap_or(false)
                         })
                         .cloned()

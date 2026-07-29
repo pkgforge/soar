@@ -240,9 +240,8 @@ impl SoarContext {
                 metadata_db.with_conn(|conn| MetadataRepository::exists_by_pkg_id(conn, pkg_id))?;
 
             if !exists {
-                let replacement = metadata_db.with_conn(|conn| {
-                    MetadataRepository::find_replacement_pkg_id(conn, pkg_id)
-                })?;
+                let replacement = metadata_db
+                    .with_conn(|conn| MetadataRepository::find_replacement_pkg_id(conn, pkg_id))?;
 
                 if let Some(new_pkg_id) = replacement {
                     self.inner.events.emit(SoarEvent::Log {

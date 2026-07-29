@@ -527,15 +527,22 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 // repository that could not be synced most of all. Without a
                 // handler these were dropped and the failure looked like
                 // nothing happening.
-                SoarEvent::Log { level, message } => {
+                SoarEvent::Log {
+                    level,
+                    message,
+                } => {
                     // Printed directly rather than through tracing: the
                     // subscriber writes via this same progress handle, so
                     // logging from inside suspend() deadlocks.
-                    MULTI.suspend(|| match level {
-                        LogLevel::Error => eprintln!(" {} {}", Red.paint("✗"), Red.paint(&message)),
-                        LogLevel::Warning => eprintln!(" {} {}", Yellow.paint("!"), message),
-                        LogLevel::Info => eprintln!(" {message}"),
-                        LogLevel::Debug => {}
+                    MULTI.suspend(|| {
+                        match level {
+                            LogLevel::Error => {
+                                eprintln!(" {} {}", Red.paint("✗"), Red.paint(&message))
+                            }
+                            LogLevel::Warning => eprintln!(" {} {}", Yellow.paint("!"), message),
+                            LogLevel::Info => eprintln!(" {message}"),
+                            LogLevel::Debug => {}
+                        }
                     });
                 }
 

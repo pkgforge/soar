@@ -143,7 +143,6 @@ pub struct RemotePackage {
     #[serde(default, deserialize_with = "empty_is_none")]
     pub pkg_type: Option<String>,
 
-
     pub description: String,
     pub version: String,
 
@@ -187,7 +186,6 @@ pub struct RemotePackage {
 
     #[serde(alias = "note")]
     pub notes: Option<Vec<String>>,
-
 
     #[serde(default, deserialize_with = "empty_is_none")]
     pub bsum: Option<String>,

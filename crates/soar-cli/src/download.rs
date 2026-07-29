@@ -212,10 +212,7 @@ pub async fn handle_direct_downloads(
 
                 let package = package.resolve(query.version.as_deref());
 
-                info!(
-                    "Downloading package: {}",
-                    package.pkg_name
-                );
+                info!("Downloading package: {}", package.pkg_name);
                 if let Some(ref url) = package.ghcr_blob {
                     let mut dl = OciDownload::new(url.as_str()).overwrite(ctx.get_overwrite_mode());
 

@@ -925,11 +925,7 @@ async fn install_single_package(
     let install_patterns = apply_sig_variants(install_patterns);
 
     // Create progress bridge for download events
-    let progress_callback = create_progress_bridge(
-        events.clone(),
-        op_id,
-        pkg.pkg_name.clone(),
-    );
+    let progress_callback = create_progress_bridge(events.clone(), op_id, pkg.pkg_name.clone());
 
     trace!(install_dir = %install_dir.display(), "creating package installer");
     let installer = PackageInstaller::new(
@@ -1044,9 +1040,11 @@ async fn install_single_package(
     // silently replaced by whatever the index says.
     let index_binaries: Option<Vec<BinaryMapping>> = pkg.binaries.as_ref().map(|bins| {
         bins.iter()
-            .map(|b| BinaryMapping {
-                source: b.source.clone(),
-                link_as: b.link_as.clone(),
+            .map(|b| {
+                BinaryMapping {
+                    source: b.source.clone(),
+                    link_as: b.link_as.clone(),
+                }
             })
             .collect()
     });

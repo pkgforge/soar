@@ -138,10 +138,8 @@ pub async fn compute_diff(
             let version_matches = pkg.version.as_ref().is_none_or(|v| existing.version == *v);
 
             if version_matches && existing.version == metadata_pkg.version {
-                diff.in_sync.push(format!(
-                    "{}@{}",
-                    existing.pkg_name, existing.version
-                ));
+                diff.in_sync
+                    .push(format!("{}@{}", existing.pkg_name, existing.version));
             } else if !existing.pinned || pkg.version.is_some() {
                 let resolved_pkg = metadata_pkg.resolve(pkg.version.as_deref());
                 let target = create_install_target(pkg, resolved_pkg, Some(existing.clone()));

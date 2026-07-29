@@ -97,11 +97,7 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
     }
 
     for failed in &report.failed {
-        tracing::error!(
-            "Failed to remove {}: {}",
-            failed.pkg_name,
-            failed.error
-        );
+        tracing::error!("Failed to remove {}: {}", failed.pkg_name, failed.error);
     }
 
     if !report.removed.is_empty() && report.failed.is_empty() {

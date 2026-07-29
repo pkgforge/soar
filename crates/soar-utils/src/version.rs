@@ -40,10 +40,12 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
             // (1.2rc and 0.5.7-beta both precede their release).
             (Some(x), None) => return extra_segment_order(x),
             (None, Some(y)) => return extra_segment_order(y).reverse(),
-            (Some(x), Some(y)) => match compare_segment(x, y) {
-                Ordering::Equal => continue,
-                other => return other,
-            },
+            (Some(x), Some(y)) => {
+                match compare_segment(x, y) {
+                    Ordering::Equal => continue,
+                    other => return other,
+                }
+            }
         }
     }
 }
@@ -118,7 +120,10 @@ mod tests {
 
     #[test]
     fn dates_order_naturally() {
-        assert_eq!(compare_versions("2026.05.24", "2026.05.23"), Ordering::Greater);
+        assert_eq!(
+            compare_versions("2026.05.24", "2026.05.23"),
+            Ordering::Greater
+        );
         assert_eq!(
             compare_versions("2026.05.24.1.dda726e-1", "2026.05.23.1.aaa111b-1"),
             Ordering::Greater
@@ -128,14 +133,29 @@ mod tests {
     #[test]
     fn dates_compare_whatever_separates_them() {
         // hyphen-separated, the ISO form
-        assert_eq!(compare_versions("2026-04-12", "2026-04-11"), Ordering::Greater);
-        assert_eq!(compare_versions("2026-05-01", "2026-04-30"), Ordering::Greater);
-        assert_eq!(compare_versions("2027-01-01", "2026-12-31"), Ordering::Greater);
+        assert_eq!(
+            compare_versions("2026-04-12", "2026-04-11"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            compare_versions("2026-05-01", "2026-04-30"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            compare_versions("2027-01-01", "2026-12-31"),
+            Ordering::Greater
+        );
         // leading zeros are numeric, not text
         assert_eq!(compare_versions("2026-04-09", "2026-04-10"), Ordering::Less);
         // the separator itself carries no meaning
-        assert_eq!(compare_versions("2026-04-12", "2026.04.12"), Ordering::Equal);
-        assert_eq!(compare_versions("2026-04-12-2", "2026-04-12"), Ordering::Greater);
+        assert_eq!(
+            compare_versions("2026-04-12", "2026.04.12"),
+            Ordering::Equal
+        );
+        assert_eq!(
+            compare_versions("2026-04-12-2", "2026-04-12"),
+            Ordering::Greater
+        );
     }
 
     #[test]
@@ -163,6 +183,9 @@ mod tests {
         assert_eq!(compare_versions("1.2", "1.2rc"), Ordering::Greater);
         assert_eq!(compare_versions("0.5.7", "0.5.7-beta"), Ordering::Greater);
         // between two prereleases, order is lexical
-        assert_eq!(compare_versions("0.5.7-beta", "0.5.7-alpha"), Ordering::Greater);
+        assert_eq!(
+            compare_versions("0.5.7-beta", "0.5.7-alpha"),
+            Ordering::Greater
+        );
     }
 }

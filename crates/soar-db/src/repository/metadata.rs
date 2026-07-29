@@ -6,8 +6,10 @@ use diesel::{dsl::sql, prelude::*, sql_types::Text};
 use regex::Regex;
 use serde_json::json;
 use soar_registry::RemotePackage;
-use soar_utils::path::is_safe_component;
-use soar_utils::version::{compare_versions, is_newer};
+use soar_utils::{
+    path::is_safe_component,
+    version::{compare_versions, is_newer},
+};
 use tracing::{debug, trace, warn};
 
 /// Regex for extracting name and contact from maintainer string format "Name (contact)".
@@ -465,10 +467,7 @@ impl MetadataRepository {
             .filter(|p| is_newer(&p.version, current_version))
             .max_by(|a, b| compare_versions(&a.version, &b.version)));
         if let Ok(Some(ref p)) = result {
-            debug!(
-                "newer version available: {} -> {}",
-                pkg_name, p.version
-            );
+            debug!("newer version available: {} -> {}", pkg_name, p.version);
         }
         result
     }
@@ -541,8 +540,7 @@ impl MetadataRepository {
 
         // pkg_name and pkg_id are joined into the install dir and interpolated
         // into resource paths, so a name with separators or '..' would escape it.
-        if !is_safe_component(&package.pkg_name)
-            || pkg_id.is_some_and(|id| !is_safe_component(id))
+        if !is_safe_component(&package.pkg_name) || pkg_id.is_some_and(|id| !is_safe_component(id))
         {
             warn!(
                 pkg_name = package.pkg_name,

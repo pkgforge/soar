@@ -268,10 +268,7 @@ impl PackageRemover {
 
         debug!(
             "removed {}:{} ({}) - reclaimed {}",
-            self.package.pkg_name,
-            self.package.repo_name,
-            self.package.version,
-            size_str
+            self.package.pkg_name, self.package.repo_name, self.package.version, size_str
         );
         Ok(())
     }

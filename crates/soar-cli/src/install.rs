@@ -76,8 +76,7 @@ pub async fn install_packages(
 
                 if let Some(pkg) = pkg {
                     // Re-resolve with the specific selected package
-                    let specific_query =
-                        format!("{}:{}", pkg.pkg_name, pkg.repo_name);
+                    let specific_query = format!("{}:{}", pkg.pkg_name, pkg.repo_name);
                     let re_results =
                         install::resolve_packages(ctx, &[specific_query], &options).await?;
                     for r in re_results {
@@ -200,8 +199,7 @@ async fn install_with_show(
                         };
 
                         if let Some(pkg) = pkg {
-                            let specific_query =
-                                format!("{}:{}", pkg.pkg_name, pkg.repo_name);
+                            let specific_query = format!("{}:{}", pkg.pkg_name, pkg.repo_name);
                             let re_results =
                                 install::resolve_packages(ctx, &[specific_query], options).await?;
                             for r in re_results {

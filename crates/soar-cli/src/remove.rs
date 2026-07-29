@@ -78,10 +78,7 @@ pub async fn remove_packages(
     }
 
     for failed in &report.failed {
-        error!(
-            "Failed to remove {}: {}",
-            failed.pkg_name, failed.error
-        );
+        error!("Failed to remove {}: {}", failed.pkg_name, failed.error);
     }
 
     debug!("package removal completed");
