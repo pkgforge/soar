@@ -81,7 +81,7 @@ pub async fn list_packages(
         .map(|entry| {
             let key = (
                 entry.repo_name.clone(),
-                entry.pkg.pkg_id.clone(),
+                entry.pkg.pkg_id.clone().unwrap_or_default(),
                 entry.pkg.pkg_name.clone(),
             );
             let installed = installed_pkgs.get(&key).copied().unwrap_or(false);

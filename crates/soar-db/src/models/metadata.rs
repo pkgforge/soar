@@ -10,7 +10,7 @@ use crate::{
 #[derive(Debug, Clone, Selectable)]
 pub struct Package {
     pub id: i32,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
     pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
@@ -52,7 +52,7 @@ pub struct Package {
 impl Queryable<packages::SqlType, Sqlite> for Package {
     type Row = (
         i32,
-        String,
+        Option<String>,
         String,
         Option<String>,
         Option<String>,
@@ -137,7 +137,7 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
 #[diesel(table_name = packages)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct PackageListing {
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
     pub pkg_type: Option<String>,
     pub version: String,
@@ -151,7 +151,7 @@ pub struct PackageListing {
 pub struct FuzzyCandidate {
     pub id: i32,
     pub pkg_name: String,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub description: Option<String>,
 }
 
@@ -192,7 +192,7 @@ pub struct PackageMaintainer {
 #[derive(Default, Insertable)]
 #[diesel(table_name = packages)]
 pub struct NewPackage<'a> {
-    pub pkg_id: &'a str,
+    pub pkg_id: Option<&'a str>,
     pub pkg_name: &'a str,
     pub pkg_family: Option<&'a str>,
     pub pkg_type: Option<&'a str>,

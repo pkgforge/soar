@@ -248,7 +248,7 @@ impl From<soar_db::models::metadata::Package> for Package {
             repo_name: String::new(), // Set by caller
             disabled: None,
             disabled_reason: None,
-            pkg_id: Some(pkg.pkg_id),
+            pkg_id: pkg.pkg_id,
             pkg_name: pkg.pkg_name,
             pkg_family: pkg.pkg_family,
             pkg_type: pkg.pkg_type,

@@ -193,8 +193,11 @@ fn score_candidates(query: &str, candidates: &[(String, FuzzyCandidate)]) -> Vec
         let name_buf = Utf32String::from(candidate.pkg_name.as_str());
         let name_score = pattern.score(name_buf.slice(..), &mut matcher);
 
-        let id_buf = Utf32String::from(candidate.pkg_id.as_str());
-        let id_score = pattern.score(id_buf.slice(..), &mut matcher);
+        // A package without an id simply has nothing extra to match on.
+        let id_score = candidate.pkg_id.as_deref().and_then(|id| {
+            let id_buf = Utf32String::from(id);
+            pattern.score(id_buf.slice(..), &mut matcher)
+        });
 
         let best_score = [name_score, id_score].into_iter().flatten().max();
 

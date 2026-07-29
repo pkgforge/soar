@@ -544,19 +544,16 @@ impl MetadataRepository {
             "inserting remote package"
         );
 
-        // An absent or empty pkg_id falls back to the name rather than
-        // rejecting the package: it only ever existed to disambiguate
-        // identical names, so a repository whose names are unique has nothing
-        // to say here.
-        let pkg_id = package
-            .pkg_id
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(&package.pkg_name);
+        // Stored as absent rather than invented: a repository whose names are
+        // already unique has no id to give, and inventing one from the name
+        // makes a fabricated value indistinguishable from a published one.
+        let pkg_id = package.pkg_id.as_deref().filter(|s| !s.is_empty());
 
         // pkg_name and pkg_id are joined into the install dir and interpolated
         // into resource paths, so a name with separators or '..' would escape it.
-        if !is_safe_component(&package.pkg_name) || !is_safe_component(pkg_id) {
+        if !is_safe_component(&package.pkg_name)
+            || pkg_id.is_some_and(|id| !is_safe_component(id))
+        {
             warn!(
                 pkg_name = package.pkg_name,
                 "skipping package with unsafe path component in pkg_name/pkg_id"
@@ -622,8 +619,7 @@ impl MetadataRepository {
 
         let inserted = diesel::insert_into(packages::table)
             .values(&new_package)
-            .on_conflict((packages::pkg_id, packages::pkg_name, packages::version))
-            .do_nothing()
+            .on_conflict_do_nothing()
             .execute(conn)?;
 
         if inserted == 0 {
