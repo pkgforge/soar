@@ -1,6 +1,7 @@
 use std::{
     ffi::OsString,
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -76,6 +77,28 @@ pub struct PackageRemover {
     config: Config,
     hooks: Option<PackageHooks>,
     sandbox: Option<SandboxConfig>,
+}
+
+/// Give every directory under `path` the owner write bit.
+///
+/// Without it `remove_dir_all` cannot unlink the entries inside, so a package
+/// that installed cleanly could not be removed.
+fn make_tree_writable(path: &Path) {
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let child = entry.path();
+        if child.is_dir() && !child.is_symlink() {
+            make_tree_writable(&child);
+        }
+    }
+    if let Ok(meta) = fs::metadata(path) {
+        let mode = meta.permissions().mode();
+        if mode & 0o200 == 0 {
+            fs::set_permissions(path, fs::Permissions::from_mode(mode | 0o200)).ok();
+        }
+    }
 }
 
 impl PackageRemover {
@@ -213,6 +236,10 @@ impl PackageRemover {
             self.package.installed_path,
             size_str
         );
+        // Archives commonly ship directories read-only, and removing a
+        // directory's entries needs the write bit on that directory. soar owns
+        // this tree, so it may restore what it needs to delete it.
+        make_tree_writable(Path::new(&self.package.installed_path));
         if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {
             // if not found, the package is already removed.
             if err.kind() != std::io::ErrorKind::NotFound {
