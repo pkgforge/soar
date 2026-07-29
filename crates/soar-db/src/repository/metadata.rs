@@ -7,6 +7,7 @@ use regex::Regex;
 use serde_json::json;
 use soar_registry::RemotePackage;
 use soar_utils::path::is_safe_component;
+use soar_utils::version::{compare_versions, is_newer};
 use tracing::{debug, trace, warn};
 
 /// Regex for extracting name and contact from maintainer string format "Name (contact)".
@@ -439,41 +440,30 @@ impl MetadataRepository {
     pub fn find_newer_version(
         conn: &mut SqliteConnection,
         pkg_name: &str,
-        pkg_id: Option<&str>,
         current_version: &str,
     ) -> QueryResult<Option<Package>> {
         trace!(
             pkg_name = pkg_name,
-            pkg_id = pkg_id,
             current_version = current_version,
             "checking for newer version"
         );
-        // Handle both regular versions and HEAD- versions
-        let head_version = if current_version.starts_with("HEAD-") && current_version.len() > 14 {
-            current_version[14..].to_string()
-        } else {
-            String::new()
-        };
-
-        // An installed package without an id is matched by name alone: the
-        // declarative format publishes no id to compare against.
-        let mut query = packages::table.into_boxed();
-        query = query.filter(packages::pkg_name.eq(pkg_name));
-        if let Some(id) = pkg_id {
-            query = query.filter(packages::pkg_id.eq(id.to_string()));
-        }
-        let result = query
-            .filter(
-                sql::<diesel::sql_types::Bool>("(version > ")
-                    .bind::<Text, _>(current_version)
-                    .sql(" OR (version LIKE 'HEAD-%' AND substr(version, 15) > ")
-                    .bind::<Text, _>(&head_version)
-                    .sql("))"),
-            )
-            .order(packages::version.desc())
+        // Matched by name alone. An id recorded at install time may no longer
+        // appear in the metadata at all, and requiring it to match would
+        // report every such package as already up to date.
+        //
+        // Ordering cannot be left to SQL: a string comparison puts 10 below 9
+        // and the rebuild suffix in 1.14.0-1 below 1.14.0. Candidates are
+        // loaded and compared segment-wise instead.
+        let candidates: Vec<Package> = packages::table
+            .into_boxed()
+            .filter(packages::pkg_name.eq(pkg_name))
             .select(Package::as_select())
-            .first(conn)
-            .optional();
+            .load(conn)?;
+
+        let result: QueryResult<Option<Package>> = Ok(candidates
+            .into_iter()
+            .filter(|p| is_newer(&p.version, current_version))
+            .max_by(|a, b| compare_versions(&a.version, &b.version)));
         if let Ok(Some(ref p)) = result {
             debug!(
                 "newer version available: {} -> {}",

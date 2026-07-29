@@ -7,3 +7,4 @@ pub mod path;
 pub mod pattern;
 pub mod system;
 pub mod time;
+pub mod version;

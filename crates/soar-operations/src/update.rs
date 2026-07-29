@@ -137,7 +137,7 @@ fn check_repo_update(
 ) -> SoarResult<Option<UpdateInfo>> {
     let new_pkg: Option<Package> = metadata_mgr
         .query_repo(&pkg.repo_name, |conn| {
-            MetadataRepository::find_newer_version(conn, &pkg.pkg_name, pkg.pkg_id.as_deref(), &pkg.version)
+            MetadataRepository::find_newer_version(conn, &pkg.pkg_name, &pkg.version)
         })?
         .flatten()
         .map(|p| {
