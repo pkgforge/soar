@@ -324,7 +324,7 @@ impl PackageInstaller {
 
             let new_package = NewInstalledPackage {
                 repo_name,
-                pkg_id: pkg_id.as_deref(),
+                pkg_id,
                 pkg_name,
                 pkg_family: package.pkg_family.as_deref(),
                 pkg_type,

@@ -110,6 +110,7 @@ fn walk_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn mangle_package_symlinks(
     install_dir: &Path,
     bin_dir: &Path,

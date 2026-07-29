@@ -106,7 +106,7 @@ mod tests {
         let collector = Arc::new(CollectorSink::default());
         let events: EventSinkHandle = collector.clone();
 
-        let bridge = create_progress_bridge(events, 1, "pkg".into(), "pkg-id".into());
+        let bridge = create_progress_bridge(events, 1, "pkg".into());
 
         bridge(Progress::Starting {
             total: 1000,

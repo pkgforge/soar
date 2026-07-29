@@ -108,7 +108,7 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
             report
                 .failed
                 .iter()
-                .map(|f| format!("{}", f.pkg_name))
+                .map(|f| f.pkg_name.to_string())
                 .collect::<Vec<_>>()
                 .join(", ")
         );
