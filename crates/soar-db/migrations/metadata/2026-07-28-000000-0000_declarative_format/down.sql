@@ -1,12 +1,7 @@
 -- A package without an id cannot be represented once the column is required
--- again. Refuse the downgrade rather than deleting the rows: the CHECK fails
--- when any such row exists, and the table name is what the error reports.
-CREATE TEMP TABLE cannot_downgrade_packages_without_pkg_id (
-  ok INTEGER NOT NULL CHECK (ok = 1)
-);
-INSERT INTO cannot_downgrade_packages_without_pkg_id (ok)
-  SELECT CASE WHEN EXISTS (SELECT 1 FROM packages WHERE pkg_id IS NULL) THEN 0 ELSE 1 END;
-DROP TABLE cannot_downgrade_packages_without_pkg_id;
+-- again. This table is a cache of the published index, so the rows are simply
+-- dropped and the next sync puts them back.
+DELETE FROM packages WHERE pkg_id IS NULL;
 
 DROP INDEX IF EXISTS packages_identity;
 
