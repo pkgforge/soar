@@ -79,8 +79,13 @@ pub struct Config {
     /// NOTE: This is not yet implemented
     pub cross_repo_updates: Option<bool>,
 
-    /// Glob patterns for package files that should be included during install.
+    /// Glob patterns filtering which files an install keeps.
+    ///
     /// Default: ["!*.log", "!SBUILD", "!*.json", "!*.version"]
+    #[deprecated(
+        since = "0.13.0",
+        note = "only the OCI download path applies these; the declarative format does not use it"
+    )]
     pub install_patterns: Option<Vec<String>>,
 
     /// Global override for signature verification
@@ -189,6 +194,8 @@ impl Config {
         soar_utils::path::icons_dir(self.system_mode)
     }
 
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn default_config<T: AsRef<str>>(selected_repos: &[T]) -> Self {
         trace!("creating default configuration");
         let soar_root = if is_system_mode() {
@@ -280,6 +287,8 @@ impl Config {
     }
 
     /// Creates a default configuration for the given system mode.
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn default_config_for_mode<T: AsRef<str>>(selected_repos: &[T], system_mode: bool) -> Self {
         trace!(
             "creating default configuration for system_mode={}",
@@ -405,6 +414,8 @@ impl Config {
         Ok(config)
     }
 
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn resolve(&mut self) -> Result<()> {
         trace!("resolving configuration");
         if !self.profile.contains_key(&self.default_profile) {
@@ -777,6 +788,8 @@ mod tests {
     }
 
     #[test]
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     fn test_config_resolve_sets_defaults() {
         let mut config = Config::default_config::<&str>(&[]);
         config.ghcr_concurrency = None;

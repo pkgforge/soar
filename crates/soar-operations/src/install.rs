@@ -737,6 +737,8 @@ fn source_skips_integrity_gate(pkg: &Package) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
+// Reads install_patterns while the OCI path exists; see the field's deprecation.
+#[allow(deprecated)]
 async fn install_single_package(
     ctx: &SoarContext,
     target: &InstallTarget,

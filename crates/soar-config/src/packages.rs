@@ -46,7 +46,11 @@ pub struct PackageDefaults {
     /// Whether to install binary only (exclude logs, desktop files, etc).
     pub binary_only: Option<bool>,
 
-    /// Default install patterns.
+    /// Glob patterns filtering which files an install keeps.
+    #[deprecated(
+        since = "0.13.0",
+        note = "only the OCI download path applies these; the declarative format does not use it"
+    )]
     pub install_patterns: Option<Vec<String>>,
 
     /// Default sandbox configuration applied to all packages.
@@ -269,7 +273,11 @@ pub struct PackageOptions {
     /// Portable directory configuration.
     pub portable: Option<PortableConfig>,
 
-    /// Custom install patterns (overrides default).
+    /// Glob patterns filtering which files an install keeps, overriding the default.
+    #[deprecated(
+        since = "0.13.0",
+        note = "only the OCI download path applies these; the declarative format does not use it"
+    )]
     pub install_patterns: Option<Vec<String>>,
 
     /// Whether to install binary only.
@@ -326,6 +334,10 @@ pub struct ResolvedPackage {
     pub pinned: bool,
     pub profile: Option<String>,
     pub portable: Option<PortableConfig>,
+    #[deprecated(
+        since = "0.13.0",
+        note = "only the OCI download path applies these; the declarative format does not use it"
+    )]
     pub install_patterns: Option<Vec<String>>,
     pub binary_only: bool,
     pub arch_map: Option<HashMap<String, String>>,
@@ -333,6 +345,8 @@ pub struct ResolvedPackage {
 
 impl PackageSpec {
     /// Resolve the package specification with defaults applied.
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn resolve(&self, name: &str, defaults: Option<&PackageDefaults>) -> ResolvedPackage {
         match self {
             PackageSpec::Simple(version_str) => {
@@ -452,6 +466,8 @@ impl PackagesConfig {
     }
 
     /// Create a default configuration.
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn default_config() -> Self {
         Self {
             defaults: Some(PackageDefaults {
