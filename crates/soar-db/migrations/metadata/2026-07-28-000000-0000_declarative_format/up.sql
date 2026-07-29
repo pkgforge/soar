@@ -1,5 +1,12 @@
--- A repository publishing the declarative format has no package id to give,
--- so the column stops being required. SQLite cannot relax NOT NULL in place.
+-- The declarative format carries what a package contains rather than leaving
+-- it to be guessed: `binaries` says where each executable lives inside the
+-- artifact and what to call it, `extra` lists side files installed alongside
+-- it. A repository publishing that format has no package id to give, so the
+-- id stops being required, and SQLite cannot relax NOT NULL in place.
+--
+-- Three columns go: `pkg_webpage` was derivable from the package's own fields,
+-- `tags` was stored and displayed but never searched, and `version_upstream`
+-- was never read at all.
 --
 -- The uniqueness key keeps the id, but NULLs are collapsed first: SQLite
 -- treats every NULL as distinct, so an id-less package would otherwise insert
@@ -48,7 +55,7 @@ INSERT INTO packages_new SELECT
   licenses, download_url, size, ghcr_pkg, ghcr_size, ghcr_blob, ghcr_url,
   bsum, icon, desktop, appstream, homepages, notes, source_urls, categories,
   build_id, build_date, build_action, build_script, build_log, provides,
-  snapshots, replaces, soar_syms, desktop_integration, portable, binaries, extra
+  snapshots, replaces, soar_syms, desktop_integration, portable, NULL, NULL
 FROM packages;
 
 DROP TABLE packages;
