@@ -327,6 +327,7 @@ impl PackageInstaller {
                 repo_name,
                 pkg_id,
                 pkg_name,
+                pkg_family: package.pkg_family.as_deref(),
                 pkg_type,
                 version,
                 size,

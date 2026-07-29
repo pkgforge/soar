@@ -4,6 +4,7 @@ diesel::table! {
         repo_name -> Text,
         pkg_id -> Text,
         pkg_name -> Text,
+        pkg_family -> Nullable<Text>,
         pkg_type -> Nullable<Text>,
         version -> Text,
         size -> BigInt,
