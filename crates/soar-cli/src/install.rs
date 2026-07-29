@@ -75,8 +75,15 @@ pub async fn install_packages(
                 };
 
                 if let Some(pkg) = pkg {
-                    // Re-resolve with the specific selected package
-                    let specific_query = format!("{}:{}", pkg.pkg_name, pkg.repo_name);
+                    // Re-resolve with the specific selected package. The
+                    // family has to come along, or a name ambiguous within one
+                    // repository resolves right back to the same choice.
+                    let specific_query = match &pkg.pkg_family {
+                        Some(family) => {
+                            format!("{}/{}:{}", family, pkg.pkg_name, pkg.repo_name)
+                        }
+                        None => format!("{}:{}", pkg.pkg_name, pkg.repo_name),
+                    };
                     let re_results =
                         install::resolve_packages(ctx, &[specific_query], &options).await?;
                     for r in re_results {
@@ -199,7 +206,12 @@ async fn install_with_show(
                         };
 
                         if let Some(pkg) = pkg {
-                            let specific_query = format!("{}:{}", pkg.pkg_name, pkg.repo_name);
+                            let specific_query = match &pkg.pkg_family {
+                                Some(family) => {
+                                    format!("{}/{}:{}", family, pkg.pkg_name, pkg.repo_name)
+                                }
+                                None => format!("{}:{}", pkg.pkg_name, pkg.repo_name),
+                            };
                             let re_results =
                                 install::resolve_packages(ctx, &[specific_query], options).await?;
                             for r in re_results {
@@ -245,7 +257,7 @@ async fn install_with_show(
                         conn,
                         query.name.as_deref(),
                         None,
-                        None,
+                        query.family.as_deref(),
                         None,
                         None,
                         Some(SortDirection::Asc),
@@ -265,7 +277,7 @@ async fn install_with_show(
                     conn,
                     query.name.as_deref(),
                     None,
-                    None,
+                    query.family.as_deref(),
                     None,
                     None,
                     Some(SortDirection::Asc),
@@ -302,7 +314,7 @@ async fn install_with_show(
         }
 
         // Get installed packages to show [installed] marker
-        let installed_packages: Vec<(String, String, String)> = diesel_db
+        let installed_packages: Vec<(String, Option<String>, String)> = diesel_db
             .with_conn(|conn| {
                 CoreRepository::list_filtered(
                     conn,
@@ -317,7 +329,7 @@ async fn install_with_show(
                 )
             })?
             .into_iter()
-            .map(|p| (p.pkg_id.unwrap_or_default(), p.repo_name, p.version))
+            .map(|p| (p.pkg_name, p.pkg_family, p.repo_name))
             .collect();
 
         let pkg = select_package_interactively_with_installed(

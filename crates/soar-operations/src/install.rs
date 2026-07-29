@@ -258,16 +258,32 @@ fn resolve_all_variants(
     }
 
     let target_pkg_id = variants[0].pkg_id.clone();
+    let target_pkg_name = variants[0].pkg_name.clone();
+    let target_pkg_family = variants[0].pkg_family.clone();
 
-    // Find all packages with this pkg_id
+    // Without an id every filter below would be None, which reads as "no
+    // filter" and returns the whole metadata table. Fall back to the selected
+    // package's own name and family instead.
+    let (name_filter, id_filter, family_filter) = match target_pkg_id.as_deref() {
+        Some(id) => (None, Some(id), None),
+        None => {
+            (
+                Some(target_pkg_name.as_str()),
+                None,
+                target_pkg_family.as_deref(),
+            )
+        }
+    };
+
+    // Find all packages with this identity
     let all_pkgs: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
         metadata_mgr
             .query_repo(repo_name, |conn| {
                 MetadataRepository::find_filtered(
                     conn,
-                    None,
-                    target_pkg_id.as_deref(),
-                    None,
+                    name_filter,
+                    id_filter,
+                    family_filter,
                     None,
                     None,
                     Some(SortDirection::Asc),
@@ -285,9 +301,9 @@ fn resolve_all_variants(
         metadata_mgr.query_all_flat(|repo_name, conn| {
             let pkgs = MetadataRepository::find_filtered(
                 conn,
-                None,
-                target_pkg_id.as_deref(),
-                None,
+                name_filter,
+                id_filter,
+                family_filter,
                 None,
                 None,
                 Some(SortDirection::Asc),
@@ -308,8 +324,8 @@ fn resolve_all_variants(
             CoreRepository::list_filtered(
                 conn,
                 query.repo_name.as_deref(),
-                None,
-                target_pkg_id.as_deref(),
+                name_filter,
+                id_filter,
                 None,
                 None,
                 None,
@@ -667,6 +683,7 @@ pub async fn perform_installation(
                     if !install_dir.as_os_str().is_empty() {
                         installed.lock().unwrap().push(InstalledInfo {
                             pkg_name: target.package.pkg_name.clone(),
+                            pkg_family: target.package.pkg_family.clone(),
                             repo_name: target.package.repo_name.clone(),
                             version: target.package.version.clone(),
                             install_dir,
@@ -833,7 +850,14 @@ async fn install_single_package(
         .filter(|s| s.len() >= 12)
         .map(|s| s[..12].to_string())
         .unwrap_or_else(|| {
-            let input = format!("{}:{}", pkg.pkg_name, pkg.version);
+            // Name and version alone collide across sources: the same
+            // release packaged by two repositories would share a directory.
+            let source = pkg
+                .pkg_id
+                .as_deref()
+                .or(pkg.ghcr_pkg.as_deref())
+                .unwrap_or(pkg.download_url.as_str());
+            let input = format!("{}:{}:{}", pkg.pkg_name, pkg.version, source);
             hash_string(&input)[..12].to_string()
         });
 

@@ -129,12 +129,16 @@ pub fn select_package_interactively<T: PackageExt>(
 pub fn select_package_interactively_with_installed<T: PackageExt>(
     pkgs: Vec<T>,
     package_name: &str,
-    installed: &[(String, String, String)], // (pkg_id, repo_name, version)
+    installed: &[(String, Option<String>, String)], // (pkg_name, pkg_family, repo_name)
 ) -> SoarResult<Option<T>> {
     info!("Showing available packages for {package_name}");
     for (idx, pkg) in pkgs.iter().enumerate() {
-        let is_installed = installed.iter().any(|(pkg_id, repo_name, _version)| {
-            pkg.pkg_id().unwrap_or_default() == pkg_id && pkg.repo_name() == repo_name
+        // Matching on the id would treat every id-less package as identical,
+        // since they all read as the same empty identity.
+        let is_installed = installed.iter().any(|(pkg_name, pkg_family, repo_name)| {
+            pkg.pkg_name() == pkg_name
+                && pkg.pkg_family() == pkg_family.as_deref()
+                && pkg.repo_name() == repo_name
         });
         let installed_marker = if is_installed {
             format!(" {}", Colored(Color::Yellow, "[installed]"))

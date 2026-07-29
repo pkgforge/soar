@@ -442,6 +442,7 @@ impl MetadataRepository {
     pub fn find_newer_version(
         conn: &mut SqliteConnection,
         pkg_name: &str,
+        pkg_family: Option<&str>,
         current_version: &str,
     ) -> QueryResult<Option<Package>> {
         trace!(
@@ -456,11 +457,16 @@ impl MetadataRepository {
         // Ordering cannot be left to SQL: a string comparison puts 10 below 9
         // and the rebuild suffix in 1.14.0-1 below 1.14.0. Candidates are
         // loaded and compared segment-wise instead.
-        let candidates: Vec<Package> = packages::table
+        let mut query = packages::table
             .into_boxed()
-            .filter(packages::pkg_name.eq(pkg_name))
-            .select(Package::as_select())
-            .load(conn)?;
+            .filter(packages::pkg_name.eq(pkg_name));
+        // Narrowed by family only when the install records one. An older
+        // install has none, and demanding a match would report it as up to
+        // date forever.
+        if let Some(family) = pkg_family {
+            query = query.filter(packages::pkg_family.eq(family.to_string()));
+        }
+        let candidates: Vec<Package> = query.select(Package::as_select()).load(conn)?;
 
         let result: QueryResult<Option<Package>> = Ok(candidates
             .into_iter()

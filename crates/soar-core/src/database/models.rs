@@ -81,6 +81,10 @@ impl PackageExt for Package {
         self.pkg_id.as_deref()
     }
 
+    fn pkg_family(&self) -> Option<&str> {
+        self.pkg_family.as_deref()
+    }
+
     fn version(&self) -> &str {
         &self.version
     }
@@ -167,6 +171,10 @@ impl PackageExt for InstalledPackage {
 
     fn pkg_id(&self) -> Option<&str> {
         self.pkg_id.as_deref()
+    }
+
+    fn pkg_family(&self) -> Option<&str> {
+        self.pkg_family.as_deref()
     }
 
     fn version(&self) -> &str {

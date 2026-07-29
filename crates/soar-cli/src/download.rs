@@ -153,8 +153,8 @@ pub async fn handle_direct_downloads(
                             MetadataRepository::find_filtered(
                                 conn,
                                 query.name.as_deref(),
-                                None,
                                 query.pkg_id.as_deref(),
+                                query.family.as_deref(),
                                 None,
                                 None,
                                 None,

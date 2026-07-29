@@ -335,6 +335,11 @@ impl Download {
                             .map(PathBuf::from)
                             .unwrap_or_else(|| PathBuf::from("."))
                     });
+                    // Cleanup below must never reach a directory that was
+                    // already there: the default destination is the download's
+                    // own parent, so removing it would take the user's other
+                    // files with it.
+                    let dir_existed = extract_dir.exists();
                     debug!(archive = %output_path.display(), dest = %extract_dir.display(),
                            ?format, "extracting archive");
                     // A bare .gz or .bz2 of a single file shares its magic
@@ -345,7 +350,9 @@ impl Download {
                     if let Err(e) = compak::extract_archive(&output_path, &extract_dir) {
                         warn!(archive = %output_path.display(), error = %e,
                               "extraction failed, installing the download as-is");
-                        std::fs::remove_dir_all(&extract_dir).ok();
+                        if !dir_existed {
+                            std::fs::remove_dir_all(&extract_dir).ok();
+                        }
                     }
                 }
                 Err(_) => {

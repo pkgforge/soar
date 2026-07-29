@@ -88,7 +88,13 @@ pub async fn switch_variant(
     // Atomically unlink other variants and link the selected one so the DB
     // is never left in a state where all variants are unlinked.
     diesel_db.transaction(|conn| {
-        CoreRepository::unlink_others_by_checksum(conn, pkg_name, pkg_id, checksum)?;
+        CoreRepository::unlink_others_by_checksum(
+            conn,
+            pkg_name,
+            pkg_id,
+            selected_package.pkg_family.as_deref(),
+            checksum,
+        )?;
         CoreRepository::link_by_checksum(conn, pkg_name, pkg_id, checksum)
     })?;
 
@@ -118,8 +124,8 @@ pub async fn switch_variant(
             MetadataRepository::find_filtered(
                 conn,
                 Some(name),
-                None,
                 selected_package.pkg_id.as_deref(),
+                None,
                 None,
                 Some(1),
                 None,

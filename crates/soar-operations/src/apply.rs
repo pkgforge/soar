@@ -70,8 +70,8 @@ pub async fn compute_diff(
                     MetadataRepository::find_filtered(
                         conn,
                         Some(&pkg.name),
-                        None,
                         pkg.pkg_id.as_deref(),
+                        None,
                         pkg.version.as_deref(),
                         None,
                         Some(SortDirection::Asc),

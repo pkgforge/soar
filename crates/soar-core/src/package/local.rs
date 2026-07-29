@@ -142,6 +142,7 @@ impl LocalPackage {
         Package {
             id: 0,
             repo_name: "local".to_string(),
+            pkg_id: Some(self.pkg_id.clone()),
             pkg_name: self.pkg_name.clone(),
             pkg_type: self.pkg_type.clone(),
             version: self.version.clone(),

@@ -28,6 +28,12 @@ use std::cmp::Ordering;
 /// assert_eq!(compare_versions("2026.05.24", "2026.05.23"), Ordering::Greater);
 /// ```
 pub fn compare_versions(a: &str, b: &str) -> Ordering {
+    // Two commit hashes carry no order at all, and segment rules would invent
+    // one, letting an arbitrary hash read as an upgrade or a downgrade.
+    if a != b && is_commit_hash(a) && is_commit_hash(b) {
+        return Ordering::Equal;
+    }
+
     let mut left = segments(a);
     let mut right = segments(b);
 
@@ -53,6 +59,17 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
 /// Whether `candidate` supersedes `current`.
 pub fn is_newer(candidate: &str, current: &str) -> bool {
     compare_versions(candidate, current) == Ordering::Greater
+}
+
+/// Whether a version is nothing but a commit hash.
+///
+/// Requires a letter, so a long run of digits stays a version: 20260412 is a
+/// date, not a hash.
+fn is_commit_hash(version: &str) -> bool {
+    version.len() >= 7
+        && version.len() <= 40
+        && version.chars().all(|c| c.is_ascii_hexdigit())
+        && version.chars().any(|c| c.is_ascii_alphabetic())
 }
 
 /// How a version compares against one that stopped earlier, judged by the
@@ -166,9 +183,17 @@ mod tests {
 
     #[test]
     fn commit_hashes_have_no_meaningful_order() {
-        // Not equal, but any answer is arbitrary; the point is that it is
-        // stable rather than that it is right.
-        assert_ne!(compare_versions("89c99d2a9", "0f3a21b"), Ordering::Equal);
+        // Neither supersedes the other, so neither can drive an upgrade.
+        assert_eq!(compare_versions("89c99d2a9", "0f3a21b"), Ordering::Equal);
+        assert_eq!(compare_versions("0f3a21b", "89c99d2a9"), Ordering::Equal);
+        assert!(!is_newer("89c99d2a9", "0f3a21b"));
+        assert!(!is_newer("0f3a21b", "89c99d2a9"));
+    }
+
+    #[test]
+    fn digit_runs_are_versions_not_hashes() {
+        // a date-like version must keep comparing normally
+        assert_eq!(compare_versions("20260413", "20260412"), Ordering::Greater);
     }
 
     #[test]

@@ -830,6 +830,15 @@ impl PackageInstaller {
                             .ok();
                         }
                     }
+                    // A leftover from an interrupted install would make rename
+                    // fail, the same way the other promotion paths treat it.
+                    if to.exists() {
+                        if to.is_dir() {
+                            fs::remove_dir_all(&to).ok();
+                        } else {
+                            fs::remove_file(&to).ok();
+                        }
+                    }
                     fs::rename(&from, &to).with_context(|| {
                         format!("renaming {} to {}", from.display(), to.display())
                     })?;
@@ -1095,8 +1104,15 @@ impl PackageInstaller {
         }
 
         if !unlinked {
-            self.db
-                .with_conn(|conn| CoreRepository::unlink_others(conn, pkg_name, pkg_id, version))?;
+            self.db.with_conn(|conn| {
+                CoreRepository::unlink_others(
+                    conn,
+                    pkg_name,
+                    pkg_id,
+                    self.package.pkg_family.as_deref(),
+                    version,
+                )
+            })?;
 
             let alternate_packages: Vec<InstalledPackageWithPortable> =
                 self.db.with_conn(|conn| {

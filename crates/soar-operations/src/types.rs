@@ -57,6 +57,7 @@ pub struct InstallReport {
 #[derive(Debug)]
 pub struct InstalledInfo {
     pub pkg_name: String,
+    pub pkg_family: Option<String>,
     pub repo_name: String,
     pub version: String,
     pub install_dir: PathBuf,

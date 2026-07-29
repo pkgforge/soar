@@ -137,7 +137,12 @@ fn check_repo_update(
 ) -> SoarResult<Option<UpdateInfo>> {
     let new_pkg: Option<Package> = metadata_mgr
         .query_repo(&pkg.repo_name, |conn| {
-            MetadataRepository::find_newer_version(conn, &pkg.pkg_name, &pkg.version)
+            MetadataRepository::find_newer_version(
+                conn,
+                &pkg.pkg_name,
+                pkg.pkg_family.as_deref(),
+                &pkg.version,
+            )
         })?
         .flatten()
         .map(|p| {
@@ -440,15 +445,29 @@ pub async fn perform_update(
     // Clean up old versions only for successfully updated packages
     if !keep_old {
         let diesel_db = ctx.diesel_core_db()?.clone();
-        let succeeded: HashSet<&str> = install_report
+        // Keyed by the whole identity: a name alone would let a package from
+        // another repository or family inherit this one's success.
+        let succeeded: HashSet<(&str, Option<&str>, &str, &str)> = install_report
             .installed
             .iter()
-            .map(|i| i.pkg_name.as_str())
+            .map(|i| {
+                (
+                    i.pkg_name.as_str(),
+                    i.pkg_family.as_deref(),
+                    i.repo_name.as_str(),
+                    i.version.as_str(),
+                )
+            })
             .collect();
 
         for target in &targets {
             let pkg = &target.package;
-            if !succeeded.contains(pkg.pkg_name.as_str()) {
+            if !succeeded.contains(&(
+                pkg.pkg_name.as_str(),
+                pkg.pkg_family.as_deref(),
+                pkg.repo_name.as_str(),
+                pkg.version.as_str(),
+            )) {
                 continue;
             }
 

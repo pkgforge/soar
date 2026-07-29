@@ -41,31 +41,58 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
         }
     }
 
-    if output_path.exists() {
-        fs::remove_file(output_path)
-            .with_context(|| format!("removing existing database {}", output_path.display()))?;
+    // Built beside the target and swapped in only once it holds something.
+    // Writing in place would destroy a working database whenever an import
+    // turned out to be entirely rejected.
+    let mut tmp_name = output_path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(".tmp");
+    let tmp_path = output_path.with_file_name(tmp_name);
+    for stale in [
+        &tmp_path,
+        &tmp_path.with_extension("tmp-wal"),
+        &tmp_path.with_extension("tmp-shm"),
+    ] {
+        fs::remove_file(stale).ok();
     }
 
-    let mut conn = DbConnection::open(output_path, DbType::Metadata)
+    let mut conn = DbConnection::open(&tmp_path, DbType::Metadata)
         .map_err(|e| SoarError::Custom(format!("opening database: {}", e)))?;
 
     // Packages with an unsafe pkg_name/pkg_id are skipped during import.
     // Reporting success while writing nothing hides that entirely, which is
     // how an empty pkg_id silently produced an empty database.
-    let imported = MetadataRepository::import_packages(conn.conn(), &packages, repo_name)
-        .map_err(|e| SoarError::Custom(format!("importing packages: {}", e)))?;
+    let result = MetadataRepository::import_packages(conn.conn(), &packages, repo_name)
+        .map_err(|e| SoarError::Custom(format!("importing packages: {}", e)));
+    let imported = match result {
+        Ok(n) if n > 0 => n,
+        other => {
+            drop(conn);
+            fs::remove_file(&tmp_path).ok();
+            return match other {
+                Err(e) => Err(e),
+                Ok(_) => {
+                    Err(SoarError::Custom(format!(
+                        "imported 0 of {} packages; every entry was rejected, most likely \
+                     an unsafe or empty pkg_name/pkg_id",
+                        packages.len()
+                    )))
+                }
+            };
+        }
+    };
 
     let skipped = packages.len() - imported;
-    if imported == 0 {
-        return Err(SoarError::Custom(format!(
-            "imported 0 of {} packages; every entry was rejected, most likely \
-             an unsafe or empty pkg_name/pkg_id",
-            packages.len()
-        )));
-    }
     if skipped > 0 {
         warn!(skipped, "some packages were rejected during import");
     }
+
+    drop(conn);
+    fs::rename(&tmp_path, output_path).with_context(|| {
+        format!(
+            "replacing {} with the imported database",
+            output_path.display()
+        )
+    })?;
 
     info!(
         count = imported,

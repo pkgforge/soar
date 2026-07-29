@@ -64,9 +64,20 @@ pub async fn list_packages(
         .into_par_iter()
         // Keyed by name, not id: a package installed before ids became
         // optional still carries one, while its metadata no longer does, and
-        // keying on both would stop matching the two.
+        // keying on both would stop matching the two. Rows sharing a key are
+        // merged rather than overwritten, so one uninstalled version cannot
+        // mask an installed one.
         .map(|pkg| ((pkg.repo_name, pkg.pkg_name), pkg.is_installed))
-        .collect();
+        .fold(HashMap::new, |mut acc, (key, installed)| {
+            *acc.entry(key).or_insert(false) |= installed;
+            acc
+        })
+        .reduce(HashMap::new, |mut acc, part| {
+            for (key, installed) in part {
+                *acc.entry(key).or_insert(false) |= installed;
+            }
+            acc
+        });
 
     let total = packages.len();
 

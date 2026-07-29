@@ -16,13 +16,21 @@ use crate::{
 pub fn remove_old_versions(package: &Package, db: &DieselDatabase, force: bool) -> SoarResult<()> {
     let Package {
         pkg_id,
+        pkg_family,
         pkg_name,
         repo_name,
         ..
     } = package;
 
     let old_packages = db.with_conn(|conn| {
-        CoreRepository::get_old_package_paths(conn, pkg_id.as_deref(), pkg_name, repo_name, force)
+        CoreRepository::get_old_package_paths(
+            conn,
+            pkg_id.as_deref(),
+            pkg_family.as_deref(),
+            pkg_name,
+            repo_name,
+            force,
+        )
     })?;
 
     for (_id, installed_path) in &old_packages {
@@ -34,7 +42,14 @@ pub fn remove_old_versions(package: &Package, db: &DieselDatabase, force: bool) 
     }
 
     db.with_conn(|conn| {
-        CoreRepository::delete_old_packages(conn, pkg_id.as_deref(), pkg_name, repo_name, force)
+        CoreRepository::delete_old_packages(
+            conn,
+            pkg_id.as_deref(),
+            pkg_family.as_deref(),
+            pkg_name,
+            repo_name,
+            force,
+        )
     })?;
 
     Ok(())

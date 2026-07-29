@@ -94,14 +94,22 @@ pub fn resolve_removals(
                     });
                 } else {
                     let target_pkg_id = installed[0].pkg_id.clone();
-                    // Find all packages with this pkg_id
+                    let target_pkg_name = installed[0].pkg_name.clone();
+                    // Without an id, filtering on it alone selects every
+                    // installed package in the repository, which would remove
+                    // far more than was asked for.
+                    let (name_filter, id_filter) = match target_pkg_id.as_deref() {
+                        Some(id) => (None, Some(id)),
+                        None => (Some(target_pkg_name.as_str()), None),
+                    };
+                    // Find all packages with this identity
                     let all_installed: Vec<InstalledPackage> = diesel_db
                         .with_conn(|conn| {
                             CoreRepository::list_filtered(
                                 conn,
                                 query.repo_name.as_deref(),
-                                None,
-                                target_pkg_id.as_deref(),
+                                name_filter,
+                                id_filter,
                                 None,
                                 None,
                                 None,
