@@ -8,9 +8,11 @@
 -- `tags` was stored and displayed but never searched, and `version_upstream`
 -- was never read at all.
 --
--- The uniqueness key keeps the id, but NULLs are collapsed first: SQLite
--- treats every NULL as distinct, so an id-less package would otherwise insert
--- a fresh duplicate on every sync instead of conflicting with itself.
+-- The uniqueness key keeps the id and adds the family, which is what tells
+-- identically-named packages apart once no id is published. NULLs are
+-- collapsed first: SQLite treats every NULL as distinct, so an id-less
+-- package would otherwise insert a fresh duplicate on every sync instead of
+-- conflicting with itself.
 CREATE TABLE packages_new (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   pkg_id TEXT COLLATE NOCASE,
@@ -63,4 +65,4 @@ DROP TABLE packages;
 ALTER TABLE packages_new RENAME TO packages;
 
 CREATE UNIQUE INDEX packages_identity
-  ON packages (COALESCE(pkg_id, ''), pkg_name, version);
+  ON packages (COALESCE(pkg_id, ''), COALESCE(pkg_family, ''), pkg_name, version);
