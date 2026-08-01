@@ -43,16 +43,15 @@ fn remove_links_into(dir: &Path, installed_path: &Path, removed: &mut Vec<PathBu
 }
 
 /// The directories a package's files are linked into, beyond `bin`.
+///
+/// Every destination, not only the ones the configured shells ask for: a
+/// completion linked while a shell was enabled still has to be unlinked once
+/// that shell is turned off.
 fn shared_link_dirs(bin_path: &Path) -> Vec<PathBuf> {
-    let prefix = bin_path.parent().unwrap_or(bin_path);
-    let data = soar_utils::path::xdg_data_home();
-    let config = soar_utils::path::xdg_config_home();
-    vec![
-        prefix.join("share/man"),
-        data.join("bash-completion/completions"),
-        data.join("zsh/site-functions"),
-        config.join("fish/completions"),
-    ]
+    crate::utils::shared_link_targets(bin_path, &[])
+        .into_iter()
+        .map(|(_, destination, _)| destination)
+        .collect()
 }
 
 /// Removes the bin-directory symlinks a package's `provides` created, keeping

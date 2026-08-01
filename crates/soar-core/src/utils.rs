@@ -119,3 +119,38 @@ pub fn substitute_placeholders(
         None => result,
     }
 }
+
+/// Where a package's shared files are exposed on the system.
+///
+/// Each entry is the directory inside the package, the destination on the
+/// system, and whether the user asked for it. Man pages go beside the bin
+/// directory, because man-db derives its search path from PATH: for every
+/// `.../bin` it also looks at `.../share/man`. That makes them findable with
+/// no MANPATH set.
+pub fn shared_link_targets(
+    bin_dir: &Path,
+    shells: &[String],
+) -> Vec<(&'static str, PathBuf, bool)> {
+    let prefix = bin_dir.parent().unwrap_or(bin_dir);
+    let data = soar_utils::path::xdg_data_home();
+    let config = soar_utils::path::xdg_config_home();
+    let wants = |name: &str| shells.iter().any(|s| s == name);
+    vec![
+        ("share/man", prefix.join("share/man"), true),
+        (
+            "share/bash-completion/completions",
+            data.join("bash-completion/completions"),
+            wants("bash"),
+        ),
+        (
+            "share/zsh/site-functions",
+            data.join("zsh/site-functions"),
+            wants("zsh"),
+        ),
+        (
+            "share/fish/vendor_completions.d",
+            config.join("fish/completions"),
+            wants("fish"),
+        ),
+    ]
+}
