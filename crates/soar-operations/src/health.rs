@@ -156,16 +156,21 @@ fn get_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
     let config = ctx.config();
     let mut broken = Vec::new();
 
+    // A directory that does not exist holds nothing broken. Walking it is an
+    // error, and reporting that as a failed health check tells the user
+    // something is wrong when nothing is.
     let bin_path = config.get_bin_path()?;
-    walk_dir(
-        &bin_path,
-        &mut |path: &std::path::Path| -> FileSystemResult<()> {
-            if !path.exists() {
-                broken.push(path.to_path_buf());
-            }
-            Ok(())
-        },
-    )?;
+    if bin_path.is_dir() {
+        walk_dir(
+            &bin_path,
+            &mut |path: &std::path::Path| -> FileSystemResult<()> {
+                if !path.exists() {
+                    broken.push(path.to_path_buf());
+                }
+                Ok(())
+            },
+        )?;
+    }
 
     let desktop_path = config.get_desktop_path()?;
     let mut soar_check = |path: &std::path::Path| -> FileSystemResult<()> {
@@ -177,8 +182,13 @@ fn get_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
         Ok(())
     };
 
-    walk_dir(&desktop_path, &mut soar_check)?;
-    walk_dir(config.get_icons_path(), &mut soar_check)?;
+    if desktop_path.is_dir() {
+        walk_dir(&desktop_path, &mut soar_check)?;
+    }
+    let icons_path = config.get_icons_path();
+    if icons_path.is_dir() {
+        walk_dir(&icons_path, &mut soar_check)?;
+    }
 
     Ok(broken)
 }
