@@ -21,6 +21,7 @@ use soar_core::{
         install::{InstallMarker, InstallTarget, PackageInstaller},
         local::LocalPackage,
         query::PackageQuery,
+        remove::make_tree_writable,
         update::remove_old_versions,
         url::UrlPackage,
     },
@@ -787,13 +788,17 @@ pub async fn perform_installation(
                             notes: target.package.notes.clone(),
                         });
                     }
-                    let _ = remove_old_versions(&target.package, &db, false);
+                    if let Err(err) = remove_old_versions(&target.package, &db, false) {
+                        warn!(error = %err, "could not remove the superseded version");
+                    }
                 }
                 Err(err) => {
                     match err {
                         SoarError::Warning(msg) => {
                             warnings.lock().unwrap().push(msg);
-                            let _ = remove_old_versions(&target.package, &db, false);
+                            if let Err(err) = remove_old_versions(&target.package, &db, false) {
+                                warn!(error = %err, "could not remove the superseded version");
+                            }
                         }
                         _ => {
                             let op_id = next_op_id();
@@ -1032,6 +1037,9 @@ async fn install_single_package(
 
     if should_cleanup && install_dir.exists() {
         debug!(path = %install_dir.display(), "cleaning up existing installation directory");
+        // An archive may ship its directories read-only, and removing an entry
+        // needs write permission on the directory holding it.
+        make_tree_writable(&install_dir);
         fs::remove_dir_all(&install_dir).map_err(|err| {
             SoarError::Custom(format!(
                 "Failed to clean up install directory {}: {}",

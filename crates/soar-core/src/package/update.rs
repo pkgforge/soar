@@ -36,6 +36,9 @@ pub fn remove_old_versions(package: &Package, db: &DieselDatabase, force: bool) 
     for (_id, installed_path) in &old_packages {
         let path = Path::new(installed_path);
         if path.exists() {
+            // An archive may ship its directories read-only, and removing an
+            // entry needs write permission on the directory holding it.
+            crate::package::remove::make_tree_writable(path);
             fs::remove_dir_all(path)
                 .with_context(|| format!("removing old package directory {}", path.display()))?;
         }

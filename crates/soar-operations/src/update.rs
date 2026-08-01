@@ -484,7 +484,9 @@ pub async fn perform_update(
                 stage: UpdateCleanupStage::Removing,
             });
 
-            let _ = remove_old_versions(pkg, &diesel_db, false);
+            if let Err(err) = remove_old_versions(pkg, &diesel_db, false) {
+                warn!(error = %err, "could not remove the superseded version");
+            }
 
             ctx.events().emit(SoarEvent::UpdateCleanup {
                 op_id,

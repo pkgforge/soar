@@ -123,7 +123,7 @@ pub struct PackageRemover {
 ///
 /// Without it `remove_dir_all` cannot unlink the entries inside, so a package
 /// that installed cleanly could not be removed.
-pub(crate) fn make_tree_writable(path: &Path) {
+pub fn make_tree_writable(path: &Path) {
     let Ok(entries) = fs::read_dir(path) else {
         return;
     };
