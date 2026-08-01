@@ -132,7 +132,10 @@ pub async fn compute_diff(
             .map(Into::into)
             .collect();
 
-        let existing_install = installed_packages.into_iter().find(|ip| ip.is_installed);
+        // The query cannot narrow by family, so it is compared here.
+        let existing_install = installed_packages.into_iter().find(|ip| {
+            ip.is_installed && ip.pkg_family.as_deref() == metadata_pkg.pkg_family.as_deref()
+        });
 
         if let Some(ref existing) = existing_install {
             let version_matches = pkg.version.as_ref().is_none_or(|v| existing.version == *v);

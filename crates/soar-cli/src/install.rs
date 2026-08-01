@@ -334,8 +334,11 @@ async fn install_with_show(
                 )
             })?
             .into_iter()
-            .map(Into::into)
-            .next();
+            // The query cannot narrow by family, and an uninstalled row of the
+            // same name would otherwise stand in for the installed one.
+            .filter(|ip| ip.pkg_family.as_deref() == pkg.pkg_family.as_deref())
+            .find(|ip| ip.is_installed)
+            .map(Into::into);
 
         if let Some(ref existing) = existing_install {
             if existing.is_installed {

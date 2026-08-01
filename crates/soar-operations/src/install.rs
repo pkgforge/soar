@@ -69,12 +69,15 @@ pub fn target_for(
                 None,
                 None,
                 None,
-                Some(1),
+                None,
                 None,
             )
         })?
         .into_iter()
-        .next()
+        // The query cannot narrow by family, and an uninstalled row of the
+        // same name would otherwise stand in for the installed one.
+        .filter(|ip| ip.pkg_family.as_deref() == package.pkg_family.as_deref())
+        .find(|ip| ip.is_installed)
         .map(Into::into);
     let pinned = options.version_override.is_some();
     let package = package.resolve(options.version_override.as_deref());
@@ -1195,7 +1198,11 @@ async fn install_single_package(
             })
             .collect()
     });
-    let binaries = target.binaries.clone().or(index_binaries);
+    let binaries = target
+        .binaries
+        .clone()
+        .filter(|bins| !bins.is_empty())
+        .or(index_binaries);
 
     let symlinks = mangle_package_symlinks(
         &install_dir,

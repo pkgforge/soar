@@ -126,7 +126,7 @@ pub async fn switch_variant(
                 conn,
                 Some(name),
                 selected_package.pkg_id.as_deref(),
-                None,
+                selected_package.pkg_family.as_deref(),
                 None,
                 Some(1),
                 None,

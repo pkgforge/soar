@@ -1360,7 +1360,13 @@ impl PackageInstaller {
 
             let alternate_packages: Vec<InstalledPackageWithPortable> =
                 self.db.with_conn(|conn| {
-                    CoreRepository::find_alternates(conn, pkg_name, pkg_id, version)
+                    CoreRepository::find_alternates(
+                        conn,
+                        pkg_name,
+                        pkg_id,
+                        self.package.pkg_family.as_deref(),
+                        version,
+                    )
                 })?;
 
             for alt_pkg in alternate_packages {

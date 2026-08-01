@@ -45,6 +45,7 @@ fn get_installed_path(
             &package.repo_name,
             &package.pkg_name,
             package.pkg_id.as_deref(),
+            package.pkg_family.as_deref(),
             &package.version,
         )
     })?;
