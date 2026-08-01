@@ -99,7 +99,11 @@ async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()>
 /// Built in a staging directory and swapped in at the end. Resolving a source
 /// can fail, and pruning first would leave a package with its binary deleted
 /// and nothing to put back.
-fn apply_file_layout(files: &[PackageFile], install_dir: &Path, artifact: &Path) -> SoarResult<()> {
+pub fn apply_file_layout(
+    files: &[PackageFile],
+    install_dir: &Path,
+    artifact: &Path,
+) -> SoarResult<()> {
     let staging = install_dir.join(".soar-layout");
     fs::remove_dir_all(&staging).ok();
     fs::create_dir_all(&staging)

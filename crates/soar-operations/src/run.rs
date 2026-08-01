@@ -3,13 +3,16 @@ use std::{fs, path::Path, process::Command, sync::Arc};
 use soar_core::{
     database::models::Package,
     error::{ErrorContext, SoarError},
-    package::query::PackageQuery,
+    package::{install::apply_file_layout, query::PackageQuery},
     utils::get_extract_dir,
     SoarResult,
 };
 use soar_db::repository::metadata::MetadataRepository;
 use soar_dl::{download::Download, oci::OciDownload, types::OverwriteMode};
-use soar_utils::hash::calculate_checksum;
+use soar_utils::{
+    hash::{calculate_checksum, hash_string},
+    version::compare_versions,
+};
 use tracing::debug;
 
 use crate::{
@@ -38,8 +41,6 @@ pub async fn prepare_run(
     let pkg_id = query.pkg_id.as_deref().or(pkg_id);
     let family = query.family.as_deref();
     let version = query.version.as_deref();
-
-    let output_path = cache_bin.join(package_name);
 
     let metadata_mgr = ctx.metadata_manager().await?;
 
@@ -86,7 +87,7 @@ pub async fn prepare_run(
         })?
     };
 
-    let packages: Vec<Package> = if let Some(version) = version {
+    let mut packages: Vec<Package> = if let Some(version) = version {
         packages
             .into_iter()
             .filter(|p| p.has_version(version))
@@ -99,14 +100,59 @@ pub async fn prepare_run(
         0 => return Err(SoarError::PackageNotFound(package_name.to_string())),
         1 => {}
         _ => {
-            return Ok(PrepareRunResult::Ambiguous(AmbiguousPackage {
-                query: package_name.to_string(),
-                candidates: packages,
-            }));
+            // Several versions of one package are not a choice to put to the
+            // caller: running a command means running the current one, unless
+            // an explicit @version says otherwise.
+            let identity = |p: &Package| {
+                (
+                    p.pkg_name.clone(),
+                    p.pkg_id.clone(),
+                    p.pkg_family.clone(),
+                    p.repo_name.clone(),
+                )
+            };
+            let first = identity(&packages[0]);
+            if packages.iter().all(|p| identity(p) == first) {
+                let newest = packages
+                    .into_iter()
+                    .max_by(|a, b| compare_versions(&a.version, &b.version))
+                    .unwrap();
+                packages = vec![newest];
+            } else {
+                return Ok(PrepareRunResult::Ambiguous(AmbiguousPackage {
+                    query: package_name.to_string(),
+                    candidates: packages,
+                }));
+            }
         }
     }
 
     let package = packages.into_iter().next().unwrap().resolve(version);
+
+    // Named like an install: content-addressed, so a different version or a
+    // different repository never reuses another's cached binary.
+    let suffix = package
+        .bsum
+        .as_deref()
+        .filter(|s| s.len() >= 12)
+        .map(|s| s[..12].to_string())
+        .unwrap_or_else(|| {
+            let source = package
+                .pkg_id
+                .as_deref()
+                .or(package.ghcr_pkg.as_deref())
+                .unwrap_or(package.download_url.as_str());
+            hash_string(&format!(
+                "{}:{}:{}",
+                package.pkg_name, package.version, source
+            ))[..12]
+                .to_string()
+        });
+    let cache_dir = cache_bin.join(format!(
+        "{}-{}-{}",
+        package.pkg_name, package.version, suffix
+    ));
+    let output_path = cache_dir.join(&package.pkg_name);
 
     // Refuse to execute a package whose integrity cannot be checked. OCI
     // artifacts are digest-verified during download, so they are exempt.
@@ -136,8 +182,8 @@ pub async fn prepare_run(
         }
     }
 
-    fs::create_dir_all(&cache_bin)
-        .with_context(|| format!("creating directory {}", cache_bin.display()))?;
+    fs::create_dir_all(&cache_dir)
+        .with_context(|| format!("creating directory {}", cache_dir.display()))?;
 
     let op_id = next_op_id();
     let progress_callback =
@@ -146,10 +192,25 @@ pub async fn prepare_run(
     download_to_cache(
         &package,
         &output_path,
-        &cache_bin,
+        &cache_dir,
         no_verify,
         progress_callback,
     )?;
+
+    // The artifact may be an archive, in which case the thing to execute is
+    // wherever the package says it is rather than the download itself.
+    if let Some(files) = package.files.as_deref().filter(|f| !f.is_empty()) {
+        apply_file_layout(files, &cache_dir, &output_path)?;
+        if let Some(binary) = files.iter().find_map(|f| {
+            f.to.strip_prefix("bin/")
+                .filter(|rest| !rest.contains('/'))
+                .map(|_| cache_dir.join(&f.to))
+        }) {
+            if binary.exists() {
+                return Ok(PrepareRunResult::Ready(binary));
+            }
+        }
+    }
 
     Ok(PrepareRunResult::Ready(output_path))
 }
