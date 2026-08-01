@@ -20,8 +20,15 @@ pub async fn run_package(
 
     let result = run::prepare_run(ctx, package_name, repo_name, pkg_id, no_verify).await?;
 
+    let mut downloaded = false;
     let output_path = match result {
-        PrepareRunResult::Ready(path) => path,
+        PrepareRunResult::Ready {
+            path,
+            downloaded: d,
+        } => {
+            downloaded = d;
+            path
+        }
         PrepareRunResult::Ambiguous(amb) => {
             let pkg = if yes {
                 amb.candidates.into_iter().next()
@@ -45,11 +52,23 @@ pub async fn run_package(
             .await?;
 
             match result {
-                PrepareRunResult::Ready(path) => path,
+                PrepareRunResult::Ready {
+                    path,
+                    downloaded: d,
+                } => {
+                    downloaded = d;
+                    path
+                }
                 _ => return Ok(0),
             }
         }
     };
+
+    // The progress bar leaves the cursor mid-line, so a program that writes
+    // straight to stdout would start where the bar stopped.
+    if downloaded {
+        eprintln!();
+    }
 
     let run_result = run::execute_binary(&output_path, args)?;
 

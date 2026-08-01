@@ -174,7 +174,10 @@ pub async fn prepare_run(
         })
     });
     if let Some(binary) = laid_out.as_ref().filter(|p| p.exists()) {
-        return Ok(PrepareRunResult::Ready(binary.clone()));
+        return Ok(PrepareRunResult::Ready {
+            path: binary.clone(),
+            downloaded: false,
+        });
     }
 
     // Reuse a cached binary only after re-verifying it against the expected
@@ -184,7 +187,10 @@ pub async fn prepare_run(
             Some(ref bsum) if !no_verify => {
                 let checksum = calculate_checksum(&output_path)?;
                 if checksum == *bsum {
-                    return Ok(PrepareRunResult::Ready(output_path));
+                    return Ok(PrepareRunResult::Ready {
+                        path: output_path,
+                        downloaded: false,
+                    });
                 }
                 debug!(
                     package = %package.pkg_name,
@@ -192,7 +198,12 @@ pub async fn prepare_run(
                 );
                 fs::remove_file(&output_path).ok();
             }
-            _ => return Ok(PrepareRunResult::Ready(output_path)),
+            _ => {
+                return Ok(PrepareRunResult::Ready {
+                    path: output_path,
+                    downloaded: false,
+                })
+            }
         }
     }
 
@@ -221,12 +232,18 @@ pub async fn prepare_run(
                 .map(|_| cache_dir.join(&f.to))
         }) {
             if binary.exists() {
-                return Ok(PrepareRunResult::Ready(binary));
+                return Ok(PrepareRunResult::Ready {
+                    path: binary,
+                    downloaded: true,
+                });
             }
         }
     }
 
-    Ok(PrepareRunResult::Ready(output_path))
+    Ok(PrepareRunResult::Ready {
+        path: output_path,
+        downloaded: true,
+    })
 }
 
 /// Execute a binary with the given arguments.

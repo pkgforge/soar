@@ -219,7 +219,7 @@ pub struct ApplyReport {
 // ---- Run ----
 
 pub enum PrepareRunResult {
-    Ready(PathBuf),
+    Ready { path: PathBuf, downloaded: bool },
     Ambiguous(AmbiguousPackage),
 }
 
