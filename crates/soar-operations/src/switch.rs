@@ -96,7 +96,7 @@ pub async fn switch_variant(
             selected_package.pkg_family.as_deref(),
             checksum,
         )?;
-        CoreRepository::link_by_checksum(conn, pkg_name, pkg_id, checksum)
+        CoreRepository::link_by_row_id(conn, selected_package.id)
     })?;
 
     let config = ctx.config();

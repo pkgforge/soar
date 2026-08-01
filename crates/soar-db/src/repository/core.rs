@@ -795,6 +795,16 @@ impl CoreRepository {
 
     /// Links a package by pkg_name, pkg_id, and checksum.
     /// Used when switching to an alternate package version.
+    /// Mark one installed row as the linked one, by its own id.
+    ///
+    /// Matching on a checksum cannot do this: two repositories shipping the
+    /// same build share it, so linking one would link both.
+    pub fn link_by_row_id(conn: &mut SqliteConnection, id: i32) -> QueryResult<usize> {
+        diesel::update(packages::table.filter(packages::id.eq(id)))
+            .set(packages::unlinked.eq(false))
+            .execute(conn)
+    }
+
     pub fn link_by_checksum(
         conn: &mut SqliteConnection,
         pkg_name: &str,
