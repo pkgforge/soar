@@ -26,7 +26,7 @@ pub struct LocalPackage {
     pub path: PathBuf,
     /// Extracted or overridden package name
     pub pkg_name: String,
-    /// Generated package ID (lowercase, normalized)
+    /// Package id, set only by an explicit override
     pub pkg_id: Option<String>,
     /// Where the file came from, used to tell apart two local files that
     /// produce the same package name.

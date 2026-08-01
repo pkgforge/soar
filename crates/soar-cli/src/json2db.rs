@@ -44,8 +44,10 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
     // Built beside the target and swapped in only once it holds something.
     // Writing in place would destroy a working database whenever an import
     // turned out to be entirely rejected.
+    // Named for this process, so a second import running at the same time
+    // cannot delete the database this one is still building.
     let mut tmp_name = output_path.file_name().unwrap_or_default().to_os_string();
-    tmp_name.push(".tmp");
+    tmp_name.push(format!(".{}.tmp", std::process::id()));
     let tmp_path = output_path.with_file_name(tmp_name);
     for stale in [
         &tmp_path,
