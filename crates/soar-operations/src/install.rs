@@ -37,6 +37,7 @@ use soar_utils::{
     lock::FileLock,
     path::is_safe_component,
     pattern::apply_sig_variants,
+    version::compare_versions,
 };
 use tokio::sync::Semaphore;
 use tracing::{debug, trace, warn};
@@ -537,6 +538,48 @@ fn resolve_normal(
             }]))
         }
         _ => {
+            // Several versions of one package are not competing variants, and
+            // asking which to install would be asking the same question the
+            // caller already answered by naming it. The newest wins; anything
+            // else is chosen with an explicit @version.
+            let identity = |p: &Package| {
+                (
+                    p.pkg_name.clone(),
+                    p.pkg_id.clone(),
+                    p.pkg_family.clone(),
+                    p.repo_name.clone(),
+                )
+            };
+            let first = identity(&packages[0]);
+            if packages.iter().all(|p| identity(p) == first) {
+                let newest = packages
+                    .into_iter()
+                    .max_by(|a, b| compare_versions(&a.version, &b.version))
+                    .unwrap();
+                let installed_pkg = installed_packages.iter().find(|ip| ip.is_installed);
+                if let Some(installed) = installed_pkg {
+                    if !options.force {
+                        return Ok(ResolveResult::AlreadyInstalled {
+                            pkg_name: installed.pkg_name.clone(),
+                            repo_name: installed.repo_name.clone(),
+                            version: installed.version.clone(),
+                        });
+                    }
+                }
+                let existing_install = installed_packages
+                    .iter()
+                    .find(|ip| ip.version == newest.version)
+                    .cloned();
+                let newest = newest.resolve(query.version.as_deref());
+                return Ok(ResolveResult::Resolved(vec![InstallTarget {
+                    package: newest,
+                    existing_install,
+                    pinned: query.version.is_some(),
+                    profile: None,
+                    ..Default::default()
+                }]));
+            }
+
             Ok(ResolveResult::Ambiguous(crate::AmbiguousPackage {
                 query: package_name.to_string(),
                 candidates: packages,
@@ -871,9 +914,17 @@ async fn install_single_package(
         )));
     }
 
+    // The version is in the name so a directory can be read at a glance. It is
+    // not the identity: the hash still is, since two builds of one version must
+    // not collide.
+    let dir_name = if is_safe_component(&pkg.version) {
+        format!("{}-{}-{}", pkg.pkg_name, pkg.version, dir_suffix)
+    } else {
+        format!("{}-{}", pkg.pkg_name, dir_suffix)
+    };
     let install_dir = config
         .get_packages_path(target.profile.clone())?
-        .join(format!("{}-{}", pkg.pkg_name, dir_suffix));
+        .join(dir_name);
     let main_binary_name = pkg
         .provides
         .as_ref()

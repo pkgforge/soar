@@ -105,6 +105,10 @@ fn apply_file_layout(files: &[PackageFile], install_dir: &Path, artifact: &Path)
     fs::create_dir_all(&staging)
         .with_context(|| format!("creating staging directory {}", staging.display()))?;
 
+    // An archive may ship its directories read-only, and moving a file out of
+    // one needs write permission on the directory itself.
+    crate::package::remove::make_tree_writable(install_dir);
+
     let present = walk_dir_files(install_dir, &staging);
     let mut placed = 0usize;
     for file in files {

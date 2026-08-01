@@ -123,7 +123,7 @@ pub struct PackageRemover {
 ///
 /// Without it `remove_dir_all` cannot unlink the entries inside, so a package
 /// that installed cleanly could not be removed.
-fn make_tree_writable(path: &Path) {
+pub(crate) fn make_tree_writable(path: &Path) {
     let Ok(entries) = fs::read_dir(path) else {
         return;
     };
@@ -245,7 +245,12 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            walk_dir(&self.config.get_desktop_path()?, &mut remove_action)?;
+            // A missing desktop or icon directory means there is nothing of
+            // ours in it, not a reason to abandon the removal half-done.
+            let desktop_path = self.config.get_desktop_path()?;
+            if desktop_path.is_dir() {
+                walk_dir(&desktop_path, &mut remove_action)?;
+            }
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                 if let Ok(real_path) = fs::read_link(path) {
@@ -256,7 +261,10 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            walk_dir(self.config.get_icons_path(), &mut remove_action)?;
+            let icons_path = self.config.get_icons_path();
+            if icons_path.is_dir() {
+                walk_dir(icons_path, &mut remove_action)?;
+            }
         }
 
         // Calculate directory size before removal for logging
