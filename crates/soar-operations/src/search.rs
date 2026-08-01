@@ -14,13 +14,18 @@ use soar_db::{
         metadata::MetadataRepository,
     },
 };
+use soar_utils::version::compare_versions;
 use tracing::{debug, trace};
 
-use crate::{SearchEntry, SearchResult, SoarContext};
+use crate::{
+    utils::{is_installed, InstalledIndex, PackageKey},
+    SearchEntry, SearchResult, SoarContext,
+};
 
 /// Search for packages across all repositories.
 ///
-/// Uses fuzzy matching by default. Falls back to SQL LIKE for case-sensitive searches.
+/// Uses fuzzy matching by default. Falls back to SQL LIKE for case-sensitive
+/// searches.
 pub async fn search_packages(
     ctx: &SoarContext,
     query: &str,
@@ -55,13 +60,67 @@ pub async fn search_packages(
         fuzzy_search(ctx, query, search_limit).await?
     };
 
-    let installed_pkgs: HashMap<(String, String, String), bool> = diesel_db
+    // One row per package: a result repeated once per published version says
+    // nothing extra and pushes real matches off the list.
+    let mut newest: HashMap<PackageKey, Package> = HashMap::new();
+    let mut counts: HashMap<PackageKey, Vec<String>> = HashMap::new();
+    let mut order: Vec<PackageKey> = Vec::new();
+    for pkg in packages {
+        let key = (
+            pkg.repo_name.clone(),
+            pkg.pkg_name.clone(),
+            pkg.pkg_id.clone(),
+            pkg.pkg_family.clone(),
+        );
+        counts
+            .entry(key.clone())
+            .or_default()
+            .push(pkg.version.clone());
+        match newest.get(&key) {
+            Some(kept) if compare_versions(&kept.version, &pkg.version).is_ge() => {}
+            _ => {
+                if !newest.contains_key(&key) {
+                    order.push(key.clone());
+                }
+                newest.insert(key, pkg);
+            }
+        }
+    }
+    // ranking order is the point of a search, so it is preserved
+    let packages: Vec<Package> = order
+        .into_iter()
+        .filter_map(|k| newest.remove(&k))
+        .collect();
+
+    let installed_pkgs: InstalledIndex = diesel_db
         .with_conn(|conn| {
             CoreRepository::list_filtered(conn, None, None, None, None, None, None, None, None)
         })?
         .into_par_iter()
-        .map(|pkg| ((pkg.repo_name, pkg.pkg_id, pkg.pkg_name), pkg.is_installed))
-        .collect();
+        // Keyed by name, not id: a package installed before ids became
+        // optional still carries one, while its metadata no longer does, and
+        // keying on both would stop matching the two. Rows sharing a key are
+        // merged rather than overwritten, so one uninstalled version cannot
+        // mask an installed one.
+        // Keyed by family too, or a package merely sharing a name would
+        // inherit the marker. The family is recorded at install time, so a
+        // package without one matches only entries without one.
+        .map(|pkg| {
+            (
+                (pkg.repo_name, pkg.pkg_name),
+                (pkg.pkg_family, pkg.is_installed),
+            )
+        })
+        .fold(HashMap::new, |mut acc: HashMap<_, Vec<_>>, (key, value)| {
+            acc.entry(key).or_default().push(value);
+            acc
+        })
+        .reduce(HashMap::new, |mut acc: HashMap<_, Vec<_>>, part| {
+            for (key, values) in part {
+                acc.entry(key).or_default().extend(values);
+            }
+            acc
+        });
 
     let total_count = packages.len();
 
@@ -69,15 +128,33 @@ pub async fn search_packages(
         .into_iter()
         .take(search_limit)
         .map(|package| {
-            let key = (
-                package.repo_name.clone(),
-                package.pkg_id.clone(),
-                package.pkg_name.clone(),
+            let installed = is_installed(
+                &installed_pkgs,
+                &package.repo_name,
+                &package.pkg_name,
+                package.pkg_family.as_deref(),
             );
-            let installed = installed_pkgs.get(&key).copied().unwrap_or(false);
+            let other_versions = counts
+                .get(&(
+                    package.repo_name.clone(),
+                    package.pkg_name.clone(),
+                    package.pkg_id.clone(),
+                    package.pkg_family.clone(),
+                ))
+                .map(|all| {
+                    let mut rest: Vec<String> = all
+                        .iter()
+                        .filter(|v| **v != package.version)
+                        .cloned()
+                        .collect();
+                    rest.sort_by(|a, b| compare_versions(b, a));
+                    rest
+                })
+                .unwrap_or_default();
             SearchEntry {
                 package,
                 installed,
+                other_versions,
             }
         })
         .collect();
@@ -184,8 +261,11 @@ fn score_candidates(query: &str, candidates: &[(String, FuzzyCandidate)]) -> Vec
         let name_buf = Utf32String::from(candidate.pkg_name.as_str());
         let name_score = pattern.score(name_buf.slice(..), &mut matcher);
 
-        let id_buf = Utf32String::from(candidate.pkg_id.as_str());
-        let id_score = pattern.score(id_buf.slice(..), &mut matcher);
+        // A package without an id simply has nothing extra to match on.
+        let id_score = candidate.pkg_id.as_deref().and_then(|id| {
+            let id_buf = Utf32String::from(id);
+            pattern.score(id_buf.slice(..), &mut matcher)
+        });
 
         let best_score = [name_score, id_score].into_iter().flatten().max();
 
@@ -222,6 +302,7 @@ pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec
                     conn,
                     query.name.as_deref(),
                     query.pkg_id.as_deref(),
+                    query.family.as_deref(),
                     None,
                     None,
                     Some(SortDirection::Asc),
@@ -241,6 +322,7 @@ pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec
                 conn,
                 query.name.as_deref(),
                 query.pkg_id.as_deref(),
+                query.family.as_deref(),
                 None,
                 None,
                 Some(SortDirection::Asc),
@@ -256,7 +338,7 @@ pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec
         })?
     };
 
-    let packages: Vec<Package> = if let Some(ref version) = query.version {
+    let mut packages: Vec<Package> = if let Some(ref version) = query.version {
         packages
             .into_iter()
             .filter(|p| p.has_version(version))
@@ -265,6 +347,16 @@ pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec
     } else {
         packages
     };
+
+    // The query is ordered by name, which says nothing about several versions
+    // of one package. Newest first, so the one that would be installed is on
+    // top.
+    packages.sort_by(|a, b| {
+        a.pkg_name
+            .cmp(&b.pkg_name)
+            .then(a.repo_name.cmp(&b.repo_name))
+            .then(compare_versions(&b.version, &a.version))
+    });
 
     Ok(packages)
 }

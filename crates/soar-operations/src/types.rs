@@ -35,7 +35,6 @@ pub enum ResolveResult {
     /// Already installed (and not --force).
     AlreadyInstalled {
         pkg_name: String,
-        pkg_id: String,
         repo_name: String,
         version: String,
     },
@@ -58,11 +57,14 @@ pub struct InstallReport {
 #[derive(Debug)]
 pub struct InstalledInfo {
     pub pkg_name: String,
-    pub pkg_id: String,
+    pub pkg_family: Option<String>,
     pub repo_name: String,
     pub version: String,
     pub install_dir: PathBuf,
     pub symlinks: Vec<(PathBuf, PathBuf)>,
+    /// Man pages and completions linked out of the package. Counted rather
+    /// than listed: a package like gh ships over a hundred manual pages.
+    pub shared: Vec<(PathBuf, PathBuf)>,
     pub notes: Option<Vec<String>>,
 }
 
@@ -70,7 +72,6 @@ pub struct InstalledInfo {
 #[derive(Debug)]
 pub struct FailedInfo {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub error: String,
 }
 
@@ -93,7 +94,6 @@ pub struct RemoveReport {
 
 pub struct RemovedInfo {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub repo_name: String,
     pub version: String,
 }
@@ -102,7 +102,6 @@ pub struct RemovedInfo {
 
 pub struct UpdateInfo {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub repo_name: String,
     pub current_version: String,
     pub new_version: String,
@@ -133,6 +132,8 @@ pub struct SearchResult {
 pub struct SearchEntry {
     pub package: Package,
     pub installed: bool,
+    /// The other versions the repository publishes, newest first.
+    pub other_versions: Vec<String>,
 }
 
 pub struct PackageListResult {
@@ -143,6 +144,9 @@ pub struct PackageListResult {
 pub struct PackageListEntry {
     pub package: Package,
     pub installed: bool,
+    /// The other versions the repository publishes, newest first. Only the
+    /// newest is listed, so these say what is not being shown.
+    pub other_versions: Vec<String>,
 }
 
 pub struct InstalledListResult {
@@ -162,13 +166,17 @@ pub struct InstalledEntry {
 pub struct HealthReport {
     pub path_configured: bool,
     pub bin_path: PathBuf,
+    /// Where soar puts manual pages, and whether `man` will actually look
+    /// there. Set only once a package has installed one, since there is
+    /// nothing to warn about otherwise.
+    pub man_path: Option<PathBuf>,
+    pub man_path_configured: bool,
     pub broken_packages: Vec<BrokenPackage>,
     pub broken_symlinks: Vec<PathBuf>,
 }
 
 pub struct BrokenPackage {
     pub pkg_name: String,
-    pub pkg_id: String,
     pub installed_path: String,
 }
 
@@ -211,7 +219,7 @@ pub struct ApplyReport {
 // ---- Run ----
 
 pub enum PrepareRunResult {
-    Ready(PathBuf),
+    Ready { path: PathBuf, downloaded: bool },
     Ambiguous(AmbiguousPackage),
 }
 

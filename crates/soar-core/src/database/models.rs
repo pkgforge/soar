@@ -3,7 +3,10 @@
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
-use soar_db::{models::types::PackageProvide, repository::core::InstalledPackageWithPortable};
+use soar_db::{
+    models::types::{PackageExtra, PackageFile, PackageProvide},
+    repository::core::InstalledPackageWithPortable,
+};
 use soar_package::PackageExt;
 
 /// Package maintainer information.
@@ -26,11 +29,10 @@ pub struct Package {
     pub repo_name: String,
     pub disabled: Option<bool>,
     pub disabled_reason: Option<String>,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
     pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
-    pub pkg_webpage: Option<String>,
     pub app_id: Option<String>,
     pub description: String,
     pub version: String,
@@ -46,7 +48,6 @@ pub struct Package {
     pub homepages: Option<Vec<String>>,
     pub notes: Option<Vec<String>>,
     pub source_urls: Option<Vec<String>>,
-    pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub icon: Option<String>,
     pub desktop: Option<String>,
@@ -65,6 +66,11 @@ pub struct Package {
     pub deprecated: bool,
     pub desktop_integration: Option<bool>,
     pub portable: Option<bool>,
+    /// Executables inside the artifact, as source path -> installed name.
+    /// Pinned side files installed alongside the artifact.
+    pub extra: Option<Vec<PackageExtra>>,
+    /// What the package takes out of its artifact. Absent means all of it.
+    pub files: Option<Vec<PackageFile>>,
 }
 
 impl PackageExt for Package {
@@ -72,8 +78,12 @@ impl PackageExt for Package {
         &self.pkg_name
     }
 
-    fn pkg_id(&self) -> &str {
-        &self.pkg_id
+    fn pkg_id(&self) -> Option<&str> {
+        self.pkg_id.as_deref()
+    }
+
+    fn pkg_family(&self) -> Option<&str> {
+        self.pkg_family.as_deref()
     }
 
     fn version(&self) -> &str {
@@ -132,8 +142,9 @@ impl Package {
 pub struct InstalledPackage {
     pub id: u64,
     pub repo_name: String,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
+    pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
     pub version: String,
     pub size: u64,
@@ -159,8 +170,12 @@ impl PackageExt for InstalledPackage {
         &self.pkg_name
     }
 
-    fn pkg_id(&self) -> &str {
-        &self.pkg_id
+    fn pkg_id(&self) -> Option<&str> {
+        self.pkg_id.as_deref()
+    }
+
+    fn pkg_family(&self) -> Option<&str> {
+        self.pkg_family.as_deref()
     }
 
     fn version(&self) -> &str {
@@ -180,6 +195,7 @@ impl From<InstalledPackageWithPortable> for InstalledPackage {
             repo_name: pkg.repo_name,
             pkg_id: pkg.pkg_id,
             pkg_name: pkg.pkg_name,
+            pkg_family: pkg.pkg_family,
             pkg_type: pkg.pkg_type,
             version: pkg.version,
             size: pkg.size as u64,
@@ -210,6 +226,7 @@ impl From<soar_db::repository::core::InstalledPackage> for InstalledPackage {
             repo_name: pkg.repo_name,
             pkg_id: pkg.pkg_id,
             pkg_name: pkg.pkg_name,
+            pkg_family: pkg.pkg_family,
             pkg_type: pkg.pkg_type,
             version: pkg.version,
             size: pkg.size as u64,
@@ -244,7 +261,6 @@ impl From<soar_db::models::metadata::Package> for Package {
             pkg_name: pkg.pkg_name,
             pkg_family: pkg.pkg_family,
             pkg_type: pkg.pkg_type,
-            pkg_webpage: pkg.pkg_webpage,
             app_id: pkg.app_id,
             description: pkg.description.unwrap_or_default(),
             version: pkg.version,
@@ -260,7 +276,6 @@ impl From<soar_db::models::metadata::Package> for Package {
             homepages: pkg.homepages,
             notes: pkg.notes,
             source_urls: pkg.source_urls,
-            tags: pkg.tags,
             categories: pkg.categories,
             icon: pkg.icon,
             desktop: pkg.desktop,
@@ -279,6 +294,8 @@ impl From<soar_db::models::metadata::Package> for Package {
             deprecated: false,
             desktop_integration: pkg.desktop_integration,
             portable: pkg.portable,
+            extra: pkg.extra,
+            files: pkg.files,
         }
     }
 }

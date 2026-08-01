@@ -20,8 +20,15 @@ pub async fn run_package(
 
     let result = run::prepare_run(ctx, package_name, repo_name, pkg_id, no_verify).await?;
 
+    let downloaded;
     let output_path = match result {
-        PrepareRunResult::Ready(path) => path,
+        PrepareRunResult::Ready {
+            path,
+            downloaded: d,
+        } => {
+            downloaded = d;
+            path
+        }
         PrepareRunResult::Ambiguous(amb) => {
             let pkg = if yes {
                 amb.candidates.into_iter().next()
@@ -33,22 +40,44 @@ pub async fn run_package(
                 return Ok(0);
             };
 
-            // Re-run with selected package
+            // Run what was chosen. Resolving it by name again would pose
+            // the same ambiguous question the choice just answered.
+            let query = match pkg.pkg_family {
+                Some(ref family) => {
+                    format!(
+                        "{}/{}@{}:{}",
+                        family, pkg.pkg_name, pkg.version, pkg.repo_name
+                    )
+                }
+                None => format!("{}@{}:{}", pkg.pkg_name, pkg.version, pkg.repo_name),
+            };
             let result = run::prepare_run(
                 ctx,
-                package_name,
+                &query,
                 Some(&pkg.repo_name),
-                Some(&pkg.pkg_id),
+                pkg.pkg_id.as_deref(),
                 no_verify,
             )
             .await?;
 
             match result {
-                PrepareRunResult::Ready(path) => path,
+                PrepareRunResult::Ready {
+                    path,
+                    downloaded: d,
+                } => {
+                    downloaded = d;
+                    path
+                }
                 _ => return Ok(0),
             }
         }
     };
+
+    // The progress bar leaves the cursor mid-line, so a program that writes
+    // straight to stdout would start where the bar stopped.
+    if downloaded {
+        eprintln!();
+    }
 
     let run_result = run::execute_binary(&output_path, args)?;
 

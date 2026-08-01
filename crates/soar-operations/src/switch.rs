@@ -82,14 +82,20 @@ pub async fn switch_variant(
         .ok_or_else(|| SoarError::Custom("Invalid variant index".into()))?;
 
     let pkg_name = &selected_package.pkg_name;
-    let pkg_id = &selected_package.pkg_id;
-    let checksum = selected_package.checksum.as_deref();
+    let pkg_id = selected_package.pkg_id.as_deref();
 
     // Atomically unlink other variants and link the selected one so the DB
     // is never left in a state where all variants are unlinked.
     diesel_db.transaction(|conn| {
-        CoreRepository::unlink_others_by_checksum(conn, pkg_name, pkg_id, checksum)?;
-        CoreRepository::link_by_checksum(conn, pkg_name, pkg_id, checksum)
+        CoreRepository::unlink_others(
+            conn,
+            pkg_name,
+            &selected_package.repo_name,
+            pkg_id,
+            selected_package.pkg_family.as_deref(),
+            None,
+        )?;
+        CoreRepository::link_by_row_id(conn, selected_package.id)
     })?;
 
     let config = ctx.config();
@@ -106,6 +112,7 @@ pub async fn switch_variant(
         None,
         None,
         None,
+        None,
     )
     .await?;
 
@@ -118,7 +125,8 @@ pub async fn switch_variant(
             MetadataRepository::find_filtered(
                 conn,
                 Some(name),
-                Some(&selected_package.pkg_id),
+                selected_package.pkg_id.as_deref(),
+                selected_package.pkg_family.as_deref(),
                 None,
                 Some(1),
                 None,

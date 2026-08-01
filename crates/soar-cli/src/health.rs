@@ -1,4 +1,4 @@
-use nu_ansi_term::Color::{Blue, Cyan, Green, Red, Yellow};
+use nu_ansi_term::Color::{Blue, Green, Red, Yellow};
 use soar_core::SoarResult;
 use soar_operations::{health, SoarContext};
 use tabled::{
@@ -24,6 +24,21 @@ pub async fn display_health(ctx: &SoarContext) -> SoarResult<()> {
         )
     };
     builder.push_record(["PATH".to_string(), path_status]);
+
+    // Only shown once something has installed a manual page, so a user with no
+    // such package is not told to configure something they do not need.
+    if let Some(man_dir) = &report.man_path {
+        let man_status = if report.man_path_configured {
+            format!("{} Configured", Colored(Green, icon_or(Icons::CHECK, "OK")))
+        } else {
+            format!(
+                "{} {} not searched by man",
+                Colored(Yellow, icon_or(Icons::WARNING, "!")),
+                Colored(Blue, man_dir.display())
+            )
+        };
+        builder.push_record(["MANPATH".to_string(), man_status]);
+    }
 
     let pkg_status = if report.broken_packages.is_empty() {
         format!("{} None", Colored(Green, icon_or(Icons::CHECK, "OK")))
@@ -61,10 +76,9 @@ pub async fn display_health(ctx: &SoarContext) -> SoarResult<()> {
         info!("\nBroken packages:");
         for pkg in &report.broken_packages {
             info!(
-                "  {} {}#{}: {}",
+                "  {} {}: {}",
                 Icons::ARROW,
                 Colored(Blue, &pkg.pkg_name),
-                Colored(Cyan, &pkg.pkg_id),
                 Colored(Yellow, &pkg.installed_path)
             );
         }
@@ -94,16 +108,11 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
     }
 
     for removed in &report.removed {
-        info!("Removed {}#{}", removed.pkg_name, removed.pkg_id);
+        info!("Removed {}", removed.pkg_name);
     }
 
     for failed in &report.failed {
-        tracing::error!(
-            "Failed to remove {}#{}: {}",
-            failed.pkg_name,
-            failed.pkg_id,
-            failed.error
-        );
+        tracing::error!("Failed to remove {}: {}", failed.pkg_name, failed.error);
     }
 
     if !report.removed.is_empty() && report.failed.is_empty() {
@@ -114,7 +123,7 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
             report
                 .failed
                 .iter()
-                .map(|f| format!("{}#{}", f.pkg_name, f.pkg_id))
+                .map(|f| f.pkg_name.to_string())
                 .collect::<Vec<_>>()
                 .join(", ")
         );

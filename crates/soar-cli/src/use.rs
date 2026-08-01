@@ -19,20 +19,26 @@ pub async fn use_alternate_package(ctx: &SoarContext, name: &str) -> SoarResult<
         info!(
             active = variant.is_active,
             pkg_name = package.pkg_name,
-            pkg_id = package.pkg_id,
+            pkg_family = package.pkg_family,
             repo_name = package.repo_name,
             pkg_type = package.pkg_type,
             version = package.version,
             size = package.size,
-            "[{}] {}#{}:{} ({}-{}) ({}){}",
+            "[{}] {}{}:{} ({}-{}) ({}){}",
             idx + 1,
+            // Two projects can publish the same name, so the family is what
+            // tells their variants apart when there is one.
+            package
+                .pkg_family
+                .as_ref()
+                .map(|f| format!("{}/", Colored(Magenta, f)))
+                .unwrap_or_default(),
             Colored(Blue, &package.pkg_name),
-            Colored(Cyan, &package.pkg_id),
             Colored(Cyan, &package.repo_name),
             package
                 .pkg_type
                 .as_ref()
-                .map(|pkg_type| format!(":{}", Colored(Magenta, &pkg_type)))
+                .map(|pkg_type| format!("{}", Colored(Magenta, &pkg_type)))
                 .unwrap_or_default(),
             Colored(Magenta, &package.version),
             Colored(Magenta, format_bytes(package.size, 2)),
@@ -51,10 +57,7 @@ pub async fn use_alternate_package(ctx: &SoarContext, name: &str) -> SoarResult<
     let selection = get_valid_selection(variants.len())?;
     switch::switch_variant(ctx, name, selection).await?;
 
-    info!(
-        "Switched to {}#{}",
-        variants[selection].package.pkg_name, variants[selection].package.pkg_id
-    );
+    info!("Switched to {}", variants[selection].package.pkg_name);
 
     Ok(())
 }

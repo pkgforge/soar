@@ -111,10 +111,6 @@ pub fn migrate_json_to_jsonb(
                     json_condition("source_urls")
                 ),
                 format!(
-                    "UPDATE packages SET tags = jsonb(tags) WHERE {}",
-                    json_condition("tags")
-                ),
-                format!(
                     "UPDATE packages SET categories = jsonb(categories) WHERE {}",
                     json_condition("categories")
                 ),

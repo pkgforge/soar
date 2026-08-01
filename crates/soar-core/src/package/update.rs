@@ -16,25 +16,43 @@ use crate::{
 pub fn remove_old_versions(package: &Package, db: &DieselDatabase, force: bool) -> SoarResult<()> {
     let Package {
         pkg_id,
+        pkg_family,
         pkg_name,
         repo_name,
         ..
     } = package;
 
     let old_packages = db.with_conn(|conn| {
-        CoreRepository::get_old_package_paths(conn, pkg_id, pkg_name, repo_name, force)
+        CoreRepository::get_old_package_paths(
+            conn,
+            pkg_id.as_deref(),
+            pkg_family.as_deref(),
+            pkg_name,
+            repo_name,
+            force,
+        )
     })?;
 
     for (_id, installed_path) in &old_packages {
         let path = Path::new(installed_path);
         if path.exists() {
+            // An archive may ship its directories read-only, and removing an
+            // entry needs write permission on the directory holding it.
+            crate::package::remove::make_tree_writable(path);
             fs::remove_dir_all(path)
                 .with_context(|| format!("removing old package directory {}", path.display()))?;
         }
     }
 
     db.with_conn(|conn| {
-        CoreRepository::delete_old_packages(conn, pkg_id, pkg_name, repo_name, force)
+        CoreRepository::delete_old_packages(
+            conn,
+            pkg_id.as_deref(),
+            pkg_family.as_deref(),
+            pkg_name,
+            repo_name,
+            force,
+        )
     })?;
 
     Ok(())

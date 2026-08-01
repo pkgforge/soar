@@ -26,8 +26,11 @@ pub struct LocalPackage {
     pub path: PathBuf,
     /// Extracted or overridden package name
     pub pkg_name: String,
-    /// Generated package ID (lowercase, normalized)
-    pub pkg_id: String,
+    /// Package id, set only by an explicit override
+    pub pkg_id: Option<String>,
+    /// Where the file came from, used to tell apart two local files that
+    /// produce the same package name.
+    pub pkg_family: Option<String>,
     /// Extracted or overridden version
     pub version: String,
     /// Detected package type from extension (e.g., "appimage")
@@ -116,18 +119,19 @@ impl LocalPackage {
             .map(|v| v.strip_prefix('v').unwrap_or(v).to_string())
             .unwrap_or(extracted_version);
 
-        let pkg_id = pkg_id_override.map(String::from).unwrap_or_else(|| {
-            if let Some(ref ptype) = pkg_type {
-                format!("local.{pkg_name}-{ptype}")
-            } else {
-                format!("local.{pkg_name}")
-            }
+        let pkg_id = pkg_id_override.map(String::from);
+        // Nothing derives an id. The family carries where the file came from,
+        // which is what the derived id was standing in for.
+        let pkg_family = Some(match pkg_type {
+            Some(ref ptype) => format!("local.{pkg_name}-{ptype}"),
+            None => format!("local.{pkg_name}"),
         });
 
         Ok(Self {
             path,
-            pkg_name,
             pkg_id,
+            pkg_family,
+            pkg_name,
             version,
             pkg_type,
             size,
@@ -143,6 +147,7 @@ impl LocalPackage {
             id: 0,
             repo_name: "local".to_string(),
             pkg_id: self.pkg_id.clone(),
+            pkg_family: self.pkg_family.clone(),
             pkg_name: self.pkg_name.clone(),
             pkg_type: self.pkg_type.clone(),
             version: self.version.clone(),
@@ -194,7 +199,7 @@ mod tests {
         assert_eq!(pkg.pkg_name, "myapp");
         assert_eq!(pkg.version, "2.0.1");
         assert_eq!(pkg.pkg_type, Some("appimage".to_string()));
-        assert_eq!(pkg.pkg_id, "local.myapp-appimage");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("local.myapp-appimage"));
 
         let package = pkg.to_package();
         assert_eq!(package.repo_name, "local");

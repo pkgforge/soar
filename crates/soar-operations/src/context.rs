@@ -46,6 +46,13 @@ fn handle_json_metadata<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Bring a published metadata database up to the schema soar reads.
+fn migrate_metadata(path: &Path) -> SoarResult<()> {
+    DbConnection::open(path, DbType::Metadata)
+        .map_err(|e| SoarError::Custom(format!("migrating repository metadata: {}", e)))?;
+    Ok(())
+}
+
 #[derive(Clone)]
 pub struct SoarContext {
     inner: Arc<SoarContextInner>,
@@ -162,6 +169,17 @@ impl SoarContext {
                         MetadataContent::SqliteDb(db_bytes) => {
                             write_metadata_db(&db_bytes, &metadata_db_path)
                                 .map_err(|e| SoarError::Custom(e.to_string()))?;
+                            // A published database was built by whatever soar
+                            // the repository runs, so it can predate the
+                            // columns these queries name. Opening it through
+                            // the migration runner brings it up to them. The
+                            // rebuild runs outside a transaction, so a failure
+                            // leaves a half-migrated file: it is discarded
+                            // rather than queried.
+                            if let Err(e) = migrate_metadata(&metadata_db_path) {
+                                fs::remove_file(&metadata_db_path).ok();
+                                return Err(e);
+                            }
                         }
                         MetadataContent::Json(packages) => {
                             handle_json_metadata(&packages, &metadata_db_path, &repo.name)?;
@@ -230,25 +248,30 @@ impl SoarContext {
         })?;
 
         for pkg in installed_packages {
-            let exists = metadata_db
-                .with_conn(|conn| MetadataRepository::exists_by_pkg_id(conn, &pkg.pkg_id))?;
+            // Replacement tracking is keyed by package id, which the
+            // declarative format does not produce. Those rows have nothing to
+            // look up here.
+            let Some(pkg_id) = pkg.pkg_id.as_deref() else {
+                continue;
+            };
+            let exists =
+                metadata_db.with_conn(|conn| MetadataRepository::exists_by_pkg_id(conn, pkg_id))?;
 
             if !exists {
-                let replacement = metadata_db.with_conn(|conn| {
-                    MetadataRepository::find_replacement_pkg_id(conn, &pkg.pkg_id)
-                })?;
+                let replacement = metadata_db
+                    .with_conn(|conn| MetadataRepository::find_replacement_pkg_id(conn, pkg_id))?;
 
                 if let Some(new_pkg_id) = replacement {
                     self.inner.events.emit(SoarEvent::Log {
                         level: LogLevel::Info,
                         message: format!(
                             "{} is replaced by {} in {}",
-                            pkg.pkg_id, new_pkg_id, repo_name
+                            pkg_id, new_pkg_id, repo_name
                         ),
                     });
 
                     diesel_core_db.with_conn(|conn| {
-                        CoreRepository::update_pkg_id(conn, &repo_name, &pkg.pkg_id, &new_pkg_id)
+                        CoreRepository::update_pkg_id(conn, &repo_name, Some(pkg_id), &new_pkg_id)
                     })?;
                 }
             }

@@ -1,6 +1,7 @@
 use std::{
     ffi::OsString,
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -13,6 +14,45 @@ use soar_utils::{error::FileSystemResult, fs::walk_dir};
 use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
+
+/// Remove every symlink under `dir` that points into `installed_path`.
+///
+/// Ownership is decided by where the link goes, not by its name: a completion
+/// has to be named after its command, so soar cannot mark its own with a
+/// suffix the way it does for desktop files. Anything pointing elsewhere
+/// belongs to someone else and is left alone.
+fn remove_links_into(dir: &Path, installed_path: &Path, removed: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_symlink() {
+            if let Ok(target) = fs::read_link(&path) {
+                if target.starts_with(installed_path) {
+                    trace!("removing link: {}", path.display());
+                    if fs::remove_file(&path).is_ok() {
+                        removed.push(path);
+                    }
+                }
+            }
+        } else if path.is_dir() {
+            remove_links_into(&path, installed_path, removed);
+        }
+    }
+}
+
+/// The directories a package's files are linked into, beyond `bin`.
+///
+/// Every destination, not only the ones the configured shells ask for: a
+/// completion linked while a shell was enabled still has to be unlinked once
+/// that shell is turned off.
+fn shared_link_dirs(bin_path: &Path) -> Vec<PathBuf> {
+    crate::utils::shared_link_targets(bin_path, &[])
+        .into_iter()
+        .map(|(_, destination, _)| destination)
+        .collect()
+}
 
 /// Removes the bin-directory symlinks a package's `provides` created, keeping
 /// only those that live directly in `bin_path` and resolve into
@@ -78,6 +118,28 @@ pub struct PackageRemover {
     sandbox: Option<SandboxConfig>,
 }
 
+/// Give every directory under `path` the owner write bit.
+///
+/// Without it `remove_dir_all` cannot unlink the entries inside, so a package
+/// that installed cleanly could not be removed.
+pub fn make_tree_writable(path: &Path) {
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let child = entry.path();
+        if child.is_dir() && !child.is_symlink() {
+            make_tree_writable(&child);
+        }
+    }
+    if let Ok(meta) = fs::metadata(path) {
+        let mode = meta.permissions().mode();
+        if mode & 0o200 == 0 {
+            fs::set_permissions(path, fs::Permissions::from_mode(mode | 0o200)).ok();
+        }
+    }
+}
+
 impl PackageRemover {
     pub async fn new(package: InstalledPackage, db: DieselDatabase, config: Config) -> Self {
         trace!(
@@ -110,9 +172,9 @@ impl PackageRemover {
     fn run_hook(&self, hook_name: &str, command: &str) -> SoarResult<()> {
         let install_dir = PathBuf::from(&self.package.installed_path);
         let env = HookEnv {
+            pkg_id: self.package.pkg_id.as_deref().unwrap_or_default(),
             install_dir: &install_dir,
             pkg_name: &self.package.pkg_name,
-            pkg_id: &self.package.pkg_id,
             pkg_version: &self.package.version,
         };
 
@@ -137,9 +199,8 @@ impl PackageRemover {
             version = self.package.version,
             repo = self.package.repo_name,
             installed_path = self.package.installed_path,
-            "removing {}#{}:{} ({})",
+            "removing {}:{} ({})",
             self.package.pkg_name,
-            self.package.pkg_id,
             self.package.repo_name,
             self.package.version
         );
@@ -156,17 +217,20 @@ impl PackageRemover {
             let bin_path = self.config.get_bin_path()?;
             let installed_path = PathBuf::from(&self.package.installed_path);
 
-            if let Some(provides) = &self.package.provides {
+            // An empty list is stored rather than null once nothing declares
+            // provides, and it must not stand in for "this package has links".
+            if let Some(provides) = self.package.provides.as_deref().filter(|p| !p.is_empty()) {
                 let removed = remove_provide_symlinks(&bin_path, provides, &installed_path)?;
                 removed_symlinks.extend(removed);
             } else {
-                let def_bin = bin_path.join(&self.package.pkg_name);
-                if def_bin.is_symlink() && def_bin.is_file() {
-                    trace!("removing binary symlink: {}", def_bin.display());
-                    fs::remove_file(&def_bin)
-                        .with_context(|| format!("removing binary {}", def_bin.display()))?;
-                    removed_symlinks.push(def_bin);
-                }
+                // Nothing declares the links anymore, so they are found by
+                // where they point. This also catches aliases, which a name
+                // built from pkg_name alone would miss.
+                remove_links_into(&bin_path, &installed_path, &mut removed_symlinks);
+            }
+
+            for dir in shared_link_dirs(&bin_path) {
+                remove_links_into(&dir, &installed_path, &mut removed_symlinks);
             }
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
@@ -180,7 +244,12 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            walk_dir(&self.config.get_desktop_path()?, &mut remove_action)?;
+            // A missing desktop or icon directory means there is nothing of
+            // ours in it, not a reason to abandon the removal half-done.
+            let desktop_path = self.config.get_desktop_path()?;
+            if desktop_path.is_dir() {
+                walk_dir(&desktop_path, &mut remove_action)?;
+            }
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                 if let Ok(real_path) = fs::read_link(path) {
@@ -191,7 +260,10 @@ impl PackageRemover {
                 }
                 Ok(())
             };
-            walk_dir(self.config.get_icons_path(), &mut remove_action)?;
+            let icons_path = self.config.get_icons_path();
+            if icons_path.is_dir() {
+                walk_dir(icons_path, &mut remove_action)?;
+            }
         }
 
         // Calculate directory size before removal for logging
@@ -214,6 +286,10 @@ impl PackageRemover {
             self.package.installed_path,
             size_str
         );
+        // Archives commonly ship directories read-only, and removing a
+        // directory's entries needs the write bit on that directory. soar owns
+        // this tree, so it may restore what it needs to delete it.
+        make_tree_writable(Path::new(&self.package.installed_path));
         if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {
             // if not found, the package is already removed.
             if err.kind() != std::io::ErrorKind::NotFound {
@@ -241,12 +317,8 @@ impl PackageRemover {
         }
 
         debug!(
-            "removed {}#{}:{} ({}) - reclaimed {}",
-            self.package.pkg_name,
-            self.package.pkg_id,
-            self.package.repo_name,
-            self.package.version,
-            size_str
+            "removed {}:{} ({}) - reclaimed {}",
+            self.package.pkg_name, self.package.repo_name, self.package.version, size_str
         );
         Ok(())
     }

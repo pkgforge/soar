@@ -75,16 +75,10 @@ pub async fn install_packages(
                 };
 
                 if let Some(pkg) = pkg {
-                    // Re-resolve with the specific selected package
-                    let specific_query =
-                        format!("{}#{}:{}", pkg.pkg_name, pkg.pkg_id, pkg.repo_name);
-                    let re_results =
-                        install::resolve_packages(ctx, &[specific_query], &options).await?;
-                    for r in re_results {
-                        if let ResolveResult::Resolved(targets) = r {
-                            install_targets.extend(targets);
-                        }
-                    }
+                    // Install the package that was chosen. Re-resolving it by
+                    // name would ask the same ambiguous question again and
+                    // answer it with nothing.
+                    install_targets.push(install::target_for(ctx, pkg, &options)?);
                 }
             }
             ResolveResult::NotFound(name) => {
@@ -97,13 +91,13 @@ pub async fn install_packages(
             }
             ResolveResult::AlreadyInstalled {
                 pkg_name,
-                pkg_id,
                 repo_name,
                 version,
+                ..
             } => {
                 warn!(
-                    "{}#{}:{} ({}) is already installed - skipping",
-                    pkg_name, pkg_id, repo_name, version,
+                    "{}:{} ({}) is already installed - skipping",
+                    pkg_name, repo_name, version,
                 );
                 if !force {
                     info!("Hint: Use --force to reinstall, or --show to see other variants");
@@ -161,13 +155,13 @@ async fn install_with_show(
                     ResolveResult::Resolved(targets) => install_targets.extend(targets),
                     ResolveResult::AlreadyInstalled {
                         pkg_name,
-                        pkg_id,
                         repo_name,
                         version,
+                        ..
                     } => {
                         warn!(
-                            "{}#{}:{} ({}) is already installed - skipping",
-                            pkg_name, pkg_id, repo_name, version,
+                            "{}:{} ({}) is already installed - skipping",
+                            pkg_name, repo_name, version,
                         );
                         if !force {
                             info!("Hint: Use --force to reinstall");
@@ -200,15 +194,7 @@ async fn install_with_show(
                         };
 
                         if let Some(pkg) = pkg {
-                            let specific_query =
-                                format!("{}#{}:{}", pkg.pkg_name, pkg.pkg_id, pkg.repo_name);
-                            let re_results =
-                                install::resolve_packages(ctx, &[specific_query], options).await?;
-                            for r in re_results {
-                                if let ResolveResult::Resolved(targets) = r {
-                                    install_targets.extend(targets);
-                                }
-                            }
+                            install_targets.push(install::target_for(ctx, pkg, options)?);
                         }
                     }
                     ResolveResult::NotFound(name) => {
@@ -221,13 +207,13 @@ async fn install_with_show(
                     }
                     ResolveResult::AlreadyInstalled {
                         pkg_name,
-                        pkg_id,
                         repo_name,
                         version,
+                        ..
                     } => {
                         warn!(
-                            "{}#{}:{} ({}) is already installed - skipping",
-                            pkg_name, pkg_id, repo_name, version,
+                            "{}:{} ({}) is already installed - skipping",
+                            pkg_name, repo_name, version,
                         );
                         if !force {
                             info!(
@@ -247,6 +233,7 @@ async fn install_with_show(
                         conn,
                         query.name.as_deref(),
                         None,
+                        query.family.as_deref(),
                         None,
                         None,
                         Some(SortDirection::Asc),
@@ -266,6 +253,7 @@ async fn install_with_show(
                     conn,
                     query.name.as_deref(),
                     None,
+                    query.family.as_deref(),
                     None,
                     None,
                     Some(SortDirection::Asc),
@@ -302,7 +290,7 @@ async fn install_with_show(
         }
 
         // Get installed packages to show [installed] marker
-        let installed_packages: Vec<(String, String, String)> = diesel_db
+        let installed_packages: Vec<(String, Option<String>, String)> = diesel_db
             .with_conn(|conn| {
                 CoreRepository::list_filtered(
                     conn,
@@ -317,7 +305,7 @@ async fn install_with_show(
                 )
             })?
             .into_iter()
-            .map(|p| (p.pkg_id, p.repo_name, p.version))
+            .map(|p| (p.pkg_name, p.pkg_family, p.repo_name))
             .collect();
 
         let pkg = select_package_interactively_with_installed(
@@ -337,7 +325,7 @@ async fn install_with_show(
                     conn,
                     Some(&pkg.repo_name),
                     Some(&pkg.pkg_name),
-                    Some(&pkg.pkg_id),
+                    pkg.pkg_id.as_deref(),
                     None,
                     None,
                     None,
@@ -346,15 +334,17 @@ async fn install_with_show(
                 )
             })?
             .into_iter()
-            .map(Into::into)
-            .next();
+            // The query cannot narrow by family, and an uninstalled row of the
+            // same name would otherwise stand in for the installed one.
+            .filter(|ip| ip.pkg_family.as_deref() == pkg.pkg_family.as_deref())
+            .find(|ip| ip.is_installed)
+            .map(Into::into);
 
         if let Some(ref existing) = existing_install {
             if existing.is_installed {
                 warn!(
-                    "{}#{}:{} ({}) is already installed - {}",
+                    "{}:{} ({}) is already installed - {}",
                     existing.pkg_name,
-                    existing.pkg_id,
                     existing.repo_name,
                     existing.version,
                     if force { "reinstalling" } else { "skipping" }
@@ -402,13 +392,38 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
 
     for info in &report.installed {
         info!(
-            "\n{} {}#{}:{} [{}]",
+            "\n{} {}:{} [{}]",
             icon_or(Icons::CHECK, "*"),
             Colored(Blue, &info.pkg_name),
-            Colored(Cyan, &info.pkg_id),
             Colored(Green, &info.repo_name),
             Colored(Magenta, info.install_dir.display())
         );
+
+        if !info.shared.is_empty() {
+            // Listing these would bury the binaries: gh alone ships over a
+            // hundred manual pages.
+            let mut man = 0;
+            let mut completions = 0;
+            for (_, link) in &info.shared {
+                let path = link.to_string_lossy();
+                if path.contains("/man/") {
+                    man += 1;
+                } else {
+                    completions += 1;
+                }
+            }
+            let mut parts = Vec::new();
+            if man > 0 {
+                parts.push(format!("{man} man page{}", if man == 1 { "" } else { "s" }));
+            }
+            if completions > 0 {
+                parts.push(format!(
+                    "{completions} completion{}",
+                    if completions == 1 { "" } else { "s" }
+                ));
+            }
+            info!("  {} Linked {}", icon_or("📖", "-"), parts.join(", "));
+        }
 
         if !info.symlinks.is_empty() {
             info!("  {} Binaries:", icon_or("📂", "-"));
@@ -424,7 +439,9 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
         }
 
         if !no_notes {
-            if let Some(ref notes) = info.notes {
+            // Most packages have nothing to say, and an empty list would
+            // otherwise print a heading with no content under it.
+            if let Some(notes) = info.notes.as_ref().filter(|n| !n.is_empty()) {
                 info!(
                     "  {} Notes:\n    {}",
                     icon_or("📝", "-"),
@@ -436,8 +453,8 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
 
     for err_info in &report.failed {
         error!(
-            "Failed to install {}#{}: {}",
-            err_info.pkg_name, err_info.pkg_id, err_info.error
+            "Failed to install {}: {}",
+            err_info.pkg_name, err_info.error
         );
     }
 

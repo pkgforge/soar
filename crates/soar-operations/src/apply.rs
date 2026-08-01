@@ -52,10 +52,10 @@ pub async fn compute_diff(
     let diesel_db = ctx.diesel_core_db()?.clone();
 
     let mut diff = ApplyDiff::default();
-    let mut declared_keys: HashSet<(String, Option<String>, Option<String>)> = HashSet::new();
+    let mut declared_keys: DeclaredKeys = HashSet::new();
 
     for pkg in resolved {
-        declared_keys.insert((pkg.name.clone(), pkg.pkg_id.clone(), pkg.repo.clone()));
+        declared_keys.insert(declared_key(pkg));
 
         let is_github_or_gitlab = pkg.github.is_some() || pkg.gitlab.is_some();
         if is_github_or_gitlab || pkg.url.is_some() {
@@ -70,7 +70,8 @@ pub async fn compute_diff(
                     MetadataRepository::find_filtered(
                         conn,
                         Some(&pkg.name),
-                        pkg.pkg_id.as_deref(),
+                        declared_pkg_id(pkg),
+                        pkg.family.as_deref(),
                         pkg.version.as_deref(),
                         None,
                         Some(SortDirection::Asc),
@@ -89,7 +90,8 @@ pub async fn compute_diff(
                 let pkgs = MetadataRepository::find_filtered(
                     conn,
                     Some(&pkg.name),
-                    pkg.pkg_id.as_deref(),
+                    declared_pkg_id(pkg),
+                    pkg.family.as_deref(),
                     pkg.version.as_deref(),
                     None,
                     Some(SortDirection::Asc),
@@ -118,7 +120,7 @@ pub async fn compute_diff(
                     conn,
                     Some(&metadata_pkg.repo_name),
                     Some(&metadata_pkg.pkg_name),
-                    Some(&metadata_pkg.pkg_id),
+                    metadata_pkg.pkg_id.as_deref(),
                     None,
                     None,
                     None,
@@ -130,24 +132,25 @@ pub async fn compute_diff(
             .map(Into::into)
             .collect();
 
-        let existing_install = installed_packages.into_iter().find(|ip| ip.is_installed);
+        // The query cannot narrow by family, so it is compared here.
+        let existing_install = installed_packages.into_iter().find(|ip| {
+            ip.is_installed && ip.pkg_family.as_deref() == metadata_pkg.pkg_family.as_deref()
+        });
 
         if let Some(ref existing) = existing_install {
             let version_matches = pkg.version.as_ref().is_none_or(|v| existing.version == *v);
 
             if version_matches && existing.version == metadata_pkg.version {
-                diff.in_sync.push(format!(
-                    "{}#{}@{}",
-                    existing.pkg_name, existing.pkg_id, existing.version
-                ));
+                diff.in_sync
+                    .push(format!("{}@{}", existing.pkg_name, existing.version));
             } else if !existing.pinned || pkg.version.is_some() {
                 let resolved_pkg = metadata_pkg.resolve(pkg.version.as_deref());
                 let target = create_install_target(pkg, resolved_pkg, Some(existing.clone()));
                 diff.to_update.push((pkg.clone(), target));
             } else {
                 diff.in_sync.push(format!(
-                    "{}#{}@{} (pinned)",
-                    existing.pkg_name, existing.pkg_id, existing.version
+                    "{}@{} (pinned)",
+                    existing.pkg_name, existing.version
                 ));
             }
         } else {
@@ -178,11 +181,16 @@ pub async fn compute_diff(
             .collect();
 
         for installed in all_installed {
-            let is_declared = declared_keys.iter().any(|(name, pkg_id, repo)| {
+            let is_declared = declared_keys.iter().any(|(name, pkg_id, family, repo)| {
                 let name_matches = *name == installed.pkg_name;
-                let pkg_id_matches = pkg_id.as_ref().is_none_or(|id| *id == installed.pkg_id);
+                let pkg_id_matches = pkg_id
+                    .as_deref()
+                    .is_none_or(|id| Some(id) == installed.pkg_id.as_deref());
+                let family_matches = family
+                    .as_deref()
+                    .is_none_or(|f| Some(f) == installed.pkg_family.as_deref());
                 let repo_matches = repo.as_ref().is_none_or(|r| *r == installed.repo_name);
-                name_matches && pkg_id_matches && repo_matches
+                name_matches && pkg_id_matches && family_matches && repo_matches
             });
 
             if !is_declared {
@@ -320,7 +328,6 @@ pub async fn execute_apply(
             ctx.events().emit(SoarEvent::Removing {
                 op_id,
                 pkg_name: pkg.pkg_name.clone(),
-                pkg_id: pkg.pkg_id.clone(),
                 stage: RemoveStage::RunningHook("pre_remove".into()),
             });
 
@@ -336,7 +343,6 @@ pub async fn execute_apply(
                     ctx.events().emit(SoarEvent::Removing {
                         op_id,
                         pkg_name: pkg.pkg_name.clone(),
-                        pkg_id: pkg.pkg_id.clone(),
                         stage: RemoveStage::Complete {
                             size_freed: None,
                         },
@@ -347,7 +353,6 @@ pub async fn execute_apply(
                     ctx.events().emit(SoarEvent::OperationFailed {
                         op_id,
                         pkg_name: pkg.pkg_name.clone(),
-                        pkg_id: pkg.pkg_id.clone(),
                         error: e.to_string(),
                     });
                     failed_count += 1;
@@ -365,22 +370,36 @@ pub async fn execute_apply(
 }
 
 /// Handle local (URL/github/gitlab) packages in apply diff.
+/// What a declaration identifies: name, package id, family and repository.
+type DeclaredKeys = HashSet<(String, Option<String>, Option<String>, Option<String>)>;
+
+/// The deprecated package id a declaration still carries, if any.
+///
+/// Reading it is the whole point of keeping the field, so the deprecation is
+/// answered once here rather than at every use.
+#[allow(deprecated)]
+fn declared_pkg_id(pkg: &ResolvedPackage) -> Option<&str> {
+    pkg.pkg_id.as_deref()
+}
+
+fn declared_key(pkg: &ResolvedPackage) -> (String, Option<String>, Option<String>, Option<String>) {
+    (
+        pkg.name.clone(),
+        declared_pkg_id(pkg).map(str::to_string),
+        pkg.family.clone(),
+        pkg.repo.clone(),
+    )
+}
+
 fn handle_local_package(
     pkg: &ResolvedPackage,
     is_github_or_gitlab: bool,
     diesel_db: &DieselDatabase,
     diff: &mut ApplyDiff,
 ) -> SoarResult<()> {
-    let local_pkg_id = if is_github_or_gitlab {
-        pkg.pkg_id.clone().or_else(|| {
-            pkg.github
-                .as_ref()
-                .or(pkg.gitlab.as_ref())
-                .map(|repo| repo.replace('/', "."))
-        })
-    } else {
-        pkg.pkg_id.clone()
-    };
+    // Only what the user set. The family is derived from the download URL,
+    // which identifies the source just as well without minting an id.
+    let local_pkg_id = declared_pkg_id(pkg).map(str::to_string);
 
     let installed: Option<InstalledPackage> = diesel_db
         .with_conn(|conn| {
@@ -548,7 +567,7 @@ fn handle_local_package(
             Some(&pkg.name),
             pkg.version.as_deref(),
             pkg.pkg_type.as_deref(),
-            pkg.pkg_id.as_deref(),
+            declared_pkg_id(pkg),
         )?;
 
         match check_url_package_status(&url_pkg, pkg, "local", diesel_db)? {
@@ -573,7 +592,7 @@ fn check_url_package_status(
                 conn,
                 Some("local"),
                 Some(&url_pkg.pkg_name),
-                Some(&url_pkg.pkg_id),
+                url_pkg.pkg_id.as_deref(),
                 None,
                 None,
                 None,
@@ -585,9 +604,11 @@ fn check_url_package_status(
         .map(Into::into)
         .collect();
 
+    // A name alone is not an identity: the family says which source this
+    // install came from, and only a matching one is the same package.
     let installed = installed_packages
         .iter()
-        .find(|ip| ip.is_installed)
+        .find(|ip| ip.is_installed && ip.pkg_family == url_pkg.pkg_family)
         .cloned();
 
     if let Some(ref existing) = installed {

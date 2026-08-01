@@ -44,7 +44,8 @@ fn get_installed_path(
             conn,
             &package.repo_name,
             &package.pkg_name,
-            &package.pkg_id,
+            package.pkg_id.as_deref(),
+            package.pkg_family.as_deref(),
             &package.version,
         )
     })?;
@@ -71,6 +72,7 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
                     conn,
                     query.name.as_deref(),
                     query.pkg_id.as_deref(),
+                    query.family.as_deref(),
                     None,
                     None,
                     Some(SortDirection::Asc),
@@ -90,6 +92,7 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
                 conn,
                 query.name.as_deref(),
                 query.pkg_id.as_deref(),
+                query.family.as_deref(),
                 None,
                 None,
                 Some(SortDirection::Asc),

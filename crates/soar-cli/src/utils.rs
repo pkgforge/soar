@@ -4,7 +4,7 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use nu_ansi_term::Color::{self, Blue, Cyan, Green, LightRed, Magenta, Red};
+use nu_ansi_term::Color::{self, Blue, Green, LightRed, Magenta, Red};
 use serde::Serialize;
 use soar_config::{
     config::get_config, display::DisplaySettings, repository::get_platform_repositories,
@@ -129,23 +129,34 @@ pub fn select_package_interactively<T: PackageExt>(
 pub fn select_package_interactively_with_installed<T: PackageExt>(
     pkgs: Vec<T>,
     package_name: &str,
-    installed: &[(String, String, String)], // (pkg_id, repo_name, version)
+    installed: &[(String, Option<String>, String)], // (pkg_name, pkg_family, repo_name)
 ) -> SoarResult<Option<T>> {
     info!("Showing available packages for {package_name}");
     for (idx, pkg) in pkgs.iter().enumerate() {
-        let is_installed = installed.iter().any(|(pkg_id, repo_name, _version)| {
-            pkg.pkg_id() == pkg_id && pkg.repo_name() == repo_name
+        // Matching on the id would treat every id-less package as identical,
+        // since they all read as the same empty identity.
+        let is_installed = installed.iter().any(|(pkg_name, pkg_family, repo_name)| {
+            pkg.pkg_name() == pkg_name
+                && pkg.pkg_family() == pkg_family.as_deref()
+                && pkg.repo_name() == repo_name
         });
         let installed_marker = if is_installed {
             format!(" {}", Colored(Color::Yellow, "[installed]"))
         } else {
             String::new()
         };
+        // The family is what tells two candidates of the same name apart, so
+        // this is the one listing that cannot leave it out.
+        let name = match pkg.pkg_family() {
+            Some(family) if family != pkg.pkg_name() => {
+                format!("{}/{}", family, pkg.pkg_name())
+            }
+            _ => pkg.pkg_name().to_string(),
+        };
         info!(
-            "[{}] {}#{}:{} | {}{}",
+            "[{}] {}:{} | {}{}",
             idx + 1,
-            Colored(Blue, &pkg.pkg_name()),
-            Colored(Cyan, &pkg.pkg_id()),
+            Colored(Blue, &name),
             Colored(Green, pkg.repo_name()),
             Colored(LightRed, pkg.version()),
             installed_marker
@@ -180,9 +191,8 @@ pub fn ask_target_action(targets: &[InstallTarget], action: &str) -> SoarResult<
     );
     for target in targets {
         info!(
-            "{}#{}:{} ({})",
+            "{}:{} ({})",
             Colored(Blue, &target.package.pkg_name),
-            Colored(Cyan, &target.package.pkg_id),
             Colored(Green, &target.package.repo_name),
             Colored(LightRed, &target.package.version)
         )

@@ -46,7 +46,11 @@ pub struct PackageDefaults {
     /// Whether to install binary only (exclude logs, desktop files, etc).
     pub binary_only: Option<bool>,
 
-    /// Default install patterns.
+    /// Glob patterns filtering which files an install keeps.
+    #[deprecated(
+        since = "0.13.0",
+        note = "only the OCI download path applies these; the declarative format does not use it"
+    )]
     pub install_patterns: Option<Vec<String>>,
 
     /// Default sandbox configuration applied to all packages.
@@ -187,7 +191,17 @@ impl SandboxConfig {
 /// Full package options for detailed specification.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Documented, DocumentedFields)]
 pub struct PackageOptions {
+    /// Package family, which tells apart projects sharing a name.
+    ///
+    /// The declarative format publishes this rather than a package id, so it
+    /// is what disambiguates `bat` the pager from `bat` the batch runner.
+    pub family: Option<String>,
+
     /// Specific package ID (for disambiguation when multiple packages share the same name).
+    #[deprecated(
+        since = "0.13.0",
+        note = "repositories publishing the declarative format have no package id; use `family`"
+    )]
     pub pkg_id: Option<String>,
 
     /// Specific version to install.
@@ -269,7 +283,11 @@ pub struct PackageOptions {
     /// Portable directory configuration.
     pub portable: Option<PortableConfig>,
 
-    /// Custom install patterns (overrides default).
+    /// Glob patterns filtering which files an install keeps, overriding the default.
+    #[deprecated(
+        since = "0.13.0",
+        note = "only the OCI download path applies these; the declarative format does not use it"
+    )]
     pub install_patterns: Option<Vec<String>>,
 
     /// Whether to install binary only.
@@ -304,6 +322,11 @@ pub struct PortableConfig {
 #[derive(Clone, Debug, Default)]
 pub struct ResolvedPackage {
     pub name: String,
+    pub family: Option<String>,
+    #[deprecated(
+        since = "0.13.0",
+        note = "repositories publishing the declarative format have no package id; use `family`"
+    )]
     pub pkg_id: Option<String>,
     pub version: Option<String>,
     pub repo: Option<String>,
@@ -326,6 +349,10 @@ pub struct ResolvedPackage {
     pub pinned: bool,
     pub profile: Option<String>,
     pub portable: Option<PortableConfig>,
+    #[deprecated(
+        since = "0.13.0",
+        note = "only the OCI download path applies these; the declarative format does not use it"
+    )]
     pub install_patterns: Option<Vec<String>>,
     pub binary_only: bool,
     pub arch_map: Option<HashMap<String, String>>,
@@ -333,6 +360,8 @@ pub struct ResolvedPackage {
 
 impl PackageSpec {
     /// Resolve the package specification with defaults applied.
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn resolve(&self, name: &str, defaults: Option<&PackageDefaults>) -> ResolvedPackage {
         match self {
             PackageSpec::Simple(version_str) => {
@@ -344,6 +373,7 @@ impl PackageSpec {
                 let pinned = version.is_some();
                 ResolvedPackage {
                     name: name.to_string(),
+                    family: None,
                     pkg_id: None,
                     version,
                     repo: None,
@@ -381,6 +411,7 @@ impl PackageSpec {
                 let pinned = opts.pinned || (version.is_some() && !is_remote);
                 ResolvedPackage {
                     name: name.to_string(),
+                    family: opts.family.clone(),
                     pkg_id: opts.pkg_id.clone(),
                     version,
                     repo: opts.repo.clone(),
@@ -452,6 +483,8 @@ impl PackagesConfig {
     }
 
     /// Create a default configuration.
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn default_config() -> Self {
         Self {
             defaults: Some(PackageDefaults {
@@ -479,7 +512,7 @@ impl PackagesConfig {
 #   package_name = "*"                    # Latest version
 #   package_name = "1.2.3"                # Specific version (pinned)
 #   package_name = { version = "1.2" }    # Same as above
-#   package_name = { pkg_id = "pkg-bin", repo = "bincache" }
+#   package_name = { family = "pkg", repo = "bincache" }
 #   package_name = { pinned = true, portable = { home = "~/.pkg" } }
 
 "#;
@@ -630,15 +663,30 @@ jq = "1.8.1"
     fn test_detailed_package_spec() {
         let toml_str = r#"
 [packages]
-neovim = { pkg_id = "neovim-appimage", repo = "soarpkgs", pinned = true }
+neovim = { family = "neovim", repo = "soarpkgs", pinned = true }
 "#;
         let config: PackagesConfig = toml::from_str(toml_str).unwrap();
         let resolved = config.resolved_packages();
 
         assert_eq!(resolved[0].name, "neovim");
-        assert_eq!(resolved[0].pkg_id, Some("neovim-appimage".to_string()));
+        assert_eq!(resolved[0].family, Some("neovim".to_string()));
         assert_eq!(resolved[0].repo, Some("soarpkgs".to_string()));
         assert!(resolved[0].pinned);
+    }
+
+    // Still read while the field exists, so it stays covered.
+    #[allow(deprecated)]
+    #[test]
+    fn deprecated_pkg_id_is_still_accepted() {
+        let toml_str = r#"
+[packages]
+neovim = { pkg_id = "neovim-appimage", repo = "soarpkgs" }
+"#;
+        let config: PackagesConfig = toml::from_str(toml_str).unwrap();
+        let resolved = config.resolved_packages();
+
+        assert_eq!(resolved[0].pkg_id, Some("neovim-appimage".to_string()));
+        assert_eq!(resolved[0].family, None);
     }
 
     #[test]

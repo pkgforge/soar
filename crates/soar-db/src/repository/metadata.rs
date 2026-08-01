@@ -6,7 +6,10 @@ use diesel::{dsl::sql, prelude::*, sql_types::Text};
 use regex::Regex;
 use serde_json::json;
 use soar_registry::RemotePackage;
-use soar_utils::path::is_safe_component;
+use soar_utils::{
+    path::is_safe_component,
+    version::{compare_versions, is_newer},
+};
 use tracing::{debug, trace, warn};
 
 /// Regex for extracting name and contact from maintainer string format "Name (contact)".
@@ -29,6 +32,24 @@ use crate::{
 struct PkgIdOnly {
     #[diesel(sql_type = Text)]
     pkg_id: String,
+}
+
+/// Narrow candidates to those carrying `pkg_id`, unless none of them do.
+///
+/// An id recorded at install time may have disappeared from the metadata,
+/// since a repository that moved to the declarative format publishes none.
+/// Demanding a match there would report the package as up to date forever,
+/// while ignoring the id altogether lets a different package of the same name
+/// pass as a newer build of this one.
+pub fn narrow_by_pkg_id(candidates: Vec<Package>, pkg_id: Option<&str>) -> Vec<Package> {
+    let Some(id) = pkg_id else {
+        return candidates;
+    };
+    let matches_id = |p: &Package| p.pkg_id.as_deref() == Some(id);
+    if !candidates.iter().any(matches_id) {
+        return candidates;
+    }
+    candidates.into_iter().filter(matches_id).collect()
 }
 
 /// Repository for package metadata operations.
@@ -285,7 +306,9 @@ impl MetadataRepository {
         conn: &mut SqliteConnection,
         pkg_id: &str,
     ) -> QueryResult<Option<String>> {
-        let query = "SELECT pkg_id FROM packages WHERE EXISTS \
+        // Only rows that have an id: the projection cannot hold a NULL, and a
+        // package without an id has nothing to answer with anyway.
+        let query = "SELECT pkg_id FROM packages WHERE pkg_id IS NOT NULL AND EXISTS \
                      (SELECT 1 FROM json_each(replaces) WHERE json_each.value = ?) LIMIT 1";
 
         diesel::sql_query(query)
@@ -390,10 +413,12 @@ impl MetadataRepository {
     }
 
     /// Finds packages with flexible filtering using Diesel DSL.
+    #[allow(clippy::too_many_arguments)]
     pub fn find_filtered(
         conn: &mut SqliteConnection,
         pkg_name: Option<&str>,
         pkg_id: Option<&str>,
+        pkg_family: Option<&str>,
         version: Option<&str>,
         limit: Option<i64>,
         sort_by_name: Option<SortDirection>,
@@ -402,6 +427,11 @@ impl MetadataRepository {
 
         if let Some(name) = pkg_name {
             query = query.filter(packages::pkg_name.eq(name));
+        }
+        if let Some(family) = pkg_family {
+            if family != "all" {
+                query = query.filter(packages::pkg_family.eq(family));
+            }
         }
         if let Some(id) = pkg_id {
             if id != "all" {
@@ -432,41 +462,35 @@ impl MetadataRepository {
     pub fn find_newer_version(
         conn: &mut SqliteConnection,
         pkg_name: &str,
-        pkg_id: &str,
+        pkg_id: Option<&str>,
+        pkg_family: Option<&str>,
         current_version: &str,
     ) -> QueryResult<Option<Package>> {
         trace!(
             pkg_name = pkg_name,
-            pkg_id = pkg_id,
             current_version = current_version,
             "checking for newer version"
         );
-        // Handle both regular versions and HEAD- versions
-        let head_version = if current_version.starts_with("HEAD-") && current_version.len() > 14 {
-            current_version[14..].to_string()
-        } else {
-            String::new()
-        };
+        // Ordering cannot be left to SQL: a string comparison puts 10 below 9
+        // and the rebuild suffix in 1.14.0-1 below 1.14.0. Candidates are
+        // loaded and compared segment-wise instead.
+        let mut query = packages::table
+            .into_boxed()
+            .filter(packages::pkg_name.eq(pkg_name));
+        // Narrowed by family only when the install records one. An older
+        // install has none, and demanding a match would report it as up to
+        // date forever.
+        if let Some(family) = pkg_family {
+            query = query.filter(packages::pkg_family.eq(family.to_string()));
+        }
+        let candidates = narrow_by_pkg_id(query.select(Package::as_select()).load(conn)?, pkg_id);
 
-        let result = packages::table
-            .filter(packages::pkg_name.eq(pkg_name))
-            .filter(packages::pkg_id.eq(pkg_id))
-            .filter(
-                sql::<diesel::sql_types::Bool>("(version > ")
-                    .bind::<Text, _>(current_version)
-                    .sql(" OR (version LIKE 'HEAD-%' AND substr(version, 15) > ")
-                    .bind::<Text, _>(&head_version)
-                    .sql("))"),
-            )
-            .order(packages::version.desc())
-            .select(Package::as_select())
-            .first(conn)
-            .optional();
+        let result: QueryResult<Option<Package>> = Ok(candidates
+            .into_iter()
+            .filter(|p| is_newer(&p.version, current_version))
+            .max_by(|a, b| compare_versions(&a.version, &b.version)));
         if let Ok(Some(ref p)) = result {
-            debug!(
-                "newer version available: {}#{} -> {}",
-                pkg_name, pkg_id, p.version
-            );
+            debug!("newer version available: {} -> {}", pkg_name, p.version);
         }
         result
     }
@@ -484,7 +508,7 @@ impl MetadataRepository {
         conn: &mut SqliteConnection,
         metadata: &[RemotePackage],
         repo_name: &str,
-    ) -> QueryResult<()> {
+    ) -> QueryResult<usize> {
         debug!(
             repo_name = repo_name,
             count = metadata.len(),
@@ -502,23 +526,29 @@ impl MetadataRepository {
                 .execute(conn)?;
             trace!(repo_name = repo_name, "repository record upserted");
 
+            let mut imported = 0usize;
             for package in metadata {
-                Self::insert_remote_package(conn, package)?;
+                if Self::insert_remote_package(conn, package)? {
+                    imported += 1;
+                }
             }
             debug!(
                 repo_name = repo_name,
-                count = metadata.len(),
+                offered = metadata.len(),
+                imported,
                 "package import completed"
             );
-            Ok(())
+            Ok(imported)
         })
     }
 
     /// Inserts a single remote package.
+    /// Returns whether the package was accepted; rejected entries are skipped
+    /// rather than failing the whole import.
     fn insert_remote_package(
         conn: &mut SqliteConnection,
         package: &RemotePackage,
-    ) -> QueryResult<()> {
+    ) -> QueryResult<bool> {
         trace!(
             pkg_id = package.pkg_id,
             pkg_name = package.pkg_name,
@@ -526,15 +556,20 @@ impl MetadataRepository {
             "inserting remote package"
         );
 
+        // Stored as absent rather than invented: a repository whose names are
+        // already unique has no id to give, and inventing one from the name
+        // makes a fabricated value indistinguishable from a published one.
+        let pkg_id = package.pkg_id.as_deref().filter(|s| !s.is_empty());
+
         // pkg_name and pkg_id are joined into the install dir and interpolated
         // into resource paths, so a name with separators or '..' would escape it.
-        if !is_safe_component(&package.pkg_name) || !is_safe_component(&package.pkg_id) {
+        if !is_safe_component(&package.pkg_name) || pkg_id.is_some_and(|id| !is_safe_component(id))
+        {
             warn!(
-                pkg_id = package.pkg_id,
                 pkg_name = package.pkg_name,
                 "skipping package with unsafe path component in pkg_name/pkg_id"
             );
-            return Ok(());
+            return Ok(false);
         }
 
         let provides = package.provides.as_ref().map(|vec| {
@@ -556,17 +591,16 @@ impl MetadataRepository {
         });
 
         let new_package = NewPackage {
-            pkg_id: &package.pkg_id,
+            pkg_id,
             pkg_name: &package.pkg_name,
             pkg_family: package.pkg_family.as_deref(),
             pkg_type: package.pkg_type.as_deref(),
-            pkg_webpage: package.pkg_webpage.as_deref(),
             app_id: package.app_id.as_deref(),
             description: Some(&package.description),
             version: &package.version,
             licenses: Some(json!(package.licenses)),
             download_url: &package.download_url,
-            size: package.size_raw.map(|s| s as i64),
+            size: package.size_raw.or(package.size).map(|s| s as i64),
             ghcr_pkg: package.ghcr_pkg.as_deref(),
             ghcr_size: package.ghcr_size_raw.map(|s| s as i64),
             ghcr_blob: package.ghcr_blob.as_deref(),
@@ -578,7 +612,6 @@ impl MetadataRepository {
             homepages: Some(json!(package.homepages)),
             notes: Some(json!(package.notes)),
             source_urls: Some(json!(package.src_urls)),
-            tags: Some(json!(&package.tags)),
             categories: Some(json!(package.categories)),
             build_id: package.build_id.as_deref(),
             build_date: package.build_date.as_deref(),
@@ -591,17 +624,18 @@ impl MetadataRepository {
             soar_syms: package.soar_syms.unwrap_or(false),
             desktop_integration: package.desktop_integration,
             portable: package.portable,
+            extra: package.extra.as_ref().map(|e| json!(e)),
+            files: package.files.as_ref().map(|f| json!(f)),
         };
 
         let inserted = diesel::insert_into(packages::table)
             .values(&new_package)
-            .on_conflict((packages::pkg_id, packages::pkg_name, packages::version))
-            .do_nothing()
+            .on_conflict_do_nothing()
             .execute(conn)?;
 
         if inserted == 0 {
-            trace!(pkg_id = package.pkg_id, "package already exists, skipping");
-            return Ok(());
+            trace!(pkg_id, "package already exists, skipping");
+            return Ok(false);
         }
 
         let package_id = Self::last_insert_id(conn)?;
@@ -615,7 +649,7 @@ impl MetadataRepository {
             }
         }
 
-        Ok(())
+        Ok(true)
     }
 
     /// Extracts name and contact from maintainer string format "Name (contact)".

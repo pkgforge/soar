@@ -27,7 +27,7 @@ blake3 = { version = "1.8.5", features = ["mmap"] }
 clap = { version = "4.6.1", features = ["cargo", "derive"] }
 clap_complete = "4.6.5"
 chrono = "0.4"
-compak = "0.1.2"
+compak = "0.2.0"
 diesel = { version = "2.3.10", features = [
   "64-column-tables",
   "returning_clauses_for_sqlite_3_35",

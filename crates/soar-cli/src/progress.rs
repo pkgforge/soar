@@ -5,11 +5,11 @@ use std::{
 };
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use nu_ansi_term::Color::{Cyan, Green, Red};
+use nu_ansi_term::Color::{Cyan, Green, Red, Yellow};
 use soar_dl::types::Progress;
 use soar_events::{
-    BuildStage, InstallStage, OperationId, RemoveStage, SoarEvent, SyncStage, UpdateCleanupStage,
-    VerifyStage,
+    BuildStage, InstallStage, LogLevel, OperationId, RemoveStage, SoarEvent, SyncStage,
+    UpdateCleanupStage, VerifyStage,
 };
 
 use crate::utils::{display_settings, progress_enabled};
@@ -56,14 +56,8 @@ fn download_style() -> ProgressStyle {
 }
 
 /// Format a colored prefix: pkg_name in cyan, #pkg_id in dim.
-fn colored_prefix(pkg_name: &str, pkg_id: &str) -> String {
-    format!(
-        "{}{}",
-        Cyan.paint(pkg_name),
-        nu_ansi_term::Style::new()
-            .dimmed()
-            .paint(format!("#{pkg_id}"))
-    )
+fn colored_prefix(pkg_name: &str) -> String {
+    Cyan.paint(pkg_name).to_string()
 }
 
 fn spinner_style() -> ProgressStyle {
@@ -174,12 +168,12 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::DownloadStarting {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     total,
+                    ..
                 } => {
                     let pb = MULTI.add(ProgressBar::new(total));
                     pb.set_style(download_style());
-                    pb.set_prefix(colored_prefix(&pkg_name, &pkg_id));
+                    pb.set_prefix(colored_prefix(&pkg_name));
                     pb.enable_steady_tick(Duration::from_millis(100));
                     jobs.insert(op_id, pb);
                     reposition_batch!(batch_job, batch_msg);
@@ -187,15 +181,15 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::DownloadResuming {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     current,
                     total,
+                    ..
                 } => {
                     let is_new = !jobs.contains_key(&op_id);
                     let pb = jobs.entry(op_id).or_insert_with(|| {
                         let pb = MULTI.add(ProgressBar::new(0));
                         pb.set_style(download_style());
-                        pb.set_prefix(colored_prefix(&pkg_name, &pkg_id));
+                        pb.set_prefix(colored_prefix(&pkg_name));
                         pb.enable_steady_tick(Duration::from_millis(100));
                         pb
                     });
@@ -217,12 +211,11 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::DownloadComplete {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     ..
                 } => {
                     if let Some(pb) = jobs.get(&op_id) {
                         pb.set_style(spinner_style());
-                        pb.set_message(format!("{pkg_name}#{pkg_id}: downloaded"));
+                        pb.set_message(format!("{pkg_name}: downloaded"));
                     }
                 }
                 SoarEvent::DownloadRetry {
@@ -242,13 +235,13 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::DownloadRecovered {
                     op_id,
                     pkg_name,
-                    pkg_id,
+                    ..
                 } => {
                     let is_new = !jobs.contains_key(&op_id);
                     jobs.entry(op_id).or_insert_with(|| {
                         let pb = MULTI.add(ProgressBar::new(0));
                         pb.set_style(download_style());
-                        pb.set_prefix(colored_prefix(&pkg_name, &pkg_id));
+                        pb.set_prefix(colored_prefix(&pkg_name));
                         pb.enable_steady_tick(Duration::from_millis(100));
                         pb
                     });
@@ -261,17 +254,17 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::Verifying {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     stage,
+                    ..
                 } => {
                     match stage {
                         VerifyStage::Checksum | VerifyStage::Signature => {
                             let msg = match stage {
                                 VerifyStage::Checksum => {
-                                    format!("{pkg_name}#{pkg_id}: verifying checksum")
+                                    format!("{pkg_name}: verifying checksum")
                                 }
                                 VerifyStage::Signature => {
-                                    format!("{pkg_name}#{pkg_id}: verifying signature")
+                                    format!("{pkg_name}: verifying signature")
                                 }
                                 _ => unreachable!(),
                             };
@@ -292,30 +285,30 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::Installing {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     stage,
+                    ..
                 } if stage != InstallStage::Complete => {
                     let msg = match &stage {
                         InstallStage::Extracting => {
-                            format!("{pkg_name}#{pkg_id}: extracting")
+                            format!("{pkg_name}: extracting")
                         }
                         InstallStage::ExtractingNested => {
-                            format!("{pkg_name}#{pkg_id}: extracting nested")
+                            format!("{pkg_name}: extracting nested")
                         }
                         InstallStage::LinkingBinaries => {
-                            format!("{pkg_name}#{pkg_id}: linking binaries")
+                            format!("{pkg_name}: linking binaries")
                         }
                         InstallStage::DesktopIntegration => {
-                            format!("{pkg_name}#{pkg_id}: desktop integration")
+                            format!("{pkg_name}: desktop integration")
                         }
                         InstallStage::SetupPortable => {
-                            format!("{pkg_name}#{pkg_id}: setting up portable")
+                            format!("{pkg_name}: setting up portable")
                         }
                         InstallStage::RecordingDatabase => {
-                            format!("{pkg_name}#{pkg_id}: recording to db")
+                            format!("{pkg_name}: recording to db")
                         }
                         InstallStage::RunningHook(hook) => {
-                            format!("{pkg_name}#{pkg_id}: running {hook}")
+                            format!("{pkg_name}: running {hook}")
                         }
                         InstallStage::Complete => unreachable!(),
                     };
@@ -332,8 +325,8 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::Building {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     stage,
+                    ..
                 } => {
                     match stage {
                         BuildStage::Sandboxing => {
@@ -350,10 +343,9 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                             }
                             MULTI.suspend(|| {
                                 eprintln!(
-                                    " {} {}#{}: {}",
+                                    " {} {}: {}",
                                     Cyan.paint("⚙"),
                                     Cyan.paint(&pkg_name),
-                                    Cyan.paint(&pkg_id),
                                     nu_ansi_term::Style::new().dimmed().paint(format!(
                                         "build ({}/{})",
                                         command_index + 1,
@@ -372,29 +364,29 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::Removing {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     stage,
+                    ..
                 } => {
                     remove_ops.insert(op_id);
                     if !matches!(stage, RemoveStage::Complete { .. }) {
                         let msg = match &stage {
                             RemoveStage::RunningHook(hook) => {
-                                format!("{pkg_name}#{pkg_id}: running {hook}")
+                                format!("{pkg_name}: running {hook}")
                             }
                             RemoveStage::UnlinkingBinaries => {
-                                format!("{pkg_name}#{pkg_id}: unlinking binaries")
+                                format!("{pkg_name}: unlinking binaries")
                             }
                             RemoveStage::UnlinkingDesktop => {
-                                format!("{pkg_name}#{pkg_id}: unlinking desktop")
+                                format!("{pkg_name}: unlinking desktop")
                             }
                             RemoveStage::UnlinkingIcons => {
-                                format!("{pkg_name}#{pkg_id}: unlinking icons")
+                                format!("{pkg_name}: unlinking icons")
                             }
                             RemoveStage::RemovingDirectory => {
-                                format!("{pkg_name}#{pkg_id}: removing files")
+                                format!("{pkg_name}: removing files")
                             }
                             RemoveStage::CleaningDatabase => {
-                                format!("{pkg_name}#{pkg_id}: cleaning db")
+                                format!("{pkg_name}: cleaning db")
                             }
                             RemoveStage::Complete {
                                 ..
@@ -409,7 +401,6 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::UpdateCleanup {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     stage,
                     ..
                 } => {
@@ -421,7 +412,7 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                             pb.finish_and_clear();
                         }
                     } else {
-                        let msg = format!("{pkg_name}#{pkg_id}: cleaning old version");
+                        let msg = format!("{pkg_name}: cleaning old version");
                         let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
                         pb.set_message(msg);
                     }
@@ -496,15 +487,14 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::OperationComplete {
                     op_id,
                     pkg_name,
-                    pkg_id,
+                    ..
                 } => {
                     if !remove_ops.remove(&op_id) {
                         MULTI.suspend(|| {
                             eprintln!(
-                                " {} {}#{}: {}",
+                                " {} {}: {}",
                                 Green.paint("✓"),
                                 Cyan.paint(&pkg_name),
-                                Cyan.paint(&pkg_id),
                                 Green.paint("installed")
                             );
                         });
@@ -516,22 +506,44 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::OperationFailed {
                     op_id,
                     pkg_name,
-                    pkg_id,
                     error,
+                    ..
                 } => {
                     remove_ops.remove(&op_id);
                     MULTI.suspend(|| {
                         eprintln!(
-                            " {} {}#{}: {}",
+                            " {} {}: {}",
                             Red.paint("✗"),
                             Cyan.paint(&pkg_name),
-                            Cyan.paint(&pkg_id),
                             Red.paint(&error)
                         );
                     });
                     if let Some(pb) = jobs.remove(&op_id) {
                         pb.finish_and_clear();
                     }
+                }
+
+                // Emitted for things that fail without aborting the run, a
+                // repository that could not be synced most of all. Without a
+                // handler these were dropped and the failure looked like
+                // nothing happening.
+                SoarEvent::Log {
+                    level,
+                    message,
+                } => {
+                    // Printed directly rather than through tracing: the
+                    // subscriber writes via this same progress handle, so
+                    // logging from inside suspend() deadlocks.
+                    MULTI.suspend(|| {
+                        match level {
+                            LogLevel::Error => {
+                                eprintln!(" {} {}", Red.paint("✗"), Red.paint(&message))
+                            }
+                            LogLevel::Warning => eprintln!(" {} {}", Yellow.paint("!"), message),
+                            LogLevel::Info => eprintln!(" {message}"),
+                            LogLevel::Debug => {}
+                        }
+                    });
                 }
 
                 _ => {}

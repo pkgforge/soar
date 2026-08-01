@@ -17,7 +17,7 @@ use regex::Regex;
 use soar_config::config::get_config;
 use soar_utils::{
     fs::{create_symlink, walk_dir},
-    path::icons_dir,
+    path::{icons_dir, is_safe_component},
 };
 use tracing::{debug, trace};
 
@@ -291,11 +291,19 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     portable_share: Option<&str>,
     portable_cache: Option<&str>,
 ) -> Result<()> {
-    let portable_dir_base = get_config().get_portable_dirs()?.join(format!(
-        "{}-{}",
-        package.pkg_name(),
-        package.pkg_id()
-    ));
+    // Packages that carry an id keep their existing directory name. Without
+    // one the family has to stand in, or two packages sharing a name would
+    // share a portable directory. Neither is trusted to be a single path
+    // component: both come from metadata, and one holding `..` would put the
+    // directory outside the portable root.
+    let family = package.pkg_family().filter(|f| is_safe_component(f));
+    let portable_dir_base = get_config().get_portable_dirs()?.join(
+        match (package.pkg_id().filter(|id| is_safe_component(id)), family) {
+            (Some(pkg_id), _) => format!("{}-{}", package.pkg_name(), pkg_id),
+            (None, Some(family)) => format!("{}-{}", package.pkg_name(), family),
+            (None, None) => package.pkg_name().to_string(),
+        },
+    );
     let bin_path = bin_path.as_ref();
 
     let pkg_name = package.pkg_name();

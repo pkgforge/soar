@@ -5,12 +5,13 @@
 
 use std::{
     fs::{self, File},
-    io::{self, BufReader, BufWriter, Write},
+    io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
 use minisign_verify::{PublicKey, Signature};
+use serde::Deserialize;
 use soar_config::repository::Repository;
 use soar_dl::http_client::SHARED_AGENT;
 use soar_utils::path::resolve_path;
@@ -435,7 +436,7 @@ pub fn process_metadata_content(
             let tmp_file = File::open(&tmp_path)
                 .with_context(|| format!("opening temporary file {tmp_path}"))?;
             let reader = BufReader::new(tmp_file);
-            let metadata: Vec<RemotePackage> = serde_json::from_reader(reader)?;
+            let metadata = parse_index_reader(reader)?;
             fs::remove_file(&tmp_path)
                 .with_context(|| format!("removing temporary file {tmp_path}"))?;
             Ok(MetadataContent::Json(metadata))
@@ -443,8 +444,70 @@ pub fn process_metadata_content(
     } else if content[..4] == SQLITE_MAGIC_BYTES {
         Ok(MetadataContent::SqliteDb(content))
     } else {
-        let metadata: Vec<RemotePackage> = serde_json::from_slice(&content)?;
+        let metadata = parse_index(&content)?;
         Ok(MetadataContent::Json(metadata))
+    }
+}
+
+/// The highest index format this build understands.
+pub const SUPPORTED_FORMAT: u32 = 1;
+
+/// The versioned shape of a metadata index.
+///
+/// The original shape is a bare array of packages; this one wraps it so a
+/// client can tell an index it cannot read from one that merely lacks a field.
+#[derive(Deserialize)]
+struct VersionedIndex {
+    format: u32,
+    packages: Vec<RemotePackage>,
+}
+
+impl VersionedIndex {
+    /// Unwrap to the packages, refusing an index newer than this build.
+    fn into_packages(self) -> Result<Vec<RemotePackage>> {
+        if self.format > SUPPORTED_FORMAT {
+            return Err(RegistryError::UnsupportedFormat {
+                found: self.format,
+                supported: SUPPORTED_FORMAT,
+            });
+        }
+        Ok(self.packages)
+    }
+}
+
+/// Whether an index is the versioned shape, judged by its opening character.
+///
+/// The two are told apart here rather than by an untagged enum, which reports
+/// only that no variant matched and so turns one malformed field anywhere in
+/// the index into a message that names nothing.
+fn is_versioned(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .find(|b| !b.is_ascii_whitespace())
+        .is_some_and(|b| *b == b'{')
+}
+
+/// Parse an index in either shape, refusing one newer than this build.
+pub fn parse_index(bytes: &[u8]) -> Result<Vec<RemotePackage>> {
+    if is_versioned(bytes) {
+        serde_json::from_slice::<VersionedIndex>(bytes)?.into_packages()
+    } else {
+        Ok(serde_json::from_slice(bytes)?)
+    }
+}
+
+/// Parse an index that is still on disk, without holding it twice in memory.
+fn parse_index_reader(mut reader: impl BufRead) -> Result<Vec<RemotePackage>> {
+    let versioned = is_versioned(reader.fill_buf().map_err(|e| {
+        RegistryError::IoError {
+            action: "reading metadata".to_string(),
+            source: e,
+        }
+    })?);
+    if versioned {
+        serde_json::from_reader::<_, VersionedIndex>(reader)?.into_packages()
+    } else {
+        Ok(serde_json::from_reader(reader)?)
     }
 }
 

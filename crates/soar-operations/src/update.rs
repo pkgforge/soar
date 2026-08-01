@@ -137,7 +137,13 @@ fn check_repo_update(
 ) -> SoarResult<Option<UpdateInfo>> {
     let new_pkg: Option<Package> = metadata_mgr
         .query_repo(&pkg.repo_name, |conn| {
-            MetadataRepository::find_newer_version(conn, &pkg.pkg_name, &pkg.pkg_id, &pkg.version)
+            MetadataRepository::find_newer_version(
+                conn,
+                &pkg.pkg_name,
+                pkg.pkg_id.as_deref(),
+                pkg.pkg_family.as_deref(),
+                &pkg.version,
+            )
         })?
         .flatten()
         .map(|p| {
@@ -150,7 +156,6 @@ fn check_repo_update(
     let Some(package) = new_pkg else {
         ctx.events().emit(SoarEvent::UpdateCheck {
             pkg_name: pkg.pkg_name.clone(),
-            pkg_id: pkg.pkg_id.clone(),
             status: UpdateCheckStatus::UpToDate {
                 version: pkg.version.clone(),
             },
@@ -168,7 +173,6 @@ fn check_repo_update(
 
     ctx.events().emit(SoarEvent::UpdateCheck {
         pkg_name: pkg.pkg_name.clone(),
-        pkg_id: pkg.pkg_id.clone(),
         status: UpdateCheckStatus::Available {
             current_version: pkg.version.clone(),
             new_version: package.version.clone(),
@@ -177,7 +181,6 @@ fn check_repo_update(
 
     Ok(Some(UpdateInfo {
         pkg_name: pkg.pkg_name.clone(),
-        pkg_id: pkg.pkg_id.clone(),
         repo_name: pkg.repo_name.clone(),
         current_version: pkg.version.clone(),
         new_version: package.version.clone(),
@@ -202,14 +205,19 @@ fn check_local_update(
     resolved_packages: &[ResolvedPackage],
     ctx: &SoarContext,
 ) -> SoarResult<Option<UpdateInfo>> {
-    let resolved = resolved_packages
-        .iter()
-        .find(|r| r.name == pkg.pkg_name && has_update_source(r));
+    // A declaration that names a family only speaks for that family, so a
+    // package of the same name from another one is not updated by it.
+    let resolved = resolved_packages.iter().find(|r| {
+        r.name == pkg.pkg_name
+            && r.family
+                .as_deref()
+                .is_none_or(|f| Some(f) == pkg.pkg_family.as_deref())
+            && has_update_source(r)
+    });
 
     let Some(resolved) = resolved else {
         ctx.events().emit(SoarEvent::UpdateCheck {
             pkg_name: pkg.pkg_name.clone(),
-            pkg_id: pkg.pkg_id.clone(),
             status: UpdateCheckStatus::Skipped {
                 reason: "no update source configured".into(),
             },
@@ -220,7 +228,6 @@ fn check_local_update(
     if resolved.pinned {
         ctx.events().emit(SoarEvent::UpdateCheck {
             pkg_name: pkg.pkg_name.clone(),
-            pkg_id: pkg.pkg_id.clone(),
             status: UpdateCheckStatus::Skipped {
                 reason: "pinned".into(),
             },
@@ -250,7 +257,6 @@ fn check_local_update(
             if v == installed_version {
                 ctx.events().emit(SoarEvent::UpdateCheck {
                     pkg_name: pkg.pkg_name.clone(),
-                    pkg_id: pkg.pkg_id.clone(),
                     status: UpdateCheckStatus::UpToDate {
                         version: pkg.version.clone(),
                     },
@@ -311,7 +317,6 @@ fn check_local_update(
             if v == installed_version {
                 ctx.events().emit(SoarEvent::UpdateCheck {
                     pkg_name: pkg.pkg_name.clone(),
-                    pkg_id: pkg.pkg_id.clone(),
                     status: UpdateCheckStatus::UpToDate {
                         version: pkg.version.clone(),
                     },
@@ -332,13 +337,12 @@ fn check_local_update(
         Some(&pkg.pkg_name),
         Some(&version),
         pkg.pkg_type.as_deref(),
-        Some(&pkg.pkg_id),
+        pkg.pkg_id.as_deref(),
     )?;
     updated_url_pkg.size = size;
 
     ctx.events().emit(SoarEvent::UpdateCheck {
         pkg_name: pkg.pkg_name.clone(),
-        pkg_id: pkg.pkg_id.clone(),
         status: UpdateCheckStatus::Available {
             current_version: pkg.version.clone(),
             new_version: version.clone(),
@@ -367,7 +371,6 @@ fn check_local_update(
 
     Ok(Some(UpdateInfo {
         pkg_name: pkg.pkg_name.clone(),
-        pkg_id: pkg.pkg_id.clone(),
         repo_name: pkg.repo_name.clone(),
         current_version: pkg.version.clone(),
         new_version: version,
@@ -389,7 +392,8 @@ fn get_existing(
             conn,
             &package.repo_name,
             &package.pkg_name,
-            &package.pkg_id,
+            package.pkg_id.as_deref(),
+            package.pkg_family.as_deref(),
             &package.version,
         )
     })?;
@@ -449,15 +453,29 @@ pub async fn perform_update(
     // Clean up old versions only for successfully updated packages
     if !keep_old {
         let diesel_db = ctx.diesel_core_db()?.clone();
-        let succeeded: HashSet<(&str, &str)> = install_report
+        // Keyed by the whole identity: a name alone would let a package from
+        // another repository or family inherit this one's success.
+        let succeeded: HashSet<(&str, Option<&str>, &str, &str)> = install_report
             .installed
             .iter()
-            .map(|i| (i.pkg_name.as_str(), i.pkg_id.as_str()))
+            .map(|i| {
+                (
+                    i.pkg_name.as_str(),
+                    i.pkg_family.as_deref(),
+                    i.repo_name.as_str(),
+                    i.version.as_str(),
+                )
+            })
             .collect();
 
         for target in &targets {
             let pkg = &target.package;
-            if !succeeded.contains(&(pkg.pkg_name.as_str(), pkg.pkg_id.as_str())) {
+            if !succeeded.contains(&(
+                pkg.pkg_name.as_str(),
+                pkg.pkg_family.as_deref(),
+                pkg.repo_name.as_str(),
+                pkg.version.as_str(),
+            )) {
                 continue;
             }
 
@@ -465,7 +483,6 @@ pub async fn perform_update(
             ctx.events().emit(SoarEvent::UpdateCleanup {
                 op_id,
                 pkg_name: pkg.pkg_name.clone(),
-                pkg_id: pkg.pkg_id.clone(),
                 old_version: target
                     .existing_install
                     .as_ref()
@@ -474,12 +491,13 @@ pub async fn perform_update(
                 stage: UpdateCleanupStage::Removing,
             });
 
-            let _ = remove_old_versions(pkg, &diesel_db, false);
+            if let Err(err) = remove_old_versions(pkg, &diesel_db, false) {
+                warn!(error = %err, "could not remove the superseded version");
+            }
 
             ctx.events().emit(SoarEvent::UpdateCleanup {
                 op_id,
                 pkg_name: pkg.pkg_name.clone(),
-                pkg_id: pkg.pkg_id.clone(),
                 old_version: target
                     .existing_install
                     .as_ref()

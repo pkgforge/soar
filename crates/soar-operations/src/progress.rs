@@ -14,7 +14,6 @@ pub fn create_progress_bridge(
     events: EventSinkHandle,
     op_id: OperationId,
     pkg_name: String,
-    pkg_id: String,
 ) -> Arc<dyn Fn(Progress) + Send + Sync> {
     Arc::new(move |progress| {
         let event = match progress {
@@ -24,7 +23,6 @@ pub fn create_progress_bridge(
                 SoarEvent::DownloadStarting {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                     total,
                 }
             }
@@ -35,7 +33,6 @@ pub fn create_progress_bridge(
                 SoarEvent::DownloadResuming {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                     current,
                     total,
                 }
@@ -47,7 +44,6 @@ pub fn create_progress_bridge(
                 SoarEvent::DownloadProgress {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                     current,
                     total,
                 }
@@ -58,7 +54,6 @@ pub fn create_progress_bridge(
                 SoarEvent::DownloadComplete {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                     total,
                 }
             }
@@ -66,21 +61,18 @@ pub fn create_progress_bridge(
                 SoarEvent::DownloadRetry {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                 }
             }
             Progress::Aborted => {
                 SoarEvent::DownloadAborted {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                 }
             }
             Progress::Recovered => {
                 SoarEvent::DownloadRecovered {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                 }
             }
         };
@@ -114,7 +106,7 @@ mod tests {
         let collector = Arc::new(CollectorSink::default());
         let events: EventSinkHandle = collector.clone();
 
-        let bridge = create_progress_bridge(events, 1, "pkg".into(), "pkg-id".into());
+        let bridge = create_progress_bridge(events, 1, "pkg".into());
 
         bridge(Progress::Starting {
             total: 1000,

@@ -79,8 +79,18 @@ pub struct Config {
     /// NOTE: This is not yet implemented
     pub cross_repo_updates: Option<bool>,
 
-    /// Glob patterns for package files that should be included during install.
+    /// Shells to link package completions for. Defaults to those whose
+    /// completion directory already exists, so soar does not create one for a
+    /// shell nobody uses.
+    pub completions: Option<Vec<String>>,
+
+    /// Glob patterns filtering which files an install keeps.
+    ///
     /// Default: ["!*.log", "!SBUILD", "!*.json", "!*.version"]
+    #[deprecated(
+        since = "0.13.0",
+        note = "only the OCI download path applies these; the declarative format does not use it"
+    )]
     pub install_patterns: Option<Vec<String>>,
 
     /// Global override for signature verification
@@ -189,6 +199,8 @@ impl Config {
         soar_utils::path::icons_dir(self.system_mode)
     }
 
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn default_config<T: AsRef<str>>(selected_repos: &[T]) -> Self {
         trace!("creating default configuration");
         let soar_root = if is_system_mode() {
@@ -270,6 +282,7 @@ impl Config {
             ghcr_concurrency: Some(8),
             cross_repo_updates: Some(false),
             install_patterns: Some(default_install_patterns()),
+            completions: None,
 
             signature_verification: None,
             desktop_integration: None,
@@ -280,6 +293,8 @@ impl Config {
     }
 
     /// Creates a default configuration for the given system mode.
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn default_config_for_mode<T: AsRef<str>>(selected_repos: &[T], system_mode: bool) -> Self {
         trace!(
             "creating default configuration for system_mode={}",
@@ -361,6 +376,7 @@ impl Config {
             ghcr_concurrency: Some(8),
             cross_repo_updates: Some(false),
             install_patterns: Some(default_install_patterns()),
+            completions: None,
 
             signature_verification: None,
             desktop_integration: None,
@@ -405,6 +421,8 @@ impl Config {
         Ok(config)
     }
 
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     pub fn resolve(&mut self) -> Result<()> {
         trace!("resolving configuration");
         if !self.profile.contains_key(&self.default_profile) {
@@ -476,6 +494,24 @@ impl Config {
             return Ok(resolve_path(bin_path)?);
         }
         self.default_profile()?.get_bin_path()
+    }
+
+    /// Shells whose completions should be linked.
+    pub fn completion_shells(&self) -> Vec<String> {
+        if let Some(shells) = &self.completions {
+            return shells.clone();
+        }
+        let data = soar_utils::path::xdg_data_home();
+        let config = soar_utils::path::xdg_config_home();
+        [
+            ("bash", data.join("bash-completion/completions")),
+            ("zsh", data.join("zsh/site-functions")),
+            ("fish", config.join("fish/completions")),
+        ]
+        .into_iter()
+        .filter(|(_, dir)| dir.is_dir())
+        .map(|(name, _)| name.to_string())
+        .collect()
     }
 
     pub fn get_desktop_path(&self) -> Result<PathBuf> {
@@ -777,6 +813,8 @@ mod tests {
     }
 
     #[test]
+    // Still populated while the OCI path exists; see the field's deprecation.
+    #[allow(deprecated)]
     fn test_config_resolve_sets_defaults() {
         let mut config = Config::default_config::<&str>(&[]);
         config.ghcr_concurrency = None;

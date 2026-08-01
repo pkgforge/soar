@@ -14,8 +14,13 @@ pub struct UrlPackage {
     pub url: String,
     /// Extracted or overridden package name
     pub pkg_name: String,
-    /// Generated package ID (lowercase, normalized)
-    pub pkg_id: String,
+    /// Package id, only when the caller supplied one. Nothing derives an id:
+    /// repositories on the declarative format publish none, so inventing one
+    /// here would be the only place they came from.
+    pub pkg_id: Option<String>,
+    /// Where the package came from, used to tell apart two sources that
+    /// produce the same name. This is what an id used to stand in for.
+    pub pkg_family: Option<String>,
     /// Extracted or overridden version
     pub version: String,
     /// Detected package type from extension (e.g., "appimage")
@@ -90,18 +95,25 @@ impl UrlPackage {
     /// Both are joined into the install dir and interpolated into resource
     /// paths, so a caller-supplied override containing `/` or `..` would escape
     /// it. The derived defaults are always dot-separated and unaffected.
-    fn validate_names(pkg_name: &str, pkg_id: &str) -> SoarResult<()> {
+    fn validate_names(
+        pkg_name: &str,
+        pkg_id: Option<&str>,
+        pkg_family: Option<&str>,
+    ) -> SoarResult<()> {
         if !is_safe_component(pkg_name) {
             return Err(SoarError::Custom(format!(
                 "Invalid package name '{}': must be a single path component",
                 pkg_name
             )));
         }
-        if !is_safe_component(pkg_id) {
-            return Err(SoarError::Custom(format!(
-                "Invalid package id '{}': must be a single path component",
-                pkg_id
-            )));
+        for (label, value) in [("id", pkg_id), ("family", pkg_family)] {
+            if let Some(value) = value {
+                if !is_safe_component(value) {
+                    return Err(SoarError::Custom(format!(
+                        "Invalid package {label} '{value}': must be a single path component"
+                    )));
+                }
+            }
         }
         Ok(())
     }
@@ -145,18 +157,18 @@ impl UrlPackage {
             .map(|v| v.strip_prefix('v').unwrap_or(v).to_string())
             .unwrap_or_else(|| tag.strip_prefix('v').unwrap_or(&tag).to_string());
 
-        let pkg_id = pkg_id_override
-            .map(String::from)
-            .unwrap_or_else(|| package.replace('/', "."));
+        let pkg_id = pkg_id_override.map(String::from);
+        let pkg_family = Some(package.replace('/', "."));
 
         let pkg_type = pkg_type_override.map(|s| s.to_lowercase());
 
-        Self::validate_names(&pkg_name, &pkg_id)?;
+        Self::validate_names(&pkg_name, pkg_id.as_deref(), pkg_family.as_deref())?;
 
         Ok(Self {
             url: reference.to_string(),
-            pkg_name,
             pkg_id,
+            pkg_family,
+            pkg_name,
             version,
             pkg_type,
             is_ghcr: true,
@@ -219,24 +231,24 @@ impl UrlPackage {
             .map(|v| v.strip_prefix('v').unwrap_or(v).to_string())
             .unwrap_or(extracted_version);
 
-        // Generate pkg_id: use override, or extract from URL, or generate from name and type
-        let pkg_id = pkg_id_override
-            .map(String::from)
-            .or_else(|| extract_pkg_id_from_url(url))
-            .unwrap_or_else(|| {
-                if let Some(ref ptype) = pkg_type {
-                    format!("{}-{}", pkg_name, ptype)
-                } else {
-                    pkg_name.clone()
-                }
-            });
+        let pkg_id = pkg_id_override.map(String::from);
+        // The host and project the URL points at, falling back to the name so
+        // two unrelated downloads sharing a filename stay distinct.
+        let pkg_family = extract_family_from_url(url).or_else(|| {
+            if let Some(ref ptype) = pkg_type {
+                Some(format!("{}-{}", pkg_name, ptype))
+            } else {
+                Some(pkg_name.clone())
+            }
+        });
 
-        Self::validate_names(&pkg_name, &pkg_id)?;
+        Self::validate_names(&pkg_name, pkg_id.as_deref(), pkg_family.as_deref())?;
 
         Ok(Self {
             url: url.to_string(),
-            pkg_name,
             pkg_id,
+            pkg_family,
+            pkg_name,
             version,
             pkg_type,
             is_ghcr: false,
@@ -251,6 +263,7 @@ impl UrlPackage {
                 id: 0,
                 repo_name: "local".to_string(),
                 pkg_id: self.pkg_id.clone(),
+                pkg_family: self.pkg_family.clone(),
                 pkg_name: self.pkg_name.clone(),
                 pkg_type: self.pkg_type.clone(),
                 version: self.version.clone(),
@@ -265,6 +278,7 @@ impl UrlPackage {
                 id: 0,
                 repo_name: "local".to_string(),
                 pkg_id: self.pkg_id.clone(),
+                pkg_family: self.pkg_family.clone(),
                 pkg_name: self.pkg_name.clone(),
                 pkg_type: self.pkg_type.clone(),
                 version: self.version.clone(),
@@ -277,12 +291,12 @@ impl UrlPackage {
     }
 }
 
-/// Extract pkg_id from URL based on host and first two path segments.
+/// Extract the family from a URL: host plus the first two path segments.
 ///
 /// Examples:
 /// - `https://github.com/user/repo/...` → `github.com.user.repo`
 /// - `https://example.com/foo/bar/...` → `example.com.foo.bar`
-fn extract_pkg_id_from_url(url: &str) -> Option<String> {
+fn extract_family_from_url(url: &str) -> Option<String> {
     let url = url.trim().to_lowercase();
 
     // Remove protocol
@@ -424,7 +438,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "myapp");
         assert_eq!(pkg.version, "2.0.0");
-        assert_eq!(pkg.pkg_id, "github.com.user.repo");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("github.com.user.repo"));
     }
 
     #[test]
@@ -436,25 +450,25 @@ mod tests {
         assert_eq!(pkg.pkg_name, "myapp");
         assert_eq!(pkg.version, "1.0.0");
         assert_eq!(pkg.pkg_type, Some("appimage".to_string()));
-        assert_eq!(pkg.pkg_id, "example.com.downloads.app");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("example.com.downloads.app"));
     }
 
     #[test]
-    fn test_extract_pkg_id_from_url() {
+    fn test_extract_family_from_url() {
         assert_eq!(
-            extract_pkg_id_from_url("https://github.com/pkgforge/soar/releases/file"),
+            extract_family_from_url("https://github.com/pkgforge/soar/releases/file"),
             Some("github.com.pkgforge.soar".to_string())
         );
         assert_eq!(
-            extract_pkg_id_from_url("https://gitlab.com/user/project/-/releases"),
+            extract_family_from_url("https://gitlab.com/user/project/-/releases"),
             Some("gitlab.com.user.project".to_string())
         );
         assert_eq!(
-            extract_pkg_id_from_url("https://example.com/foo/bar/baz"),
+            extract_family_from_url("https://example.com/foo/bar/baz"),
             Some("example.com.foo.bar".to_string())
         );
         assert_eq!(
-            extract_pkg_id_from_url("https://example.com/app"),
+            extract_family_from_url("https://example.com/app"),
             Some("example.com.app".to_string())
         );
     }
@@ -468,7 +482,7 @@ mod tests {
         assert_eq!(pkg.repo_name, "local");
         assert_eq!(pkg.pkg_name, "test");
         assert_eq!(pkg.version, "1.0");
-        assert_eq!(pkg.pkg_id, "github.com.user.testrepo");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("github.com.user.testrepo"));
         assert_eq!(pkg.download_url, url);
     }
 
@@ -540,7 +554,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "soar");
         assert_eq!(pkg.version, "0.8.1"); // 'v' prefix stripped
-        assert_eq!(pkg.pkg_id, "pkgforge.soar");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("pkgforge.soar"));
         assert!(pkg.is_ghcr);
     }
 
@@ -551,7 +565,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "repo");
         assert_eq!(pkg.version, "sha256:deadbeef1234567890");
-        assert_eq!(pkg.pkg_id, "org.repo");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("org.repo"));
         assert!(pkg.is_ghcr);
     }
 
@@ -562,7 +576,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "package");
         assert_eq!(pkg.version, "latest");
-        assert_eq!(pkg.pkg_id, "org.package");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("org.package"));
         assert!(pkg.is_ghcr);
     }
 
@@ -573,7 +587,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "repo");
         assert_eq!(pkg.version, "1.0");
-        assert_eq!(pkg.pkg_id, "org.team.repo");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("org.team.repo"));
         assert!(pkg.is_ghcr);
     }
 
@@ -586,7 +600,7 @@ mod tests {
 
         assert_eq!(pkg.pkg_name, "myapp");
         assert_eq!(pkg.version, "2.0.0");
-        assert_eq!(pkg.pkg_id, "custom-id");
+        assert_eq!(pkg.pkg_id.as_deref(), Some("custom-id"));
         assert!(pkg.is_ghcr);
     }
 
@@ -618,7 +632,7 @@ mod tests {
         assert_eq!(pkg.repo_name, "local");
         assert_eq!(pkg.pkg_name, "soar");
         assert_eq!(pkg.version, "0.8.1"); // 'v' prefix stripped
-        assert_eq!(pkg.pkg_id, "pkgforge.soar");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("pkgforge.soar"));
         assert_eq!(pkg.download_url, "");
         assert_eq!(
             pkg.ghcr_pkg,

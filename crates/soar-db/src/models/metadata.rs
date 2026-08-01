@@ -1,16 +1,19 @@
 use diesel::{prelude::*, sqlite::Sqlite};
 use serde_json::Value;
 
-use crate::{json_vec, models::types::PackageProvide, schema::metadata::*};
+use crate::{
+    json_vec,
+    models::types::{PackageExtra, PackageFile, PackageProvide},
+    schema::metadata::*,
+};
 
 #[derive(Debug, Clone, Selectable)]
 pub struct Package {
     pub id: i32,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub pkg_name: String,
     pub pkg_family: Option<String>,
     pub pkg_type: Option<String>,
-    pub pkg_webpage: Option<String>,
     pub app_id: Option<String>,
     pub description: Option<String>,
     pub version: String,
@@ -28,7 +31,6 @@ pub struct Package {
     pub homepages: Option<Vec<String>>,
     pub notes: Option<Vec<String>>,
     pub source_urls: Option<Vec<String>>,
-    pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub build_id: Option<String>,
     pub build_date: Option<String>,
@@ -41,14 +43,18 @@ pub struct Package {
     pub soar_syms: bool,
     pub desktop_integration: Option<bool>,
     pub portable: Option<bool>,
+    /// Executables inside the artifact, as source path -> installed name.
+    /// Pinned side files installed alongside the artifact.
+    pub extra: Option<Vec<PackageExtra>>,
+    /// What the package takes out of its artifact.
+    pub files: Option<Vec<PackageFile>>,
 }
 
 impl Queryable<packages::SqlType, Sqlite> for Package {
     type Row = (
         i32,
-        String,
-        String,
         Option<String>,
+        String,
         Option<String>,
         Option<String>,
         Option<String>,
@@ -65,7 +71,6 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         Option<String>,
         Option<String>,
         Option<String>,
-        Option<Value>,
         Option<Value>,
         Option<Value>,
         Option<Value>,
@@ -81,6 +86,8 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         bool,
         Option<bool>,
         Option<bool>,
+        Option<Value>,
+        Option<Value>,
     );
 
     fn build(row: Self::Row) -> diesel::deserialize::Result<Self> {
@@ -90,37 +97,37 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
             pkg_name: row.2,
             pkg_family: row.3,
             pkg_type: row.4,
-            pkg_webpage: row.5,
-            app_id: row.6,
-            description: row.7,
-            version: row.8,
-            licenses: json_vec!(row.9),
-            download_url: row.10,
-            size: row.11,
-            ghcr_pkg: row.12,
-            ghcr_size: row.13,
-            ghcr_blob: row.14,
-            ghcr_url: row.15,
-            bsum: row.16,
-            icon: row.17,
-            desktop: row.18,
-            appstream: row.19,
-            homepages: json_vec!(row.20),
-            notes: json_vec!(row.21),
-            source_urls: json_vec!(row.22),
-            tags: json_vec!(row.23),
-            categories: json_vec!(row.24),
-            build_id: row.25,
-            build_date: row.26,
-            build_action: row.27,
-            build_script: row.28,
-            build_log: row.29,
-            provides: json_vec!(row.30),
-            snapshots: json_vec!(row.31),
-            replaces: json_vec!(row.32),
-            soar_syms: row.33,
-            desktop_integration: row.34,
-            portable: row.35,
+            app_id: row.5,
+            description: row.6,
+            version: row.7,
+            licenses: json_vec!(row.8),
+            download_url: row.9,
+            size: row.10,
+            ghcr_pkg: row.11,
+            ghcr_size: row.12,
+            ghcr_blob: row.13,
+            ghcr_url: row.14,
+            bsum: row.15,
+            icon: row.16,
+            desktop: row.17,
+            appstream: row.18,
+            homepages: json_vec!(row.19),
+            notes: json_vec!(row.20),
+            source_urls: json_vec!(row.21),
+            categories: json_vec!(row.22),
+            build_id: row.23,
+            build_date: row.24,
+            build_action: row.25,
+            build_script: row.26,
+            build_log: row.27,
+            provides: json_vec!(row.28),
+            snapshots: json_vec!(row.29),
+            replaces: json_vec!(row.30),
+            soar_syms: row.31,
+            desktop_integration: row.32,
+            portable: row.33,
+            extra: json_vec!(row.34),
+            files: json_vec!(row.35),
         })
     }
 }
@@ -131,7 +138,8 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
 #[diesel(table_name = packages)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct PackageListing {
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
+    pub pkg_family: Option<String>,
     pub pkg_name: String,
     pub pkg_type: Option<String>,
     pub version: String,
@@ -145,7 +153,7 @@ pub struct PackageListing {
 pub struct FuzzyCandidate {
     pub id: i32,
     pub pkg_name: String,
-    pub pkg_id: String,
+    pub pkg_id: Option<String>,
     pub description: Option<String>,
 }
 
@@ -186,11 +194,10 @@ pub struct PackageMaintainer {
 #[derive(Default, Insertable)]
 #[diesel(table_name = packages)]
 pub struct NewPackage<'a> {
-    pub pkg_id: &'a str,
+    pub pkg_id: Option<&'a str>,
     pub pkg_name: &'a str,
     pub pkg_family: Option<&'a str>,
     pub pkg_type: Option<&'a str>,
-    pub pkg_webpage: Option<&'a str>,
     pub app_id: Option<&'a str>,
     pub description: Option<&'a str>,
     pub version: &'a str,
@@ -208,7 +215,6 @@ pub struct NewPackage<'a> {
     pub homepages: Option<Value>,
     pub notes: Option<Value>,
     pub source_urls: Option<Value>,
-    pub tags: Option<Value>,
     pub categories: Option<Value>,
     pub build_id: Option<&'a str>,
     pub build_date: Option<&'a str>,
@@ -221,6 +227,8 @@ pub struct NewPackage<'a> {
     pub soar_syms: bool,
     pub desktop_integration: Option<bool>,
     pub portable: Option<bool>,
+    pub extra: Option<Value>,
+    pub files: Option<Value>,
 }
 
 #[derive(Default, Insertable)]

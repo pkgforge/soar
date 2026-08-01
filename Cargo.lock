@@ -412,9 +412,9 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "compak"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b129e47c79a2208973c9ea9af66840f1ffe533fa0aa8ad5d478d58cb4d9a898d"
+checksum = "c830a2769ae55bf48f5be48a24718c9533af40e185d2fe203ade59d6802f49fe"
 dependencies = [
  "bzip2",
  "flate2",

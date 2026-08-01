@@ -7,14 +7,12 @@ pub enum SoarEvent {
     DownloadStarting {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         total: u64,
     },
     /// Download is resuming from a previous checkpoint.
     DownloadResuming {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         current: u64,
         total: u64,
     },
@@ -22,7 +20,6 @@ pub enum SoarEvent {
     DownloadProgress {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         current: u64,
         total: u64,
     },
@@ -30,59 +27,50 @@ pub enum SoarEvent {
     DownloadComplete {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         total: u64,
     },
     /// Download error, retrying.
     DownloadRetry {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
     },
     /// Download permanently failed after retries.
     DownloadAborted {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
     },
     /// Download recovered from an error.
     DownloadRecovered {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
     },
     /// Verification stage.
     Verifying {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         stage: VerifyStage,
     },
     /// Install/extraction stage.
     Installing {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         stage: InstallStage,
     },
     /// Package removal stage.
     Removing {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         stage: RemoveStage,
     },
     /// Update check for a package.
     UpdateCheck {
         pkg_name: String,
-        pkg_id: String,
         status: UpdateCheckStatus,
     },
     /// Old version cleanup after update.
     UpdateCleanup {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         old_version: String,
         stage: UpdateCleanupStage,
     },
@@ -90,7 +78,6 @@ pub enum SoarEvent {
     Hook {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         hook_name: String,
         stage: HookStage,
     },
@@ -98,27 +85,23 @@ pub enum SoarEvent {
     Running {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         stage: RunStage,
     },
     /// Build stage (for source packages).
     Building {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         stage: BuildStage,
     },
     /// Operation completed successfully.
     OperationComplete {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
     },
     /// Operation failed.
     OperationFailed {
         op_id: OperationId,
         pkg_name: String,
-        pkg_id: String,
         error: String,
     },
     /// Repository sync progress.

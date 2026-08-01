@@ -137,3 +137,30 @@ mod tests {
         assert!(!PackageProvide::from_string("@../evil").is_safe());
     }
 }
+
+/// One file the package installs out of its artifact.
+///
+/// `to` is a path inside the package directory, so where it lands says what it
+/// is. An empty `source` means the artifact is itself the file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PackageFile {
+    #[serde(default)]
+    pub source: String,
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alias: Vec<String>,
+}
+
+/// A side file installed alongside the artifact, pinned by hash.
+///
+/// Exists because some artifacts are a bare binary with no room for a licence,
+/// and a package manager that redistributes them still owes one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PackageExtra {
+    pub url: String,
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blake3: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+}

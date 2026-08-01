@@ -87,11 +87,7 @@ fn display_diff(diff: &ApplyDiff, prune: bool) {
             let pkg = &target.package;
             builder.push_record([
                 format!("{}", Colored(Green, icon_or("+", "+"))),
-                format!(
-                    "{}#{}",
-                    Colored(Blue, &pkg.pkg_name),
-                    Colored(Cyan, &pkg.pkg_id)
-                ),
+                format!("{}", Colored(Blue, &pkg.pkg_name),),
                 format!("{}", Colored(Green, &pkg.version)),
                 format!("{}", Colored(Magenta, &pkg.repo_name)),
             ]);
@@ -105,11 +101,7 @@ fn display_diff(diff: &ApplyDiff, prune: bool) {
                 .map_or("?".to_string(), |e| e.version.clone());
             builder.push_record([
                 format!("{}", Colored(Yellow, icon_or("~", "~"))),
-                format!(
-                    "{}#{}",
-                    Colored(Blue, &pkg.pkg_name),
-                    Colored(Cyan, &pkg.pkg_id)
-                ),
+                format!("{}", Colored(Blue, &pkg.pkg_name),),
                 format!(
                     "{} -> {}",
                     Colored(Red, &old_version),
@@ -123,11 +115,7 @@ fn display_diff(diff: &ApplyDiff, prune: bool) {
             for pkg in &diff.to_remove {
                 builder.push_record([
                     format!("{}", Colored(Red, icon_or("-", "-"))),
-                    format!(
-                        "{}#{}",
-                        Colored(Blue, &pkg.pkg_name),
-                        Colored(Cyan, &pkg.pkg_id)
-                    ),
+                    format!("{}", Colored(Blue, &pkg.pkg_name),),
                     format!("{}", Colored(Yellow, &pkg.version)),
                     format!("{}", Colored(Magenta, &pkg.repo_name)),
                 ]);

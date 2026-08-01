@@ -22,12 +22,38 @@ pub fn check_health(ctx: &SoarContext) -> SoarResult<HealthReport> {
         .split(':')
         .any(|p| resolve_path(p).unwrap_or_default() == bin_path);
 
+    // Whether `man` can find what soar installed. An explicit MANPATH replaces
+    // everything man-db would work out for itself, so a package's manual pages
+    // can be installed correctly and still be invisible.
+    let man_dir = bin_path.parent().unwrap_or(&bin_path).join("share/man");
+    let man_path = man_dir.is_dir().then(|| man_dir.clone());
+    let man_path_configured = match &man_path {
+        None => true,
+        Some(dir) => {
+            let listed = |value: String| {
+                value
+                    .split(':')
+                    .any(|p| !p.is_empty() && resolve_path(p).unwrap_or_default() == *dir)
+            };
+            let from_env = std::env::var("MANPATH").map(&listed).unwrap_or(false);
+            from_env
+                || std::process::Command::new("manpath")
+                    .output()
+                    .ok()
+                    .and_then(|o| String::from_utf8(o.stdout).ok())
+                    .map(|out| listed(out.trim().to_string()))
+                    .unwrap_or(false)
+        }
+    };
+
     let broken_packages = get_broken_packages(ctx)?;
     let broken_symlinks = get_broken_symlinks(ctx)?;
 
     Ok(HealthReport {
         path_configured,
         bin_path,
+        man_path,
+        man_path_configured,
         broken_packages,
         broken_symlinks,
     })
@@ -46,14 +72,12 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
     for package in broken {
         let op_id = next_op_id();
         let pkg_name = package.pkg_name.clone();
-        let pkg_id = package.pkg_id.clone();
         let repo_name = package.repo_name.clone();
         let version = package.version.clone();
 
         ctx.events().emit(SoarEvent::Removing {
             op_id,
             pkg_name: pkg_name.clone(),
-            pkg_id: pkg_id.clone(),
             stage: RemoveStage::RemovingDirectory,
         });
 
@@ -69,14 +93,12 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
                 ctx.events().emit(SoarEvent::Removing {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                     stage: RemoveStage::Complete {
                         size_freed: None,
                     },
                 });
                 removed.push(RemovedInfo {
                     pkg_name,
-                    pkg_id,
                     repo_name,
                     version,
                 });
@@ -85,12 +107,10 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
                 ctx.events().emit(SoarEvent::OperationFailed {
                     op_id,
                     pkg_name: pkg_name.clone(),
-                    pkg_id: pkg_id.clone(),
                     error: err.to_string(),
                 });
                 failed.push(FailedInfo {
                     pkg_name,
-                    pkg_id,
                     error: err.to_string(),
                 });
             }
@@ -126,7 +146,6 @@ fn get_broken_packages(ctx: &SoarContext) -> SoarResult<Vec<BrokenPackage>> {
         .map(|p| {
             BrokenPackage {
                 pkg_name: p.pkg_name,
-                pkg_id: p.pkg_id,
                 installed_path: p.installed_path,
             }
         })
@@ -137,16 +156,21 @@ fn get_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
     let config = ctx.config();
     let mut broken = Vec::new();
 
+    // A directory that does not exist holds nothing broken. Walking it is an
+    // error, and reporting that as a failed health check tells the user
+    // something is wrong when nothing is.
     let bin_path = config.get_bin_path()?;
-    walk_dir(
-        &bin_path,
-        &mut |path: &std::path::Path| -> FileSystemResult<()> {
-            if !path.exists() {
-                broken.push(path.to_path_buf());
-            }
-            Ok(())
-        },
-    )?;
+    if bin_path.is_dir() {
+        walk_dir(
+            &bin_path,
+            &mut |path: &std::path::Path| -> FileSystemResult<()> {
+                if !path.exists() {
+                    broken.push(path.to_path_buf());
+                }
+                Ok(())
+            },
+        )?;
+    }
 
     let desktop_path = config.get_desktop_path()?;
     let mut soar_check = |path: &std::path::Path| -> FileSystemResult<()> {
@@ -158,8 +182,13 @@ fn get_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
         Ok(())
     };
 
-    walk_dir(&desktop_path, &mut soar_check)?;
-    walk_dir(config.get_icons_path(), &mut soar_check)?;
+    if desktop_path.is_dir() {
+        walk_dir(&desktop_path, &mut soar_check)?;
+    }
+    let icons_path = config.get_icons_path();
+    if icons_path.is_dir() {
+        walk_dir(&icons_path, &mut soar_check)?;
+    }
 
     Ok(broken)
 }

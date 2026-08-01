@@ -322,16 +322,33 @@ impl Download {
 
         remove_resume(&output_path)?;
 
+        // Extraction is driven by what the file actually is, not by what the
+        // caller guessed it would be. compak detects by magic number, so an
+        // ELF (an AppImage, say) is never mistaken for an archive even when
+        // extraction was requested.
         if self.extract {
-            let extract_dir = self.extract_to.unwrap_or_else(|| {
-                output_path
-                    .parent()
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("."))
-            });
-            debug!(archive = %output_path.display(), dest = %extract_dir.display(), "extracting archive");
-
-            compak::extract_archive(&output_path, &extract_dir)?;
+            match compak::detect_from_file(&output_path) {
+                Ok(format) => {
+                    let extract_dir = self.extract_to.unwrap_or_else(|| {
+                        output_path
+                            .parent()
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("."))
+                    });
+                    debug!(archive = %output_path.display(), dest = %extract_dir.display(),
+                           ?format, "extracting archive");
+                    // A failure here fails the install. A bare .gz of a single
+                    // file shares its magic number with the tar-wrapped form,
+                    // but detection decompresses far enough to tell the two
+                    // apart, so what is left is a download that really is
+                    // broken, and swallowing that installs an empty package.
+                    compak::extract_archive(&output_path, &extract_dir)?;
+                }
+                Err(_) => {
+                    trace!(path = %output_path.display(),
+                           "not an archive, installing as-is");
+                }
+            }
         }
 
         debug!(path = %output_path.display(), "download completed successfully");

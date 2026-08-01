@@ -30,9 +30,8 @@ pub async fn remove_packages(
                     );
                     for pkg in &pkgs {
                         info!(
-                            "  - {}#{}:{} ({})",
+                            "  - {}:{} ({})",
                             Colored(Blue, &pkg.pkg_name),
-                            Colored(Cyan, &pkg.pkg_id),
                             Colored(Green, &pkg.repo_name),
                             Colored(LightRed, &pkg.version)
                         );
@@ -73,16 +72,13 @@ pub async fn remove_packages(
 
     for removed in &report.removed {
         info!(
-            "Removed {}#{}:{} ({})",
-            removed.pkg_name, removed.pkg_id, removed.repo_name, removed.version
+            "Removed {}:{} ({})",
+            removed.pkg_name, removed.repo_name, removed.version
         );
     }
 
     for failed in &report.failed {
-        error!(
-            "Failed to remove {}#{}: {}",
-            failed.pkg_name, failed.pkg_id, failed.error
-        );
+        error!("Failed to remove {}: {}", failed.pkg_name, failed.error);
     }
 
     debug!("package removal completed");
