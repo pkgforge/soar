@@ -1,3 +1,5 @@
+PRAGMA foreign_keys = OFF;
+
 -- A package without an id cannot be represented once the column is required
 -- again. This table is a cache of the published index, so the rows are simply
 -- dropped and the next sync puts them back.
@@ -57,3 +59,5 @@ FROM packages;
 
 DROP TABLE packages;
 ALTER TABLE packages_old RENAME TO packages;
+
+PRAGMA foreign_keys = ON;

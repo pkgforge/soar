@@ -1,18 +1,6 @@
--- The declarative format carries what a package contains rather than leaving
--- it to be guessed: `binaries` says where each executable lives inside the
--- artifact and what to call it, `extra` lists side files installed alongside
--- it. A repository publishing that format has no package id to give, so the
--- id stops being required, and SQLite cannot relax NOT NULL in place.
---
--- Three columns go: `pkg_webpage` was derivable from the package's own fields,
--- `tags` was stored and displayed but never searched, and `version_upstream`
--- was never read at all.
---
--- The uniqueness key keeps the id and adds the family, which is what tells
--- identically-named packages apart once no id is published. NULLs are
--- collapsed first: SQLite treats every NULL as distinct, so an id-less
--- package would otherwise insert a fresh duplicate on every sync instead of
--- conflicting with itself.
+PRAGMA foreign_keys = OFF;
+
+-- Rebuilt rather than altered: SQLite cannot relax `pkg_id NOT NULL` in place.
 CREATE TABLE packages_new (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   pkg_id TEXT COLLATE NOCASE,
@@ -48,7 +36,6 @@ CREATE TABLE packages_new (
   soar_syms BOOLEAN NOT NULL DEFAULT false,
   desktop_integration BOOLEAN,
   portable BOOLEAN,
-  binaries JSONB,
   extra JSONB,
   files JSONB
 );
@@ -58,11 +45,15 @@ INSERT INTO packages_new SELECT
   licenses, download_url, size, ghcr_pkg, ghcr_size, ghcr_blob, ghcr_url,
   bsum, icon, desktop, appstream, homepages, notes, source_urls, categories,
   build_id, build_date, build_action, build_script, build_log, provides,
-  snapshots, replaces, soar_syms, desktop_integration, portable, NULL, NULL, NULL
+  snapshots, replaces, soar_syms, desktop_integration, portable, NULL, NULL
 FROM packages;
 
 DROP TABLE packages;
 ALTER TABLE packages_new RENAME TO packages;
 
+-- NULLs are collapsed first: SQLite treats every NULL as distinct, so an
+-- id-less package would insert a duplicate on every sync instead of conflicting.
 CREATE UNIQUE INDEX packages_identity
   ON packages (COALESCE(pkg_id, ''), COALESCE(pkg_family, ''), pkg_name, version);
+
+PRAGMA foreign_keys = ON;

@@ -46,6 +46,13 @@ fn handle_json_metadata<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Bring a published metadata database up to the schema soar reads.
+fn migrate_metadata(path: &Path) -> SoarResult<()> {
+    DbConnection::open(path, DbType::Metadata)
+        .map_err(|e| SoarError::Custom(format!("migrating repository metadata: {}", e)))?;
+    Ok(())
+}
+
 #[derive(Clone)]
 pub struct SoarContext {
     inner: Arc<SoarContextInner>,
@@ -162,6 +169,17 @@ impl SoarContext {
                         MetadataContent::SqliteDb(db_bytes) => {
                             write_metadata_db(&db_bytes, &metadata_db_path)
                                 .map_err(|e| SoarError::Custom(e.to_string()))?;
+                            // A published database was built by whatever soar
+                            // the repository runs, so it can predate the
+                            // columns these queries name. Opening it through
+                            // the migration runner brings it up to them. The
+                            // rebuild runs outside a transaction, so a failure
+                            // leaves a half-migrated file: it is discarded
+                            // rather than queried.
+                            if let Err(e) = migrate_metadata(&metadata_db_path) {
+                                fs::remove_file(&metadata_db_path).ok();
+                                return Err(e);
+                            }
                         }
                         MetadataContent::Json(packages) => {
                             handle_json_metadata(&packages, &metadata_db_path, &repo.name)?;

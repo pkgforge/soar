@@ -1,7 +1,6 @@
--- Installed rows record the family a package came from, so variants can be
--- told apart without the package id repositories no longer publish, and the
--- id itself stops being required. SQLite cannot relax NOT NULL in place, so
--- the table is rebuilt.
+PRAGMA foreign_keys = OFF;
+
+-- Rebuilt rather than altered: SQLite cannot relax `pkg_id NOT NULL` in place.
 CREATE TABLE packages_new (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   repo_name TEXT NOT NULL,
@@ -32,9 +31,10 @@ FROM packages;
 DROP TABLE packages;
 ALTER TABLE packages_new RENAME TO packages;
 
--- Installs from a URL or a local file used to carry a synthesised id, since
--- that was the only field able to say where they came from. That is now the
--- family's job, so the value moves across and nothing derives an id again.
+-- A synthesised id was how a URL or local install recorded its source; that is
+-- the family's job now.
 UPDATE packages
 SET pkg_family = pkg_id
 WHERE repo_name = 'local' AND pkg_family IS NULL AND pkg_id IS NOT NULL;
+
+PRAGMA foreign_keys = ON;
