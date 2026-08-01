@@ -88,7 +88,7 @@ remote-tool = { url = "https://example.com/tool.tar.gz" }
 
 ```toml
 [packages.my_package]
-pkg_id = "pkg-bin"
+family = "my-project"
 repo = "soarpkgs"
 version = "1.0.0"
 pinned = true
@@ -100,7 +100,8 @@ portable = { home = "~/.pkg", config = "~/.pkg/config" }
 | Field | Type | Description |
 |-------|------|-------------|
 | `version` | String | Package version to install (`"*"` for latest) |
-| `pkg_id` | String | Package variant/family identifier |
+| `family` | String | Project a package belongs to, used to pick between packages sharing a name |
+| `pkg_id` | String | **Deprecated.** Repositories publishing the declarative format have no package id; use `family` |
 | `repo` | String | Install from a specific repository |
 | `url` | String | Install directly from a URL |
 | `bsum` | String | Expected BLAKE3 checksum (hex) for `url`/`github`/`gitlab` downloads; install aborts on mismatch |
@@ -114,7 +115,7 @@ portable = { home = "~/.pkg", config = "~/.pkg/config" }
 | `version_command` | String | Custom command to fetch latest version and download URL |
 | `binary_only` | Boolean | Only extract binaries, skip other files |
 | `binaries` | Array | Map multiple binaries to custom names (see [Binary Mappings](#binary-mappings)) |
-| `install_patterns` | Array | File patterns to include/exclude |
+| `install_patterns` | Array | **Deprecated.** Only the OCI download path applies these; the declarative format does not use them |
 | `portable` | Object | Configure portable directories (see [Portable](#portable)) |
 | `hooks` | Object | Lifecycle hooks (see [Hooks](#hooks)) |
 | `build` | Object | Build from source (see [Build From Source](#build-from-source)) |
@@ -504,14 +505,14 @@ sandbox = { require = true, network = false }
 The configuration below uses every available option at least once. Because several options are alternatives to one another, the example spreads them across multiple packages rather than forcing them into a single entry.
 
 ::: info Pick one source per package
-Each package draws from a single source: a registry entry (`pkg_id` and `repo`), a direct `url`, a `github` repo, a `gitlab` repo, or a `version_command`. The source-specific fields follow from that choice, so treat this as a field reference rather than a template to copy verbatim.
+Each package draws from a single source: a registry entry (`family` and `repo`), a direct `url`, a `github` repo, a `gitlab` repo, or a `version_command`. The source-specific fields follow from that choice, so treat this as a field reference rather than a template to copy verbatim.
 :::
 
 ```toml
 [defaults]
 profile = "default"                          # default profile for every package
 binary_only = false                          # extract everything, not just the binary
-install_patterns = ["!*.log", "!SBUILD"]     # default include/exclude globs
+install_patterns = ["!*.log", "!SBUILD"]     # deprecated; only the OCI path applies these
 
 # Sandbox defaults are merged into every package. Per-package sandbox blocks
 # override these fields, and fs_read/fs_write are concatenated.
@@ -524,7 +525,7 @@ fs_write = ["/tmp/soar-build"]               # extra writable paths
 
 # Registry package pinned to a specific variant, version, and repository.
 [packages.bat]
-pkg_id = "catlike.tools.bat.official"        # disambiguate packages that share a name
+family = "bat"                               # disambiguate packages that share a name
 version = "0.24.0"                           # specific version ("*" means latest)
 repo = "soarpkgs"                            # install from this repository
 pinned = true                                # never update automatically

@@ -1,6 +1,6 @@
 ---
 title: Removing Packages
-description: Remove installed packages with soar, including specific pkg_ids, multiple packages at once, and cleanup of broken or partial installations.
+description: Remove installed packages with soar, including specific variants, multiple packages at once, and cleanup of broken or partial installations.
 ---
 
 # Remove Packages
@@ -42,7 +42,7 @@ The `remove` command supports the following options.
 | Option | Description |
 |--------|-------------|
 | `--yes` | Skip confirmation prompts. Automatically selects the first option when multiple packages match. |
-| `--all` | Remove all installed variants of the specified package across different pkg_ids. |
+| `--all` | Remove every installed variant of the named package, whatever family, repository or version it came from. |
 
 #### Using --yes
 
@@ -61,7 +61,7 @@ soar remove --yes bat
 Remove all installed variants of a package.
 
 ```sh
-# Remove all versions of bat from all pkg_ids
+# Remove every installed variant of bat
 soar remove --all bat
 
 # Remove with --yes to skip bulk confirmation
@@ -69,7 +69,7 @@ soar remove --all --yes cat
 ```
 
 ::: warning Removes every variant
-Using `--all` will remove ALL installed variants of the package, including those from different repositories and pkg_ids. Use with caution.
+Using `--all` will remove ALL installed variants of the package, including those from different repositories and families. Use with caution.
 :::
 
 ### Removing multiple packages
@@ -87,34 +87,34 @@ soar remove 7z bat
 ```
 
 ::: info
-If you provide only the package name without a pkg_id and multiple packages match, you will be prompted to select ONE package to remove. Use `--all` to remove all variants.
+If you provide only the package name and several variants match, you will be prompted to select ONE package to remove. Use `--all` to remove all variants.
 :::
 
-### Removing a package from a specific pkg_id
+### Removing a package from a specific family
 
 ```sh
-soar remove <package>#<pkg_id>
+soar remove <family>/<package>
 ```
 
-Example: remove `cat` from the `git.busybox.net.busybox.standalone.glibc` pkg_id.
+Example: remove `rg` as published by the ripgrep project.
 
 ```sh
-soar remove cat#git.busybox.net.busybox.standalone.glibc
+soar remove ripgrep/rg
 ```
 
-### Removing all packages from a specific pkg_id
+### Removing every variant of a name
 
 ```sh
 soar remove '<name>#all'
 ```
 
-This searches for all pkg_ids that `cat` is in and prompts you to choose one.
+This finds each package called `cat` and prompts you to choose one.
 
 ```sh
 soar remove 'cat#all'
 ```
 
-After you select a pkg_id, all packages from that pkg_id will be removed.
+After you select a variant, every package installed under it will be removed.
 
 ## What Happens During Removal
 

@@ -11,7 +11,7 @@ Each topic below has a dedicated page with full details, flags, and examples.
 
 ## Core Operations
 
-- [Installing Packages](./install.md) installs packages from repositories, a `pkg_id`, a URL, or a local file, including portable installation for AppImages.
+- [Installing Packages](./install.md) installs packages from repositories, a family, a URL, or a local file, including portable installation for AppImages.
 - [Removing Packages](./remove.md) removes one or more installed packages.
 - [Updating Packages](./update.md) keeps all or selected packages up to date.
 

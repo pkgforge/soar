@@ -38,7 +38,7 @@ soar Q <package>
 The `query` command searches for packages and displays detailed information in a formatted table. It checks:
 
 - Package name
-- Package ID (pkg_id)
+- Family and package id, where the repository publishes them
 - Version numbers
 - Repository sources
 
@@ -61,7 +61,7 @@ The query command displays the following information.
 
 | Field | Description |
 |-------|-------------|
-| **Name** | Package name in format `name#pkg_id:repo` |
+| **Name** | Package name in format `family/name:repo`, with the family omitted when the repository publishes none |
 | **Description** | Human-readable package description |
 | **Version** | Current package version |
 | **Size** | Download size (formatted for readability) |
@@ -113,7 +113,7 @@ soar inspect <package>
 
 The `inspect` command:
 
-1. Searches for matching packages by name, pkg_id, or version.
+1. Searches for matching packages by name, family, or version.
 2. Prompts for interactive selection if multiple matches are found.
 3. Checks if the package is installed locally and reads from `$INSTALL_DIR/SBUILD`.
 4. Fetches from the repository URL if the package is not installed locally.

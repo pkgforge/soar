@@ -1,6 +1,6 @@
 ---
 title: Installing Packages
-description: Install packages with soar from repositories, specific pkg_ids, repositories, or direct URLs, with options for portable, binary-only, and non-interactive installs.
+description: Install packages with soar from repositories, specific families, repositories, or direct URLs, with options for portable, binary-only, and non-interactive installs.
 ---
 
 # Installing Packages
@@ -14,12 +14,28 @@ Soar offers several flexible ways to install packages. This guide covers every i
 | Input | Example | How soar resolves it |
 |-------|---------|----------------------|
 | Package name | `soar install bat` | Searches all synced repositories. If several packages match, soar prompts you to choose, or selects the first match when `--yes` is set. |
-| `name#pkg_id` | `soar install cat#git.busybox.net.busybox.standalone.glibc` | Searches a specific package family. |
+| `family/name` | `soar install ripgrep/rg` | Picks one project when several publish a command of the same name. |
+| `name#pkg_id` | `soar install cat#busybox` | Deprecated. Repositories publishing the declarative format have no package id; use `family/name`. |
 | `name:repo` | `soar install 7z:soarpkgs` | Searches a specific repository. |
 | `name@version` | `soar install soar@0.5.2` | Pins the package at a specific version. |
 | URL | `soar install https://example.com/app.AppImage` | Downloads and installs directly from the URL. |
 
 Once the input resolves to a package, soar downloads and installs it. The sections below cover each input type in detail.
+
+## What an Install Links
+
+A package from a repository publishing the declarative format states where each
+of its files belongs, and soar puts them where the system looks for them:
+
+| File | Linked to |
+|------|-----------|
+| Commands | The bin directory, which is `~/.local/share/soar/bin` by default |
+| Manual pages | `share/man` beside the bin directory, which `man` finds through PATH with no `MANPATH` set |
+| Shell completions | The completion directory of each shell listed in `completions` |
+
+Licences and other side files are installed inside the package directory and
+are not linked. Removing a package unlinks only what points back into it, so a
+manual page or completion installed by your distribution is left alone.
 
 ## Basic Installation
 
@@ -59,19 +75,23 @@ The plain name is searched across all synced repositories.
 soar add bat
 ```
 
-### Specific pkg_id
+### Specific family
 
-Packages can be organized into a pkg_id (like a family). Append `#<pkg_id>` to install from a specific one.
-
-```sh
-soar add <package>#<pkg_id>
-```
-
-Example: install the `cat` package from the `git.busybox.net.busybox.standalone.glibc` pkg_id.
+Where more than one project publishes a command of the same name, the family
+says which one you mean. Prefix it with a `/`.
 
 ```sh
-soar add cat#git.busybox.net.busybox.standalone.glibc
+soar add <family>/<package>
 ```
+
+Example: install `rg` as published by the ripgrep project.
+
+```sh
+soar add ripgrep/rg
+```
+
+The older `<package>#<pkg_id>` form still works and warns. Repositories
+publishing the declarative format have no package id, so prefer the family.
 
 ### Specific repository
 
@@ -164,15 +184,10 @@ Example: install the `bat` and `7z` packages.
 soar add bat 7z
 ```
 
-## Installing Whole pkg_ids
+## Installing Every Variant
 
-To install every package provided by a pkg_id, prefix the pkg_id with `#`.
-
-```sh
-soar add '#git.busybox.net.busybox.standalone.glibc'
-```
-
-If you do not know the full pkg_id but know that `cat` is in it, use `#all`. This searches for every pkg_id that contains `cat` and prompts you to choose one.
+To install every variant a repository publishes under one name, use `#all`.
+This finds each package called `cat` and prompts you to choose.
 
 ```sh
 soar add 'cat#all'
@@ -351,7 +366,7 @@ This opens an interactive picker that displays:
 
 - All available versions and variants of the package
 - `[installed]` marker next to already-installed versions
-- Package details (name, version, repository, pkg_id)
+- Package details (name, version, repository, family)
 
 Example: browse all `bat` variants interactively.
 

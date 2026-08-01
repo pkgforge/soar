@@ -31,7 +31,7 @@ For example, search for packages containing `bat`:
 soar search bat
 ```
 
-A search checks for a partial match in `pkg_id`, `pkg_name`, `pkg`, and the target from `provides`.
+A search checks for a partial match in `pkg_name`, `pkg_family`, `pkg_id`, and the target from `provides`.
 
 ## Search Filters
 
@@ -137,12 +137,12 @@ Example results for `soar search fire`:
 [+] firefoxpwa#third-party:flathub (1.0)
 ```
 
-### Searching by pkg_id
+### Searching by Family
 
-Search by package ID family:
+Search for every package a project publishes:
 
 ```sh
-soar search git.busybox.net
+soar search ripgrep
 ```
 
 ### Searching by Provides
@@ -177,15 +177,18 @@ soar query bat
 The `query` command supports a detailed syntax for specific lookups:
 
 ```sh
-soar query <name>#<pkg_id>@<version>:<repo>
+soar query <family>/<name>@<version>:<repo>
 ```
 
 The components are:
 
 - `<name>` is the package name (required)
-- `#<pkg_id>` is the package ID, used for disambiguation (optional)
+- `<family>/` is the project it belongs to, used to pick between packages sharing a name (optional)
 - `@<version>` is a version constraint (optional)
 - `:<repo>` is the repository name (optional)
+
+The older `<name>#<pkg_id>` form still parses and warns. Repositories publishing
+the declarative format have no package id, so prefer `<family>/<name>`.
 
 ### Query Output
 
@@ -196,7 +199,7 @@ The query command returns the following fields:
 | Name | Package name |
 | Version | Current or latest version |
 | Repository | Source repository |
-| pkg_id | Package ID or family |
+| Family | Project the package belongs to, where the repository publishes one |
 | Size | Package size on disk |
 | Install Date | When the package was installed |
 | Last Updated | Last update timestamp |
@@ -212,7 +215,7 @@ Output:
 Name:        bat
 Version:     0.24.0
 Repository:  official
-pkg_id:      catlike.tools.bat.official
+Family:      bat
 Size:        2.3 MiB
 Install Date: 2025-01-15
 Last Updated: 2025-01-20

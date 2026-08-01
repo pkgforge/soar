@@ -41,7 +41,8 @@ Control where soar stores its data.
 
 | Configuration Option | Type | Default | Description |
 |---------------------|------|---------|-------------|
-| `install_patterns` | Array | `["!*.log", "!SBUILD", "!*.json", "!*.version"]` | Files to exclude during installation |
+| `install_patterns` | Array | `["!*.log", "!SBUILD", "!*.json", "!*.version"]` | **Deprecated.** Files to exclude during installation. Only the OCI download path applies these |
+| `completions` | Array | auto | Shells whose completions are linked on install (`bash`, `zsh`, `fish`). Defaults to those whose completion directory already exists |
 
 ### Security
 

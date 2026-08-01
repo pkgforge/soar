@@ -114,7 +114,7 @@ soar use <package_name>
 
 - `<package_name>`: the **base package name only**, for example `python`, `cat`, or `node`.
   - Do not use version suffixes. Use `python`, not `python@3.12`.
-  - Do not use pkg_id prefixes. Use `python`, not `python#pypy`.
+  - Do not use family or pkg_id prefixes. Use `python`, not `pypy/python`.
 - No additional flags or options are supported.
 - The command is interactive when multiple variants are installed.
 - If only one variant is installed, the command exits without prompting because there is nothing to switch.

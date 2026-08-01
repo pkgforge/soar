@@ -57,13 +57,13 @@ $ soar list soarpkgs
 ┗━━━━━━━━━━━┻━━━━━━━━━━━━━━━┛
 ```
 
-The output format is `[icon] name#pkg_id:repo | version | type`:
+The output format is `[icon] family/name:repo | version (other versions) | type`:
 
 - **icon**: `✓` (or `+`) means installed, `○` (or `-`) means available, depending on whether `display.icons` is enabled
+- **family**: The project a package belongs to (green), shown only when the repository publishes one
 - **name**: Package name (blue)
-- **pkg_id**: Package identifier (cyan)
 - **repo**: Repository name (cyan)
-- **version**: Package version (light red)
+- **version**: Newest version (light red), with any other installed versions listed in parentheses
 - **type**: Package type (magenta, optional)
 
 ## List Installed Packages
