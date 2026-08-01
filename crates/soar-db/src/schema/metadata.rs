@@ -50,7 +50,6 @@ diesel::table! {
         soar_syms -> Bool,
         desktop_integration -> Nullable<Bool>,
         portable -> Nullable<Bool>,
-        binaries -> Nullable<Jsonb>,
         extra -> Nullable<Jsonb>,
         files -> Nullable<Jsonb>,
     }

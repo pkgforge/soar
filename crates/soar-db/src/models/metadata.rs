@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::{
     json_vec,
-    models::types::{PackageBinary, PackageExtra, PackageFile, PackageProvide},
+    models::types::{PackageExtra, PackageFile, PackageProvide},
     schema::metadata::*,
 };
 
@@ -44,7 +44,6 @@ pub struct Package {
     pub desktop_integration: Option<bool>,
     pub portable: Option<bool>,
     /// Executables inside the artifact, as source path -> installed name.
-    pub binaries: Option<Vec<PackageBinary>>,
     /// Pinned side files installed alongside the artifact.
     pub extra: Option<Vec<PackageExtra>>,
     /// What the package takes out of its artifact.
@@ -89,7 +88,6 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         Option<bool>,
         Option<Value>,
         Option<Value>,
-        Option<Value>,
     );
 
     fn build(row: Self::Row) -> diesel::deserialize::Result<Self> {
@@ -128,9 +126,8 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
             soar_syms: row.31,
             desktop_integration: row.32,
             portable: row.33,
-            binaries: json_vec!(row.34),
-            extra: json_vec!(row.35),
-            files: json_vec!(row.36),
+            extra: json_vec!(row.34),
+            files: json_vec!(row.35),
         })
     }
 }
@@ -230,7 +227,6 @@ pub struct NewPackage<'a> {
     pub soar_syms: bool,
     pub desktop_integration: Option<bool>,
     pub portable: Option<bool>,
-    pub binaries: Option<Value>,
     pub extra: Option<Value>,
     pub files: Option<Value>,
 }

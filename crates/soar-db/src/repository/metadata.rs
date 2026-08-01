@@ -624,7 +624,6 @@ impl MetadataRepository {
             soar_syms: package.soar_syms.unwrap_or(false),
             desktop_integration: package.desktop_integration,
             portable: package.portable,
-            binaries: package.binaries.as_ref().map(|b| json!(b)),
             extra: package.extra.as_ref().map(|e| json!(e)),
             files: package.files.as_ref().map(|f| json!(f)),
         };

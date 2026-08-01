@@ -238,10 +238,6 @@ pub struct RemotePackage {
     pub snapshots: Option<Vec<String>>,
     pub replaces: Option<Vec<String>>,
     /// Executables inside the artifact, as source path -> installed name.
-    /// Lets a package whose binary is named differently from the package
-    /// itself be installed from the index alone.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub binaries: Option<Vec<RemoteBinary>>,
     /// Pinned side files to install alongside the artifact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra: Option<Vec<RemoteExtra>>,
@@ -299,17 +295,6 @@ mod tests {
         let pkg: RemotePackage = serde_json::from_str(json).unwrap();
         assert_eq!(pkg.disabled, Some(true));
     }
-}
-
-/// One executable inside a package artifact, as published in the index.
-///
-/// `source` is relative to the extracted artifact and may be a glob, since
-/// archives commonly wrap their contents in a versioned directory.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RemoteBinary {
-    pub source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link_as: Option<String>,
 }
 
 /// One file the package installs, as published in the index.

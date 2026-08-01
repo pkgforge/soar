@@ -138,18 +138,6 @@ mod tests {
     }
 }
 
-/// One executable inside a package artifact.
-///
-/// `source` is a path relative to the extracted artifact and may be a glob,
-/// since archives often wrap their contents in a versioned directory.
-/// `link_as` is the name to install it under, defaulting to the file's own.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PackageBinary {
-    pub source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link_as: Option<String>,
-}
-
 /// One file the package installs out of its artifact.
 ///
 /// `to` is a path inside the package directory, so where it lands says what it

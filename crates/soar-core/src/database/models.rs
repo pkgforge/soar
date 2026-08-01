@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 use soar_db::{
-    models::types::{PackageBinary, PackageExtra, PackageFile, PackageProvide},
+    models::types::{PackageExtra, PackageFile, PackageProvide},
     repository::core::InstalledPackageWithPortable,
 };
 use soar_package::PackageExt;
@@ -67,7 +67,6 @@ pub struct Package {
     pub desktop_integration: Option<bool>,
     pub portable: Option<bool>,
     /// Executables inside the artifact, as source path -> installed name.
-    pub binaries: Option<Vec<PackageBinary>>,
     /// Pinned side files installed alongside the artifact.
     pub extra: Option<Vec<PackageExtra>>,
     /// What the package takes out of its artifact. Absent means all of it.
@@ -295,7 +294,6 @@ impl From<soar_db::models::metadata::Package> for Package {
             deprecated: false,
             desktop_integration: pkg.desktop_integration,
             portable: pkg.portable,
-            binaries: pkg.binaries,
             extra: pkg.extra,
             files: pkg.files,
         }

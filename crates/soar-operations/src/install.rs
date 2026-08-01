@@ -10,7 +10,7 @@ use std::{
 };
 
 use minisign_verify::{PublicKey, Signature};
-use soar_config::{packages::BinaryMapping, utils::default_install_patterns};
+use soar_config::utils::default_install_patterns;
 use soar_core::{
     database::{
         connection::{DieselDatabase, MetadataManager},
@@ -1185,24 +1185,9 @@ async fn install_single_package(
         stage: InstallStage::LinkingBinaries,
     });
 
-    // A repository can describe where its executables live; local
-    // configuration still wins, so an override in packages.toml is never
-    // silently replaced by whatever the index says.
-    let index_binaries: Option<Vec<BinaryMapping>> = pkg.binaries.as_ref().map(|bins| {
-        bins.iter()
-            .map(|b| {
-                BinaryMapping {
-                    source: b.source.clone(),
-                    link_as: b.link_as.clone(),
-                }
-            })
-            .collect()
-    });
-    let binaries = target
-        .binaries
-        .clone()
-        .filter(|bins| !bins.is_empty())
-        .or(index_binaries);
+    // Only what packages.toml declares: a repository says where its files go
+    // through `files`, not through a binary mapping.
+    let binaries = target.binaries.clone().filter(|bins| !bins.is_empty());
 
     let symlinks = mangle_package_symlinks(
         &install_dir,
