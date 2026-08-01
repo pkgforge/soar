@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     env, fs,
     io::{Read, Write},
     os::unix::fs::PermissionsExt,
@@ -109,42 +110,21 @@ pub fn apply_file_layout(
     // one needs write permission on the directory itself.
     crate::package::remove::make_tree_writable(install_dir);
 
-    let present = walk_dir_files(install_dir, &staging);
-    let mut placed = 0usize;
-    for file in files {
-        if !is_safe_relative(&file.to) {
-            warn!(to = file.to, "skipping file with an unsafe target");
-            continue;
-        }
-        let Some(source) = resolve_source(&file.source, install_dir, &present, artifact) else {
-            warn!(
-                source = file.source,
-                to = file.to,
-                "file not found in the artifact"
-            );
-            continue;
-        };
-        let dest = staging.join(&file.to);
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-        }
-        fs::rename(&source, &dest).with_context(|| format!("placing {}", file.to))?;
-        placed += 1;
-
-        let name = dest.file_name().unwrap_or_default().to_os_string();
-        for alias in &file.alias {
-            if !is_safe_relative(alias) {
-                warn!(alias, "skipping alias with an unsafe target");
-                continue;
+    // What each file was moved from, so a failure part-way can put it back.
+    let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let placed = match place_files(files, install_dir, artifact, &staging, &mut moved) {
+        Ok(placed) => placed,
+        Err(err) => {
+            // Leave the package as it was found rather than half emptied: the
+            // caller may retry, and the sources are only in the staging
+            // directory this call is about to remove.
+            for (source, dest) in moved {
+                fs::rename(&dest, &source).ok();
             }
-            let link = staging.join(alias);
-            if let Some(parent) = link.parent() {
-                fs::create_dir_all(parent).ok();
-            }
-            // relative, so the package directory stays movable
-            std::os::unix::fs::symlink(&name, &link).ok();
+            fs::remove_dir_all(&staging).ok();
+            return Err(err);
         }
-    }
+    };
 
     // Nothing resolved means the recipe and the artifact disagree, which most
     // often means the download never extracted. Keeping what is there would
@@ -164,7 +144,9 @@ pub fn apply_file_layout(
         .flatten()
     {
         let path = entry.path();
-        if path == staging {
+        // The install marker is soar's own bookkeeping, not package content:
+        // removing it here loses the record an interrupted install resumes from.
+        if path == staging || entry.file_name() == INSTALL_MARKER_FILE {
             continue;
         }
         if path.is_dir() && !path.is_symlink() {
@@ -183,6 +165,91 @@ pub fn apply_file_layout(
     }
     fs::remove_dir_all(&staging).ok();
     Ok(())
+}
+
+/// Move each listed file into the staging directory and record where it came
+/// from. Returns how many were placed.
+fn place_files(
+    files: &[PackageFile],
+    install_dir: &Path,
+    artifact: &Path,
+    staging: &Path,
+    moved: &mut Vec<(PathBuf, PathBuf)>,
+) -> SoarResult<usize> {
+    let present = walk_dir_files(install_dir, staging);
+    // Where a source ended up, for the second entry that names the same file.
+    let mut taken: HashMap<PathBuf, PathBuf> = HashMap::new();
+    let mut placed = 0usize;
+    for file in files {
+        if !is_safe_relative(&file.to) {
+            warn!(to = file.to, "skipping file with an unsafe target");
+            continue;
+        }
+        let Some(source) = resolve_source(&file.source, install_dir, &present, artifact) else {
+            warn!(
+                source = file.source,
+                to = file.to,
+                "file not found in the artifact"
+            );
+            continue;
+        };
+        let dest = staging.join(&file.to);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        }
+        // A file listed twice under different names was consumed by the first
+        // move, so the second is a copy of where it landed.
+        match taken.get(&source) {
+            Some(already) => {
+                fs::copy(already, &dest).with_context(|| format!("copying to {}", file.to))?;
+            }
+            None => {
+                fs::rename(&source, &dest).with_context(|| format!("placing {}", file.to))?;
+                moved.push((source.clone(), dest.clone()));
+                taken.insert(source, dest.clone());
+            }
+        }
+        placed += 1;
+
+        for alias in &file.alias {
+            if !is_safe_relative(alias) {
+                warn!(alias, "skipping alias with an unsafe target");
+                continue;
+            }
+            let link = staging.join(alias);
+            if let Some(parent) = link.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            // relative, so the package directory stays movable
+            if let Some(target) = relative_to(alias, &file.to) {
+                std::os::unix::fs::symlink(&target, &link).ok();
+            }
+        }
+    }
+    Ok(placed)
+}
+
+/// The path `target` has when read from the directory holding `link`.
+///
+/// Nearly every alias is a sibling of what it points at, which is just the
+/// file's own name, but nothing in the format requires that.
+fn relative_to(link: &str, target: &str) -> Option<PathBuf> {
+    let link_dir: Vec<&str> = link.split('/').collect();
+    let link_dir = &link_dir[..link_dir.len().saturating_sub(1)];
+    let target_parts: Vec<&str> = target.split('/').collect();
+    let shared = link_dir
+        .iter()
+        .zip(&target_parts)
+        .take_while(|(a, b)| a == b)
+        .count();
+    let mut out = PathBuf::new();
+    for _ in shared..link_dir.len() {
+        out.push("..");
+    }
+    for part in &target_parts[shared..] {
+        out.push(part);
+    }
+    (!out.as_os_str().is_empty()).then_some(out)
 }
 
 /// Whether a path stays inside the directory it is joined to.
@@ -1329,5 +1396,33 @@ impl PackageInstaller {
         self.remove_marker()?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::relative_to;
+
+    #[test]
+    fn alias_beside_its_target_is_just_the_name() {
+        assert_eq!(
+            relative_to("bin/fdfind", "bin/fd").unwrap(),
+            Path::new("fd")
+        );
+    }
+
+    #[test]
+    fn alias_in_another_directory_climbs_out() {
+        assert_eq!(
+            relative_to("share/man/man1/fdfind.1", "share/man/man1/fd.1").unwrap(),
+            Path::new("fd.1")
+        );
+        assert_eq!(
+            relative_to("bin/fd", "libexec/fd").unwrap(),
+            Path::new("../libexec/fd")
+        );
+        assert_eq!(relative_to("fd", "bin/fd").unwrap(), Path::new("bin/fd"));
     }
 }
