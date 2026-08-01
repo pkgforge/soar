@@ -42,9 +42,18 @@ pub async fn run_package(
 
             // Run what was chosen. Resolving it by name again would pose
             // the same ambiguous question the choice just answered.
+            let query = match pkg.pkg_family {
+                Some(ref family) => {
+                    format!(
+                        "{}/{}@{}:{}",
+                        family, pkg.pkg_name, pkg.version, pkg.repo_name
+                    )
+                }
+                None => format!("{}@{}:{}", pkg.pkg_name, pkg.version, pkg.repo_name),
+            };
             let result = run::prepare_run(
                 ctx,
-                &format!("{}@{}:{}", pkg.pkg_name, pkg.version, pkg.repo_name),
+                &query,
                 Some(&pkg.repo_name),
                 pkg.pkg_id.as_deref(),
                 no_verify,

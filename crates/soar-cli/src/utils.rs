@@ -145,10 +145,18 @@ pub fn select_package_interactively_with_installed<T: PackageExt>(
         } else {
             String::new()
         };
+        // The family is what tells two candidates of the same name apart, so
+        // this is the one listing that cannot leave it out.
+        let name = match pkg.pkg_family() {
+            Some(family) if family != pkg.pkg_name() => {
+                format!("{}/{}", family, pkg.pkg_name())
+            }
+            _ => pkg.pkg_name().to_string(),
+        };
         info!(
             "[{}] {}:{} | {}{}",
             idx + 1,
-            Colored(Blue, &pkg.pkg_name()),
+            Colored(Blue, &name),
             Colored(Green, pkg.repo_name()),
             Colored(LightRed, pkg.version()),
             installed_marker
