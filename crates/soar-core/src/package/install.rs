@@ -1276,6 +1276,7 @@ impl PackageInstaller {
                 CoreRepository::unlink_others(
                     conn,
                     pkg_name,
+                    &self.package.repo_name,
                     pkg_id,
                     self.package.pkg_family.as_deref(),
                     version,

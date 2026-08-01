@@ -91,6 +91,7 @@ pub async fn switch_variant(
         CoreRepository::unlink_others_by_checksum(
             conn,
             pkg_name,
+            &selected_package.repo_name,
             pkg_id,
             selected_package.pkg_family.as_deref(),
             checksum,

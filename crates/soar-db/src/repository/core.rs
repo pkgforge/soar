@@ -19,6 +19,10 @@ use crate::{
 /// A repository publishing the declarative format produces no package id, so
 /// `pkg_id = ?` would never match those rows and `pkg_id != ?` would never
 /// exclude them. Asking for no id has to mean the row has none either.
+/// An installed row reduced to what identifies it: id, repository, package id,
+/// family and version.
+type IdentityRow = (i32, String, Option<String>, Option<String>, String);
+
 fn match_pkg_id(
     pkg_id: Option<&str>,
 ) -> Box<dyn BoxableExpression<packages::table, Sqlite, SqlType = Nullable<Bool>>> {
@@ -464,6 +468,7 @@ impl CoreRepository {
     pub fn unlink_others(
         conn: &mut SqliteConnection,
         pkg_name: &str,
+        keep_repo_name: &str,
         keep_pkg_id: Option<&str>,
         keep_pkg_family: Option<&str>,
         keep_version: &str,
@@ -474,6 +479,7 @@ impl CoreRepository {
         let stale = Self::rows_other_than(
             conn,
             pkg_name,
+            keep_repo_name,
             keep_pkg_id,
             keep_pkg_family,
             Some(keep_version),
@@ -490,14 +496,16 @@ impl CoreRepository {
     fn rows_other_than(
         conn: &mut SqliteConnection,
         pkg_name: &str,
+        keep_repo_name: &str,
         keep_pkg_id: Option<&str>,
         keep_pkg_family: Option<&str>,
         keep_version: Option<&str>,
     ) -> QueryResult<Vec<i32>> {
-        let rows: Vec<(i32, Option<String>, Option<String>, String)> = packages::table
+        let rows: Vec<IdentityRow> = packages::table
             .filter(packages::pkg_name.eq(pkg_name))
             .select((
                 packages::id,
+                packages::repo_name,
                 packages::pkg_id,
                 packages::pkg_family,
                 packages::version,
@@ -505,8 +513,12 @@ impl CoreRepository {
             .load(conn)?;
         Ok(rows
             .into_iter()
-            .filter(|(_, pkg_id, pkg_family, version)| {
-                let same = pkg_id.as_deref() == keep_pkg_id
+            .filter(|(_, repo_name, pkg_id, pkg_family, version)| {
+                // The repository is part of the identity: the same package
+                // from two of them is two installs, and only one can own the
+                // command.
+                let same = repo_name == keep_repo_name
+                    && pkg_id.as_deref() == keep_pkg_id
                     && pkg_family.as_deref() == keep_pkg_family
                     && keep_version.is_none_or(|v| version == v);
                 !same
@@ -742,24 +754,36 @@ impl CoreRepository {
     pub fn unlink_others_by_checksum(
         conn: &mut SqliteConnection,
         pkg_name: &str,
+        keep_repo_name: &str,
         keep_pkg_id: Option<&str>,
         keep_pkg_family: Option<&str>,
         keep_checksum: Option<&str>,
     ) -> QueryResult<usize> {
         if let Some(checksum) = keep_checksum {
-            let others = Self::rows_other_than(conn, pkg_name, keep_pkg_id, keep_pkg_family, None)?;
+            let others = Self::rows_other_than(
+                conn,
+                pkg_name,
+                keep_repo_name,
+                keep_pkg_id,
+                keep_pkg_family,
+                None,
+            )?;
             if others.is_empty() {
                 return Ok(0);
             }
-            diesel::update(
-                packages::table
-                    .filter(packages::id.eq_any(others))
-                    .filter(packages::checksum.ne(checksum)),
-            )
-            .set(packages::unlinked.eq(true))
-            .execute(conn)
+            let _ = checksum;
+            diesel::update(packages::table.filter(packages::id.eq_any(others)))
+                .set(packages::unlinked.eq(true))
+                .execute(conn)
         } else {
-            let others = Self::rows_other_than(conn, pkg_name, keep_pkg_id, keep_pkg_family, None)?;
+            let others = Self::rows_other_than(
+                conn,
+                pkg_name,
+                keep_repo_name,
+                keep_pkg_id,
+                keep_pkg_family,
+                None,
+            )?;
             if others.is_empty() {
                 return Ok(0);
             }
