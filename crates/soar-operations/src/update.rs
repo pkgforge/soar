@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, path::Path};
 
 use soar_config::packages::{PackagesConfig, ResolvedPackage};
 use soar_core::{
@@ -7,10 +7,11 @@ use soar_core::{
         models::{InstalledPackage, Package},
     },
     package::{
-        install::InstallTarget,
+        install::{InstallTarget, ZsyncSeed},
         query::PackageQuery,
         release_source::{run_version_command, ReleaseSource},
         update::remove_old_versions,
+        update_info::{self, UpdateInfo as ArtifactUpdateInfo},
         url::UrlPackage,
     },
     utils::substitute_placeholders,
@@ -20,6 +21,7 @@ use soar_db::repository::{
     core::{CoreRepository, SortDirection},
     metadata::MetadataRepository,
 };
+use soar_dl::zsync;
 use soar_events::{SoarEvent, UpdateCheckStatus, UpdateCleanupStage};
 use tracing::{debug, warn};
 
@@ -216,6 +218,11 @@ fn check_local_update(
     });
 
     let Some(resolved) = resolved else {
+        // Nothing declares this package, but an install from a URL records
+        // where it came from, which is a source in its own right.
+        if pkg.update_info.is_some() {
+            return check_recorded_source(pkg, ctx);
+        }
         ctx.events().emit(SoarEvent::UpdateCheck {
             pkg_name: pkg.pkg_name.clone(),
             status: UpdateCheckStatus::Skipped {
@@ -361,6 +368,7 @@ fn check_local_update(
         portable_cache: resolved.portable.as_ref().and_then(|p| p.cache.clone()),
         entrypoint: resolved.entrypoint.clone(),
         binaries: resolved.binaries.clone(),
+        zsync: None,
         nested_extract: resolved.nested_extract.clone(),
         extract_root: resolved.extract_root.clone(),
         hooks: resolved.hooks.clone(),
@@ -376,6 +384,109 @@ fn check_local_update(
         new_version: version,
         target,
         update_toml_url,
+    }))
+}
+
+/// Check a package against the update feed its artifact carries.
+///
+/// The feed describes the current artifact block by block, so whether it
+/// differs from the installed copy is answered by its checksum alone, without
+/// downloading anything but the control file.
+fn check_recorded_source(
+    pkg: &InstalledPackage,
+    ctx: &SoarContext,
+) -> SoarResult<Option<UpdateInfo>> {
+    let up_to_date = |version: &str| {
+        ctx.events().emit(SoarEvent::UpdateCheck {
+            pkg_name: pkg.pkg_name.clone(),
+            status: UpdateCheckStatus::UpToDate {
+                version: version.to_string(),
+            },
+        });
+    };
+
+    let artifact = Path::new(&pkg.installed_path).join(&pkg.pkg_name);
+
+    let raw = pkg.update_info.as_deref().unwrap_or_default();
+    let Some(info) = ArtifactUpdateInfo::parse(raw) else {
+        return Ok(None);
+    };
+    let zsync_url = match info.zsync_url() {
+        Ok(url) => url,
+        Err(e) => {
+            warn!(pkg_name = pkg.pkg_name, error = %e, "could not resolve the update feed");
+            return Ok(None);
+        }
+    };
+    let target = match zsync::fetch_target(&zsync_url) {
+        Ok(t) => t,
+        Err(e) => {
+            warn!(pkg_name = pkg.pkg_name, error = %e, "could not read the update feed");
+            return Ok(None);
+        }
+    };
+
+    if !zsync::differs_from(&target, &artifact) {
+        up_to_date(&pkg.version);
+        return Ok(None);
+    }
+
+    // The feed says what the artifact is, not what it is called. A published
+    // filename usually carries the version; where it does not, the build date
+    // orders releases well enough to tell one from the next.
+    let new_version =
+        update_info::version_from_feed(target.filename.as_deref(), target.mtime.as_deref())
+            .unwrap_or_else(|| pkg.version.clone());
+    if new_version == pkg.version {
+        up_to_date(&pkg.version);
+        return Ok(None);
+    }
+
+    ctx.events().emit(SoarEvent::UpdateCheck {
+        pkg_name: pkg.pkg_name.clone(),
+        status: UpdateCheckStatus::Available {
+            current_version: pkg.version.clone(),
+            new_version: new_version.clone(),
+        },
+    });
+
+    // The feed's own location is what the new artifact is fetched from, so a
+    // release that renamed its file is still followed.
+    let artifact_url = target
+        .artifact_url(&zsync_url)
+        .unwrap_or_else(|| pkg.download_url.clone().unwrap_or_default());
+    let mut updated = UrlPackage::from_remote(
+        &artifact_url,
+        Some(&pkg.pkg_name),
+        Some(&new_version),
+        pkg.pkg_type.as_deref(),
+        pkg.pkg_id.as_deref(),
+    )?;
+    updated.size = Some(target.length);
+    let package = updated.to_package();
+
+    Ok(Some(UpdateInfo {
+        pkg_name: pkg.pkg_name.clone(),
+        repo_name: pkg.repo_name.clone(),
+        current_version: pkg.version.clone(),
+        new_version,
+        target: InstallTarget {
+            package,
+            existing_install: Some(pkg.clone()),
+            pinned: pkg.pinned,
+            profile: Some(pkg.profile.clone()),
+            portable: pkg.portable_path.clone(),
+            portable_home: pkg.portable_home.clone(),
+            portable_config: pkg.portable_config.clone(),
+            portable_share: pkg.portable_share.clone(),
+            portable_cache: pkg.portable_cache.clone(),
+            zsync: Some(ZsyncSeed {
+                url: zsync_url,
+                seed: artifact,
+            }),
+            ..Default::default()
+        },
+        update_toml_url: None,
     }))
 }
 

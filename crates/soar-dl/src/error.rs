@@ -71,6 +71,13 @@ pub enum DownloadError {
     #[error("Multiple download errors occurred")]
     #[diagnostic(code(soar_dl::multiple_errors))]
     Multiple { errors: Vec<String> },
+
+    #[error("zsync: {0}")]
+    #[diagnostic(
+        code(soar_dl::zsync),
+        help("The publisher's zsync feed may be stale; a plain download still works")
+    )]
+    Zsync(String),
 }
 
 pub type Result<T> = miette::Result<T>;

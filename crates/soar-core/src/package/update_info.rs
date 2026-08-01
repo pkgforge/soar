@@ -149,6 +149,29 @@ impl UpdateInfo {
     }
 }
 
+/// The version implied by what a feed says about the artifact.
+///
+/// A published filename carries the version far more often than the artifact
+/// records one anywhere else, and it is what the install derived its own
+/// version from, so the two agree. Failing that, the build date orders one
+/// release against the next, which is all an update check needs.
+pub fn version_from_feed(filename: Option<&str>, mtime: Option<&str>) -> Option<String> {
+    if let Some(name) = filename {
+        let (_, version) = crate::package::url::parse_filename(name);
+        if version != "unknown" {
+            return Some(version);
+        }
+    }
+    mtime.and_then(http_date_to_version)
+}
+
+/// `Mon, 01 Aug 2026 12:00:00 GMT` as `20260801`, which compares like a date.
+fn http_date_to_version(raw: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc2822(raw)
+        .ok()
+        .map(|d| d.format("%Y%m%d").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +203,31 @@ mod tests {
     fn a_direct_feed_needs_no_network_to_resolve() {
         let info = UpdateInfo::parse("zsync|https://e.test/a.zsync").unwrap();
         assert_eq!(info.zsync_url().unwrap(), "https://e.test/a.zsync");
+    }
+
+    #[test]
+    fn version_comes_from_the_filename_before_the_date() {
+        assert_eq!(
+            version_from_feed(
+                Some("Ruffle-2026.8.1-1-anylinux-x86_64.AppImage"),
+                Some("Sat, 01 Aug 2026 07:28:36 +0000")
+            )
+            .as_deref(),
+            Some("2026.8.1")
+        );
+    }
+
+    #[test]
+    fn a_nameless_build_falls_back_to_its_date() {
+        assert_eq!(
+            version_from_feed(
+                Some("app.AppImage"),
+                Some("Sat, 01 Aug 2026 07:28:36 +0000")
+            )
+            .as_deref(),
+            Some("20260801")
+        );
+        assert_eq!(version_from_feed(None, None), None);
     }
 
     #[test]

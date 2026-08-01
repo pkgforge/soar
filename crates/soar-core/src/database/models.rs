@@ -163,6 +163,10 @@ pub struct InstalledPackage {
     pub portable_share: Option<String>,
     pub portable_cache: Option<String>,
     pub install_patterns: Option<Vec<String>>,
+    /// Where a URL or local install came from, so it can be checked again.
+    pub download_url: Option<String>,
+    /// The AppImage `.upd_info` string, which names a zsync feed.
+    pub update_info: Option<String>,
 }
 
 impl PackageExt for InstalledPackage {
@@ -214,6 +218,8 @@ impl From<InstalledPackageWithPortable> for InstalledPackage {
             portable_share: pkg.portable_share,
             portable_cache: pkg.portable_cache,
             install_patterns: pkg.install_patterns,
+            download_url: pkg.download_url,
+            update_info: pkg.update_info,
         }
     }
 }
@@ -245,6 +251,8 @@ impl From<soar_db::repository::core::InstalledPackage> for InstalledPackage {
             portable_share: None,
             portable_cache: None,
             install_patterns: pkg.install_patterns,
+            download_url: pkg.download_url,
+            update_info: pkg.update_info,
         }
     }
 }

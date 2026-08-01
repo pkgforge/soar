@@ -450,8 +450,21 @@ pub struct PackageInstaller {
     build: Option<BuildConfig>,
     sandbox: Option<SandboxConfig>,
     arch_map: Option<std::collections::HashMap<String, String>>,
+    zsync: Option<ZsyncSeed>,
     events: EventSinkHandle,
     op_id: OperationId,
+}
+
+/// A zsync feed and the installed copy to rebuild the new artifact from.
+///
+/// An AppImage release changes a fraction of a file measured in tens of
+/// megabytes, so the blocks the old copy already holds are worth reusing.
+#[derive(Clone, Debug)]
+pub struct ZsyncSeed {
+    /// URL of the zsync control file describing the new artifact.
+    pub url: String,
+    /// The installed artifact to take unchanged blocks from.
+    pub seed: PathBuf,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -473,6 +486,8 @@ pub struct InstallTarget {
     pub build: Option<BuildConfig>,
     pub sandbox: Option<SandboxConfig>,
     pub arch_map: Option<std::collections::HashMap<String, String>>,
+    /// Set when the new artifact can be rebuilt from the installed one.
+    pub zsync: Option<ZsyncSeed>,
 }
 
 impl PackageInstaller {
@@ -598,6 +613,7 @@ impl PackageInstaller {
             build: target.build.clone(),
             sandbox: target.sandbox.clone(),
             arch_map: target.arch_map.clone(),
+            zsync: target.zsync.clone(),
             events,
             op_id,
         })
@@ -1014,7 +1030,20 @@ impl PackageInstaller {
             // as an unusable compressed file.
             let should_extract = true;
 
-            let file_path = if let Some(local_src) = local_path_from_url(url) {
+            let file_path = if let Some(seed) = self.zsync.clone() {
+                trace!(
+                    url = seed.url,
+                    "rebuilding from the installed copy over zsync"
+                );
+                let callback = self.progress_callback.clone();
+                soar_dl::zsync::download(
+                    &seed.url,
+                    &seed.seed,
+                    output_path,
+                    callback.map(|cb| move |p| cb(p)),
+                )?;
+                output_path.to_path_buf()
+            } else if let Some(local_src) = local_path_from_url(url) {
                 trace!(source = %local_src.display(), "installing from local file");
                 self.copy_local_source(local_src, output_path, should_extract, &extract_dir)?
             } else {

@@ -350,7 +350,7 @@ pub(crate) fn detect_pkg_type(filename: &str) -> Option<String> {
 /// - `Name-Version-platform.ext`
 /// - `name_version.ext`
 /// - `name-version.ext`
-pub(crate) fn parse_filename(filename: &str) -> (String, String) {
+pub fn parse_filename(filename: &str) -> (String, String) {
     static VERSION_RE: OnceLock<Regex> = OnceLock::new();
     let re = VERSION_RE.get_or_init(|| {
         // Match: Name[-_.]v?Version (where version is purely numeric like 1.2.3)

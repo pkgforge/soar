@@ -81,6 +81,8 @@ pub struct InstalledPackageWithPortable {
     pub portable_config: Option<String>,
     pub portable_share: Option<String>,
     pub portable_cache: Option<String>,
+    pub download_url: Option<String>,
+    pub update_info: Option<String>,
 }
 
 impl From<(Package, Option<PortablePackage>)> for InstalledPackageWithPortable {
@@ -109,6 +111,8 @@ impl From<(Package, Option<PortablePackage>)> for InstalledPackageWithPortable {
             portable_config: portable.as_ref().and_then(|p| p.portable_config.clone()),
             portable_share: portable.as_ref().and_then(|p| p.portable_share.clone()),
             portable_cache: portable.as_ref().and_then(|p| p.portable_cache.clone()),
+            download_url: pkg.download_url,
+            update_info: pkg.update_info,
         }
     }
 }
