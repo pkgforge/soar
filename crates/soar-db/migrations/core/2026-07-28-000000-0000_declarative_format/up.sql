@@ -31,3 +31,10 @@ FROM packages;
 
 DROP TABLE packages;
 ALTER TABLE packages_new RENAME TO packages;
+
+-- Installs from a URL or a local file used to carry a synthesised id, since
+-- that was the only field able to say where they came from. That is now the
+-- family's job, so the value moves across and nothing derives an id again.
+UPDATE packages
+SET pkg_family = pkg_id
+WHERE repo_name = 'local' AND pkg_family IS NULL AND pkg_id IS NOT NULL;

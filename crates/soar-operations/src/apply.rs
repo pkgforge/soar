@@ -370,16 +370,9 @@ fn handle_local_package(
     diesel_db: &DieselDatabase,
     diff: &mut ApplyDiff,
 ) -> SoarResult<()> {
-    let local_pkg_id = if is_github_or_gitlab {
-        pkg.pkg_id.clone().or_else(|| {
-            pkg.github
-                .as_ref()
-                .or(pkg.gitlab.as_ref())
-                .map(|repo| repo.replace('/', "."))
-        })
-    } else {
-        pkg.pkg_id.clone()
-    };
+    // Only what the user set. The family is derived from the download URL,
+    // which identifies the source just as well without minting an id.
+    let local_pkg_id = pkg.pkg_id.clone();
 
     let installed: Option<InstalledPackage> = diesel_db
         .with_conn(|conn| {
@@ -572,7 +565,7 @@ fn check_url_package_status(
                 conn,
                 Some("local"),
                 Some(&url_pkg.pkg_name),
-                Some(url_pkg.pkg_id.as_str()),
+                url_pkg.pkg_id.as_deref(),
                 None,
                 None,
                 None,
@@ -584,9 +577,11 @@ fn check_url_package_status(
         .map(Into::into)
         .collect();
 
+    // A name alone is not an identity: the family says which source this
+    // install came from, and only a matching one is the same package.
     let installed = installed_packages
         .iter()
-        .find(|ip| ip.is_installed)
+        .find(|ip| ip.is_installed && ip.pkg_family == url_pkg.pkg_family)
         .cloned();
 
     if let Some(ref existing) = installed {
