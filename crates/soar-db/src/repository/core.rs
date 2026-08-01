@@ -14,15 +14,15 @@ use crate::{
     schema::core::{packages, portable_package},
 };
 
+/// An installed row reduced to what identifies it: id, repository, package id,
+/// family and version.
+type IdentityRow = (i32, String, Option<String>, Option<String>, String);
+
 /// Matches a row's package id, including rows that have none.
 ///
 /// A repository publishing the declarative format produces no package id, so
 /// `pkg_id = ?` would never match those rows and `pkg_id != ?` would never
 /// exclude them. Asking for no id has to mean the row has none either.
-/// An installed row reduced to what identifies it: id, repository, package id,
-/// family and version.
-type IdentityRow = (i32, String, Option<String>, Option<String>, String);
-
 fn match_pkg_id(
     pkg_id: Option<&str>,
 ) -> Box<dyn BoxableExpression<packages::table, Sqlite, SqlType = Nullable<Bool>>> {
@@ -338,22 +338,44 @@ impl CoreRepository {
         Ok(results.into_iter().map(Into::into).collect())
     }
 
-    /// Finds installed packages by name, excluding specific pkg_id and version.
+    /// Finds installed packages of the same name that are not this one.
+    ///
+    /// The same version under a different id and the same id at a different
+    /// version are both other packages, so neither condition alone may be
+    /// required: only the row matching on both is this package itself.
     pub fn find_alternates(
         conn: &mut SqliteConnection,
         pkg_name: &str,
         exclude_pkg_id: Option<&str>,
         exclude_version: &str,
     ) -> QueryResult<Vec<InstalledPackageWithPortable>> {
-        let results: Vec<(Package, Option<PortablePackage>)> = packages::table
+        let query = packages::table
             .left_join(portable_package::table)
             .filter(packages::pkg_name.eq(pkg_name))
-            .filter(
-                packages::pkg_id
-                    .is_null()
-                    .or(packages::pkg_id.ne(exclude_pkg_id)),
-            )
-            .filter(packages::version.ne(exclude_version))
+            .into_boxed();
+
+        // An id-less row differs from one that carries an id, and SQL answers
+        // `pkg_id != ?` with NULL rather than true in both directions, so
+        // neither case can be left to the comparison.
+        let others = match exclude_pkg_id {
+            Some(id) => {
+                query.filter(
+                    packages::pkg_id
+                        .is_null()
+                        .or(packages::pkg_id.ne(id.to_string()))
+                        .or(packages::version.ne(exclude_version)),
+                )
+            }
+            None => {
+                query.filter(
+                    packages::pkg_id
+                        .is_not_null()
+                        .or(packages::version.ne(exclude_version)),
+                )
+            }
+        };
+
+        let results: Vec<(Package, Option<PortablePackage>)> = others
             .select((Package::as_select(), Option::<PortablePackage>::as_select()))
             .load(conn)?;
 
