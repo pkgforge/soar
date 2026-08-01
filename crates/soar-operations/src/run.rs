@@ -129,8 +129,10 @@ pub async fn prepare_run(
 
     let package = packages.into_iter().next().unwrap().resolve(version);
 
-    // Named like an install: content-addressed, so a different version or a
-    // different repository never reuses another's cached binary.
+    // Named like an install. A package that published a checksum is keyed by
+    // it, so identical content is shared and different content never is;
+    // without one the key is the identity the package was resolved from,
+    // repository included.
     let suffix = package
         .bsum
         .as_deref()
@@ -143,8 +145,12 @@ pub async fn prepare_run(
                 .or(package.ghcr_pkg.as_deref())
                 .unwrap_or(package.download_url.as_str());
             hash_string(&format!(
-                "{}:{}:{}",
-                package.pkg_name, package.version, source
+                "{}:{}:{}:{}:{}",
+                package.repo_name,
+                package.pkg_family.as_deref().unwrap_or_default(),
+                package.pkg_name,
+                package.version,
+                source
             ))[..12]
                 .to_string()
         });
@@ -164,20 +170,38 @@ pub async fn prepare_run(
     }
 
     // A laid-out package keeps its binary, not the artifact it came from, so a
-    // cache hit is that binary. The directory is content-addressed, which is
-    // what makes finding it there proof enough.
+    // cache hit is that binary. Where the binary is the artifact itself the
+    // published checksum still describes it, and a cache entry is only reused
+    // once it matches; a binary taken out of an archive has no checksum of its
+    // own, and the content-addressed directory is what stands in for one.
     let laid_out = package.files.as_deref().and_then(|files| {
         files.iter().find_map(|f| {
             f.to.strip_prefix("bin/")
                 .filter(|rest| !rest.contains('/'))
-                .map(|_| cache_dir.join(&f.to))
+                .map(|_| (cache_dir.join(&f.to), f.source.is_empty()))
         })
     });
-    if let Some(binary) = laid_out.as_ref().filter(|p| p.exists()) {
-        return Ok(PrepareRunResult::Ready {
-            path: binary.clone(),
-            downloaded: false,
-        });
+    if let Some((binary, is_artifact)) = laid_out.as_ref().filter(|(p, _)| p.exists()) {
+        let verified = match package.bsum {
+            Some(ref bsum) if *is_artifact && !no_verify => {
+                let matches = calculate_checksum(binary)? == *bsum;
+                if !matches {
+                    debug!(
+                        package = %package.pkg_name,
+                        "cached binary checksum mismatch; re-downloading"
+                    );
+                    fs::remove_dir_all(&cache_dir).ok();
+                }
+                matches
+            }
+            _ => true,
+        };
+        if verified {
+            return Ok(PrepareRunResult::Ready {
+                path: binary.clone(),
+                downloaded: false,
+            });
+        }
     }
 
     // Reuse a cached binary only after re-verifying it against the expected
