@@ -1422,6 +1422,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "md4"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd76fb0fd6b2e4be62a73f8e0858ca97f81babcb1af322dcaca196f735f17f80"
+dependencies = [
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2133,6 +2142,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2304,6 +2324,7 @@ dependencies = [
  "ureq",
  "url",
  "xattr",
+ "zsync-rs",
 ]
 
 [[package]]
@@ -3369,7 +3390,7 @@ dependencies = [
  "lzma-rust2 0.15.8",
  "memchr",
  "pbkdf2",
- "sha1",
+ "sha1 0.10.6",
  "time",
  "typed-path",
  "zeroize",
@@ -3427,4 +3448,17 @@ checksum = "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
 dependencies = [
  "cc",
  "pkg-config",
+]
+
+[[package]]
+name = "zsync-rs"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a79e4e46cbf5b2cc163dcd1d19d332298e085b82817d9417c023e04d7509f9bb"
+dependencies = [
+ "clap",
+ "md4",
+ "sha1 0.11.0",
+ "thiserror",
+ "ureq",
 ]

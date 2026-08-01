@@ -39,7 +39,9 @@ use crate::{
     constants::INSTALL_MARKER_FILE,
     database::{connection::DieselDatabase, models::Package},
     error::{ErrorContext, SoarError},
-    package::{local::local_path_from_url, remove::remove_provide_symlinks},
+    package::{
+        local::local_path_from_url, remove::remove_provide_symlinks, update_info::UpdateInfo,
+    },
     utils::get_extract_dir,
     SoarResult,
 };
@@ -576,6 +578,8 @@ impl PackageInstaller {
                 unlinked: false,
                 provides: None,
                 install_patterns: Some(json!(globs)),
+                download_url: None,
+                update_info: None,
             };
 
             db.with_conn(|conn| CoreRepository::insert(conn, &new_package))?;
@@ -1301,6 +1305,22 @@ impl PackageInstaller {
                 pkg_name
             ))
         })?;
+
+        // Only a local or URL install needs its source recorded; a repository
+        // package is found again through the index. The update feed lives in
+        // the artifact, which is in place by the time this runs.
+        if repo_name == "local" {
+            let artifact = self.install_dir.join(pkg_name);
+            let update_info = UpdateInfo::raw_from_artifact(&artifact);
+            self.db.with_conn(|conn| {
+                CoreRepository::set_install_source(
+                    conn,
+                    record_id,
+                    Some(package.download_url.as_str()),
+                    update_info.as_deref(),
+                )
+            })?;
+        }
 
         if portable.is_some()
             || portable_home.is_some()

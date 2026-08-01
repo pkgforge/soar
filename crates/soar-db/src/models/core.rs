@@ -23,6 +23,10 @@ pub struct Package {
     pub unlinked: bool,
     pub provides: Option<Vec<PackageProvide>>,
     pub install_patterns: Option<Vec<String>>,
+    /// Where a URL or local install came from, so it can be checked again.
+    pub download_url: Option<String>,
+    /// The AppImage `.upd_info` string, which names a zsync feed.
+    pub update_info: Option<String>,
 }
 
 impl Queryable<packages::SqlType, Sqlite> for Package {
@@ -45,6 +49,8 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         bool,
         Option<Value>,
         Option<Value>,
+        Option<String>,
+        Option<String>,
     );
 
     fn build(row: Self::Row) -> diesel::deserialize::Result<Self> {
@@ -67,6 +73,8 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
             unlinked: row.15,
             provides: json_vec!(row.16),
             install_patterns: json_vec!(row.17),
+            download_url: row.18,
+            update_info: row.19,
         })
     }
 }
@@ -103,6 +111,8 @@ pub struct NewPackage<'a> {
     pub unlinked: bool,
     pub provides: Option<Value>,
     pub install_patterns: Option<Value>,
+    pub download_url: Option<&'a str>,
+    pub update_info: Option<&'a str>,
 }
 
 #[derive(Default, Insertable)]

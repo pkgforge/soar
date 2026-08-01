@@ -790,6 +790,24 @@ impl CoreRepository {
         diesel::delete(query).execute(conn)
     }
 
+    /// Record where an install came from, so it can be checked again later.
+    ///
+    /// Only local and URL installs have anything to record: a repository
+    /// package is found again through its index.
+    pub fn set_install_source(
+        conn: &mut SqliteConnection,
+        id: i32,
+        download_url: Option<&str>,
+        update_info: Option<&str>,
+    ) -> QueryResult<usize> {
+        diesel::update(packages::table.filter(packages::id.eq(id)))
+            .set((
+                packages::download_url.eq(download_url),
+                packages::update_info.eq(update_info),
+            ))
+            .execute(conn)
+    }
+
     /// Mark one installed row as the linked one, by its own id.
     ///
     /// Matching on a checksum cannot do this: two repositories shipping the

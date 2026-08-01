@@ -18,6 +18,8 @@ diesel::table! {
         unlinked -> Bool,
         provides -> Nullable<Jsonb>,
         install_patterns -> Nullable<Jsonb>,
+        download_url -> Nullable<Text>,
+        update_info -> Nullable<Text>,
     }
 
 }
