@@ -205,9 +205,15 @@ fn check_local_update(
     resolved_packages: &[ResolvedPackage],
     ctx: &SoarContext,
 ) -> SoarResult<Option<UpdateInfo>> {
-    let resolved = resolved_packages
-        .iter()
-        .find(|r| r.name == pkg.pkg_name && has_update_source(r));
+    // A declaration that names a family only speaks for that family, so a
+    // package of the same name from another one is not updated by it.
+    let resolved = resolved_packages.iter().find(|r| {
+        r.name == pkg.pkg_name
+            && r.family
+                .as_deref()
+                .is_none_or(|f| Some(f) == pkg.pkg_family.as_deref())
+            && has_update_source(r)
+    });
 
     let Some(resolved) = resolved else {
         ctx.events().emit(SoarEvent::UpdateCheck {

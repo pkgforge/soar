@@ -191,7 +191,17 @@ impl SandboxConfig {
 /// Full package options for detailed specification.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Documented, DocumentedFields)]
 pub struct PackageOptions {
+    /// Package family, which tells apart projects sharing a name.
+    ///
+    /// The declarative format publishes this rather than a package id, so it
+    /// is what disambiguates `bat` the pager from `bat` the batch runner.
+    pub family: Option<String>,
+
     /// Specific package ID (for disambiguation when multiple packages share the same name).
+    #[deprecated(
+        since = "0.13.0",
+        note = "repositories publishing the declarative format have no package id; use `family`"
+    )]
     pub pkg_id: Option<String>,
 
     /// Specific version to install.
@@ -312,6 +322,11 @@ pub struct PortableConfig {
 #[derive(Clone, Debug, Default)]
 pub struct ResolvedPackage {
     pub name: String,
+    pub family: Option<String>,
+    #[deprecated(
+        since = "0.13.0",
+        note = "repositories publishing the declarative format have no package id; use `family`"
+    )]
     pub pkg_id: Option<String>,
     pub version: Option<String>,
     pub repo: Option<String>,
@@ -358,6 +373,7 @@ impl PackageSpec {
                 let pinned = version.is_some();
                 ResolvedPackage {
                     name: name.to_string(),
+                    family: None,
                     pkg_id: None,
                     version,
                     repo: None,
@@ -395,6 +411,7 @@ impl PackageSpec {
                 let pinned = opts.pinned || (version.is_some() && !is_remote);
                 ResolvedPackage {
                     name: name.to_string(),
+                    family: opts.family.clone(),
                     pkg_id: opts.pkg_id.clone(),
                     version,
                     repo: opts.repo.clone(),
@@ -495,7 +512,7 @@ impl PackagesConfig {
 #   package_name = "*"                    # Latest version
 #   package_name = "1.2.3"                # Specific version (pinned)
 #   package_name = { version = "1.2" }    # Same as above
-#   package_name = { pkg_id = "pkg-bin", repo = "bincache" }
+#   package_name = { family = "pkg", repo = "bincache" }
 #   package_name = { pinned = true, portable = { home = "~/.pkg" } }
 
 "#;
@@ -646,15 +663,30 @@ jq = "1.8.1"
     fn test_detailed_package_spec() {
         let toml_str = r#"
 [packages]
-neovim = { pkg_id = "neovim-appimage", repo = "soarpkgs", pinned = true }
+neovim = { family = "neovim", repo = "soarpkgs", pinned = true }
 "#;
         let config: PackagesConfig = toml::from_str(toml_str).unwrap();
         let resolved = config.resolved_packages();
 
         assert_eq!(resolved[0].name, "neovim");
-        assert_eq!(resolved[0].pkg_id, Some("neovim-appimage".to_string()));
+        assert_eq!(resolved[0].family, Some("neovim".to_string()));
         assert_eq!(resolved[0].repo, Some("soarpkgs".to_string()));
         assert!(resolved[0].pinned);
+    }
+
+    // Still read while the field exists, so it stays covered.
+    #[allow(deprecated)]
+    #[test]
+    fn deprecated_pkg_id_is_still_accepted() {
+        let toml_str = r#"
+[packages]
+neovim = { pkg_id = "neovim-appimage", repo = "soarpkgs" }
+"#;
+        let config: PackagesConfig = toml::from_str(toml_str).unwrap();
+        let resolved = config.resolved_packages();
+
+        assert_eq!(resolved[0].pkg_id, Some("neovim-appimage".to_string()));
+        assert_eq!(resolved[0].family, None);
     }
 
     #[test]

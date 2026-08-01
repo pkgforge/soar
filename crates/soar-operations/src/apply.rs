@@ -52,10 +52,10 @@ pub async fn compute_diff(
     let diesel_db = ctx.diesel_core_db()?.clone();
 
     let mut diff = ApplyDiff::default();
-    let mut declared_keys: HashSet<(String, Option<String>, Option<String>)> = HashSet::new();
+    let mut declared_keys: DeclaredKeys = HashSet::new();
 
     for pkg in resolved {
-        declared_keys.insert((pkg.name.clone(), pkg.pkg_id.clone(), pkg.repo.clone()));
+        declared_keys.insert(declared_key(pkg));
 
         let is_github_or_gitlab = pkg.github.is_some() || pkg.gitlab.is_some();
         if is_github_or_gitlab || pkg.url.is_some() {
@@ -70,8 +70,8 @@ pub async fn compute_diff(
                     MetadataRepository::find_filtered(
                         conn,
                         Some(&pkg.name),
-                        pkg.pkg_id.as_deref(),
-                        None,
+                        declared_pkg_id(pkg),
+                        pkg.family.as_deref(),
                         pkg.version.as_deref(),
                         None,
                         Some(SortDirection::Asc),
@@ -90,8 +90,8 @@ pub async fn compute_diff(
                 let pkgs = MetadataRepository::find_filtered(
                     conn,
                     Some(&pkg.name),
-                    pkg.pkg_id.as_deref(),
-                    None,
+                    declared_pkg_id(pkg),
+                    pkg.family.as_deref(),
                     pkg.version.as_deref(),
                     None,
                     Some(SortDirection::Asc),
@@ -181,13 +181,16 @@ pub async fn compute_diff(
             .collect();
 
         for installed in all_installed {
-            let is_declared = declared_keys.iter().any(|(name, pkg_id, repo)| {
+            let is_declared = declared_keys.iter().any(|(name, pkg_id, family, repo)| {
                 let name_matches = *name == installed.pkg_name;
                 let pkg_id_matches = pkg_id
                     .as_deref()
                     .is_none_or(|id| Some(id) == installed.pkg_id.as_deref());
+                let family_matches = family
+                    .as_deref()
+                    .is_none_or(|f| Some(f) == installed.pkg_family.as_deref());
                 let repo_matches = repo.as_ref().is_none_or(|r| *r == installed.repo_name);
-                name_matches && pkg_id_matches && repo_matches
+                name_matches && pkg_id_matches && family_matches && repo_matches
             });
 
             if !is_declared {
@@ -367,6 +370,27 @@ pub async fn execute_apply(
 }
 
 /// Handle local (URL/github/gitlab) packages in apply diff.
+/// What a declaration identifies: name, package id, family and repository.
+type DeclaredKeys = HashSet<(String, Option<String>, Option<String>, Option<String>)>;
+
+/// The deprecated package id a declaration still carries, if any.
+///
+/// Reading it is the whole point of keeping the field, so the deprecation is
+/// answered once here rather than at every use.
+#[allow(deprecated)]
+fn declared_pkg_id(pkg: &ResolvedPackage) -> Option<&str> {
+    pkg.pkg_id.as_deref()
+}
+
+fn declared_key(pkg: &ResolvedPackage) -> (String, Option<String>, Option<String>, Option<String>) {
+    (
+        pkg.name.clone(),
+        declared_pkg_id(pkg).map(str::to_string),
+        pkg.family.clone(),
+        pkg.repo.clone(),
+    )
+}
+
 fn handle_local_package(
     pkg: &ResolvedPackage,
     is_github_or_gitlab: bool,
@@ -375,7 +399,7 @@ fn handle_local_package(
 ) -> SoarResult<()> {
     // Only what the user set. The family is derived from the download URL,
     // which identifies the source just as well without minting an id.
-    let local_pkg_id = pkg.pkg_id.clone();
+    let local_pkg_id = declared_pkg_id(pkg).map(str::to_string);
 
     let installed: Option<InstalledPackage> = diesel_db
         .with_conn(|conn| {
@@ -543,7 +567,7 @@ fn handle_local_package(
             Some(&pkg.name),
             pkg.version.as_deref(),
             pkg.pkg_type.as_deref(),
-            pkg.pkg_id.as_deref(),
+            declared_pkg_id(pkg),
         )?;
 
         match check_url_package_status(&url_pkg, pkg, "local", diesel_db)? {
