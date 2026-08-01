@@ -1,5 +1,6 @@
 use soar_core::{
     database::models::InstalledPackage,
+    error::SoarError,
     package::{query::PackageQuery, remove::PackageRemover},
     SoarResult,
 };
@@ -61,70 +62,12 @@ pub fn resolve_removals(
             continue;
         }
 
-        // Handle #all: remove all packages with the selected pkg_id
-        if let Some(ref pkg_id) = query.pkg_id {
-            if pkg_id == "all" {
-                let installed: Vec<InstalledPackage> = diesel_db
-                    .with_conn(|conn| {
-                        CoreRepository::list_filtered(
-                            conn,
-                            query.repo_name.as_deref(),
-                            query.name.as_deref(),
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            Some(SortDirection::Asc),
-                        )
-                    })?
-                    .into_iter()
-                    .map(Into::into)
-                    .collect();
-
-                if installed.is_empty() {
-                    results.push(RemoveResolveResult::NotInstalled(
-                        query.name.clone().unwrap_or_default(),
-                    ));
-                } else if installed.len() > 1 {
-                    // Multiple pkg_ids → ambiguous, caller picks which pkg_id
-                    results.push(RemoveResolveResult::Ambiguous {
-                        query: query.name.clone().unwrap_or_default(),
-                        candidates: installed,
-                    });
-                } else {
-                    let target_pkg_id = installed[0].pkg_id.clone();
-                    let target_pkg_name = installed[0].pkg_name.clone();
-                    // Without an id, filtering on it alone selects every
-                    // installed package in the repository, which would remove
-                    // far more than was asked for.
-                    let (name_filter, id_filter) = match target_pkg_id.as_deref() {
-                        Some(id) => (None, Some(id)),
-                        None => (Some(target_pkg_name.as_str()), None),
-                    };
-                    // Find all packages with this identity
-                    let all_installed: Vec<InstalledPackage> = diesel_db
-                        .with_conn(|conn| {
-                            CoreRepository::list_filtered(
-                                conn,
-                                query.repo_name.as_deref(),
-                                name_filter,
-                                id_filter,
-                                None,
-                                None,
-                                None,
-                                None,
-                                Some(SortDirection::Asc),
-                            )
-                        })?
-                        .into_iter()
-                        .map(Into::into)
-                        .collect();
-
-                    results.push(RemoveResolveResult::Resolved(all_installed));
-                }
-                continue;
-            }
+        // `#all` selected every variant, then removed only the one chosen, so
+        // it did nothing a bare name did not. `--all` is what removes them all.
+        if query.pkg_id.as_deref() == Some("all") {
+            return Err(SoarError::InvalidPackageQuery(
+                "'#all' is not supported when removing; use --all".into(),
+            ));
         }
 
         // Normal case: find matching installed packages

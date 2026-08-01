@@ -102,20 +102,6 @@ Example: remove `rg` as published by the ripgrep project.
 soar remove ripgrep/rg
 ```
 
-### Removing every variant of a name
-
-```sh
-soar remove '<name>#all'
-```
-
-This finds each package called `cat` and prompts you to choose one.
-
-```sh
-soar remove 'cat#all'
-```
-
-After you select a variant, every package installed under it will be removed.
-
 ## What Happens During Removal
 
 When you remove a package, Soar performs these cleanup operations.

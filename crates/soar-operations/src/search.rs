@@ -280,7 +280,7 @@ fn score_candidates(query: &str, candidates: &[(String, FuzzyCandidate)]) -> Vec
 
 /// Query detailed package information.
 ///
-/// Accepts query strings in the format `name#pkg_id@version:repo`.
+/// Accepts query strings in the format `family/name@version:repo`.
 /// Returns all matching packages with full metadata.
 pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec<Package>> {
     debug!(query = query_str, "querying package info");

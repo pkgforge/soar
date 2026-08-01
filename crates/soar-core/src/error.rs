@@ -120,7 +120,7 @@ pub enum SoarError {
     #[error("Invalid package query: {0}")]
     #[diagnostic(
         code(soar::invalid_query),
-        help("Use format: name#pkg_id@version:repo (e.g., 'curl', 'curl#bin', 'curl@8.0.0')")
+        help("Use format: family/name@version:repo (e.g., 'curl', 'curl/curl', 'curl@8.0.0')")
     )]
     InvalidPackageQuery(String),
 
