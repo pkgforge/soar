@@ -83,18 +83,17 @@ pub async fn switch_variant(
 
     let pkg_name = &selected_package.pkg_name;
     let pkg_id = selected_package.pkg_id.as_deref();
-    let checksum = selected_package.checksum.as_deref();
 
     // Atomically unlink other variants and link the selected one so the DB
     // is never left in a state where all variants are unlinked.
     diesel_db.transaction(|conn| {
-        CoreRepository::unlink_others_by_checksum(
+        CoreRepository::unlink_others(
             conn,
             pkg_name,
             &selected_package.repo_name,
             pkg_id,
             selected_package.pkg_family.as_deref(),
-            checksum,
+            None,
         )?;
         CoreRepository::link_by_row_id(conn, selected_package.id)
     })?;

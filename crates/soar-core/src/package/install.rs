@@ -1354,7 +1354,7 @@ impl PackageInstaller {
                     &self.package.repo_name,
                     pkg_id,
                     self.package.pkg_family.as_deref(),
-                    version,
+                    Some(version),
                 )
             })?;
 

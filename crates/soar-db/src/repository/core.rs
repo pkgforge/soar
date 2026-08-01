@@ -493,18 +493,21 @@ impl CoreRepository {
         keep_repo_name: &str,
         keep_pkg_id: Option<&str>,
         keep_pkg_family: Option<&str>,
-        keep_version: &str,
+        keep_version: Option<&str>,
     ) -> QueryResult<usize> {
         // The row to keep is identified in full. A SQL predicate cannot do it:
         // `pkg_id IS NULL` matches every id-less row, which now includes the
         // package being installed, so it would unlink itself.
+        //
+        // Switching between versions of one package passes no version, since
+        // there every other version is exactly what has to be unlinked.
         let stale = Self::rows_other_than(
             conn,
             pkg_name,
             keep_repo_name,
             keep_pkg_id,
             keep_pkg_family,
-            Some(keep_version),
+            keep_version,
         )?;
         if stale.is_empty() {
             return Ok(0);
@@ -771,52 +774,6 @@ impl CoreRepository {
         diesel::delete(query).execute(conn)
     }
 
-    /// Unlinks all packages with a given name except those matching pkg_id and checksum.
-    /// Used when switching between alternate package versions.
-    pub fn unlink_others_by_checksum(
-        conn: &mut SqliteConnection,
-        pkg_name: &str,
-        keep_repo_name: &str,
-        keep_pkg_id: Option<&str>,
-        keep_pkg_family: Option<&str>,
-        keep_checksum: Option<&str>,
-    ) -> QueryResult<usize> {
-        if let Some(checksum) = keep_checksum {
-            let others = Self::rows_other_than(
-                conn,
-                pkg_name,
-                keep_repo_name,
-                keep_pkg_id,
-                keep_pkg_family,
-                None,
-            )?;
-            if others.is_empty() {
-                return Ok(0);
-            }
-            let _ = checksum;
-            diesel::update(packages::table.filter(packages::id.eq_any(others)))
-                .set(packages::unlinked.eq(true))
-                .execute(conn)
-        } else {
-            let others = Self::rows_other_than(
-                conn,
-                pkg_name,
-                keep_repo_name,
-                keep_pkg_id,
-                keep_pkg_family,
-                None,
-            )?;
-            if others.is_empty() {
-                return Ok(0);
-            }
-            diesel::update(packages::table.filter(packages::id.eq_any(others)))
-                .set(packages::unlinked.eq(true))
-                .execute(conn)
-        }
-    }
-
-    /// Links a package by pkg_name, pkg_id, and checksum.
-    /// Used when switching to an alternate package version.
     /// Mark one installed row as the linked one, by its own id.
     ///
     /// Matching on a checksum cannot do this: two repositories shipping the
@@ -825,31 +782,5 @@ impl CoreRepository {
         diesel::update(packages::table.filter(packages::id.eq(id)))
             .set(packages::unlinked.eq(false))
             .execute(conn)
-    }
-
-    pub fn link_by_checksum(
-        conn: &mut SqliteConnection,
-        pkg_name: &str,
-        pkg_id: Option<&str>,
-        checksum: Option<&str>,
-    ) -> QueryResult<usize> {
-        if let Some(checksum) = checksum {
-            diesel::update(
-                packages::table
-                    .filter(packages::pkg_name.eq(pkg_name))
-                    .filter(match_pkg_id(pkg_id))
-                    .filter(packages::checksum.eq(checksum)),
-            )
-            .set(packages::unlinked.eq(false))
-            .execute(conn)
-        } else {
-            diesel::update(
-                packages::table
-                    .filter(packages::pkg_name.eq(pkg_name))
-                    .filter(match_pkg_id(pkg_id)),
-            )
-            .set(packages::unlinked.eq(false))
-            .execute(conn)
-        }
     }
 }
