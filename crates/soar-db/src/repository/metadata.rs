@@ -34,6 +34,24 @@ struct PkgIdOnly {
     pkg_id: String,
 }
 
+/// Narrow candidates to those carrying `pkg_id`, unless none of them do.
+///
+/// An id recorded at install time may have disappeared from the metadata,
+/// since a repository that moved to the declarative format publishes none.
+/// Demanding a match there would report the package as up to date forever,
+/// while ignoring the id altogether lets a different package of the same name
+/// pass as a newer build of this one.
+pub fn narrow_by_pkg_id(candidates: Vec<Package>, pkg_id: Option<&str>) -> Vec<Package> {
+    let Some(id) = pkg_id else {
+        return candidates;
+    };
+    let matches_id = |p: &Package| p.pkg_id.as_deref() == Some(id);
+    if !candidates.iter().any(matches_id) {
+        return candidates;
+    }
+    candidates.into_iter().filter(matches_id).collect()
+}
+
 /// Repository for package metadata operations.
 pub struct MetadataRepository;
 
@@ -442,6 +460,7 @@ impl MetadataRepository {
     pub fn find_newer_version(
         conn: &mut SqliteConnection,
         pkg_name: &str,
+        pkg_id: Option<&str>,
         pkg_family: Option<&str>,
         current_version: &str,
     ) -> QueryResult<Option<Package>> {
@@ -450,10 +469,6 @@ impl MetadataRepository {
             current_version = current_version,
             "checking for newer version"
         );
-        // Matched by name alone. An id recorded at install time may no longer
-        // appear in the metadata at all, and requiring it to match would
-        // report every such package as already up to date.
-        //
         // Ordering cannot be left to SQL: a string comparison puts 10 below 9
         // and the rebuild suffix in 1.14.0-1 below 1.14.0. Candidates are
         // loaded and compared segment-wise instead.
@@ -466,7 +481,7 @@ impl MetadataRepository {
         if let Some(family) = pkg_family {
             query = query.filter(packages::pkg_family.eq(family.to_string()));
         }
-        let candidates: Vec<Package> = query.select(Package::as_select()).load(conn)?;
+        let candidates = narrow_by_pkg_id(query.select(Package::as_select()).load(conn)?, pkg_id);
 
         let result: QueryResult<Option<Package>> = Ok(candidates
             .into_iter()

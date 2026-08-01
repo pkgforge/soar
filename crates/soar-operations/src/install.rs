@@ -28,7 +28,7 @@ use soar_core::{
 };
 use soar_db::repository::{
     core::{CoreRepository, SortDirection},
-    metadata::MetadataRepository,
+    metadata::{narrow_by_pkg_id, MetadataRepository},
 };
 use soar_events::{InstallStage, SoarEvent, VerifyStage};
 use soar_package::integrate_package;
@@ -644,26 +644,29 @@ fn find_packages(
         .as_ref()
         .filter(|_| query.repo_name.is_none())
     {
-        let existing_pkgs: Vec<Package> = metadata_mgr
-            .query_repo(&existing.repo_name, |conn| {
-                MetadataRepository::find_filtered(
-                    conn,
-                    Some(&existing.pkg_name),
-                    None,
-                    existing.pkg_id.as_deref(),
-                    None,
-                    None,
-                    None,
-                )
-            })?
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| {
-                let mut pkg: Package = p.into();
-                pkg.repo_name = existing.repo_name.clone();
-                pkg
-            })
-            .collect();
+        let existing_pkgs: Vec<Package> = narrow_by_pkg_id(
+            metadata_mgr
+                .query_repo(&existing.repo_name, |conn| {
+                    MetadataRepository::find_filtered(
+                        conn,
+                        Some(&existing.pkg_name),
+                        None,
+                        existing.pkg_family.as_deref(),
+                        None,
+                        None,
+                        None,
+                    )
+                })?
+                .unwrap_or_default(),
+            existing.pkg_id.as_deref(),
+        )
+        .into_iter()
+        .map(|p| {
+            let mut pkg: Package = p.into();
+            pkg.repo_name = existing.repo_name.clone();
+            pkg
+        })
+        .collect();
 
         if !existing_pkgs.is_empty() {
             return Ok(existing_pkgs);

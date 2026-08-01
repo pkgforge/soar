@@ -140,6 +140,7 @@ fn check_repo_update(
             MetadataRepository::find_newer_version(
                 conn,
                 &pkg.pkg_name,
+                pkg.pkg_id.as_deref(),
                 pkg.pkg_family.as_deref(),
                 &pkg.version,
             )
