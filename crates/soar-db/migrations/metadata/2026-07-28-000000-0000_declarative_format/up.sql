@@ -47,7 +47,8 @@ CREATE TABLE packages_new (
   desktop_integration BOOLEAN,
   portable BOOLEAN,
   binaries JSONB,
-  extra JSONB
+  extra JSONB,
+  files JSONB
 );
 
 INSERT INTO packages_new SELECT
@@ -55,7 +56,7 @@ INSERT INTO packages_new SELECT
   licenses, download_url, size, ghcr_pkg, ghcr_size, ghcr_blob, ghcr_url,
   bsum, icon, desktop, appstream, homepages, notes, source_urls, categories,
   build_id, build_date, build_action, build_script, build_log, provides,
-  snapshots, replaces, soar_syms, desktop_integration, portable, NULL, NULL
+  snapshots, replaces, soar_syms, desktop_integration, portable, NULL, NULL, NULL
 FROM packages;
 
 DROP TABLE packages;

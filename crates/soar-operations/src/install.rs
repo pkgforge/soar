@@ -43,7 +43,7 @@ use tracing::{debug, trace, warn};
 
 use crate::{
     progress::{create_progress_bridge, next_op_id},
-    utils::{has_desktop_integration, mangle_package_symlinks},
+    utils::{has_desktop_integration, link_shared_files, mangle_package_symlinks},
     FailedInfo, InstallOptions, InstallReport, InstalledInfo, ResolveResult, SoarContext,
 };
 
@@ -1085,8 +1085,14 @@ async fn install_single_package(
         target.entrypoint.as_deref(),
         binaries.as_deref(),
         target.arch_map.as_ref(),
+        pkg.files.as_deref(),
     )
     .await?;
+
+    // Man pages and completions only mean anything where the system looks for
+    // them, so they are linked out of the package the same way binaries are.
+    let shared = link_shared_files(&install_dir, &bin_dir, &ctx.config().completion_shells())?;
+    let symlinks = symlinks.into_iter().chain(shared).collect::<Vec<_>>();
 
     // Desktop integration
     if !unlinked || has_desktop_integration(pkg, ctx.config()) {

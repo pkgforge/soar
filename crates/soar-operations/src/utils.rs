@@ -15,9 +15,9 @@ use soar_core::{
     utils::substitute_placeholders,
     SoarResult,
 };
-use soar_db::models::types::PackageProvide;
+use soar_db::models::types::{PackageFile, PackageProvide};
 use soar_utils::fs::is_elf;
-use tracing::warn;
+use tracing::{debug, warn};
 
 /// Check if a package should have desktop integration (desktop files, icons).
 pub fn has_desktop_integration(package: &Package, config: &Config) -> bool {
@@ -87,6 +87,86 @@ fn create_provide_symlinks(
     Ok(symlinks)
 }
 
+/// Where a package's shared files are exposed on the system.
+///
+/// Man pages go beside the bin directory, because man-db derives its search
+/// path from PATH: for every `.../bin` it also looks at `.../share/man`. That
+/// makes them findable with no MANPATH set.
+pub fn shared_link_targets(
+    bin_dir: &Path,
+    shells: &[String],
+) -> Vec<(&'static str, PathBuf, bool)> {
+    let prefix = bin_dir.parent().unwrap_or(bin_dir);
+    let data = soar_utils::path::xdg_data_home();
+    let config = soar_utils::path::xdg_config_home();
+    let wants = |name: &str| shells.iter().any(|s| s == name);
+    vec![
+        ("share/man", prefix.join("share/man"), true),
+        (
+            "share/bash-completion/completions",
+            data.join("bash-completion/completions"),
+            wants("bash"),
+        ),
+        (
+            "share/zsh/site-functions",
+            data.join("zsh/site-functions"),
+            wants("zsh"),
+        ),
+        (
+            "share/fish/vendor_completions.d",
+            config.join("fish/completions"),
+            wants("fish"),
+        ),
+    ]
+}
+
+/// Link a package's man pages and completions where the system looks for them.
+///
+/// A destination already holding something soar did not put there is left
+/// alone: a distro package or a hand-written completion outranks ours.
+pub fn link_shared_files(
+    install_dir: &Path,
+    bin_dir: &Path,
+    shells: &[String],
+) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
+    let mut linked = Vec::new();
+    for (relative, destination, enabled) in shared_link_targets(bin_dir, shells) {
+        if !enabled {
+            continue;
+        }
+        let source_root = install_dir.join(relative);
+        if !source_root.is_dir() {
+            continue;
+        }
+        for source in walk_files(&source_root) {
+            let Ok(rest) = source.strip_prefix(&source_root) else {
+                continue;
+            };
+            let link = destination.join(rest);
+            if let Some(parent) = link.parent() {
+                if fs::create_dir_all(parent).is_err() {
+                    continue;
+                }
+            }
+            match fs::read_link(&link) {
+                // ours, from this package or an older version of it
+                Ok(target) if target.starts_with(install_dir) => {
+                    fs::remove_file(&link).ok();
+                }
+                Ok(_) | Err(_) if link.exists() || link.is_symlink() => {
+                    debug!(path = %link.display(), "leaving a file soar does not own");
+                    continue;
+                }
+                _ => {}
+            }
+            if unix::fs::symlink(&source, &link).is_ok() {
+                linked.push((source, link));
+            }
+        }
+    }
+    Ok(linked)
+}
+
 /// Creates symlinks from installed package binaries to the bin directory.
 #[allow(clippy::too_many_arguments)]
 /// Every regular file under `dir`, recursively, skipping symlinks and the
@@ -120,8 +200,55 @@ pub async fn mangle_package_symlinks(
     entrypoint: Option<&str>,
     binaries: Option<&[BinaryMapping]>,
     arch_map: Option<&HashMap<String, String>>,
+    files: Option<&[PackageFile]>,
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
     let mut symlinks = Vec::new();
+
+    // A package laid out by its file list has already said what its commands
+    // are: everything in `bin/`. Reading the directory rather than the list
+    // covers a package that is already installed, which no longer carries one.
+    let listed: Vec<String> = files
+        .filter(|f| !f.is_empty())
+        .map(|files| {
+            files
+                .iter()
+                .flat_map(|f| std::iter::once(&f.to).chain(f.alias.iter()))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            // Read rather than walk: an alias is a symlink, which walking skips.
+            fs::read_dir(install_dir.join("bin"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| format!("bin/{}", e.file_name().to_string_lossy()))
+                .collect()
+        });
+    if !listed.is_empty() {
+        for path in &listed {
+            {
+                let Some(name) = path.strip_prefix("bin/").filter(|n| !n.contains('/')) else {
+                    continue;
+                };
+                let source_path = install_dir.join(path);
+                if !source_path.exists() {
+                    continue;
+                }
+                let link_path = bin_dir.join(name);
+                set_executable(&source_path)?;
+                if link_path.is_symlink() || link_path.is_file() {
+                    std::fs::remove_file(&link_path).with_context(|| {
+                        format!("removing existing file/symlink at {}", link_path.display())
+                    })?;
+                }
+                unix::fs::symlink(&source_path, &link_path)
+                    .with_context(|| format!("creating symlink {}", link_path.display()))?;
+                symlinks.push((source_path, link_path));
+            }
+        }
+        return Ok(symlinks);
+    }
 
     if let Some(bins) = binaries {
         if !bins.is_empty() {

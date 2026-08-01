@@ -112,6 +112,7 @@ pub async fn switch_variant(
         None,
         None,
         None,
+        None,
     )
     .await?;
 

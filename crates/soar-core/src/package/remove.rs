@@ -15,6 +15,46 @@ use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
 
+/// Remove every symlink under `dir` that points into `installed_path`.
+///
+/// Ownership is decided by where the link goes, not by its name: a completion
+/// has to be named after its command, so soar cannot mark its own with a
+/// suffix the way it does for desktop files. Anything pointing elsewhere
+/// belongs to someone else and is left alone.
+fn remove_links_into(dir: &Path, installed_path: &Path, removed: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_symlink() {
+            if let Ok(target) = fs::read_link(&path) {
+                if target.starts_with(installed_path) {
+                    trace!("removing link: {}", path.display());
+                    if fs::remove_file(&path).is_ok() {
+                        removed.push(path);
+                    }
+                }
+            }
+        } else if path.is_dir() {
+            remove_links_into(&path, installed_path, removed);
+        }
+    }
+}
+
+/// The directories a package's files are linked into, beyond `bin`.
+fn shared_link_dirs(bin_path: &Path) -> Vec<PathBuf> {
+    let prefix = bin_path.parent().unwrap_or(bin_path);
+    let data = soar_utils::path::xdg_data_home();
+    let config = soar_utils::path::xdg_config_home();
+    vec![
+        prefix.join("share/man"),
+        data.join("bash-completion/completions"),
+        data.join("zsh/site-functions"),
+        config.join("fish/completions"),
+    ]
+}
+
 /// Removes the bin-directory symlinks a package's `provides` created, keeping
 /// only those that live directly in `bin_path` and resolve into
 /// `installed_path`.
@@ -178,17 +218,20 @@ impl PackageRemover {
             let bin_path = self.config.get_bin_path()?;
             let installed_path = PathBuf::from(&self.package.installed_path);
 
-            if let Some(provides) = &self.package.provides {
+            // An empty list is stored rather than null once nothing declares
+            // provides, and it must not stand in for "this package has links".
+            if let Some(provides) = self.package.provides.as_deref().filter(|p| !p.is_empty()) {
                 let removed = remove_provide_symlinks(&bin_path, provides, &installed_path)?;
                 removed_symlinks.extend(removed);
             } else {
-                let def_bin = bin_path.join(&self.package.pkg_name);
-                if def_bin.is_symlink() && def_bin.is_file() {
-                    trace!("removing binary symlink: {}", def_bin.display());
-                    fs::remove_file(&def_bin)
-                        .with_context(|| format!("removing binary {}", def_bin.display()))?;
-                    removed_symlinks.push(def_bin);
-                }
+                // Nothing declares the links anymore, so they are found by
+                // where they point. This also catches aliases, which a name
+                // built from pkg_name alone would miss.
+                remove_links_into(&bin_path, &installed_path, &mut removed_symlinks);
+            }
+
+            for dir in shared_link_dirs(&bin_path) {
+                remove_links_into(&dir, &installed_path, &mut removed_symlinks);
             }
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {

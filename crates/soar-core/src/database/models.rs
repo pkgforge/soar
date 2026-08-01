@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 use soar_db::{
-    models::types::{PackageBinary, PackageExtra, PackageProvide},
+    models::types::{PackageBinary, PackageExtra, PackageFile, PackageProvide},
     repository::core::InstalledPackageWithPortable,
 };
 use soar_package::PackageExt;
@@ -70,6 +70,8 @@ pub struct Package {
     pub binaries: Option<Vec<PackageBinary>>,
     /// Pinned side files installed alongside the artifact.
     pub extra: Option<Vec<PackageExtra>>,
+    /// What the package takes out of its artifact. Absent means all of it.
+    pub files: Option<Vec<PackageFile>>,
 }
 
 impl PackageExt for Package {
@@ -295,6 +297,7 @@ impl From<soar_db::models::metadata::Package> for Package {
             portable: pkg.portable,
             binaries: pkg.binaries,
             extra: pkg.extra,
+            files: pkg.files,
         }
     }
 }

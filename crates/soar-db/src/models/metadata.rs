@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::{
     json_vec,
-    models::types::{PackageBinary, PackageExtra, PackageProvide},
+    models::types::{PackageBinary, PackageExtra, PackageFile, PackageProvide},
     schema::metadata::*,
 };
 
@@ -47,6 +47,8 @@ pub struct Package {
     pub binaries: Option<Vec<PackageBinary>>,
     /// Pinned side files installed alongside the artifact.
     pub extra: Option<Vec<PackageExtra>>,
+    /// What the package takes out of its artifact.
+    pub files: Option<Vec<PackageFile>>,
 }
 
 impl Queryable<packages::SqlType, Sqlite> for Package {
@@ -85,6 +87,7 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         bool,
         Option<bool>,
         Option<bool>,
+        Option<Value>,
         Option<Value>,
         Option<Value>,
     );
@@ -127,6 +130,7 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
             portable: row.33,
             binaries: json_vec!(row.34),
             extra: json_vec!(row.35),
+            files: json_vec!(row.36),
         })
     }
 }
@@ -227,6 +231,7 @@ pub struct NewPackage<'a> {
     pub portable: Option<bool>,
     pub binaries: Option<Value>,
     pub extra: Option<Value>,
+    pub files: Option<Value>,
 }
 
 #[derive(Default, Insertable)]

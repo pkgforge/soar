@@ -52,6 +52,7 @@ diesel::table! {
         portable -> Nullable<Bool>,
         binaries -> Nullable<Jsonb>,
         extra -> Nullable<Jsonb>,
+        files -> Nullable<Jsonb>,
     }
 }
 

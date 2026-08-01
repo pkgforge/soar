@@ -79,6 +79,11 @@ pub struct Config {
     /// NOTE: This is not yet implemented
     pub cross_repo_updates: Option<bool>,
 
+    /// Shells to link package completions for. Defaults to those whose
+    /// completion directory already exists, so soar does not create one for a
+    /// shell nobody uses.
+    pub completions: Option<Vec<String>>,
+
     /// Glob patterns filtering which files an install keeps.
     ///
     /// Default: ["!*.log", "!SBUILD", "!*.json", "!*.version"]
@@ -277,6 +282,7 @@ impl Config {
             ghcr_concurrency: Some(8),
             cross_repo_updates: Some(false),
             install_patterns: Some(default_install_patterns()),
+            completions: None,
 
             signature_verification: None,
             desktop_integration: None,
@@ -370,6 +376,7 @@ impl Config {
             ghcr_concurrency: Some(8),
             cross_repo_updates: Some(false),
             install_patterns: Some(default_install_patterns()),
+            completions: None,
 
             signature_verification: None,
             desktop_integration: None,
@@ -487,6 +494,24 @@ impl Config {
             return Ok(resolve_path(bin_path)?);
         }
         self.default_profile()?.get_bin_path()
+    }
+
+    /// Shells whose completions should be linked.
+    pub fn completion_shells(&self) -> Vec<String> {
+        if let Some(shells) = &self.completions {
+            return shells.clone();
+        }
+        let data = soar_utils::path::xdg_data_home();
+        let config = soar_utils::path::xdg_config_home();
+        [
+            ("bash", data.join("bash-completion/completions")),
+            ("zsh", data.join("zsh/site-functions")),
+            ("fish", config.join("fish/completions")),
+        ]
+        .into_iter()
+        .filter(|(_, dir)| dir.is_dir())
+        .map(|(name, _)| name.to_string())
+        .collect()
     }
 
     pub fn get_desktop_path(&self) -> Result<PathBuf> {

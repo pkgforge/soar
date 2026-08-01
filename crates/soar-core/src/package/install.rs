@@ -14,8 +14,9 @@ use soar_config::{
     config::Config,
     packages::{BinaryMapping, BuildConfig, PackageHooks, SandboxConfig},
 };
-use soar_db::repository::core::{
-    CoreRepository, InstalledPackageWithPortable, NewInstalledPackage,
+use soar_db::{
+    models::types::PackageFile,
+    repository::core::{CoreRepository, InstalledPackageWithPortable, NewInstalledPackage},
 };
 use soar_dl::{
     download::Download,
@@ -90,6 +91,161 @@ async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()>
         }
     }
     Ok(())
+}
+
+/// Lay the package out as its recipe describes: each listed file at its own
+/// path, aliases beside it, and nothing else kept.
+///
+/// Built in a staging directory and swapped in at the end. Resolving a source
+/// can fail, and pruning first would leave a package with its binary deleted
+/// and nothing to put back.
+fn apply_file_layout(files: &[PackageFile], install_dir: &Path, artifact: &Path) -> SoarResult<()> {
+    let staging = install_dir.join(".soar-layout");
+    fs::remove_dir_all(&staging).ok();
+    fs::create_dir_all(&staging)
+        .with_context(|| format!("creating staging directory {}", staging.display()))?;
+
+    let present = walk_dir_files(install_dir, &staging);
+    let mut placed = 0usize;
+    for file in files {
+        if !is_safe_relative(&file.to) {
+            warn!(to = file.to, "skipping file with an unsafe target");
+            continue;
+        }
+        let Some(source) = resolve_source(&file.source, install_dir, &present, artifact) else {
+            warn!(
+                source = file.source,
+                to = file.to,
+                "file not found in the artifact"
+            );
+            continue;
+        };
+        let dest = staging.join(&file.to);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        }
+        fs::rename(&source, &dest).with_context(|| format!("placing {}", file.to))?;
+        placed += 1;
+
+        let name = dest.file_name().unwrap_or_default().to_os_string();
+        for alias in &file.alias {
+            if !is_safe_relative(alias) {
+                warn!(alias, "skipping alias with an unsafe target");
+                continue;
+            }
+            let link = staging.join(alias);
+            if let Some(parent) = link.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            // relative, so the package directory stays movable
+            std::os::unix::fs::symlink(&name, &link).ok();
+        }
+    }
+
+    // Nothing resolved means the recipe and the artifact disagree. Keeping the
+    // artifact untouched is better than installing an empty package.
+    if placed == 0 {
+        warn!("no listed file was found; leaving the artifact as it is");
+        fs::remove_dir_all(&staging).ok();
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(install_dir)
+        .with_context(|| format!("reading {}", install_dir.display()))?
+        .flatten()
+    {
+        let path = entry.path();
+        if path == staging {
+            continue;
+        }
+        if path.is_dir() && !path.is_symlink() {
+            fs::remove_dir_all(&path).ok();
+        } else {
+            fs::remove_file(&path).ok();
+        }
+    }
+    for entry in fs::read_dir(&staging)
+        .with_context(|| format!("reading {}", staging.display()))?
+        .flatten()
+    {
+        let to = install_dir.join(entry.file_name());
+        fs::rename(entry.path(), &to)
+            .with_context(|| format!("moving {} into place", to.display()))?;
+    }
+    fs::remove_dir_all(&staging).ok();
+    Ok(())
+}
+
+/// Whether a path stays inside the directory it is joined to.
+fn is_safe_relative(path: &str) -> bool {
+    !path.is_empty()
+        && !Path::new(path).is_absolute()
+        && Path::new(path)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
+/// Every regular file under `dir`, skipping the staging directory.
+fn walk_dir_files(dir: &Path, skip: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == skip || path.is_symlink() {
+            continue;
+        }
+        if path.is_dir() {
+            out.extend(walk_dir_files(&path, skip));
+        } else {
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// Find a listed source among the extracted files.
+///
+/// An empty source means the artifact is itself the file, which is the case for
+/// a bare binary. Otherwise the recorded path is tried as written, then without
+/// its leading component, since an archive with a single top-level directory
+/// has it promoted away, and finally by file name alone.
+fn resolve_source(
+    source: &str,
+    install_dir: &Path,
+    present: &[PathBuf],
+    artifact: &Path,
+) -> Option<PathBuf> {
+    // An empty source means the download itself, which is how a bare binary or
+    // an AppImage says "the artifact is the file".
+    if source.is_empty() {
+        return artifact.exists().then(|| artifact.to_path_buf());
+    }
+    let rel_of = |p: &PathBuf| {
+        p.strip_prefix(install_dir)
+            .unwrap_or(p)
+            .to_string_lossy()
+            .to_string()
+    };
+    // As written first, then without the leading component, since an archive
+    // with a single top-level directory has it promoted away.
+    let mut patterns = vec![source.to_string()];
+    if let Some((_, rest)) = source.split_once('/') {
+        patterns.push(rest.to_string());
+    }
+    for pattern in patterns {
+        if let Some(hit) = present.iter().find(|p| rel_of(p) == pattern) {
+            return Some(hit.clone());
+        }
+    }
+    // Last resort, the file name alone: an archive that was extracted but not
+    // promoted still has everything under the extraction directory.
+    let name = source.rsplit('/').next().unwrap_or(source);
+    present
+        .iter()
+        .find(|p| p.file_name().is_some_and(|n| n == name))
+        .cloned()
 }
 
 /// Give every ELF under `dir` the executable bit.
@@ -930,6 +1086,10 @@ impl PackageInstaller {
                 } else {
                     warn!("extract_root '{}' not found in package", root_dir);
                 }
+            }
+
+            if let Some(files) = self.package.files.as_deref().filter(|f| !f.is_empty()) {
+                apply_file_layout(files, &self.install_dir, output_path)?;
             }
 
             if extracted {

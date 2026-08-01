@@ -245,6 +245,10 @@ pub struct RemotePackage {
     /// Pinned side files to install alongside the artifact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra: Option<Vec<RemoteExtra>>,
+    /// What the package takes out of its artifact. Absent means the whole
+    /// artifact is the package, which is how the older format always behaved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<Vec<RemoteFile>>,
 }
 
 #[cfg(test)]
@@ -306,6 +310,21 @@ pub struct RemoteBinary {
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_as: Option<String>,
+}
+
+/// One file the package installs, as published in the index.
+///
+/// `to` is a path inside the package directory, so the directory it lands in
+/// says what it is: `bin/` is a command, `share/man/` a manual page. An empty
+/// `source` means the artifact is itself the file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemoteFile {
+    #[serde(default)]
+    pub source: String,
+    pub to: String,
+    /// Extra paths, relative to the package directory, resolving to this file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alias: Vec<String>,
 }
 
 /// A pinned side file as published in the index.
