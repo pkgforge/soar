@@ -11,8 +11,9 @@
 //! (`1.05`, `7.1-2`, `r1287.fef2b38-1`) are not valid semver at all.
 //!
 //! A version built from a commit hash has no order to recover: hashes carry no
-//! time. Those compare equal unless identical, so a repository that wants
-//! upgrades between snapshots has to publish something ordered, such as a date.
+//! time. Those compare equal to each other and below any ordinary version, so a
+//! repository that wants upgrades between snapshots has to publish something
+//! ordered, such as a date.
 
 use std::cmp::Ordering;
 
@@ -29,9 +30,16 @@ use std::cmp::Ordering;
 /// ```
 pub fn compare_versions(a: &str, b: &str) -> Ordering {
     // Two commit hashes carry no order at all, and segment rules would invent
-    // one, letting an arbitrary hash read as an upgrade or a downgrade.
-    if a != b && is_commit_hash(a) && is_commit_hash(b) {
-        return Ordering::Equal;
+    // one, letting an arbitrary hash read as an upgrade or a downgrade. A hash
+    // ranks below any ordinary version rather than being compared segment-wise
+    // against one, which would leave the ordering intransitive: two hashes
+    // equal to each other yet landing on opposite sides of the same tag, which
+    // is enough to panic `sort_by`.
+    match (is_commit_hash(a), is_commit_hash(b)) {
+        (true, true) => return Ordering::Equal,
+        (true, false) => return Ordering::Less,
+        (false, true) => return Ordering::Greater,
+        (false, false) => {}
     }
 
     let mut left = segments(a);
@@ -188,6 +196,20 @@ mod tests {
         assert_eq!(compare_versions("0f3a21b", "89c99d2a9"), Ordering::Equal);
         assert!(!is_newer("89c99d2a9", "0f3a21b"));
         assert!(!is_newer("0f3a21b", "89c99d2a9"));
+    }
+
+    #[test]
+    fn hashes_rank_below_ordinary_versions() {
+        // Sorting a mixed list needs a total order. Comparing each hash
+        // segment-wise against the tag would put one above it and one below,
+        // while the two stay equal to each other.
+        assert_eq!(compare_versions("0f3a21b", "5.0"), Ordering::Less);
+        assert_eq!(compare_versions("89c99d2a9", "5.0"), Ordering::Less);
+        assert_eq!(compare_versions("5.0", "89c99d2a9"), Ordering::Greater);
+
+        let mut versions = ["89c99d2a9", "5.0", "0f3a21b", "4.9"];
+        versions.sort_by(|a, b| compare_versions(b, a));
+        assert_eq!(&versions[..2], &["5.0", "4.9"]);
     }
 
     #[test]
