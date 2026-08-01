@@ -150,12 +150,17 @@ pub fn apply_file_layout(
         }
     }
 
-    // Nothing resolved means the recipe and the artifact disagree. Keeping the
-    // artifact untouched is better than installing an empty package.
+    // Nothing resolved means the recipe and the artifact disagree, which most
+    // often means the download never extracted. Keeping what is there would
+    // record a package with no commands in it and still report success, so the
+    // install fails here instead.
     if placed == 0 {
-        warn!("no listed file was found; leaving the artifact as it is");
         fs::remove_dir_all(&staging).ok();
-        return Ok(());
+        return Err(SoarError::Custom(format!(
+            "none of the {} files listed by {} were found in the artifact",
+            files.len(),
+            install_dir.display()
+        )));
     }
 
     for entry in fs::read_dir(install_dir)
@@ -819,7 +824,10 @@ impl PackageInstaller {
                 .with_context(|| format!("setting permissions on {}", dest.display()))?;
         }
 
-        if extract {
+        // Extraction is offered for every install, so what the file actually is
+        // decides: a local AppImage or bare binary is not an archive and is
+        // left alone rather than failing.
+        if extract && compak::detect_from_file(dest).is_ok() {
             debug!(archive = %dest.display(), dest = %extract_dir.display(), "extracting local archive");
             compak::extract_archive(dest, extract_dir).map_err(|e| {
                 SoarError::Custom(format!(

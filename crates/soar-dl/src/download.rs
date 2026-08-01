@@ -335,25 +335,14 @@ impl Download {
                             .map(PathBuf::from)
                             .unwrap_or_else(|| PathBuf::from("."))
                     });
-                    // Cleanup below must never reach a directory that was
-                    // already there: the default destination is the download's
-                    // own parent, so removing it would take the user's other
-                    // files with it.
-                    let dir_existed = extract_dir.exists();
                     debug!(archive = %output_path.display(), dest = %extract_dir.display(),
                            ?format, "extracting archive");
-                    // A bare .gz or .bz2 of a single file shares its magic
-                    // number with the tar-wrapped form, so detection can be
-                    // right about the compression and wrong about the
-                    // container. Leave the download in place rather than
-                    // failing the install outright.
-                    if let Err(e) = compak::extract_archive(&output_path, &extract_dir) {
-                        warn!(archive = %output_path.display(), error = %e,
-                              "extraction failed, installing the download as-is");
-                        if !dir_existed {
-                            std::fs::remove_dir_all(&extract_dir).ok();
-                        }
-                    }
+                    // A failure here fails the install. A bare .gz of a single
+                    // file shares its magic number with the tar-wrapped form,
+                    // but detection decompresses far enough to tell the two
+                    // apart, so what is left is a download that really is
+                    // broken, and swallowing that installs an empty package.
+                    compak::extract_archive(&output_path, &extract_dir)?;
                 }
                 Err(_) => {
                     trace!(path = %output_path.display(),
