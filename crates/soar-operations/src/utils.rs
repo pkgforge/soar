@@ -129,6 +129,10 @@ pub fn link_shared_files(
     bin_dir: &Path,
     shells: &[String],
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
+    // A link pointing anywhere inside soar's own package tree is soar's,
+    // including one left by an older version of this package: an install
+    // directory carries its version, so the path never matches the new one.
+    let packages_root = install_dir.parent().unwrap_or(install_dir);
     let mut linked = Vec::new();
     for (relative, destination, enabled) in shared_link_targets(bin_dir, shells) {
         if !enabled {
@@ -150,7 +154,7 @@ pub fn link_shared_files(
             }
             match fs::read_link(&link) {
                 // ours, from this package or an older version of it
-                Ok(target) if target.starts_with(install_dir) => {
+                Ok(target) if target.starts_with(packages_root) => {
                     fs::remove_file(&link).ok();
                 }
                 Ok(_) | Err(_) if link.exists() || link.is_symlink() => {
@@ -205,27 +209,35 @@ pub async fn mangle_package_symlinks(
     let mut symlinks = Vec::new();
 
     // A package laid out by its file list has already said what its commands
-    // are: everything in `bin/`. Reading the directory rather than the list
-    // covers a package that is already installed, which no longer carries one.
-    let listed: Vec<String> = files
-        .filter(|f| !f.is_empty())
-        .map(|files| {
-            files
-                .iter()
-                .flat_map(|f| std::iter::once(&f.to).chain(f.alias.iter()))
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_else(|| {
-            // Read rather than walk: an alias is a symlink, which walking skips.
-            fs::read_dir(install_dir.join("bin"))
-                .into_iter()
-                .flatten()
-                .flatten()
-                .map(|e| format!("bin/{}", e.file_name().to_string_lossy()))
-                .collect()
-        });
-    if !listed.is_empty() {
+    // are: everything in `bin/`.
+    let listed: Option<Vec<String>> = files.filter(|f| !f.is_empty()).map(|files| {
+        files
+            .iter()
+            .flat_map(|f| std::iter::once(&f.to).chain(f.alias.iter()))
+            .cloned()
+            .collect()
+    });
+    // A package installed before the file list existed carries none, so its own
+    // `bin/` stands in, but only where nothing else describes the package.
+    // Reading the directory otherwise publishes every executable an archive
+    // happens to ship, which for a toolchain is dozens of them.
+    let listed = listed.or_else(|| {
+        if entrypoint.is_some()
+            || binaries.is_some_and(|b| !b.is_empty())
+            || provides.is_some_and(|p| !p.is_empty())
+        {
+            return None;
+        }
+        // Read rather than walk: an alias is a symlink, which walking skips.
+        let entries: Vec<String> = fs::read_dir(install_dir.join("bin"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| format!("bin/{}", e.file_name().to_string_lossy()))
+            .collect();
+        (!entries.is_empty()).then_some(entries)
+    });
+    if let Some(listed) = listed {
         for path in &listed {
             {
                 let Some(name) = path.strip_prefix("bin/").filter(|n| !n.contains('/')) else {
