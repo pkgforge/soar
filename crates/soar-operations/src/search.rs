@@ -22,6 +22,27 @@ use crate::{SearchEntry, SearchResult, SoarContext};
 /// Search for packages across all repositories.
 ///
 /// Uses fuzzy matching by default. Falls back to SQL LIKE for case-sensitive searches.
+/// Installed packages by repository and name, each with the family it was
+/// installed under, so a package sharing a name is not mistaken for it.
+/// What identifies a package apart from its version: repository, name, id and
+/// family. Two entries sharing this are two versions of one package.
+type PackageKey = (String, String, Option<String>, Option<String>);
+
+type InstalledIndex = HashMap<(String, String), Vec<(Option<String>, bool)>>;
+
+fn is_installed(
+    map: &InstalledIndex,
+    repo_name: &str,
+    pkg_name: &str,
+    pkg_family: Option<&str>,
+) -> bool {
+    map.get(&(repo_name.to_string(), pkg_name.to_string()))
+        .is_some_and(|rows| {
+            rows.iter()
+                .any(|(family, installed)| *installed && family.as_deref() == pkg_family)
+        })
+}
+
 pub async fn search_packages(
     ctx: &SoarContext,
     query: &str,
@@ -58,14 +79,15 @@ pub async fn search_packages(
 
     // One row per package: a result repeated once per published version says
     // nothing extra and pushes real matches off the list.
-    let mut newest: HashMap<(String, String, Option<String>), Package> = HashMap::new();
-    let mut counts: HashMap<(String, String, Option<String>), Vec<String>> = HashMap::new();
-    let mut order: Vec<(String, String, Option<String>)> = Vec::new();
+    let mut newest: HashMap<PackageKey, Package> = HashMap::new();
+    let mut counts: HashMap<PackageKey, Vec<String>> = HashMap::new();
+    let mut order: Vec<PackageKey> = Vec::new();
     for pkg in packages {
         let key = (
             pkg.repo_name.clone(),
             pkg.pkg_name.clone(),
             pkg.pkg_id.clone(),
+            pkg.pkg_family.clone(),
         );
         counts
             .entry(key.clone())
@@ -87,7 +109,7 @@ pub async fn search_packages(
         .filter_map(|k| newest.remove(&k))
         .collect();
 
-    let installed_pkgs: HashMap<(String, String), bool> = diesel_db
+    let installed_pkgs: InstalledIndex = diesel_db
         .with_conn(|conn| {
             CoreRepository::list_filtered(conn, None, None, None, None, None, None, None, None)
         })?
@@ -97,14 +119,22 @@ pub async fn search_packages(
         // keying on both would stop matching the two. Rows sharing a key are
         // merged rather than overwritten, so one uninstalled version cannot
         // mask an installed one.
-        .map(|pkg| ((pkg.repo_name, pkg.pkg_name), pkg.is_installed))
-        .fold(HashMap::new, |mut acc, (key, installed)| {
-            *acc.entry(key).or_insert(false) |= installed;
+        // Keyed by family too, or a package merely sharing a name would
+        // inherit the marker. The family is recorded at install time, so a
+        // package without one matches only entries without one.
+        .map(|pkg| {
+            (
+                (pkg.repo_name, pkg.pkg_name),
+                (pkg.pkg_family, pkg.is_installed),
+            )
+        })
+        .fold(HashMap::new, |mut acc: HashMap<_, Vec<_>>, (key, value)| {
+            acc.entry(key).or_default().push(value);
             acc
         })
-        .reduce(HashMap::new, |mut acc, part| {
-            for (key, installed) in part {
-                *acc.entry(key).or_insert(false) |= installed;
+        .reduce(HashMap::new, |mut acc: HashMap<_, Vec<_>>, part| {
+            for (key, values) in part {
+                acc.entry(key).or_default().extend(values);
             }
             acc
         });
@@ -115,13 +145,18 @@ pub async fn search_packages(
         .into_iter()
         .take(search_limit)
         .map(|package| {
-            let key = (package.repo_name.clone(), package.pkg_name.clone());
-            let installed = installed_pkgs.get(&key).copied().unwrap_or(false);
+            let installed = is_installed(
+                &installed_pkgs,
+                &package.repo_name,
+                &package.pkg_name,
+                package.pkg_family.as_deref(),
+            );
             let other_versions = counts
                 .get(&(
                     package.repo_name.clone(),
                     package.pkg_name.clone(),
                     package.pkg_id.clone(),
+                    package.pkg_family.clone(),
                 ))
                 .map(|all| {
                     let mut rest: Vec<String> = all

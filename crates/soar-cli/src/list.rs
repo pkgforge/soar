@@ -53,8 +53,13 @@ pub async fn search_packages(
             version = package.version,
             description = package.description,
             size = package.ghcr_size.or(package.size),
-            "[{}] {}:{} | {}{} | {} - {} ({})",
+            "[{}] {}{}:{} | {}{} | {} - {} ({})",
             state_icon,
+            package
+                .pkg_family
+                .as_ref()
+                .map(|f| format!("{}/", Colored(Green, f)))
+                .unwrap_or_default(),
             Colored(Blue, &package.pkg_name),
             Colored(Green, &package.repo_name),
             Colored(LightRed, &package.version),
@@ -304,8 +309,15 @@ pub async fn list_packages(ctx: &SoarContext, repo_name: Option<String>) -> Soar
             repo_name = package.repo_name,
             pkg_type = package.pkg_type,
             version = package.version,
-            "[{}] {}:{} | {}{} | {}",
+            "[{}] {}{}:{} | {}{} | {}",
             state_icon,
+            // shown the way it is typed, so two packages sharing a name are
+            // told apart and can be asked for
+            package
+                .pkg_family
+                .as_ref()
+                .map(|f| format!("{}/", Colored(Cyan, f)))
+                .unwrap_or_default(),
             Colored(Blue, &package.pkg_name),
             Colored(Cyan, &package.repo_name),
             Colored(LightRed, &package.version),

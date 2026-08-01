@@ -52,6 +52,44 @@ use crate::{
 ///
 /// For each query string, returns a [`ResolveResult`] indicating whether the package
 /// was resolved, is ambiguous (multiple candidates), not found, or already installed.
+/// Build an install target for a package the caller has already chosen.
+///
+/// Resolving it again by name would pose the same ambiguous question that the
+/// choice just answered.
+pub fn target_for(
+    ctx: &SoarContext,
+    package: Package,
+    options: &InstallOptions,
+) -> SoarResult<InstallTarget> {
+    let diesel_db = ctx.diesel_core_db()?.clone();
+    let existing_install: Option<InstalledPackage> = diesel_db
+        .with_conn(|conn| {
+            CoreRepository::list_filtered(
+                conn,
+                Some(&package.repo_name),
+                Some(&package.pkg_name),
+                package.pkg_id.as_deref(),
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+            )
+        })?
+        .into_iter()
+        .next()
+        .map(Into::into);
+    let pinned = options.version_override.is_some();
+    let package = package.resolve(options.version_override.as_deref());
+    Ok(InstallTarget {
+        package,
+        existing_install,
+        pinned,
+        profile: None,
+        ..Default::default()
+    })
+}
+
 pub async fn resolve_packages(
     ctx: &SoarContext,
     packages: &[String],
@@ -510,7 +548,11 @@ fn resolve_normal(
         0 => Ok(ResolveResult::NotFound(package_name.to_string())),
         1 => {
             let pkg = packages.into_iter().next().unwrap();
-            let installed_pkg = installed_packages.iter().find(|ip| ip.is_installed);
+            // Same name from another repository is a different package, so it
+            // must not be mistaken for this one already being installed.
+            let installed_pkg = installed_packages
+                .iter()
+                .find(|ip| ip.is_installed && ip.repo_name == pkg.repo_name);
 
             if let Some(installed) = installed_pkg {
                 if !options.force {
@@ -556,7 +598,9 @@ fn resolve_normal(
                     .into_iter()
                     .max_by(|a, b| compare_versions(&a.version, &b.version))
                     .unwrap();
-                let installed_pkg = installed_packages.iter().find(|ip| ip.is_installed);
+                let installed_pkg = installed_packages
+                    .iter()
+                    .find(|ip| ip.is_installed && ip.repo_name == newest.repo_name);
                 if let Some(installed) = installed_pkg {
                     if !options.force {
                         return Ok(ResolveResult::AlreadyInstalled {
@@ -593,8 +637,13 @@ fn find_packages(
     query: &PackageQuery,
     existing_install: &Option<InstalledPackage>,
 ) -> SoarResult<Vec<Package>> {
+    // Naming a repository is a choice, so it outranks where an existing install
+    // happened to come from.
     // If we have an existing install, try to find it in its original repo first
-    if let Some(existing) = existing_install {
+    if let Some(existing) = existing_install
+        .as_ref()
+        .filter(|_| query.repo_name.is_none())
+    {
         let existing_pkgs: Vec<Package> = metadata_mgr
             .query_repo(&existing.repo_name, |conn| {
                 MetadataRepository::find_filtered(

@@ -75,22 +75,10 @@ pub async fn install_packages(
                 };
 
                 if let Some(pkg) = pkg {
-                    // Re-resolve with the specific selected package. The
-                    // family has to come along, or a name ambiguous within one
-                    // repository resolves right back to the same choice.
-                    let specific_query = match &pkg.pkg_family {
-                        Some(family) => {
-                            format!("{}/{}:{}", family, pkg.pkg_name, pkg.repo_name)
-                        }
-                        None => format!("{}:{}", pkg.pkg_name, pkg.repo_name),
-                    };
-                    let re_results =
-                        install::resolve_packages(ctx, &[specific_query], &options).await?;
-                    for r in re_results {
-                        if let ResolveResult::Resolved(targets) = r {
-                            install_targets.extend(targets);
-                        }
-                    }
+                    // Install the package that was chosen. Re-resolving it by
+                    // name would ask the same ambiguous question again and
+                    // answer it with nothing.
+                    install_targets.push(install::target_for(ctx, pkg, &options)?);
                 }
             }
             ResolveResult::NotFound(name) => {
@@ -206,19 +194,7 @@ async fn install_with_show(
                         };
 
                         if let Some(pkg) = pkg {
-                            let specific_query = match &pkg.pkg_family {
-                                Some(family) => {
-                                    format!("{}/{}:{}", family, pkg.pkg_name, pkg.repo_name)
-                                }
-                                None => format!("{}:{}", pkg.pkg_name, pkg.repo_name),
-                            };
-                            let re_results =
-                                install::resolve_packages(ctx, &[specific_query], options).await?;
-                            for r in re_results {
-                                if let ResolveResult::Resolved(targets) = r {
-                                    install_targets.extend(targets);
-                                }
-                            }
+                            install_targets.push(install::target_for(ctx, pkg, options)?);
                         }
                     }
                     ResolveResult::NotFound(name) => {

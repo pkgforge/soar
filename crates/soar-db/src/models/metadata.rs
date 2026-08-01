@@ -142,6 +142,7 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct PackageListing {
     pub pkg_id: Option<String>,
+    pub pkg_family: Option<String>,
     pub pkg_name: String,
     pub pkg_type: Option<String>,
     pub version: String,
