@@ -25,6 +25,21 @@ pub async fn display_health(ctx: &SoarContext) -> SoarResult<()> {
     };
     builder.push_record(["PATH".to_string(), path_status]);
 
+    // Only shown once something has installed a manual page, so a user with no
+    // such package is not told to configure something they do not need.
+    if let Some(man_dir) = &report.man_path {
+        let man_status = if report.man_path_configured {
+            format!("{} Configured", Colored(Green, icon_or(Icons::CHECK, "OK")))
+        } else {
+            format!(
+                "{} {} not searched by man",
+                Colored(Yellow, icon_or(Icons::WARNING, "!")),
+                Colored(Blue, man_dir.display())
+            )
+        };
+        builder.push_record(["MANPATH".to_string(), man_status]);
+    }
+
     let pkg_status = if report.broken_packages.is_empty() {
         format!("{} None", Colored(Green, icon_or(Icons::CHECK, "OK")))
     } else {

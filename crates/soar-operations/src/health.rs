@@ -22,12 +22,38 @@ pub fn check_health(ctx: &SoarContext) -> SoarResult<HealthReport> {
         .split(':')
         .any(|p| resolve_path(p).unwrap_or_default() == bin_path);
 
+    // Whether `man` can find what soar installed. An explicit MANPATH replaces
+    // everything man-db would work out for itself, so a package's manual pages
+    // can be installed correctly and still be invisible.
+    let man_dir = bin_path.parent().unwrap_or(&bin_path).join("share/man");
+    let man_path = man_dir.is_dir().then(|| man_dir.clone());
+    let man_path_configured = match &man_path {
+        None => true,
+        Some(dir) => {
+            let listed = |value: String| {
+                value
+                    .split(':')
+                    .any(|p| !p.is_empty() && resolve_path(p).unwrap_or_default() == *dir)
+            };
+            let from_env = std::env::var("MANPATH").map(&listed).unwrap_or(false);
+            from_env
+                || std::process::Command::new("manpath")
+                    .output()
+                    .ok()
+                    .and_then(|o| String::from_utf8(o.stdout).ok())
+                    .map(|out| listed(out.trim().to_string()))
+                    .unwrap_or(false)
+        }
+    };
+
     let broken_packages = get_broken_packages(ctx)?;
     let broken_symlinks = get_broken_symlinks(ctx)?;
 
     Ok(HealthReport {
         path_configured,
         bin_path,
+        man_path,
+        man_path_configured,
         broken_packages,
         broken_symlinks,
     })

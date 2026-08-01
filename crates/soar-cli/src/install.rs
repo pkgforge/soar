@@ -420,6 +420,32 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
             Colored(Magenta, info.install_dir.display())
         );
 
+        if !info.shared.is_empty() {
+            // Listing these would bury the binaries: gh alone ships over a
+            // hundred manual pages.
+            let mut man = 0;
+            let mut completions = 0;
+            for (_, link) in &info.shared {
+                let path = link.to_string_lossy();
+                if path.contains("/man/") {
+                    man += 1;
+                } else {
+                    completions += 1;
+                }
+            }
+            let mut parts = Vec::new();
+            if man > 0 {
+                parts.push(format!("{man} man page{}", if man == 1 { "" } else { "s" }));
+            }
+            if completions > 0 {
+                parts.push(format!(
+                    "{completions} completion{}",
+                    if completions == 1 { "" } else { "s" }
+                ));
+            }
+            info!("  {} Linked {}", icon_or("📖", "-"), parts.join(", "));
+        }
+
         if !info.symlinks.is_empty() {
             info!("  {} Binaries:", icon_or("📂", "-"));
             for (target, link) in &info.symlinks {

@@ -679,7 +679,7 @@ pub async fn perform_installation(
             .await;
 
             match result {
-                Ok((install_dir, symlinks)) => {
+                Ok((install_dir, symlinks, shared)) => {
                     if !install_dir.as_os_str().is_empty() {
                         installed.lock().unwrap().push(InstalledInfo {
                             pkg_name: target.package.pkg_name.clone(),
@@ -688,6 +688,7 @@ pub async fn perform_installation(
                             version: target.package.version.clone(),
                             install_dir,
                             symlinks,
+                            shared,
                             notes: target.package.notes.clone(),
                         });
                     }
@@ -767,7 +768,7 @@ async fn install_single_package(
     portable_config: Option<&str>,
     portable_share: Option<&str>,
     portable_cache: Option<&str>,
-) -> SoarResult<(PathBuf, Vec<(PathBuf, PathBuf)>)> {
+) -> SoarResult<(PathBuf, Vec<(PathBuf, PathBuf)>, Vec<(PathBuf, PathBuf)>)> {
     let op_id = next_op_id();
     let events = ctx.events().clone();
     let pkg = &target.package;
@@ -823,7 +824,7 @@ async fn install_single_package(
         .find(|ip| ip.is_installed);
 
     if freshly_installed.is_some() {
-        return Ok((PathBuf::new(), Vec::new()));
+        return Ok((PathBuf::new(), Vec::new(), Vec::new()));
     }
 
     let config = ctx.config();
@@ -1092,7 +1093,6 @@ async fn install_single_package(
     // Man pages and completions only mean anything where the system looks for
     // them, so they are linked out of the package the same way binaries are.
     let shared = link_shared_files(&install_dir, &bin_dir, &ctx.config().completion_shells())?;
-    let symlinks = symlinks.into_iter().chain(shared).collect::<Vec<_>>();
 
     // Desktop integration
     if !unlinked || has_desktop_integration(pkg, ctx.config()) {
@@ -1148,7 +1148,7 @@ async fn install_single_package(
         version = pkg.version,
         "installation complete"
     );
-    Ok((install_dir, symlinks))
+    Ok((install_dir, symlinks, shared))
 }
 
 fn verify_signatures(pubkey_str: &str, install_dir: &Path) -> SoarResult<usize> {
