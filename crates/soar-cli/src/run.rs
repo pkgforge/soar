@@ -20,7 +20,7 @@ pub async fn run_package(
 
     let result = run::prepare_run(ctx, package_name, repo_name, pkg_id, no_verify).await?;
 
-    let mut downloaded = false;
+    let downloaded;
     let output_path = match result {
         PrepareRunResult::Ready {
             path,
