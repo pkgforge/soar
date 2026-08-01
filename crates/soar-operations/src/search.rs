@@ -320,7 +320,7 @@ pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec
         })?
     };
 
-    let packages: Vec<Package> = if let Some(ref version) = query.version {
+    let mut packages: Vec<Package> = if let Some(ref version) = query.version {
         packages
             .into_iter()
             .filter(|p| p.has_version(version))
@@ -329,6 +329,16 @@ pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec
     } else {
         packages
     };
+
+    // The query is ordered by name, which says nothing about several versions
+    // of one package. Newest first, so the one that would be installed is on
+    // top.
+    packages.sort_by(|a, b| {
+        a.pkg_name
+            .cmp(&b.pkg_name)
+            .then(a.repo_name.cmp(&b.repo_name))
+            .then(compare_versions(&b.version, &a.version))
+    });
 
     Ok(packages)
 }
