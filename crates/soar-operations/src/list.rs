@@ -13,29 +13,9 @@ use soar_utils::{fs::dir_size, version::compare_versions};
 use tracing::{debug, trace};
 
 use crate::{
+    utils::{is_installed, InstalledIndex, PackageKey},
     InstalledEntry, InstalledListResult, PackageListEntry, PackageListResult, SoarContext,
 };
-
-/// What identifies a package apart from its version: repository, name, id and
-/// family. Two entries sharing this are two versions of one package.
-type PackageKey = (String, String, Option<String>, Option<String>);
-
-/// Installed packages by repository and name, each with the family it was
-/// installed under, so a package sharing a name is not mistaken for it.
-type InstalledIndex = HashMap<(String, String), Vec<(Option<String>, bool)>>;
-
-fn is_installed(
-    map: &InstalledIndex,
-    repo_name: &str,
-    pkg_name: &str,
-    pkg_family: Option<&str>,
-) -> bool {
-    map.get(&(repo_name.to_string(), pkg_name.to_string()))
-        .is_some_and(|rows| {
-            rows.iter()
-                .any(|(family, installed)| *installed && family.as_deref() == pkg_family)
-        })
-}
 
 /// List all available packages, optionally filtered by repository.
 pub async fn list_packages(
