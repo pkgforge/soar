@@ -43,10 +43,6 @@ use crate::{
     SoarResult,
 };
 
-/// Returns `true` if the file at `path` starts with the ELF magic bytes.
-///
-/// AppImages and plain binaries are ELF and need the executable bit; archives
-/// are not and are extracted instead.
 /// Fetch the side files an artifact does not carry itself.
 ///
 /// One that published a hash is verified against it, on the same footing as
@@ -284,6 +280,10 @@ fn mark_elfs_executable(dir: &Path) {
     }
 }
 
+/// Returns `true` if the file at `path` starts with the ELF magic bytes.
+///
+/// AppImages and plain binaries are ELF and need the executable bit; archives
+/// are not and are extracted instead.
 fn is_elf(path: &Path) -> bool {
     let mut magic = [0u8; 4];
     fs::File::open(path)

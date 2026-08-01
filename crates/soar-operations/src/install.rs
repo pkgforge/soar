@@ -49,10 +49,6 @@ use crate::{
     FailedInfo, InstallOptions, InstallReport, InstalledInfo, ResolveResult, SoarContext,
 };
 
-/// Resolve package queries into install targets or ambiguity results.
-///
-/// For each query string, returns a [`ResolveResult`] indicating whether the package
-/// was resolved, is ambiguous (multiple candidates), not found, or already installed.
 /// Build an install target for a package the caller has already chosen.
 ///
 /// Resolving it again by name would pose the same ambiguous question that the
@@ -91,6 +87,11 @@ pub fn target_for(
     })
 }
 
+/// Resolve package queries into install targets or ambiguity results.
+///
+/// For each query string, returns a [`ResolveResult`] indicating whether the
+/// package was resolved, is ambiguous (multiple candidates), not found, or
+/// already installed.
 pub async fn resolve_packages(
     ctx: &SoarContext,
     packages: &[String],

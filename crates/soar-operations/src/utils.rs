@@ -171,8 +171,6 @@ pub fn link_shared_files(
     Ok(linked)
 }
 
-/// Creates symlinks from installed package binaries to the bin directory.
-#[allow(clippy::too_many_arguments)]
 /// Every regular file under `dir`, recursively, skipping symlinks and the
 /// bookkeeping entries soar writes alongside a package.
 fn walk_files(dir: &Path) -> Vec<PathBuf> {
@@ -194,6 +192,7 @@ fn walk_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Creates symlinks from installed package binaries to the bin directory.
 #[allow(clippy::too_many_arguments)]
 pub async fn mangle_package_symlinks(
     install_dir: &Path,

@@ -16,13 +16,12 @@ use crate::{
     InstalledEntry, InstalledListResult, PackageListEntry, PackageListResult, SoarContext,
 };
 
-/// List all available packages, optionally filtered by repository.
-/// Installed packages by repository and name, each with the family it was
-/// installed under, so a package sharing a name is not mistaken for it.
 /// What identifies a package apart from its version: repository, name, id and
 /// family. Two entries sharing this are two versions of one package.
 type PackageKey = (String, String, Option<String>, Option<String>);
 
+/// Installed packages by repository and name, each with the family it was
+/// installed under, so a package sharing a name is not mistaken for it.
 type InstalledIndex = HashMap<(String, String), Vec<(Option<String>, bool)>>;
 
 fn is_installed(
@@ -38,6 +37,7 @@ fn is_installed(
         })
 }
 
+/// List all available packages, optionally filtered by repository.
 pub async fn list_packages(
     ctx: &SoarContext,
     repo_name: Option<&str>,

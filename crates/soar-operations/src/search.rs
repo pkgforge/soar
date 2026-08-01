@@ -19,15 +19,12 @@ use tracing::{debug, trace};
 
 use crate::{SearchEntry, SearchResult, SoarContext};
 
-/// Search for packages across all repositories.
-///
-/// Uses fuzzy matching by default. Falls back to SQL LIKE for case-sensitive searches.
-/// Installed packages by repository and name, each with the family it was
-/// installed under, so a package sharing a name is not mistaken for it.
 /// What identifies a package apart from its version: repository, name, id and
 /// family. Two entries sharing this are two versions of one package.
 type PackageKey = (String, String, Option<String>, Option<String>);
 
+/// Installed packages by repository and name, each with the family it was
+/// installed under, so a package sharing a name is not mistaken for it.
 type InstalledIndex = HashMap<(String, String), Vec<(Option<String>, bool)>>;
 
 fn is_installed(
@@ -43,6 +40,10 @@ fn is_installed(
         })
 }
 
+/// Search for packages across all repositories.
+///
+/// Uses fuzzy matching by default. Falls back to SQL LIKE for case-sensitive
+/// searches.
 pub async fn search_packages(
     ctx: &SoarContext,
     query: &str,
