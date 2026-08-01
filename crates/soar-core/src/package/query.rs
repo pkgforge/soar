@@ -27,6 +27,7 @@ impl TryFrom<&str> for PackageQuery {
         let re = PACKAGE_RE.get_or_init(|| {
             Regex::new(
                 r"(?x)
+            ^                                   # anchored: a/b/c is not a query
             (?:(?P<family>[^\/\#\@:]+)\/)?      # optional family before /
             (?P<name>[^\/\#\@:]+)?              # optional package name
             (?:\#(?P<pkg_id>[^@:]+))?           # deprecated pkg_id after #
@@ -75,5 +76,29 @@ impl TryFrom<&str> for PackageQuery {
             name,
             version: caps.name("version").map(|m| m.as_str().to_string()),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PackageQuery;
+
+    #[test]
+    fn parses_every_supported_shape() {
+        let q = PackageQuery::try_from("ripgrep").unwrap();
+        assert_eq!(q.name.as_deref(), Some("ripgrep"));
+        assert_eq!(q.family, None);
+
+        let q = PackageQuery::try_from("bat/bat@0.24.0:bincache").unwrap();
+        assert_eq!(q.family.as_deref(), Some("bat"));
+        assert_eq!(q.name.as_deref(), Some("bat"));
+        assert_eq!(q.version.as_deref(), Some("0.24.0"));
+        assert_eq!(q.repo_name.as_deref(), Some("bincache"));
+    }
+
+    #[test]
+    fn a_third_segment_is_not_a_query() {
+        // Unanchored, this matched from the middle and silently dropped `a`.
+        assert!(PackageQuery::try_from("a/b/c").is_err());
     }
 }
