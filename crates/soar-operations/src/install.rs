@@ -937,22 +937,24 @@ async fn install_single_package(
         }
     }
 
-    let dir_suffix: String = pkg
+    // Keyed on the whole identity rather than the artifact's hash. Two
+    // repositories shipping byte-identical builds are still two installs, and
+    // sharing a directory means removing one deletes the other's files.
+    let content = pkg
         .bsum
-        .as_ref()
-        .filter(|s| s.len() >= 12)
-        .map(|s| s[..12].to_string())
-        .unwrap_or_else(|| {
-            // Name and version alone collide across sources: the same
-            // release packaged by two repositories would share a directory.
-            let source = pkg
-                .pkg_id
-                .as_deref()
-                .or(pkg.ghcr_pkg.as_deref())
-                .unwrap_or(pkg.download_url.as_str());
-            let input = format!("{}:{}:{}", pkg.pkg_name, pkg.version, source);
-            hash_string(&input)[..12].to_string()
-        });
+        .as_deref()
+        .or(pkg.pkg_id.as_deref())
+        .or(pkg.ghcr_pkg.as_deref())
+        .unwrap_or(pkg.download_url.as_str());
+    let dir_suffix: String = hash_string(&format!(
+        "{}:{}:{}:{}:{}",
+        pkg.repo_name,
+        pkg.pkg_family.as_deref().unwrap_or_default(),
+        pkg.pkg_name,
+        pkg.version,
+        content
+    ))[..12]
+        .to_string();
 
     // pkg_name is joined into install_dir and interpolated into resource paths
     // downstream, so it must not be able to escape the packages dir.
