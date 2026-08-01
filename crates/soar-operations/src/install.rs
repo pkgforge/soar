@@ -614,7 +614,11 @@ fn resolve_normal(
                 }
                 let existing_install = installed_packages
                     .iter()
-                    .find(|ip| ip.version == newest.version)
+                    .find(|ip| {
+                        ip.version == newest.version
+                            && ip.repo_name == newest.repo_name
+                            && ip.pkg_family.as_deref() == newest.pkg_family.as_deref()
+                    })
                     .cloned();
                 let newest = newest.resolve(query.version.as_deref());
                 return Ok(ResolveResult::Resolved(vec![InstallTarget {
@@ -922,7 +926,9 @@ async fn install_single_package(
             )
         })?
         .into_iter()
-        .find(|ip| ip.is_installed);
+        // The query cannot narrow by family, so it is compared here: two
+        // packages sharing a name in one batch are still two packages.
+        .find(|ip| ip.is_installed && ip.pkg_family.as_deref() == pkg.pkg_family.as_deref());
 
     if freshly_installed.is_some() {
         return Ok((PathBuf::new(), Vec::new(), Vec::new()));
