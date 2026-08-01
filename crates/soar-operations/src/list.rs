@@ -9,7 +9,7 @@ use soar_db::{
     models::metadata::PackageListing,
     repository::{core::CoreRepository, metadata::MetadataRepository},
 };
-use soar_utils::fs::dir_size;
+use soar_utils::{fs::dir_size, version::compare_versions};
 use tracing::{debug, trace};
 
 use crate::{
@@ -56,6 +56,30 @@ pub async fn list_packages(
                 .collect())
         })?
     };
+
+    // One row per package, not per version. A repository publishes every
+    // version it knows, and listing them all buries the packages themselves.
+    let mut newest: HashMap<(String, String, Option<String>), ListingWithRepo> = HashMap::new();
+    for entry in packages {
+        let key = (
+            entry.repo_name.clone(),
+            entry.pkg.pkg_name.clone(),
+            entry.pkg.pkg_id.clone(),
+        );
+        match newest.get(&key) {
+            Some(kept) if compare_versions(&kept.pkg.version, &entry.pkg.version).is_ge() => {}
+            _ => {
+                newest.insert(key, entry);
+            }
+        }
+    }
+    let mut packages: Vec<ListingWithRepo> = newest.into_values().collect();
+    packages.sort_by(|a, b| {
+        a.pkg
+            .pkg_name
+            .cmp(&b.pkg.pkg_name)
+            .then(a.repo_name.cmp(&b.repo_name))
+    });
 
     let installed_pkgs: HashMap<(String, String), bool> = diesel_db
         .with_conn(|conn| {

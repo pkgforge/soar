@@ -14,6 +14,7 @@ use soar_db::{
         metadata::MetadataRepository,
     },
 };
+use soar_utils::version::compare_versions;
 use tracing::{debug, trace};
 
 use crate::{SearchEntry, SearchResult, SoarContext};
@@ -54,6 +55,32 @@ pub async fn search_packages(
     } else {
         fuzzy_search(ctx, query, search_limit).await?
     };
+
+    // One row per package: a result repeated once per published version says
+    // nothing extra and pushes real matches off the list.
+    let mut newest: HashMap<(String, String, Option<String>), Package> = HashMap::new();
+    let mut order: Vec<(String, String, Option<String>)> = Vec::new();
+    for pkg in packages {
+        let key = (
+            pkg.repo_name.clone(),
+            pkg.pkg_name.clone(),
+            pkg.pkg_id.clone(),
+        );
+        match newest.get(&key) {
+            Some(kept) if compare_versions(&kept.version, &pkg.version).is_ge() => {}
+            _ => {
+                if !newest.contains_key(&key) {
+                    order.push(key.clone());
+                }
+                newest.insert(key, pkg);
+            }
+        }
+    }
+    // ranking order is the point of a search, so it is preserved
+    let packages: Vec<Package> = order
+        .into_iter()
+        .filter_map(|k| newest.remove(&k))
+        .collect();
 
     let installed_pkgs: HashMap<(String, String), bool> = diesel_db
         .with_conn(|conn| {
