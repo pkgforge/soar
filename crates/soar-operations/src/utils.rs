@@ -263,6 +263,25 @@ pub async fn mangle_package_symlinks(
 
     if let Some(bins) = binaries {
         if !bins.is_empty() {
+            // Walked once: the tree does not change while the mappings are
+            // resolved against it.
+            let present = walk_files(install_dir);
+            let rel_of = |path: &PathBuf| {
+                path.strip_prefix(install_dir)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .to_string()
+            };
+            let matching = |pat: &str| -> Vec<PathBuf> {
+                present
+                    .iter()
+                    .filter(|p| fast_glob::glob_match(pat, rel_of(p)))
+                    .cloned()
+                    .collect()
+            };
+            // One name cannot stand for two files, so the first mapping to
+            // claim it keeps it.
+            let mut claimed: HashSet<PathBuf> = HashSet::new();
             for mapping in bins {
                 let source_pattern =
                     substitute_placeholders(&mapping.source, Some(version), arch_map);
@@ -270,20 +289,6 @@ pub async fn mangle_package_symlinks(
                 // straight back to the file name would pick an arbitrary one
                 // when an archive ships the same binary for several
                 // architectures, each under its own directory.
-                let files = walk_files(install_dir);
-                let rel_of = |path: &PathBuf| {
-                    path.strip_prefix(install_dir)
-                        .unwrap_or(path)
-                        .to_string_lossy()
-                        .to_string()
-                };
-                let matching = |pat: &str| -> Vec<PathBuf> {
-                    files
-                        .iter()
-                        .filter(|p| fast_glob::glob_match(pat, rel_of(p)))
-                        .cloned()
-                        .collect()
-                };
 
                 let mut source_paths = matching(&source_pattern);
                 // An archive with a single top-level directory has it promoted
@@ -295,9 +300,10 @@ pub async fn mangle_package_symlinks(
                     }
                 }
                 // Last resort: the artifact was rearranged and only the name
-                // survives. Ambiguity here is handled below.
+                // survives. Several files can answer to it, so `link_as` is
+                // dropped below and each keeps its own name.
                 if source_paths.is_empty() {
-                    source_paths = files
+                    source_paths = present
                         .iter()
                         .filter(|p| {
                             p.file_name()
@@ -334,6 +340,14 @@ pub async fn mangle_package_symlinks(
                             .unwrap_or(&mapping.source)
                     });
                     let link_path = bin_dir.join(link_name);
+                    if !claimed.insert(link_path.clone()) {
+                        warn!(
+                            link = %link_path.display(),
+                            source = %source_path.display(),
+                            "skipping a second source for the same command"
+                        );
+                        continue;
+                    }
 
                     set_executable(&source_path)?;
 
