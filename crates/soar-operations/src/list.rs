@@ -60,12 +60,17 @@ pub async fn list_packages(
     // One row per package, not per version. A repository publishes every
     // version it knows, and listing them all buries the packages themselves.
     let mut newest: HashMap<(String, String, Option<String>), ListingWithRepo> = HashMap::new();
+    let mut counts: HashMap<(String, String, Option<String>), Vec<String>> = HashMap::new();
     for entry in packages {
         let key = (
             entry.repo_name.clone(),
             entry.pkg.pkg_name.clone(),
             entry.pkg.pkg_id.clone(),
         );
+        counts
+            .entry(key.clone())
+            .or_default()
+            .push(entry.pkg.version.clone());
         match newest.get(&key) {
             Some(kept) if compare_versions(&kept.pkg.version, &entry.pkg.version).is_ge() => {}
             _ => {
@@ -110,6 +115,22 @@ pub async fn list_packages(
         .map(|entry| {
             let key = (entry.repo_name.clone(), entry.pkg.pkg_name.clone());
             let installed = installed_pkgs.get(&key).copied().unwrap_or(false);
+            let other_versions = counts
+                .get(&(
+                    entry.repo_name.clone(),
+                    entry.pkg.pkg_name.clone(),
+                    entry.pkg.pkg_id.clone(),
+                ))
+                .map(|all| {
+                    let mut rest: Vec<String> = all
+                        .iter()
+                        .filter(|v| **v != entry.pkg.version)
+                        .cloned()
+                        .collect();
+                    rest.sort_by(|a, b| compare_versions(b, a));
+                    rest
+                })
+                .unwrap_or_default();
 
             // Build a minimal Package for the entry
             let package = Package {
@@ -123,6 +144,7 @@ pub async fn list_packages(
             PackageListEntry {
                 package,
                 installed,
+                other_versions,
             }
         })
         .collect();

@@ -53,11 +53,19 @@ pub async fn search_packages(
             version = package.version,
             description = package.description,
             size = package.ghcr_size.or(package.size),
-            "[{}] {}:{} | {} | {} - {} ({})",
+            "[{}] {}:{} | {}{} | {} - {} ({})",
             state_icon,
             Colored(Blue, &package.pkg_name),
             Colored(Green, &package.repo_name),
             Colored(LightRed, &package.version),
+            if entry.other_versions.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " {}",
+                    Colored(Yellow, format!("({})", entry.other_versions.join(", ")))
+                )
+            },
             package
                 .pkg_type
                 .as_ref()
@@ -296,11 +304,20 @@ pub async fn list_packages(ctx: &SoarContext, repo_name: Option<String>) -> Soar
             repo_name = package.repo_name,
             pkg_type = package.pkg_type,
             version = package.version,
-            "[{}] {}:{} | {} | {}",
+            "[{}] {}:{} | {}{} | {}",
             state_icon,
             Colored(Blue, &package.pkg_name),
             Colored(Cyan, &package.repo_name),
             Colored(LightRed, &package.version),
+            // only the newest is listed; name the others rather than counting them
+            if entry.other_versions.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " {}",
+                    Colored(Yellow, format!("({})", entry.other_versions.join(", ")))
+                )
+            },
             package
                 .pkg_type
                 .as_ref()

@@ -132,6 +132,8 @@ pub struct SearchResult {
 pub struct SearchEntry {
     pub package: Package,
     pub installed: bool,
+    /// The other versions the repository publishes, newest first.
+    pub other_versions: Vec<String>,
 }
 
 pub struct PackageListResult {
@@ -142,6 +144,9 @@ pub struct PackageListResult {
 pub struct PackageListEntry {
     pub package: Package,
     pub installed: bool,
+    /// The other versions the repository publishes, newest first. Only the
+    /// newest is listed, so these say what is not being shown.
+    pub other_versions: Vec<String>,
 }
 
 pub struct InstalledListResult {

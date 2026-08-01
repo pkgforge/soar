@@ -59,6 +59,7 @@ pub async fn search_packages(
     // One row per package: a result repeated once per published version says
     // nothing extra and pushes real matches off the list.
     let mut newest: HashMap<(String, String, Option<String>), Package> = HashMap::new();
+    let mut counts: HashMap<(String, String, Option<String>), Vec<String>> = HashMap::new();
     let mut order: Vec<(String, String, Option<String>)> = Vec::new();
     for pkg in packages {
         let key = (
@@ -66,6 +67,10 @@ pub async fn search_packages(
             pkg.pkg_name.clone(),
             pkg.pkg_id.clone(),
         );
+        counts
+            .entry(key.clone())
+            .or_default()
+            .push(pkg.version.clone());
         match newest.get(&key) {
             Some(kept) if compare_versions(&kept.version, &pkg.version).is_ge() => {}
             _ => {
@@ -112,9 +117,26 @@ pub async fn search_packages(
         .map(|package| {
             let key = (package.repo_name.clone(), package.pkg_name.clone());
             let installed = installed_pkgs.get(&key).copied().unwrap_or(false);
+            let other_versions = counts
+                .get(&(
+                    package.repo_name.clone(),
+                    package.pkg_name.clone(),
+                    package.pkg_id.clone(),
+                ))
+                .map(|all| {
+                    let mut rest: Vec<String> = all
+                        .iter()
+                        .filter(|v| **v != package.version)
+                        .cloned()
+                        .collect();
+                    rest.sort_by(|a, b| compare_versions(b, a));
+                    rest
+                })
+                .unwrap_or_default();
             SearchEntry {
                 package,
                 installed,
+                other_versions,
             }
         })
         .collect();
