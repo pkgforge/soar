@@ -209,6 +209,7 @@ impl CoreRepository {
         repo_name: &str,
         pkg_name: &str,
         pkg_id: Option<&str>,
+        pkg_family: Option<&str>,
         version: &str,
     ) -> QueryResult<Option<InstalledPackageWithPortable>> {
         // The boxed predicate is typed for the bare table, so the join builds
@@ -222,6 +223,10 @@ impl CoreRepository {
         query = match pkg_id {
             Some(id) => query.filter(packages::pkg_id.eq(id.to_string())),
             None => query.filter(packages::pkg_id.is_null()),
+        };
+        query = match pkg_family {
+            Some(family) => query.filter(packages::pkg_family.eq(family.to_string())),
+            None => query.filter(packages::pkg_family.is_null()),
         };
         let result: Option<(Package, Option<PortablePackage>)> = query
             .select((Package::as_select(), Option::<PortablePackage>::as_select()))
@@ -286,8 +291,12 @@ impl CoreRepository {
         }
 
         query
+            // NULLs are collapsed first: concatenating one yields NULL, and
+            // COUNT(DISTINCT) skips it, so every package without an id went
+            // uncounted.
             .select(sql::<diesel::sql_types::BigInt>(
-                "COUNT(DISTINCT pkg_id || '\x00' || pkg_name)",
+                "COUNT(DISTINCT COALESCE(pkg_id, '') || '\x00' \
+                 || COALESCE(pkg_family, '') || '\x00' || pkg_name)",
             ))
             .first(conn)
     }
@@ -347,12 +356,19 @@ impl CoreRepository {
         conn: &mut SqliteConnection,
         pkg_name: &str,
         exclude_pkg_id: Option<&str>,
+        pkg_family: Option<&str>,
         exclude_version: &str,
     ) -> QueryResult<Vec<InstalledPackageWithPortable>> {
-        let query = packages::table
+        let mut query = packages::table
             .left_join(portable_package::table)
             .filter(packages::pkg_name.eq(pkg_name))
             .into_boxed();
+        // Same family only, matching how old versions are found: another
+        // family sharing the name is a different package, not an alternate.
+        query = match pkg_family {
+            Some(family) => query.filter(packages::pkg_family.eq(family.to_string())),
+            None => query.filter(packages::pkg_family.is_null()),
+        };
 
         // An id-less row differs from one that carries an id, and SQL answers
         // `pkg_id != ?` with NULL rather than true in both directions, so

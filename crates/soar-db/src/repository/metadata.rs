@@ -306,7 +306,9 @@ impl MetadataRepository {
         conn: &mut SqliteConnection,
         pkg_id: &str,
     ) -> QueryResult<Option<String>> {
-        let query = "SELECT pkg_id FROM packages WHERE EXISTS \
+        // Only rows that have an id: the projection cannot hold a NULL, and a
+        // package without an id has nothing to answer with anyway.
+        let query = "SELECT pkg_id FROM packages WHERE pkg_id IS NOT NULL AND EXISTS \
                      (SELECT 1 FROM json_each(replaces) WHERE json_each.value = ?) LIMIT 1";
 
         diesel::sql_query(query)

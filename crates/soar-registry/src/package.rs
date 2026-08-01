@@ -133,7 +133,7 @@ pub struct RemotePackage {
     /// Optional. It exists to disambiguate identically-named packages within
     /// one repository; where names are already unique a repository can omit
     /// it, and the name is used instead.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_is_none")]
     pub pkg_id: Option<String>,
     pub pkg_name: String,
 
