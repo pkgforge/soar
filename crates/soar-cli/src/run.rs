@@ -33,10 +33,11 @@ pub async fn run_package(
                 return Ok(0);
             };
 
-            // Re-run with selected package
+            // Run what was chosen. Resolving it by name again would pose
+            // the same ambiguous question the choice just answered.
             let result = run::prepare_run(
                 ctx,
-                package_name,
+                &format!("{}@{}:{}", pkg.pkg_name, pkg.version, pkg.repo_name),
                 Some(&pkg.repo_name),
                 pkg.pkg_id.as_deref(),
                 no_verify,

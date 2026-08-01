@@ -163,6 +163,20 @@ pub async fn prepare_run(
         )));
     }
 
+    // A laid-out package keeps its binary, not the artifact it came from, so a
+    // cache hit is that binary. The directory is content-addressed, which is
+    // what makes finding it there proof enough.
+    let laid_out = package.files.as_deref().and_then(|files| {
+        files.iter().find_map(|f| {
+            f.to.strip_prefix("bin/")
+                .filter(|rest| !rest.contains('/'))
+                .map(|_| cache_dir.join(&f.to))
+        })
+    });
+    if let Some(binary) = laid_out.as_ref().filter(|p| p.exists()) {
+        return Ok(PrepareRunResult::Ready(binary.clone()));
+    }
+
     // Reuse a cached binary only after re-verifying it against the expected
     // checksum, so a stale or tampered cache entry is never executed blindly.
     if output_path.exists() {
