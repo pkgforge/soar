@@ -60,6 +60,57 @@ pub struct ResolvedRelease {
 }
 
 impl ReleaseSource {
+    /// The releases a download URL came out of, where its host publishes any.
+    ///
+    /// A forge download URL names the project, the release it belongs to and
+    /// the asset taken from it, which is everything needed to ask for the
+    /// current release later. A URL from anywhere else answers nothing, and
+    /// is reported as such rather than guessed at.
+    pub fn from_download_url(url: &str) -> Option<Self> {
+        let parsed = url::Url::parse(url).ok()?;
+        let host = parsed.host_str()?;
+        let decoded: Vec<String> = parsed
+            .path_segments()?
+            .map(|s| {
+                percent_encoding::percent_decode_str(s)
+                    .decode_utf8_lossy()
+                    .to_string()
+            })
+            .collect();
+        let segments: Vec<&str> = decoded.iter().map(String::as_str).collect();
+
+        // github.com/{owner}/{repo}/releases/download/{tag}/{asset}
+        // gitlab.com/{owner}/{repo}/-/releases/{tag}/downloads/{asset}
+        let (is_github, owner, repo, tag, asset) = match segments.as_slice() {
+            [owner, repo, "releases", "download", tag, asset] if host == "github.com" => {
+                (true, owner, repo, tag, asset)
+            }
+            [owner, repo, "-", "releases", tag, "downloads", asset] if host == "gitlab.com" => {
+                (false, owner, repo, tag, asset)
+            }
+            _ => return None,
+        };
+
+        let source = if is_github {
+            Self::GitHub {
+                repo: format!("{owner}/{repo}"),
+                asset_pattern: asset_glob(tag, asset),
+                include_prerelease: false,
+                tag_pattern: None,
+                arch_map: None,
+            }
+        } else {
+            Self::GitLab {
+                repo: format!("{owner}/{repo}"),
+                asset_pattern: asset_glob(tag, asset),
+                include_prerelease: false,
+                tag_pattern: None,
+                arch_map: None,
+            }
+        };
+        Some(source)
+    }
+
     /// Create a ReleaseSource from a resolved package configuration.
     ///
     /// Returns `None` if the package doesn't have github/gitlab source configured.
@@ -149,6 +200,25 @@ fn matches_tag_pattern(tag: &str, pattern: Option<&str>) -> bool {
 }
 
 /// Resolve a GitHub release source.
+/// A glob matching this asset across releases.
+///
+/// An asset is named after the release it belongs to, so the name as-is only
+/// ever matches the release it came from. Taking the version out of it leaves
+/// what stays the same from one release to the next, which is the platform and
+/// the extension: `tool-1.2.3-linux-x86_64.tar.gz` from tag `v1.2.3` becomes
+/// `tool-*-linux-x86_64.tar.gz`.
+fn asset_glob(tag: &str, asset: &str) -> String {
+    // Publishers append build metadata to the tag that the asset does not
+    // carry, and a leading `v` that it usually does not either.
+    let version = tag.split(['@', '+']).next().unwrap_or(tag);
+    for candidate in [version, version.strip_prefix('v').unwrap_or(version)] {
+        if !candidate.is_empty() && asset.contains(candidate) {
+            return asset.replace(candidate, "*");
+        }
+    }
+    asset.to_string()
+}
+
 fn resolve_github(
     repo: &str,
     asset_pattern: &str,
@@ -424,5 +494,59 @@ mod tests {
         };
 
         assert!(ReleaseSource::from_resolved(&pkg).is_none());
+    }
+
+    #[test]
+    fn a_github_download_names_the_releases_it_came_from() {
+        // The tag is percent-encoded in the path, as one carrying build
+        // metadata has to be.
+        let source = ReleaseSource::from_download_url(
+            "https://github.com/owner/repo/releases/download/\
+             1.2.3-abcdef%402026-04-01_1775061744/\
+             tool-1.2.3-abcdef-linux-x86_64.AppImage",
+        )
+        .unwrap();
+        match source {
+            ReleaseSource::GitHub {
+                repo,
+                asset_pattern,
+                ..
+            } => {
+                assert_eq!(repo, "owner/repo");
+                assert_eq!(asset_pattern, "tool-*-linux-x86_64.AppImage");
+            }
+            other => panic!("expected GitHub, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_version_comes_out_of_the_asset_name() {
+        // The tag carries build metadata the asset does not.
+        assert_eq!(
+            asset_glob(
+                "1.2.3-1@2026-08-01_1785586116",
+                "tool-1.2.3-1-linux-x86_64.AppImage"
+            ),
+            "tool-*-linux-x86_64.AppImage"
+        );
+        // A tag the asset spells without its `v`.
+        assert_eq!(
+            asset_glob("v1.2.3", "tool-1.2.3-x86_64-unknown-linux-musl.tar.gz"),
+            "tool-*-x86_64-unknown-linux-musl.tar.gz"
+        );
+        // Nothing of the tag in the name leaves the name alone.
+        assert_eq!(
+            asset_glob("nightly", "tool-x86_64.AppImage"),
+            "tool-x86_64.AppImage"
+        );
+    }
+
+    #[test]
+    fn a_url_no_forge_publishes_releases_for_answers_nothing() {
+        assert!(ReleaseSource::from_download_url("https://example.com/app.AppImage").is_none());
+        assert!(ReleaseSource::from_download_url(
+            "https://github.com/owner/repo/archive/refs/tags/v1.0.tar.gz"
+        )
+        .is_none());
     }
 }

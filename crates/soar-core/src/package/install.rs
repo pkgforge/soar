@@ -1429,7 +1429,12 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(&self.config.get_desktop_path()?, &mut remove_action)?;
+                // A directory that was never created holds none of our links,
+                // which is not a reason to fail an install that worked.
+                let desktop_path = self.config.get_desktop_path()?;
+                if desktop_path.is_dir() {
+                    walk_dir(&desktop_path, &mut remove_action)?;
+                }
 
                 let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                     if let Ok(real_path) = fs::read_link(path) {
@@ -1439,7 +1444,10 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(self.config.get_icons_path(), &mut remove_action)?;
+                let icons_path = self.config.get_icons_path();
+                if icons_path.is_dir() {
+                    walk_dir(&icons_path, &mut remove_action)?;
+                }
 
                 if let Some(ref provides) = alt_pkg.provides {
                     let bin_path = self.config.get_bin_path()?;

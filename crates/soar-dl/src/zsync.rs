@@ -59,6 +59,15 @@ impl From<ControlFile> for ZsyncTarget {
     }
 }
 
+/// The zsync feed published beside an artifact, where there is one.
+///
+/// A publisher that offers zsync puts the control file next to the artifact
+/// under the same name, so asking for it is how to find out.
+pub fn feed_beside(artifact_url: &str) -> Option<String> {
+    let feed = format!("{artifact_url}.zsync");
+    crate::http::Http::head(&feed).ok().map(|_| feed)
+}
+
 /// Read the control file at `url` without downloading the artifact.
 pub fn fetch_target(url: &str) -> Result<ZsyncTarget, DownloadError> {
     let http = HttpClient::new();

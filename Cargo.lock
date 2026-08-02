@@ -2271,6 +2271,7 @@ dependencies = [
  "libsqlite3-sys",
  "miette",
  "nix",
+ "percent-encoding",
  "regex",
  "serde",
  "serde_json",

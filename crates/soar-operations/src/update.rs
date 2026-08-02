@@ -220,7 +220,7 @@ fn check_local_update(
     let Some(resolved) = resolved else {
         // Nothing declares this package, but an install from a URL records
         // where it came from, which is a source in its own right.
-        if pkg.update_info.is_some() {
+        if pkg.update_info.is_some() || pkg.download_url.is_some() {
             return check_recorded_source(pkg, ctx);
         }
         ctx.events().emit(SoarEvent::UpdateCheck {
@@ -396,6 +396,126 @@ fn check_recorded_source(
     pkg: &InstalledPackage,
     ctx: &SoarContext,
 ) -> SoarResult<Option<UpdateInfo>> {
+    // The feed is the publisher's own statement of how this package updates,
+    // which may deliberately be something other than the newest release, so it
+    // is asked first. Where it cannot answer at all, the releases the download
+    // came from are the next best authority.
+    match check_update_feed(pkg, ctx)? {
+        FeedOutcome::Update(update) => return Ok(Some(*update)),
+        FeedOutcome::UpToDate => return Ok(None),
+        FeedOutcome::Unusable => {}
+    }
+
+    if let Some(source) = pkg
+        .download_url
+        .as_deref()
+        .and_then(ReleaseSource::from_download_url)
+    {
+        return check_release(pkg, source, ctx);
+    }
+    Ok(None)
+}
+
+/// What an artifact's own update feed had to say.
+enum FeedOutcome {
+    Update(Box<UpdateInfo>),
+    UpToDate,
+    /// No feed, or one that could not be resolved or read. A publisher who
+    /// deletes the tag their feed names leaves nothing to follow, and the
+    /// package should not be stuck on whatever build it has.
+    Unusable,
+}
+
+/// Check a package against the releases its download URL came from.
+fn check_release(
+    pkg: &InstalledPackage,
+    source: ReleaseSource,
+    ctx: &SoarContext,
+) -> SoarResult<Option<UpdateInfo>> {
+    let release = match source.resolve() {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(pkg_name = pkg.pkg_name, error = %e, "could not check the release source");
+            return Ok(None);
+        }
+    };
+
+    // Tags carry build metadata after an `@` that the artifact itself does
+    // not, and showing it as the version makes every listing unreadable.
+    let new_version = release
+        .version
+        .split('@')
+        .next()
+        .unwrap_or(&release.version);
+    let new_version = new_version
+        .strip_prefix('v')
+        .unwrap_or(new_version)
+        .to_string();
+    let installed = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
+    if new_version == installed {
+        ctx.events().emit(SoarEvent::UpdateCheck {
+            pkg_name: pkg.pkg_name.clone(),
+            status: UpdateCheckStatus::UpToDate {
+                version: pkg.version.clone(),
+            },
+        });
+        return Ok(None);
+    }
+
+    ctx.events().emit(SoarEvent::UpdateCheck {
+        pkg_name: pkg.pkg_name.clone(),
+        status: UpdateCheckStatus::Available {
+            current_version: pkg.version.clone(),
+            new_version: new_version.clone(),
+        },
+    });
+
+    let mut updated = UrlPackage::from_remote(
+        &release.download_url,
+        Some(&pkg.pkg_name),
+        Some(&new_version),
+        pkg.pkg_type.as_deref(),
+        pkg.pkg_id.as_deref(),
+    )?;
+    updated.size = release.size;
+
+    // A release that publishes a feed beside the artifact can be fetched as a
+    // delta against the copy already installed.
+    let artifact = Path::new(&pkg.installed_path).join(&pkg.pkg_name);
+    let zsync = zsync::feed_beside(&release.download_url).map(|url| {
+        ZsyncSeed {
+            url,
+            seed: artifact,
+        }
+    });
+
+    Ok(Some(UpdateInfo {
+        pkg_name: pkg.pkg_name.clone(),
+        repo_name: pkg.repo_name.clone(),
+        current_version: pkg.version.clone(),
+        new_version,
+        target: InstallTarget {
+            package: updated.to_package(),
+            existing_install: Some(pkg.clone()),
+            pinned: pkg.pinned,
+            profile: Some(pkg.profile.clone()),
+            portable: pkg.portable_path.clone(),
+            portable_home: pkg.portable_home.clone(),
+            portable_config: pkg.portable_config.clone(),
+            portable_share: pkg.portable_share.clone(),
+            portable_cache: pkg.portable_cache.clone(),
+            zsync,
+            ..Default::default()
+        },
+        update_toml_url: None,
+    }))
+}
+
+/// Check a package against the update feed its own artifact carries.
+///
+/// The feed describes the current artifact block by block, so whether it
+/// differs from the installed copy is answered by its checksum alone.
+fn check_update_feed(pkg: &InstalledPackage, ctx: &SoarContext) -> SoarResult<FeedOutcome> {
     let up_to_date = |version: &str| {
         ctx.events().emit(SoarEvent::UpdateCheck {
             pkg_name: pkg.pkg_name.clone(),
@@ -409,26 +529,26 @@ fn check_recorded_source(
 
     let raw = pkg.update_info.as_deref().unwrap_or_default();
     let Some(info) = ArtifactUpdateInfo::parse(raw) else {
-        return Ok(None);
+        return Ok(FeedOutcome::Unusable);
     };
     let zsync_url = match info.zsync_url() {
         Ok(url) => url,
         Err(e) => {
             warn!(pkg_name = pkg.pkg_name, error = %e, "could not resolve the update feed");
-            return Ok(None);
+            return Ok(FeedOutcome::Unusable);
         }
     };
     let target = match zsync::fetch_target(&zsync_url) {
         Ok(t) => t,
         Err(e) => {
             warn!(pkg_name = pkg.pkg_name, error = %e, "could not read the update feed");
-            return Ok(None);
+            return Ok(FeedOutcome::Unusable);
         }
     };
 
     if !zsync::differs_from(&target, &artifact) {
         up_to_date(&pkg.version);
-        return Ok(None);
+        return Ok(FeedOutcome::UpToDate);
     }
 
     // The checksum already settled that this is a different artifact, so the
@@ -462,7 +582,7 @@ fn check_recorded_source(
     updated.size = Some(target.length);
     let package = updated.to_package();
 
-    Ok(Some(UpdateInfo {
+    Ok(FeedOutcome::Update(Box::new(UpdateInfo {
         pkg_name: pkg.pkg_name.clone(),
         repo_name: pkg.repo_name.clone(),
         current_version: pkg.version.clone(),
@@ -484,7 +604,7 @@ fn check_recorded_source(
             ..Default::default()
         },
         update_toml_url: None,
-    }))
+    })))
 }
 
 fn has_update_source(resolved: &ResolvedPackage) -> bool {
