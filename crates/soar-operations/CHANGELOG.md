@@ -1,4 +1,25 @@
 
+## [0.4.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.3.2...soar-operations-v0.4.0) - 2026-08-02
+
+### ⛰️  Features
+
+- *(remove)* Accept the URL a package was installed from - ([cb95df8](https://github.com/pkgforge/soar/commit/cb95df8a081d4d363ec1c9fde3b6e207dc3ab218))
+- *(update)* Accept the URL a package was installed from - ([5434005](https://github.com/pkgforge/soar/commit/5434005c15c3a49ee91a37456adf5dc064a6eef3))
+- *(update)* Follow a release source when no feed is declared - ([178b87a](https://github.com/pkgforge/soar/commit/178b87a48b34dfab3af4f986569c6fb3ec8d1244))
+- *(update)* Update URL-installed AppImages over zsync - ([509df1f](https://github.com/pkgforge/soar/commit/509df1fb1ca0d0e50d12f6eee1652d368acb71ba))
+- [**breaking**] Consume the declarative index, drop the pkg_id requirement ([#186](https://github.com/pkgforge/soar/pull/186)) - ([3a35ad7](https://github.com/pkgforge/soar/commit/3a35ad7774e7ac3d8c055e4257cb3e9dff5be2fe))
+
+### 🐛 Bug Fixes
+
+- *(remove)* Drop '#all', which duplicated a bare name - ([28fc0fc](https://github.com/pkgforge/soar/commit/28fc0fc2c26af6401275856224d9691044050733))
+- *(update)* Say why a source check failed - ([64e115e](https://github.com/pkgforge/soar/commit/64e115e70895839c57b94b2ee3d9d58ef7923ed8))
+- *(update)* Trust the checksum, not the version label - ([e05092d](https://github.com/pkgforge/soar/commit/e05092db24e9ff4a60c65a2e368d5f92fc8e9e0d))
+
+### 📚 Documentation
+
+- Cover forge tokens and rate limits - ([ccdd34a](https://github.com/pkgforge/soar/commit/ccdd34ad3f09a90994b85e917a45885fd1c3e413))
+- Refresh the readme and contributing guidelines - ([5ecd397](https://github.com/pkgforge/soar/commit/5ecd397e853d7d601677766ccf73dc68c063f015))
+
 ## [0.3.2](https://github.com/pkgforge/soar/compare/soar-operations-v0.3.1...soar-operations-v0.3.2) - 2026-07-16
 
 ### 🐛 Bug Fixes
