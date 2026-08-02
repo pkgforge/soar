@@ -52,6 +52,24 @@ pub fn narrow_by_pkg_id(candidates: Vec<Package>, pkg_id: Option<&str>) -> Vec<P
     candidates.into_iter().filter(matches_id).collect()
 }
 
+/// Narrow candidates to those carrying `pkg_family`, unless none of them do.
+///
+/// The same reasoning as [`narrow_by_pkg_id`]: a repository that stopped
+/// publishing families leaves every install recorded under one unable to match
+/// anything, which would report those packages as up to date for good. Where
+/// the repository still publishes families, one that differs is a different
+/// package and has to be excluded.
+pub fn narrow_by_pkg_family(candidates: Vec<Package>, pkg_family: Option<&str>) -> Vec<Package> {
+    let Some(family) = pkg_family else {
+        return candidates;
+    };
+    let matches_family = |p: &Package| p.pkg_family.as_deref() == Some(family);
+    if !candidates.iter().any(matches_family) {
+        return candidates;
+    }
+    candidates.into_iter().filter(matches_family).collect()
+}
+
 /// Repository for package metadata operations.
 pub struct MetadataRepository;
 
@@ -474,16 +492,11 @@ impl MetadataRepository {
         // Ordering cannot be left to SQL: a string comparison puts 10 below 9
         // and the rebuild suffix in 1.14.0-1 below 1.14.0. Candidates are
         // loaded and compared segment-wise instead.
-        let mut query = packages::table
-            .into_boxed()
-            .filter(packages::pkg_name.eq(pkg_name));
-        // Narrowed by family only when the install records one. An older
-        // install has none, and demanding a match would report it as up to
-        // date forever.
-        if let Some(family) = pkg_family {
-            query = query.filter(packages::pkg_family.eq(family.to_string()));
-        }
-        let candidates = narrow_by_pkg_id(query.select(Package::as_select()).load(conn)?, pkg_id);
+        let candidates = packages::table
+            .filter(packages::pkg_name.eq(pkg_name))
+            .select(Package::as_select())
+            .load(conn)?;
+        let candidates = narrow_by_pkg_family(narrow_by_pkg_id(candidates, pkg_id), pkg_family);
 
         let result: QueryResult<Option<Package>> = Ok(candidates
             .into_iter()
