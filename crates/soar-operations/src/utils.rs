@@ -10,12 +10,19 @@ use soar_config::{
     packages::{BinaryMapping, PackageHooks, PackagesConfig, SandboxConfig},
 };
 use soar_core::{
-    database::models::Package,
+    database::{
+        connection::DieselDatabase,
+        models::{InstalledPackage, Package},
+    },
     error::{ErrorContext, SoarError},
+    package::{local::LocalPackage, url::UrlPackage},
     utils::{shared_link_targets, substitute_placeholders},
     SoarResult,
 };
-use soar_db::models::types::{PackageFile, PackageProvide};
+use soar_db::{
+    models::types::{PackageFile, PackageProvide},
+    repository::core::{CoreRepository, SortDirection},
+};
 use soar_utils::fs::is_elf;
 use tracing::{debug, warn};
 
@@ -525,6 +532,64 @@ pub fn is_installed(
             rows.iter()
                 .any(|(family, installed)| *installed && family.as_deref() == pkg_family)
         })
+}
+
+/// The installed packages a URL or local path refers to.
+///
+/// A package installed from a URL is named by that URL as readily as by the
+/// name derived from it, and the URL is what the caller has. An update
+/// replaces the recorded source with the one it fetched, so the URL a package
+/// was installed from stops matching it; it still names the package it
+/// produced, which is what the caller means by it.
+pub fn installed_from_source(
+    diesel_db: &DieselDatabase,
+    source: &str,
+) -> SoarResult<Vec<InstalledPackage>> {
+    let installed: Vec<InstalledPackage> = diesel_db
+        .with_conn(|conn| CoreRepository::find_by_download_url(conn, source))?
+        .into_iter()
+        .map(Into::into)
+        .filter(|ip: &InstalledPackage| ip.is_installed)
+        .collect();
+    if !installed.is_empty() {
+        return Ok(installed);
+    }
+
+    let Some((name, family)) = package_from_source(source) else {
+        return Ok(Vec::new());
+    };
+    Ok(diesel_db
+        .with_conn(|conn| {
+            CoreRepository::list_filtered(
+                conn,
+                Some("local"),
+                Some(&name),
+                None,
+                None,
+                Some(true),
+                None,
+                None,
+                Some(SortDirection::Asc),
+            )
+        })?
+        .into_iter()
+        .map(Into::into)
+        .filter(|ip: &InstalledPackage| ip.pkg_family.as_deref() == family.as_deref())
+        .collect())
+}
+
+/// The package name and family a URL or local path installs as.
+fn package_from_source(source: &str) -> Option<(String, Option<String>)> {
+    let package = if LocalPackage::is_local(source) {
+        LocalPackage::from_path(source, None, None, None, None)
+            .ok()?
+            .to_package()
+    } else {
+        UrlPackage::from_remote(source, None, None, None, None)
+            .ok()?
+            .to_package()
+    };
+    Some((package.pkg_name, package.pkg_family))
 }
 
 #[cfg(test)]

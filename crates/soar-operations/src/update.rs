@@ -8,6 +8,7 @@ use soar_core::{
     },
     package::{
         install::{InstallTarget, ZsyncSeed},
+        local::LocalPackage,
         query::PackageQuery,
         release_source::{run_version_command, ReleaseSource},
         update::remove_old_versions,
@@ -26,8 +27,8 @@ use soar_events::{SoarEvent, UpdateCheckStatus, UpdateCleanupStage};
 use tracing::{debug, warn};
 
 use crate::{
-    install::perform_installation, progress::next_op_id, InstallOptions, SoarContext, UpdateInfo,
-    UpdateReport, UrlUpdateInfo,
+    install::perform_installation, progress::next_op_id, utils::installed_from_source,
+    InstallOptions, SoarContext, UpdateInfo, UpdateReport, UrlUpdateInfo,
 };
 
 /// Check for available updates.
@@ -52,6 +53,17 @@ pub async fn check_updates(
 
     if let Some(packages) = packages {
         for package in packages {
+            // A package installed from a URL is named by that URL as readily
+            // as by the name derived from it.
+            if UrlPackage::is_remote(package) || LocalPackage::is_local(package) {
+                for pkg in installed_from_source(&diesel_db, package)? {
+                    if let Some(update_info) = check_local_update(&pkg, &resolved_packages, ctx)? {
+                        updates.push(update_info);
+                    }
+                }
+                continue;
+            }
+
             let query = PackageQuery::try_from(package.as_str())?;
 
             let installed_pkgs: Vec<InstalledPackage> = diesel_db

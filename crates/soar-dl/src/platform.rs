@@ -148,8 +148,15 @@ where
     let url = format!("{}{}", base, path);
     let mut req = SHARED_AGENT.get(&url);
 
-    if let Ok(token) = env::var(token_env[0]).or_else(|_| env::var(token_env[1])) {
-        req = req.header(AUTHORIZATION, &format!("Bearer {}", token.trim()));
+    // An empty variable is set but says nothing, and sending it as a bearer
+    // token earns a 401 on every request rather than the anonymous rate limit.
+    let token = env::var(token_env[0])
+        .or_else(|_| env::var(token_env[1]))
+        .ok()
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty());
+    if let Some(token) = token {
+        req = req.header(AUTHORIZATION, &format!("Bearer {token}"));
     }
 
     let mut resp = req.call()?;
