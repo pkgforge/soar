@@ -70,11 +70,13 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 | **Fast & Efficient** | Minimal overhead with parallel downloads and efficient package operations. |
 
 
-## 🔑 GitHub Token
+## 🔑 Forge Tokens
 
-Installing or updating from a GitHub release uses the GitHub API, which allows
-60 requests an hour unauthenticated. Setting `GITHUB_TOKEN` or `GH_TOKEN` raises
-that to 5,000, and is worth doing if you track several packages this way.
+Installing or updating from a release uses that forge's API, which is rate
+limited. GitHub's limit of 60 requests an hour is easy to reach, so setting
+`GITHUB_TOKEN` or `GH_TOKEN` is worth doing if you track several packages that
+way. GitLab counts per minute and is rarely a problem, but honours
+`GITLAB_TOKEN` and `GL_TOKEN` all the same.
 
 ## 🤝 Contributing
 

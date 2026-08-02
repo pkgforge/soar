@@ -109,8 +109,10 @@ A feed that cannot be resolved at all, because the tag it names was deleted,
 falls through to the release source rather than leaving the package stuck.
 
 ::: tip
-Checking a release uses the GitHub API, which allows 60 requests an hour
-unauthenticated. Set `GITHUB_TOKEN` or `GH_TOKEN` to raise that to 5,000.
+Checking a release uses the forge's API, which is rate limited. GitHub's limit
+of 60 requests an hour is the one you are likely to meet; setting
+`GITHUB_TOKEN` or `GH_TOKEN` raises it to 5,000. See
+[Forge Rate Limits](./configuration.md#forge-rate-limits).
 :::
 
 ### Delta Updates Over zsync
