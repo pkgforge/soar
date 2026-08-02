@@ -62,11 +62,19 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 |:--:|:--|
 | **Universal** | Single binary, no dependencies, works on any Unix-like system without superuser privileges. |
 | **Portable Formats** | Install static binaries, AppImages, and other self-contained archives with ease. |
-| **System Integration** | Automatically adds desktop entries and icons for a native feel. |
+| **System Integration** | Adds desktop entries and icons, and links manual pages and shell completions where your system already looks for them. |
+| **Install From Anywhere** | Install from a repository, a direct URL, or a local file. A package installed from a GitHub or GitLab release is then kept up to date from that release. |
+| **Delta Updates** | An AppImage advertising a zsync feed is updated by fetching only the parts that changed. |
 | **Repository Agnostic** | Works with any repository that provides compatible metadata. Use [official soarpkgs repo](https://github.com/pkgforge/soarpkgs), third-party sources, or [create your own](https://soar.qaidvoid.dev/configuration#custom-repository-support). |
 | **Security First** | Enforces security through checksums and signature verification for package installations. |
 | **Fast & Efficient** | Minimal overhead with parallel downloads and efficient package operations. |
 
+
+## 🔑 GitHub Token
+
+Installing or updating from a GitHub release uses the GitHub API, which allows
+60 requests an hour unauthenticated. Setting `GITHUB_TOKEN` or `GH_TOKEN` raises
+that to 5,000, and is worth doing if you track several packages this way.
 
 ## 🤝 Contributing
 
