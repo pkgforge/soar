@@ -67,29 +67,14 @@ impl ReleaseSource {
     /// current release later. A URL from anywhere else answers nothing, and
     /// is reported as such rather than guessed at.
     pub fn from_download_url(url: &str) -> Option<Self> {
-        let parsed = url::Url::parse(url).ok()?;
-        let host = parsed.host_str()?;
-        let decoded: Vec<String> = parsed
-            .path_segments()?
-            .map(|s| {
-                percent_encoding::percent_decode_str(s)
-                    .decode_utf8_lossy()
-                    .to_string()
-            })
-            .collect();
-        let segments: Vec<&str> = decoded.iter().map(String::as_str).collect();
-
-        // github.com/{owner}/{repo}/releases/download/{tag}/{asset}
-        // gitlab.com/{owner}/{repo}/-/releases/{tag}/downloads/{asset}
-        let (is_github, owner, repo, tag, asset) = match segments.as_slice() {
-            [owner, repo, "releases", "download", tag, asset] if host == "github.com" => {
-                (true, owner, repo, tag, asset)
-            }
-            [owner, repo, "-", "releases", tag, "downloads", asset] if host == "gitlab.com" => {
-                (false, owner, repo, tag, asset)
-            }
-            _ => return None,
-        };
+        let ReleaseDownload {
+            is_github,
+            owner,
+            repo,
+            tag,
+            asset,
+        } = ReleaseDownload::parse(url)?;
+        let (owner, repo, tag, asset) = (&owner, &repo, &tag, &asset);
 
         let source = if is_github {
             Self::GitHub {
@@ -200,6 +185,64 @@ fn matches_tag_pattern(tag: &str, pattern: Option<&str>) -> bool {
 }
 
 /// Resolve a GitHub release source.
+/// A download URL taken apart into the release it came from.
+struct ReleaseDownload {
+    is_github: bool,
+    owner: String,
+    repo: String,
+    tag: String,
+    asset: String,
+}
+
+impl ReleaseDownload {
+    fn parse(url: &str) -> Option<Self> {
+        let parsed = url::Url::parse(url).ok()?;
+        let host = parsed.host_str()?;
+        let decoded: Vec<String> = parsed
+            .path_segments()?
+            .map(|s| {
+                percent_encoding::percent_decode_str(s)
+                    .decode_utf8_lossy()
+                    .to_string()
+            })
+            .collect();
+        let segments: Vec<&str> = decoded.iter().map(String::as_str).collect();
+
+        // github.com/{owner}/{repo}/releases/download/{tag}/{asset}
+        // gitlab.com/{owner}/{repo}/-/releases/{tag}/downloads/{asset}
+        let (is_github, owner, repo, tag, asset) = match segments.as_slice() {
+            [owner, repo, "releases", "download", tag, asset] if host == "github.com" => {
+                (true, owner, repo, tag, asset)
+            }
+            [owner, repo, "-", "releases", tag, "downloads", asset] if host == "gitlab.com" => {
+                (false, owner, repo, tag, asset)
+            }
+            _ => return None,
+        };
+        Some(Self {
+            is_github,
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            tag: tag.to_string(),
+            asset: asset.to_string(),
+        })
+    }
+}
+
+/// The version a forge release URL states outright.
+///
+/// A release is tagged with its version, while the asset in it is named
+/// however the project chose: plenty carry no version at all, and one named
+/// for a platform can be mistaken for carrying one.
+pub fn version_from_release_url(url: &str) -> Option<String> {
+    let tag = ReleaseDownload::parse(url)?.tag;
+    // Tags carry build metadata after an `@` that no version should show.
+    let version = tag.split('@').next().unwrap_or(&tag);
+    let version = version.strip_prefix('v').unwrap_or(version);
+    (!version.is_empty() && version.starts_with(|c: char| c.is_ascii_digit()))
+        .then(|| version.to_string())
+}
+
 /// A glob matching this asset across releases.
 ///
 /// An asset is named after the release it belongs to, so the name as-is only

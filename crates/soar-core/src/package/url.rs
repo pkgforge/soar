@@ -226,9 +226,12 @@ impl UrlPackage {
             .map(|s| s.to_lowercase())
             .unwrap_or(extracted_name);
 
-        // Normalize version by stripping "v" prefix for consistency
+        // A release is tagged with its version, while the asset in it is named
+        // however the project chose, so the tag is preferred over the filename
+        // where the URL has one. An explicit override still wins over both.
         let version = version_override
             .map(|v| v.strip_prefix('v').unwrap_or(v).to_string())
+            .or_else(|| crate::package::release_source::version_from_release_url(url))
             .unwrap_or(extracted_version);
 
         let pkg_id = pkg_id_override.map(String::from);
@@ -344,9 +347,82 @@ pub(crate) fn detect_pkg_type(filename: &str) -> Option<String> {
     }
 }
 
+/// Architecture words, which are never a package name.
+///
+/// `x86_64` is why this exists: its trailing `64` reads as a version and its
+/// leading `x86` as part of the name, so `tool_x86_64-unknown-linux-musl`
+/// parses as `tool_x86` at version `64`.
+const ARCH_WORDS: &[&str] = &[
+    "x86_64", "ppc64le", "riscv64", "loong64", "aarch64", "armv7l", "armhf", "arm64", "amd64",
+    "s390x", "i686", "i386",
+];
+
+/// Platform words, which a package may legitimately be called.
+///
+/// These are only dropped once the name is over, which the version or the
+/// architecture marks the start of. A package called `windows` keeps its name;
+/// the `windows` in `tool-1.0-windows-x86_64` does not survive.
+const PLATFORM_WORDS: &[&str] = &[
+    "unknown", "anylinux", "linux", "darwin", "apple", "windows", "musl", "gnu", "static",
+];
+
+/// Drop the platform decoration from a filename, leaving what names the
+/// package and, where the name carries one, its version.
+fn strip_platform_words(base: &str) -> String {
+    // Separators are kept as they were: the name pattern joins words with `_`
+    // but not with `-`, so rejoining with either would rename the package.
+    let mut words: Vec<(String, char)> = Vec::new();
+    let mut current = String::new();
+    for ch in base.chars() {
+        if matches!(ch, '-' | '_') {
+            words.push((std::mem::take(&mut current), ch));
+        } else {
+            current.push(ch);
+        }
+    }
+    words.push((current, '\0'));
+
+    // Rejoin the architecture words a separator split apart, so `x86_64` is one
+    // word rather than `x86` followed by something that looks like a version.
+    let mut i = 0;
+    while i + 1 < words.len() {
+        let joined = format!("{}{}{}", words[i].0, words[i].1, words[i + 1].0);
+        if ARCH_WORDS.contains(&joined.to_lowercase().as_str()) {
+            let sep = words[i + 1].1;
+            words[i] = (joined, sep);
+            words.remove(i + 1);
+            continue;
+        }
+        i += 1;
+    }
+
+    let is_arch = |w: &str| ARCH_WORDS.contains(&w.to_lowercase().as_str());
+    let is_platform = |w: &str| PLATFORM_WORDS.contains(&w.to_lowercase().as_str());
+    // Everything up to the version or the architecture is the name, however
+    // much of it reads like a platform.
+    let name_ends = words
+        .iter()
+        .position(|(w, _)| is_arch(w) || w.starts_with(|c: char| c.is_ascii_digit()))
+        .unwrap_or(words.len());
+
+    let mut out = String::new();
+    for (index, (word, sep)) in words.iter().enumerate() {
+        if word.is_empty() || (index >= name_ends && (is_arch(word) || is_platform(word))) {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(if index == 0 { '-' } else { words[index - 1].1 });
+        }
+        out.push_str(word);
+        let _ = sep;
+    }
+    out
+}
+
 /// Parse filename to extract name and version.
 ///
 /// Handles common patterns like:
+///
 /// - `Name-Version-platform.ext`
 /// - `name_version.ext`
 /// - `name-version.ext`
@@ -370,7 +446,7 @@ pub fn parse_filename(filename: &str) -> (String, String) {
     });
 
     // Remove extension(s) for parsing
-    let base = remove_extensions(filename);
+    let base = strip_platform_words(&remove_extensions(filename));
 
     if let Some(caps) = re.captures(&base) {
         let name = caps
@@ -501,6 +577,27 @@ mod tests {
     }
 
     #[test]
+    fn a_package_may_be_named_after_a_platform() {
+        // The name runs until the version or the architecture, so a platform
+        // word inside it is part of the name.
+        let (name, ver) = parse_filename("windows-1.0-x86_64.AppImage");
+        assert_eq!(name, "windows");
+        assert_eq!(ver, "1.0");
+
+        let (name, ver) = parse_filename("something_linux-1.0-x86_64.tar.gz");
+        assert_eq!(name, "something_linux");
+        assert_eq!(ver, "1.0");
+
+        let (name, _) = parse_filename("linuxdeploy-x86_64.AppImage");
+        assert_eq!(name, "linuxdeploy");
+
+        // Past the version, the same words are decoration.
+        let (name, ver) = parse_filename("tool-1.0-windows-x86_64.zip");
+        assert_eq!(name, "tool");
+        assert_eq!(ver, "1.0");
+    }
+
+    #[test]
     fn test_parse_various_filenames() {
         // Standard pattern
         let (name, ver) = parse_filename("myapp-2.0.1-linux-arm64.AppImage");
@@ -518,6 +615,16 @@ mod tests {
         assert_eq!(ver, "1.2.3");
 
         // No version
+        // The platform words in an asset name are not a version, however much
+        // the trailing digits of one look like it.
+        let (name, ver) = parse_filename("eza_x86_64-unknown-linux-musl.tar.gz");
+        assert_eq!(name, "eza");
+        assert_eq!(ver, "unknown");
+
+        let (name, ver) = parse_filename("ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz");
+        assert_eq!(name, "ripgrep");
+        assert_eq!(ver, "15.2.0");
+
         let (name, ver) = parse_filename("simple.AppImage");
         assert_eq!(name, "simple");
         assert_eq!(ver, "unknown");
