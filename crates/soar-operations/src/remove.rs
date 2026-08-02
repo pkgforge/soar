@@ -1,7 +1,7 @@
 use soar_core::{
     database::models::InstalledPackage,
     error::SoarError,
-    package::{query::PackageQuery, remove::PackageRemover},
+    package::{local::LocalPackage, query::PackageQuery, remove::PackageRemover, url::UrlPackage},
     SoarResult,
 };
 use soar_db::repository::core::{CoreRepository, SortDirection};
@@ -32,6 +32,53 @@ pub fn resolve_removals(
     let mut results = Vec::with_capacity(packages.len());
 
     for package in packages {
+        // A package installed from a URL is named by that URL as readily as by
+        // the name derived from it, and the URL is what the caller has.
+        if UrlPackage::is_remote(package) || LocalPackage::is_local(package) {
+            let mut installed: Vec<InstalledPackage> = diesel_db
+                .with_conn(|conn| CoreRepository::find_by_download_url(conn, package))?
+                .into_iter()
+                .map(Into::into)
+                .filter(|ip: &InstalledPackage| ip.is_installed)
+                .collect();
+
+            // An update replaces the recorded source with the one it fetched,
+            // so the URL a package was installed from stops matching it. The
+            // URL still names the package it produced, which is what the
+            // caller means by it.
+            if installed.is_empty() {
+                if let Some((name, family)) = package_from_source(package) {
+                    installed = diesel_db
+                        .with_conn(|conn| {
+                            CoreRepository::list_filtered(
+                                conn,
+                                Some("local"),
+                                Some(&name),
+                                None,
+                                None,
+                                Some(true),
+                                None,
+                                None,
+                                Some(SortDirection::Asc),
+                            )
+                        })?
+                        .into_iter()
+                        .map(Into::into)
+                        .filter(|ip: &InstalledPackage| {
+                            ip.pkg_family.as_deref() == family.as_deref()
+                        })
+                        .collect();
+                }
+            }
+
+            if installed.is_empty() {
+                results.push(RemoveResolveResult::NotInstalled(package.clone()));
+            } else {
+                results.push(RemoveResolveResult::Resolved(installed));
+            }
+            continue;
+        }
+
         let query = PackageQuery::try_from(package.as_str())?;
 
         // --all flag: remove all installed variants matching the name
@@ -102,6 +149,20 @@ pub fn resolve_removals(
     }
 
     Ok(results)
+}
+
+/// The package name and family a URL or local path installs as.
+fn package_from_source(source: &str) -> Option<(String, Option<String>)> {
+    let package = if LocalPackage::is_local(source) {
+        LocalPackage::from_path(source, None, None, None, None)
+            .ok()?
+            .to_package()
+    } else {
+        UrlPackage::from_remote(source, None, None, None, None)
+            .ok()?
+            .to_package()
+    };
+    Some((package.pkg_name, package.pkg_family))
 }
 
 /// Remove installed packages. Emits events through the context's event sink.

@@ -794,6 +794,20 @@ impl CoreRepository {
         diesel::delete(query).execute(conn)
     }
 
+    /// Finds installs fetched from a given URL.
+    pub fn find_by_download_url(
+        conn: &mut SqliteConnection,
+        download_url: &str,
+    ) -> QueryResult<Vec<InstalledPackageWithPortable>> {
+        let results: Vec<(Package, Option<PortablePackage>)> = packages::table
+            .left_join(portable_package::table)
+            .filter(packages::download_url.eq(download_url))
+            .select((Package::as_select(), Option::<PortablePackage>::as_select()))
+            .load(conn)?;
+
+        Ok(results.into_iter().map(Into::into).collect())
+    }
+
     /// Record where an install came from, so it can be checked again later.
     ///
     /// Only local and URL installs have anything to record: a repository
