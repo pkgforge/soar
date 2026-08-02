@@ -431,16 +431,13 @@ fn check_recorded_source(
         return Ok(None);
     }
 
-    // The feed says what the artifact is, not what it is called. A published
-    // filename usually carries the version; where it does not, the build date
-    // orders releases well enough to tell one from the next.
+    // The checksum already settled that this is a different artifact, so the
+    // version is only a label for it. Rolling builds keep one version across
+    // every build, and refusing to update those would leave a package pinned
+    // to whichever build happened to be installed first.
     let new_version =
         update_info::version_from_feed(target.filename.as_deref(), target.mtime.as_deref())
             .unwrap_or_else(|| pkg.version.clone());
-    if new_version == pkg.version {
-        up_to_date(&pkg.version);
-        return Ok(None);
-    }
 
     ctx.events().emit(SoarEvent::UpdateCheck {
         pkg_name: pkg.pkg_name.clone(),

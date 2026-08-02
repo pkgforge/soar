@@ -931,7 +931,16 @@ async fn install_single_package(
         .into_iter()
         // The query cannot narrow by family, so it is compared here: two
         // packages sharing a name in one batch are still two packages.
-        .find(|ip| ip.is_installed && ip.pkg_family.as_deref() == pkg.pkg_family.as_deref());
+        //
+        // The row being replaced is not somebody else's install. A rolling
+        // build keeps one version across every build, so without this an
+        // update of one would look like an install that already happened.
+        .find(|ip| {
+            ip.is_installed
+                && ip.pkg_family.as_deref() == pkg.pkg_family.as_deref()
+                && Some(u64::from(ip.id.unsigned_abs()))
+                    != target.existing_install.as_ref().map(|e| e.id)
+        });
 
     if freshly_installed.is_some() {
         return Ok((PathBuf::new(), Vec::new(), Vec::new()));
