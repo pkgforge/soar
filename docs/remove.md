@@ -90,6 +90,18 @@ soar remove 7z bat
 If you provide only the package name and several variants match, you will be prompted to select ONE package to remove. Use `--all` to remove all variants.
 :::
 
+### Removing a package installed from a URL
+
+A package installed from a URL can be removed by that URL, which saves working
+out what it installed as:
+
+```sh
+soar remove https://github.com/owner/repo/releases/download/v1.2.3/tool-linux-x86_64.AppImage
+```
+
+This keeps working after the package has been updated, when the URL no longer
+matches the artifact currently installed.
+
 ### Removing a package from a specific family
 
 ```sh

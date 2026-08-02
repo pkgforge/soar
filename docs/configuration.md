@@ -206,6 +206,15 @@ Add `bin_path` to your PATH in `~/.bashrc` or `~/.zshrc`.
 
 Run `soar sync` manually. Check network connectivity and repository URLs.
 
+### GitHub Rate Limits
+
+Installing or updating a package from a GitHub release uses the GitHub API,
+which allows 60 requests an hour unauthenticated. Once that runs out, an update
+check reports an HTTP 403 and leaves the package alone.
+
+Set `GITHUB_TOKEN` or `GH_TOKEN` to raise the limit to 5,000 an hour. Either may
+be left unset; an empty one is ignored rather than sent.
+
 ### Signature Verification Failed
 
 Verify the `pubkey` value is correct. Run `soar sync` to update repository data.
