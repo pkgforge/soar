@@ -435,7 +435,7 @@ fn check_release(
     let release = match source.resolve() {
         Ok(r) => r,
         Err(e) => {
-            warn!(pkg_name = pkg.pkg_name, error = %e, "could not check the release source");
+            warn!("{}: could not check its release source: {e}", pkg.pkg_name);
             return Ok(None);
         }
     };
@@ -534,14 +534,14 @@ fn check_update_feed(pkg: &InstalledPackage, ctx: &SoarContext) -> SoarResult<Fe
     let zsync_url = match info.zsync_url() {
         Ok(url) => url,
         Err(e) => {
-            warn!(pkg_name = pkg.pkg_name, error = %e, "could not resolve the update feed");
+            warn!("{}: could not resolve its update feed: {e}", pkg.pkg_name);
             return Ok(FeedOutcome::Unusable);
         }
     };
     let target = match zsync::fetch_target(&zsync_url) {
         Ok(t) => t,
         Err(e) => {
-            warn!(pkg_name = pkg.pkg_name, error = %e, "could not read the update feed");
+            warn!("{}: could not read its update feed: {e}", pkg.pkg_name);
             return Ok(FeedOutcome::Unusable);
         }
     };
