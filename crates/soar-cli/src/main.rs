@@ -595,5 +595,8 @@ async fn main() {
     if let Err(err) = handle_cli().await {
         // Use miette's error display for Diagnostic errors
         eprintln!("{:?}", miette::Report::new(err));
+        // Anything driving soar reads the exit code to know whether the work
+        // happened, so a failure has to say so.
+        std::process::exit(1);
     }
 }
