@@ -8,3 +8,7 @@ repository.workspace = true
 keywords.workspace = true
 readme.workspace = true
 categories.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }

@@ -1,7 +1,8 @@
 use crate::OperationId;
 
 /// All event types emitted by soar operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum SoarEvent {
     /// Download is starting.
     DownloadStarting {
@@ -117,7 +118,8 @@ pub enum SoarEvent {
 }
 
 /// Verification stages.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum VerifyStage {
     /// Calculating and verifying checksum (blake3).
     Checksum,
@@ -130,7 +132,8 @@ pub enum VerifyStage {
 }
 
 /// Installation stages.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum InstallStage {
     /// Extracting package archive.
     Extracting,
@@ -151,7 +154,8 @@ pub enum InstallStage {
 }
 
 /// Package removal stages.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RemoveStage {
     /// Running pre-remove hook.
     RunningHook(String),
@@ -170,7 +174,8 @@ pub enum RemoveStage {
 }
 
 /// Repository sync stages.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SyncStage {
     /// Fetching metadata from remote.
     Fetching,
@@ -187,7 +192,8 @@ pub enum SyncStage {
 }
 
 /// Update check result for a single package.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UpdateCheckStatus {
     /// A newer version is available.
     Available {
@@ -201,7 +207,8 @@ pub enum UpdateCheckStatus {
 }
 
 /// Old version cleanup stages after update.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UpdateCleanupStage {
     /// Removing the old version.
     Removing,
@@ -212,7 +219,8 @@ pub enum UpdateCleanupStage {
 }
 
 /// Hook execution stages.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HookStage {
     /// Hook is starting.
     Starting,
@@ -223,7 +231,8 @@ pub enum HookStage {
 }
 
 /// Package execution stages (run command).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RunStage {
     /// Using a cached binary (already downloaded).
     CacheHit,
@@ -236,7 +245,8 @@ pub enum RunStage {
 }
 
 /// Build stages (for source packages).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BuildStage {
     /// Running build command N of M.
     Running {
@@ -250,7 +260,8 @@ pub enum BuildStage {
 }
 
 /// Log levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LogLevel {
     Debug,
     Info,

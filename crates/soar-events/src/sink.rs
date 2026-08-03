@@ -69,3 +69,42 @@ impl EventSink for CollectorSink {
         self.events.lock().unwrap().push(event);
     }
 }
+
+/// Writes each event as one JSON object per line.
+///
+/// This is the shape a frontend driving soar over a pipe reads: a line is a
+/// complete event, so a reader never has to buffer for a closing bracket, and
+/// a stream cut short mid-operation still parses up to the last full line.
+pub struct JsonLinesSink<W: std::io::Write + Send + Sync> {
+    writer: std::sync::Mutex<W>,
+}
+
+impl<W: std::io::Write + Send + Sync> JsonLinesSink<W> {
+    pub fn new(writer: W) -> Self {
+        Self {
+            writer: std::sync::Mutex::new(writer),
+        }
+    }
+}
+
+impl JsonLinesSink<std::io::Stdout> {
+    /// A sink writing to stdout, which is where a frontend expects the stream.
+    pub fn stdout() -> Self {
+        Self::new(std::io::stdout())
+    }
+}
+
+impl<W: std::io::Write + Send + Sync> EventSink for JsonLinesSink<W> {
+    fn emit(&self, event: SoarEvent) {
+        let Ok(line) = serde_json::to_string(&event) else {
+            return;
+        };
+        let Ok(mut writer) = self.writer.lock() else {
+            return;
+        };
+        // Flushed per event: a frontend rendering progress needs it now, not
+        // when the buffer happens to fill.
+        let _ = writeln!(writer, "{line}");
+        let _ = writer.flush();
+    }
+}

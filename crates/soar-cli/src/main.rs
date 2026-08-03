@@ -65,6 +65,11 @@ use self_actions::process_self_action;
 pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
     let config = get_config();
 
+    if utils::event_stream_enabled() {
+        let events: EventSinkHandle = Arc::new(soar_events::JsonLinesSink::stdout());
+        return (SoarContext::new(config, events), None);
+    }
+
     if progress_enabled() {
         let (sink, receiver) = soar_events::ChannelSink::new();
         let events: EventSinkHandle = Arc::new(sink);
@@ -145,6 +150,13 @@ async fn handle_cli() -> SoarResult<()> {
     if args.no_progress {
         let mut progress = utils::PROGRESS.write().unwrap();
         *progress = false;
+    }
+
+    if args.json {
+        *utils::EVENT_STREAM.write().unwrap() = true;
+        // The rendered progress display writes to the same stream the events
+        // go to, so only one of them can have it.
+        *utils::PROGRESS.write().unwrap() = false;
     }
 
     if args.system {
