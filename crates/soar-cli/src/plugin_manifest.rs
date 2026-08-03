@@ -81,8 +81,10 @@ fields = {{ config = "config", packages_config = "packages_config", bin = "bin",
 
 # What applying the declarative configuration would change, asked before it is
 # applied rather than reported while it happens.
+# Always pruning, so the answer says which installed packages are undeclared.
+# Whether they are actually removed is decided when applying.
 [ops.apply_check]
-args = ["--json", "apply", "--dry-run"]
+args = ["--json", "apply", "--dry-run", "--prune"]
 output = {{ format = "json" }}
 
 # Operations answer with a stream instead: one JSON object per line, written as
@@ -107,8 +109,15 @@ args = ["--json", "sync"]
 output = {{ format = "ndjson" }}
 progress = {{ event = "type", message = "repo_name" }}
 
+# Pruning is a different command rather than a flag on this one, because an
+# operation is one argv and nothing here is conditional.
 [ops.apply]
 args = ["--json", "apply", "--yes"]
+output = {{ format = "ndjson" }}
+progress = {{ event = "type", current = "current", total = "total", message = "pkg_name" }}
+
+[ops.apply_prune]
+args = ["--json", "apply", "--yes", "--prune"]
 output = {{ format = "ndjson" }}
 progress = {{ event = "type", current = "current", total = "total", message = "pkg_name" }}
 

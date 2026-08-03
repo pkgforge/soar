@@ -113,6 +113,13 @@ pub enum SoarEvent {
         total: u32,
         failed: u32,
     },
+    /// What applying the declarative configuration ended up doing.
+    ApplyComplete {
+        installed: usize,
+        updated: usize,
+        removed: usize,
+        failed: usize,
+    },
     /// Log message.
     Log { level: LogLevel, message: String },
 }

@@ -361,6 +361,13 @@ pub async fn execute_apply(
         }
     }
 
+    ctx.events().emit(SoarEvent::ApplyComplete {
+        installed: installed_count,
+        updated: updated_count,
+        removed: removed_count,
+        failed: failed_count,
+    });
+
     Ok(ApplyReport {
         installed_count,
         updated_count,
