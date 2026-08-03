@@ -45,6 +45,7 @@ mod health;
 mod inspect;
 mod install;
 mod json2db;
+mod json_output;
 mod list;
 mod logging;
 mod progress;
