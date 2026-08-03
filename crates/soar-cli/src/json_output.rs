@@ -7,8 +7,12 @@
 //! meant to change the output.
 
 use serde::Serialize;
-use soar_core::database::models::{InstalledPackage, Package};
-use soar_operations::{InstalledEntry, PackageListEntry, SearchEntry};
+use soar_config::repository::Repository;
+use soar_core::{
+    database::models::{InstalledPackage, Package},
+    package::install::InstallTarget,
+};
+use soar_operations::{ApplyDiff, InstalledEntry, PackageListEntry, SearchEntry, UpdateInfo};
 
 /// A package as published by a repository.
 #[derive(Serialize)]
@@ -141,6 +145,124 @@ impl From<&Package> for PackageDetailJson {
             categories: package.categories.clone().unwrap_or_default(),
             notes: package.notes.clone().unwrap_or_default(),
             download_url: package.download_url.clone(),
+        }
+    }
+}
+
+/// A package with a newer version waiting for it.
+#[derive(Serialize)]
+pub struct UpdateJson {
+    pub name: String,
+    pub family: Option<String>,
+    pub pkg_id: Option<String>,
+    pub repo: String,
+    pub current_version: String,
+    pub new_version: String,
+    pub size: Option<u64>,
+}
+
+impl From<&UpdateInfo> for UpdateJson {
+    fn from(update: &UpdateInfo) -> Self {
+        let package = &update.target.package;
+        Self {
+            name: update.pkg_name.clone(),
+            family: package.pkg_family.clone(),
+            pkg_id: package.pkg_id.clone(),
+            repo: update.repo_name.clone(),
+            current_version: update.current_version.clone(),
+            new_version: update.new_version.clone(),
+            size: package.ghcr_size.or(package.size),
+        }
+    }
+}
+
+/// A repository soar is configured to read.
+#[derive(Serialize)]
+pub struct RepositoryJson {
+    pub name: String,
+    pub url: String,
+    pub enabled: bool,
+    pub signature_verification: bool,
+    pub desktop_integration: bool,
+}
+
+impl From<&Repository> for RepositoryJson {
+    fn from(repo: &Repository) -> Self {
+        Self {
+            name: repo.name.clone(),
+            url: repo.url.clone(),
+            enabled: repo.is_enabled(),
+            signature_verification: repo.signature_verification.unwrap_or(false),
+            desktop_integration: repo.desktop_integration.unwrap_or(false),
+        }
+    }
+}
+
+/// Where soar keeps everything, so a frontend can read and write the same
+/// files rather than guessing at their locations.
+#[derive(Serialize)]
+pub struct EnvJson {
+    pub config: String,
+    pub packages_config: String,
+    pub bin: String,
+    pub db: String,
+    pub cache: String,
+    pub packages: String,
+    pub repositories: String,
+}
+
+/// One package the declarative configuration would change.
+#[derive(Serialize)]
+pub struct ApplyChangeJson {
+    pub name: String,
+    pub family: Option<String>,
+    pub repo: String,
+    pub version: String,
+    /// The version on disk now, for a package being replaced.
+    pub current_version: Option<String>,
+}
+
+/// What applying the declarative configuration would do.
+#[derive(Serialize)]
+pub struct ApplyDiffJson {
+    pub to_install: Vec<ApplyChangeJson>,
+    pub to_update: Vec<ApplyChangeJson>,
+    pub to_remove: Vec<ApplyChangeJson>,
+    pub in_sync: Vec<String>,
+    pub not_found: Vec<String>,
+}
+
+impl ApplyDiffJson {
+    pub fn new(diff: &ApplyDiff) -> Self {
+        let change = |target: &InstallTarget| {
+            let package = &target.package;
+            ApplyChangeJson {
+                name: package.pkg_name.clone(),
+                family: package.pkg_family.clone(),
+                repo: package.repo_name.clone(),
+                version: package.version.clone(),
+                current_version: target.existing_install.as_ref().map(|e| e.version.clone()),
+            }
+        };
+
+        Self {
+            to_install: diff.to_install.iter().map(|(_, t)| change(t)).collect(),
+            to_update: diff.to_update.iter().map(|(_, t)| change(t)).collect(),
+            to_remove: diff
+                .to_remove
+                .iter()
+                .map(|package| {
+                    ApplyChangeJson {
+                        name: package.pkg_name.clone(),
+                        family: package.pkg_family.clone(),
+                        repo: package.repo_name.clone(),
+                        version: package.version.clone(),
+                        current_version: Some(package.version.clone()),
+                    }
+                })
+                .collect(),
+            in_sync: diff.in_sync.clone(),
+            not_found: diff.not_found.clone(),
         }
     }
 }

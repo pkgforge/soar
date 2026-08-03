@@ -106,6 +106,18 @@ fn answers_with_document(command: &cli::Commands) -> bool {
             | cli::Commands::ListInstalledPackages { .. }
             | cli::Commands::Search { .. }
             | cli::Commands::Query { .. }
+            | cli::Commands::Env
+            | cli::Commands::Update {
+                check: true,
+                ..
+            }
+            | cli::Commands::Apply {
+                dry_run: true,
+                ..
+            }
+            | cli::Commands::Repo {
+                action: cli::RepoAction::List,
+            }
     )
 }
 
@@ -328,9 +340,10 @@ async fn handle_cli() -> SoarResult<()> {
                     packages,
                     keep,
                     ask,
+                    check,
                     no_verify,
                 } => {
-                    update_packages(&ctx, packages, keep, ask, no_verify).await?;
+                    update_packages(&ctx, packages, keep, ask, check, no_verify).await?;
                 }
                 cli::Commands::ListInstalledPackages {
                     repo_name,
@@ -432,19 +445,30 @@ async fn handle_cli() -> SoarResult<()> {
                 }
                 cli::Commands::Env => {
                     let config = get_config();
+                    let paths = json_output::EnvJson {
+                        config: CONFIG_PATH.read()?.display().to_string(),
+                        packages_config: soar_config::packages::PACKAGES_CONFIG_PATH
+                            .read()?
+                            .display()
+                            .to_string(),
+                        bin: config.get_bin_path()?.display().to_string(),
+                        db: config.get_db_path()?.display().to_string(),
+                        cache: config.get_cache_path()?.display().to_string(),
+                        packages: config.get_packages_path(None)?.display().to_string(),
+                        repositories: config.get_repositories_path()?.display().to_string(),
+                    };
 
-                    info!("SOAR_CONFIG={}", CONFIG_PATH.read()?.display());
-                    info!("SOAR_BIN={}", config.get_bin_path()?.display());
-                    info!("SOAR_DB={}", config.get_db_path()?.display());
-                    info!("SOAR_CACHE={}", config.get_cache_path()?.display());
-                    info!(
-                        "SOAR_PACKAGES={}",
-                        config.get_packages_path(None)?.display()
-                    );
-                    info!(
-                        "SOAR_REPOSITORIES={}",
-                        config.get_repositories_path()?.display()
-                    );
+                    if utils::event_stream_enabled() {
+                        json_output::emit(&paths);
+                    } else {
+                        info!("SOAR_CONFIG={}", paths.config);
+                        info!("SOAR_PACKAGES_CONFIG={}", paths.packages_config);
+                        info!("SOAR_BIN={}", paths.bin);
+                        info!("SOAR_DB={}", paths.db);
+                        info!("SOAR_CACHE={}", paths.cache);
+                        info!("SOAR_PACKAGES={}", paths.packages);
+                        info!("SOAR_REPOSITORIES={}", paths.repositories);
+                    }
                 }
                 #[cfg(feature = "self")]
                 cli::Commands::SelfCmd {

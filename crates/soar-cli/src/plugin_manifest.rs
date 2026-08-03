@@ -62,6 +62,29 @@ args = ["--json", "query", "{{selector}}"]
 output = {{ format = "json", select = "$.items[*]" }}
 fields = {{ name = "name", family = "family", version = "version", repo = "repo", description = "description", size = "size", checksum = "checksum", homepages = "homepages", licenses = "licenses", download_url = "download_url" }}
 
+[ops.list_updates]
+args = ["--json", "update", "--check"]
+output = {{ format = "json", select = "$.items[*]" }}
+fields = {{ name = "name", family = "family", repo = "repo", version = "current_version", current_version = "current_version", new_version = "new_version", size = "size" }}
+
+[ops.list_repos]
+args = ["--json", "repo", "list"]
+output = {{ format = "json", select = "$.items[*]" }}
+fields = {{ name = "name", url = "url", enabled = "enabled" }}
+
+# Where soar keeps its files, so they can be read and written directly rather
+# than through a command for every field.
+[ops.paths]
+args = ["--json", "env"]
+output = {{ format = "json" }}
+fields = {{ config = "config", packages_config = "packages_config", bin = "bin", db = "db", cache = "cache", packages = "packages", repositories = "repositories" }}
+
+# What applying the declarative configuration would change, asked before it is
+# applied rather than reported while it happens.
+[ops.apply_check]
+args = ["--json", "apply", "--dry-run"]
+output = {{ format = "json" }}
+
 # Operations answer with a stream instead: one JSON object per line, written as
 # it happens, so progress can be shown while the work is still running.
 [ops.install]
@@ -83,6 +106,24 @@ progress = {{ event = "type", current = "current", total = "total", message = "p
 args = ["--json", "sync"]
 output = {{ format = "ndjson" }}
 progress = {{ event = "type", message = "repo_name" }}
+
+[ops.apply]
+args = ["--json", "apply", "--yes"]
+output = {{ format = "ndjson" }}
+progress = {{ event = "type", current = "current", total = "total", message = "pkg_name" }}
+
+# Repository commands report nothing on success, so there is no shape to read.
+[ops.add_repo]
+args = ["repo", "add", "{{name}}", "{{url}}"]
+output = {{ format = "ndjson" }}
+
+[ops.remove_repo]
+args = ["repo", "remove", "{{name}}"]
+output = {{ format = "ndjson" }}
+
+[ops.set_repo_enabled]
+args = ["repo", "update", "{{name}}", "--enabled", "{{enabled}}"]
+output = {{ format = "ndjson" }}
 "#
     )
 }
