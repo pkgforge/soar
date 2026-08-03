@@ -125,6 +125,7 @@ pub struct PackageDetailJson {
     pub categories: Vec<String>,
     pub notes: Vec<String>,
     pub download_url: String,
+    pub build_date: Option<String>,
 }
 
 impl From<&Package> for PackageDetailJson {
@@ -145,6 +146,7 @@ impl From<&Package> for PackageDetailJson {
             categories: package.categories.clone().unwrap_or_default(),
             notes: package.notes.clone().unwrap_or_default(),
             download_url: package.download_url.clone(),
+            build_date: package.build_date.clone(),
         }
     }
 }
