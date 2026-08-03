@@ -17,7 +17,10 @@ const SCHEMA_VERSION: u32 = 1;
 
 /// Describes the commands as this build actually accepts them.
 ///
-/// `{name}`, `{query}` and `{version}` are the only substitutions.
+/// `{selector}`, `{name}`, `{query}` and `{version}` are the only
+/// substitutions. `selector` says how to build the first of those out of a
+/// package's fields, so two projects publishing the same command name stay
+/// told apart.
 pub fn manifest() -> String {
     let version = env!("CARGO_PKG_VERSION");
     format!(
@@ -27,6 +30,10 @@ schema_version = {SCHEMA_VERSION}
 id = "soar"
 name = "Soar"
 version = "{version}"
+
+# Most specific form first: a package published under a family is named by it,
+# and one published without a family is named on its own.
+selector = ["{{family}}/{{name}}", "{{name}}"]
 
 [detect]
 command = "soar"
@@ -51,19 +58,19 @@ output = {{ format = "json", select = "$.items[*]" }}
 fields = {{ name = "name", family = "family", version = "version", repo = "repo", description = "description", size = "size", installed = "installed" }}
 
 [ops.info]
-args = ["--json", "query", "{{name}}"]
+args = ["--json", "query", "{{selector}}"]
 output = {{ format = "json", select = "$.items[*]" }}
 fields = {{ name = "name", family = "family", version = "version", repo = "repo", description = "description", size = "size", checksum = "checksum", homepages = "homepages", licenses = "licenses", download_url = "download_url" }}
 
 # Operations answer with a stream instead: one JSON object per line, written as
 # it happens, so progress can be shown while the work is still running.
 [ops.install]
-args = ["--json", "install", "--yes", "{{name}}"]
+args = ["--json", "install", "--yes", "{{selector}}"]
 output = {{ format = "ndjson" }}
 progress = {{ event = "type", current = "current", total = "total", message = "pkg_name" }}
 
 [ops.remove]
-args = ["--json", "remove", "--yes", "{{name}}"]
+args = ["--json", "remove", "--yes", "{{selector}}"]
 output = {{ format = "ndjson" }}
 progress = {{ event = "type", message = "pkg_name" }}
 
