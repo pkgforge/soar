@@ -94,6 +94,17 @@ impl JsonLinesSink<std::io::Stdout> {
     }
 }
 
+impl JsonLinesSink<std::io::Stderr> {
+    /// A sink writing beside the answer rather than into it.
+    ///
+    /// A command answering with one JSON document cannot carry a stream on the
+    /// same output, since a reader expecting a document would find a second
+    /// thing after it.
+    pub fn stderr() -> Self {
+        Self::new(std::io::stderr())
+    }
+}
+
 impl<W: std::io::Write + Send + Sync> EventSink for JsonLinesSink<W> {
     fn emit(&self, event: SoarEvent) {
         let Ok(line) = serde_json::to_string(&event) else {

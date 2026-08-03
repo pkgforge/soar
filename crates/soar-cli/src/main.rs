@@ -65,10 +65,23 @@ mod self_actions;
 use self_actions::process_self_action;
 
 pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
+    create_context_for(false)
+}
+
+/// Build the context, putting the event stream where the command leaves room
+/// for it.
+///
+/// A command that answers with one JSON document keeps stdout for the answer,
+/// so anything it does on the way there is reported beside it instead.
+pub fn create_context_for(answers_with_document: bool) -> (SoarContext, Option<ProgressGuard>) {
     let config = get_config();
 
     if utils::event_stream_enabled() {
-        let events: EventSinkHandle = Arc::new(soar_events::JsonLinesSink::stdout());
+        let events: EventSinkHandle = if answers_with_document {
+            Arc::new(soar_events::JsonLinesSink::stderr())
+        } else {
+            Arc::new(soar_events::JsonLinesSink::stdout())
+        };
         return (SoarContext::new(config, events), None);
     }
 
@@ -83,6 +96,17 @@ pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
         let ctx = SoarContext::new(config, events);
         (ctx, None)
     }
+}
+
+/// Whether `--json` makes this command answer with a single JSON document.
+fn answers_with_document(command: &cli::Commands) -> bool {
+    matches!(
+        command,
+        cli::Commands::ListPackages { .. }
+            | cli::Commands::ListInstalledPackages { .. }
+            | cli::Commands::Search { .. }
+            | cli::Commands::Query { .. }
+    )
 }
 
 /// Handle system mode - check for root privileges and re-exec with sudo/doas if needed
@@ -227,7 +251,7 @@ async fn handle_cli() -> SoarResult<()> {
 
             setup_required_paths().unwrap();
 
-            let (ctx, progress_guard) = create_context();
+            let (ctx, progress_guard) = create_context_for(answers_with_document(&command));
             let mut run_exit_code = None;
 
             match command {
