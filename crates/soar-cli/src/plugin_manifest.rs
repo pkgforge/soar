@@ -161,7 +161,7 @@ fields = {{ name = "name", family = "family", version = "version", repo = "repo"
 [ops.info]
 args = ["--json", "query", "{{selector}}"]
 output = {{ format = "json", select = "$.items[*]" }}
-fields = {{ name = "name", family = "family", version = "version", repo = "repo", description = "description", size = "size", checksum = "checksum", homepage = "homepages", license = "licenses", category = "categories", pkg_type = "pkg_type", build_date = "build_date", download_url = "download_url" }}
+fields = {{ name = "name", family = "family", version = "version", repo = "repo", description = "description", size = "size", checksum = "checksum", homepage = "homepages", license = "licenses", category = "categories", pkg_type = "pkg_type", source = "source_urls", build_date = "build_date", download_url = "download_url" }}
 
 [ops.list_updates]
 args = ["--json", "update", "--check"]
