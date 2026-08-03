@@ -441,7 +441,8 @@ async fn handle_cli() -> SoarResult<()> {
                     repo::handle_repo_action(&ctx, action)?;
                 }
                 cli::Commands::PluginManifest => {
-                    print!("{}", plugin_manifest::manifest());
+                    let profiles: Vec<String> = get_config().profile.keys().cloned().collect();
+                    print!("{}", plugin_manifest::manifest(&profiles));
                 }
                 cli::Commands::Env => {
                     let config = get_config();
