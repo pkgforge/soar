@@ -487,6 +487,10 @@ pub enum Commands {
     #[clap(name = "env")]
     Env,
 
+    /// Print how a frontend should drive this soar
+    #[clap(name = "plugin-manifest")]
+    PluginManifest,
+
     /// Garbage collection
     #[clap(name = "clean")]
     Clean {

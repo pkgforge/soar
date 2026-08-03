@@ -48,6 +48,7 @@ mod json2db;
 mod json_output;
 mod list;
 mod logging;
+mod plugin_manifest;
 mod progress;
 mod remove;
 mod repo;
@@ -401,6 +402,9 @@ async fn handle_cli() -> SoarResult<()> {
                     action,
                 } => {
                     repo::handle_repo_action(&ctx, action)?;
+                }
+                cli::Commands::PluginManifest => {
+                    print!("{}", plugin_manifest::manifest());
                 }
                 cli::Commands::Env => {
                     let config = get_config();
