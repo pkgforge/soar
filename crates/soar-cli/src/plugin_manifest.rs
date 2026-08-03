@@ -193,34 +193,34 @@ output = {{ format = "json" }}
 [ops.install]
 args = ["--json", "install", "--yes", "{{selector}}"]
 output = {{ format = "ndjson" }}
-progress = {{ event = "type", current = "current", total = "total", message = "pkg_name" }}
+progress = {{ event = "type", stage = "stage", current = "current", total = "total", message = "pkg_name" }}
 
 [ops.remove]
 args = ["--json", "remove", "--yes", "{{selector}}"]
 output = {{ format = "ndjson" }}
-progress = {{ event = "type", message = "pkg_name" }}
+progress = {{ event = "type", stage = "stage", message = "pkg_name" }}
 
 [ops.update]
 args = ["--json", "update"]
 output = {{ format = "ndjson" }}
-progress = {{ event = "type", current = "current", total = "total", message = "pkg_name" }}
+progress = {{ event = "type", stage = "stage", current = "current", total = "total", message = "pkg_name" }}
 
 [ops.sync]
 args = ["--json", "sync"]
 output = {{ format = "ndjson" }}
-progress = {{ event = "type", message = "repo_name" }}
+progress = {{ event = "type", stage = "stage", message = "repo_name" }}
 
 # Pruning is a different command rather than a flag on this one, because an
 # operation is one argv and nothing here is conditional.
 [ops.apply]
 args = ["--json", "apply", "--yes"]
 output = {{ format = "ndjson" }}
-progress = {{ event = "type", current = "current", total = "total", message = "pkg_name" }}
+progress = {{ event = "type", stage = "stage", current = "current", total = "total", message = "pkg_name" }}
 
 [ops.apply_prune]
 args = ["--json", "apply", "--yes", "--prune"]
 output = {{ format = "ndjson" }}
-progress = {{ event = "type", current = "current", total = "total", message = "pkg_name" }}
+progress = {{ event = "type", stage = "stage", current = "current", total = "total", message = "pkg_name" }}
 
 # Writing a first configuration file. Soar needs a whole one to start from,
 # so a frontend meaning to edit settings asks for this before writing any.
