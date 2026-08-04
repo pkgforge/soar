@@ -10,6 +10,10 @@ use ureq::{
     Agent, Proxy, RequestBuilder,
 };
 
+/// Bounds TCP connect and TLS handshake, so an unroutable address fails over to the next one
+/// instead of stalling forever.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
     pub user_agent: Option<String>,
@@ -55,6 +59,9 @@ impl ClientConfig {
     /// The returned `Agent` will incorporate the configured proxy, global timeout,
     /// IP family, and user agent header (if present).
     ///
+    /// When no proxy is set, the `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
+    /// environment variables are honored.
+    ///
     /// # Examples
     ///
     /// ```
@@ -67,9 +74,13 @@ impl ClientConfig {
     /// ```
     pub fn build(&self) -> Agent {
         let mut config = ureq::Agent::config_builder()
-            .proxy(self.proxy.clone())
             .timeout_global(self.timeout)
+            .timeout_connect(Some(CONNECT_TIMEOUT))
             .ip_family(self.ip_family);
+
+        if self.proxy.is_some() {
+            config = config.proxy(self.proxy.clone());
+        }
 
         if let Some(user_agent) = &self.user_agent {
             config = config.user_agent(user_agent);
@@ -285,6 +296,31 @@ mod tests {
         };
         let agent = config.build();
         let _ = agent;
+    }
+
+    #[test]
+    fn test_client_config_sets_connect_timeout() {
+        let agent = ClientConfig::default().build();
+        assert_eq!(agent.config().timeouts().connect, Some(CONNECT_TIMEOUT));
+    }
+
+    #[test]
+    fn test_client_config_without_proxy_falls_back_to_env() {
+        let agent = ClientConfig::default().build();
+        assert_eq!(
+            agent.config().proxy().is_some(),
+            Proxy::try_from_env().is_some()
+        );
+    }
+
+    #[test]
+    fn test_client_config_explicit_proxy_overrides_env() {
+        let config = ClientConfig {
+            proxy: Some(Proxy::new("http://127.0.0.1:8080").unwrap()),
+            ..Default::default()
+        };
+        let agent = config.build();
+        assert_eq!(agent.config().proxy().unwrap().port(), 8080);
     }
 
     #[test]

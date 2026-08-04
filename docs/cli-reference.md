@@ -109,6 +109,10 @@ soar --proxy http://proxy.example.com:8080 install python
 soar --proxy http://user:pass@proxy.example.com:8080 sync
 ```
 
+When this option is omitted, soar falls back to the `ALL_PROXY`, `HTTPS_PROXY` and `HTTP_PROXY`
+environment variables, honoring `NO_PROXY` for hosts that should bypass the proxy. Passing
+`--proxy` overrides all of them, including `NO_PROXY`.
+
 ### `--header` / `-H`
 
 Add custom HTTP headers.
@@ -133,7 +137,8 @@ resolves to, in whatever order the system resolver returns them.
 
 These are useful on networks where one family is advertised but not actually routable. If a host
 publishes AAAA records and the network drops IPv6 traffic instead of rejecting it, soar waits out
-the connect timeout on that address before moving on. Passing `-4` skips IPv6 addresses entirely.
+a 30 second connect timeout per address before moving on. Passing `-4` skips IPv6 addresses
+entirely.
 
 ```bash
 soar -4 install soar
@@ -185,7 +190,10 @@ sudo soar --system install docker
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `HTTP_PROXY` | Set HTTP/HTTPS proxy | `export HTTP_PROXY=http://proxy:8080` |
+| `ALL_PROXY` | Set proxy for all schemes | `export ALL_PROXY=socks5://proxy:1080` |
+| `HTTPS_PROXY` | Set HTTPS proxy | `export HTTPS_PROXY=http://proxy:8080` |
+| `HTTP_PROXY` | Set HTTP proxy | `export HTTP_PROXY=http://proxy:8080` |
+| `NO_PROXY` | Hosts that bypass the proxy | `export NO_PROXY=localhost,*.internal` |
 | `SOAR_CONFIG` | Custom config file path | `export SOAR_CONFIG=/path/to/config.toml` |
 | `SOAR_PACKAGES_CONFIG` | Custom packages.toml path | `export SOAR_PACKAGES_CONFIG=/path/to/packages.toml` |
 | `NO_COLOR` | Disable colored output | `export NO_COLOR=1` |
