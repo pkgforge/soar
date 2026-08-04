@@ -34,7 +34,7 @@ use soar_operations::SoarContext;
 use soar_utils::path::resolve_path;
 use tracing::{debug, info, warn};
 use update::update_packages;
-use ureq::Proxy;
+use ureq::{config::IpFamily, Proxy};
 use use_package::use_alternate_package;
 use utils::{progress_enabled, COLOR};
 
@@ -169,10 +169,19 @@ async fn handle_cli() -> SoarResult<()> {
     let proxy = args.proxy.clone();
     let user_agent = args.user_agent.clone();
     let header = args.header.clone();
+    let ip_family = match (args.ipv4, args.ipv6) {
+        (true, _) => Some(IpFamily::Ipv4Only),
+        (_, true) => Some(IpFamily::Ipv6Only),
+        _ => None,
+    };
 
     configure_http_client(|config| {
         if let Some(proxy) = proxy.as_deref() {
             config.proxy = Some(Proxy::new(proxy).unwrap());
+        }
+
+        if let Some(ip_family) = ip_family {
+            config.ip_family = ip_family;
         }
 
         if let Some(user_agent) = user_agent {

@@ -21,6 +21,8 @@ This page documents the global options that apply across soar commands, along wi
 | `--proxy` | `-P` | Set HTTP/HTTPS proxy server |
 | `--header` | `-H` | Add custom HTTP headers |
 | `--user-agent` | `-A` | Set custom User-Agent string |
+| `--ipv4` | `-4` | Connect over IPv4 only |
+| `--ipv6` | `-6` | Connect over IPv6 only |
 | `--system` | `-S` | Operate in system-wide mode (requires root) |
 
 ## Verbosity Control
@@ -123,6 +125,23 @@ Set a custom User-Agent string.
 ```bash
 soar --user-agent "MyApp/1.0" install python
 ```
+
+### `--ipv4` / `-4` and `--ipv6` / `-6`
+
+Restrict connections to a single address family. By default soar tries every address a host
+resolves to, in whatever order the system resolver returns them.
+
+These are useful on networks where one family is advertised but not actually routable. If a host
+publishes AAAA records and the network drops IPv6 traffic instead of rejecting it, soar waits out
+the connect timeout on that address before moving on. Passing `-4` skips IPv6 addresses entirely.
+
+```bash
+soar -4 install soar
+soar --ipv4 sync
+```
+
+Both are filters rather than preferences, so `-4` fails with "host not found" on a host that
+publishes only AAAA records. The two options cannot be combined.
 
 ## System Mode
 

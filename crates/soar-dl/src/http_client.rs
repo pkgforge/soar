@@ -4,6 +4,7 @@ use std::{
 };
 
 use ureq::{
+    config::IpFamily,
     http::{self, HeaderMap, Uri},
     typestate::{WithBody, WithoutBody},
     Agent, Proxy, RequestBuilder,
@@ -15,23 +16,27 @@ pub struct ClientConfig {
     pub headers: Option<HeaderMap>,
     pub proxy: Option<Proxy>,
     pub timeout: Option<Duration>,
+    pub ip_family: IpFamily,
 }
 
 impl Default for ClientConfig {
     /// Creates a default ClientConfig populated with sensible defaults for HTTP requests.
     ///
-    /// The default sets a user agent of "pkgforge/soar" and leaves proxy, headers, and timeout unset.
+    /// The default sets a user agent of "pkgforge/soar", allows both IPv4 and IPv6, and leaves
+    /// proxy, headers, and timeout unset.
     ///
     /// # Examples
     ///
     /// ```
     /// use soar_dl::http_client::ClientConfig;
+    /// use ureq::config::IpFamily;
     ///
     /// let cfg = ClientConfig::default();
     /// assert_eq!(cfg.user_agent.as_deref(), Some("pkgforge/soar"));
     /// assert!(cfg.proxy.is_none());
     /// assert!(cfg.headers.is_none());
     /// assert!(cfg.timeout.is_none());
+    /// assert_eq!(cfg.ip_family, IpFamily::Any);
     /// ```
     fn default() -> Self {
         Self {
@@ -39,6 +44,7 @@ impl Default for ClientConfig {
             proxy: None,
             headers: None,
             timeout: None,
+            ip_family: IpFamily::Any,
         }
     }
 }
@@ -47,7 +53,7 @@ impl ClientConfig {
     /// Builds an HTTP `Agent` configured from this `ClientConfig`.
     ///
     /// The returned `Agent` will incorporate the configured proxy, global timeout,
-    /// and user agent header (if present).
+    /// IP family, and user agent header (if present).
     ///
     /// # Examples
     ///
@@ -62,7 +68,8 @@ impl ClientConfig {
     pub fn build(&self) -> Agent {
         let mut config = ureq::Agent::config_builder()
             .proxy(self.proxy.clone())
-            .timeout_global(self.timeout);
+            .timeout_global(self.timeout)
+            .ip_family(self.ip_family);
 
         if let Some(user_agent) = &self.user_agent {
             config = config.user_agent(user_agent);
@@ -256,6 +263,7 @@ mod tests {
         assert!(config.proxy.is_none());
         assert!(config.headers.is_none());
         assert!(config.timeout.is_none());
+        assert_eq!(config.ip_family, IpFamily::Any);
     }
 
     #[test]
@@ -273,9 +281,22 @@ mod tests {
             proxy: None,
             headers: None,
             timeout: Some(Duration::from_secs(30)),
+            ip_family: IpFamily::Any,
         };
         let agent = config.build();
         let _ = agent;
+    }
+
+    #[test]
+    fn test_client_config_ip_family() {
+        for family in [IpFamily::Any, IpFamily::Ipv4Only, IpFamily::Ipv6Only] {
+            let config = ClientConfig {
+                ip_family: family,
+                ..Default::default()
+            };
+            let agent = config.build();
+            assert_eq!(agent.config().ip_family(), family);
+        }
     }
 
     #[test]

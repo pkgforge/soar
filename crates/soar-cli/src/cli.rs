@@ -56,6 +56,14 @@ pub struct Args {
     #[arg(required = false, long, short = 'A', global = true)]
     pub user_agent: Option<String>,
 
+    /// Connect over IPv4 only
+    #[arg(long, short = '4', global = true, conflicts_with = "ipv6")]
+    pub ipv4: bool,
+
+    /// Connect over IPv6 only
+    #[arg(long, short = '6', global = true)]
+    pub ipv6: bool,
+
     /// Manage system-wide packages (requires root)
     #[arg(long, short = 'S', global = true)]
     pub system: bool,
