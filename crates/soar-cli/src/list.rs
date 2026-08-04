@@ -416,7 +416,12 @@ pub async fn list_installed_packages(
                     repo_name = package.repo_name,
                     installed_date = package.installed_date.clone(),
                     size = %package.size,
-                    "{}-{}:{} ({}) ({}){}",
+                    "{}{}@{}:{} ({}) ({}){}",
+                    package
+                        .pkg_family
+                        .as_ref()
+                        .map(|f| format!("{}/", Colored(Cyan, f)))
+                        .unwrap_or_default(),
                     Colored(Blue, &package.pkg_name),
                     Colored(Magenta, &package.version),
                     Colored(Cyan, &package.repo_name),

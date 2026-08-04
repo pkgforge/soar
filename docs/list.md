@@ -118,10 +118,10 @@ soar info --repo-name soarpkgs --count
 ```sh
 $ soar info
 
-bat-0.24.0:soarpkgs (2025-01-15) (1.8 MB)
-curl-8.11.1:soarpkgs (2025-01-15) (2.4 MB)
-ffmpeg-7.1:soarpkgs (2025-01-14) (15.2 MB)
-jq-1.7.1:soarpkgs (2025-01-10) (1.5 MB) ✗ Broken
+bat@0.24.0:soarpkgs (2025-01-15) (1.8 MB)
+curl@8.11.1:soarpkgs (2025-01-15) (2.4 MB)
+ffmpeg@7.1:soarpkgs (2025-01-14) (15.2 MB)
+jq@1.7.1:soarpkgs (2025-01-10) (1.5 MB) ✗ Broken
 
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ ✓ Installed ┃ 3, 3 distinct (20.0 MB)     ┃
