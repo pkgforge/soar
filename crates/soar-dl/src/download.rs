@@ -492,7 +492,8 @@ impl Download {
             if checkpoint > last_checkpoint {
                 last_checkpoint = checkpoint;
                 trace!(downloaded = downloaded, "saving resume checkpoint");
-                write_resume(
+                // don't fail on filesystems without xattr support
+                if let Err(err) = write_resume(
                     path,
                     &ResumeInfo {
                         downloaded,
@@ -500,7 +501,9 @@ impl Download {
                         etag: new_etag.clone(),
                         last_modified: None,
                     },
-                )?;
+                ) {
+                    trace!(%err, "failed to save resume checkpoint");
+                }
             }
 
             if let Some(ref cb) = self.on_progress {

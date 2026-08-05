@@ -978,7 +978,7 @@ fn download_layer_impl(
         let checkpoint = *local_downloaded / (1024 * 1024);
         if checkpoint > last_checkpoint {
             last_checkpoint = checkpoint;
-            write_resume(
+            if let Err(err) = write_resume(
                 path,
                 &ResumeInfo {
                     downloaded: *local_downloaded,
@@ -986,7 +986,9 @@ fn download_layer_impl(
                     etag: new_etag.clone(),
                     last_modified: None,
                 },
-            )?;
+            ) {
+                trace!(%err, "failed to save resume checkpoint");
+            }
         }
 
         if let Some(cb) = on_progress {
