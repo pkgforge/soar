@@ -1,4 +1,16 @@
 
+## [0.12.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.11.0...soar-dl-v0.12.0) - 2026-08-05
+
+### ⛰️  Features
+
+- *(cli)* Add --ipv4 and --ipv6 flags - ([2ee8e22](https://github.com/pkgforge/soar/commit/2ee8e228e25216505685b301d349eab47cd8fb24))
+
+### 🐛 Bug Fixes
+
+- *(dl)* Tolerate filesystems without xattr support - ([f7080c3](https://github.com/pkgforge/soar/commit/f7080c32007616712392525c1055ad308a86b684))
+- *(dl)* Surface underlying download errors - ([d06823a](https://github.com/pkgforge/soar/commit/d06823a96aa346a4708f0feae74669545304e9cd))
+- *(http)* Honor proxy env vars and bound connect time - ([3a43c0f](https://github.com/pkgforge/soar/commit/3a43c0fd79dee8d8331abd8427f618c2066601c5))
+
 ## [0.11.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.10.2...soar-dl-v0.11.0) - 2026-08-02
 
 ### ⛰️  Features
