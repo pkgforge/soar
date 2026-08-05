@@ -68,7 +68,7 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::resume_mismatch))]
     ResumeMismatch,
 
-    #[error("Multiple download errors occurred")]
+    #[error("{}", .errors.join("; "))]
     #[diagnostic(code(soar_dl::multiple_errors))]
     Multiple { errors: Vec<String> },
 
@@ -172,7 +172,7 @@ mod tests {
             errors: vec!["Error 1".to_string(), "Error 2".to_string()],
         };
         let msg = format!("{}", err);
-        assert_eq!(msg, "Multiple download errors occurred");
+        assert_eq!(msg, "Error 1; Error 2");
     }
 
     #[test]

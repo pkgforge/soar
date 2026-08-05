@@ -616,7 +616,7 @@ impl OciDownload {
                         let path = match safe_layer_path(&output_dir, filename) {
                             Ok(p) => p,
                             Err(e) => {
-                                errors.lock().unwrap().push(format!("{e}"));
+                                errors.lock().unwrap().push(format!("{filename}: {e}"));
                                 continue;
                             }
                         };
@@ -625,7 +625,7 @@ impl OciDownload {
                             if let Ok(metadata) = path.metadata() {
                                 if metadata.len() == layer.size {
                                     if let Err(e) = verify_layer_digest(&path, &layer.digest) {
-                                        errors.lock().unwrap().push(format!("{e}"));
+                                        errors.lock().unwrap().push(format!("{filename}: {e}"));
                                         continue;
                                     }
                                     let current = downloaded
@@ -661,14 +661,14 @@ impl OciDownload {
                                     let extract_dir =
                                         extract_to.clone().unwrap_or_else(|| output_dir.clone());
                                     if let Err(e) = compak::extract_archive(&path, &extract_dir) {
-                                        errors.lock().unwrap().push(format!("{e}"));
+                                        errors.lock().unwrap().push(format!("{filename}: {e}"));
                                         continue;
                                     }
                                 }
                                 paths.lock().unwrap().push(path);
                             }
                             Err(e) => {
-                                errors.lock().unwrap().push(format!("{e}"));
+                                errors.lock().unwrap().push(format!("{filename}: {e}"));
                             }
                         }
                     }

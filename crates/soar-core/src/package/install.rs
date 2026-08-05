@@ -998,7 +998,10 @@ impl PackageInstaller {
                                 ..
                             } | DownloadError::Network(_)
                         ) {
-                            warn!(retry = retries, "download failed, retrying after delay");
+                            warn!(
+                                retry = retries,
+                                "download failed, retrying after delay: {err}"
+                            );
                             sleep(Duration::from_secs(5));
                             retries += 1;
                             if retries > 1 {
