@@ -1,4 +1,10 @@
 
+## [0.4.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.4.0...soar-operations-v0.4.1) - 2026-08-05
+
+### 🐛 Bug Fixes
+
+- *(core)* Create system-mode database when writable - ([6b5d35e](https://github.com/pkgforge/soar/commit/6b5d35e57a240e1c90f6e01d7bdf13c6ea560d77))
+
 ## [0.4.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.3.2...soar-operations-v0.4.0) - 2026-08-02
 
 ### ⛰️  Features

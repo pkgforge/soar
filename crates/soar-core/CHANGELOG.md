@@ -1,4 +1,10 @@
 
+## [0.17.1](https://github.com/pkgforge/soar/compare/soar-core-v0.17.0...soar-core-v0.17.1) - 2026-08-05
+
+### 🐛 Bug Fixes
+
+- *(dl)* Surface underlying download errors - ([d06823a](https://github.com/pkgforge/soar/commit/d06823a96aa346a4708f0feae74669545304e9cd))
+
 ## [0.17.0](https://github.com/pkgforge/soar/compare/soar-core-v0.16.4...soar-core-v0.17.0) - 2026-08-02
 
 ### ⛰️  Features
