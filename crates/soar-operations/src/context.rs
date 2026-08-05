@@ -26,6 +26,25 @@ type SyncTaskResult = (
     String,
 );
 
+/// Ensures the core database file exists and is writable by this process.
+fn ensure_core_db_file(path: &Path) -> SoarResult<()> {
+    if path.is_file() {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .with_context(|| format!("opening database file {}", path.display()))?;
+        return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("creating database directory {}", parent.display()))?;
+    }
+    File::create(path).with_context(|| format!("creating database file {}", path.display()))?;
+
+    Ok(())
+}
+
 fn handle_json_metadata<P: AsRef<Path>>(
     metadata: &[RemotePackage],
     metadata_db: P,
@@ -286,20 +305,14 @@ impl SoarContext {
     fn create_diesel_core_db(&self) -> SoarResult<DieselDatabase> {
         let core_db_file = self.config().get_db_path()?.join("soar.db");
 
-        if self.config().is_system() {
-            return DieselDatabase::open_core_readonly(&core_db_file);
-        }
-
-        if !core_db_file.exists() {
-            if let Some(parent) = core_db_file.parent() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("creating database directory {}", parent.display()))?;
+        match ensure_core_db_file(&core_db_file) {
+            Ok(()) => DieselDatabase::open_core(&core_db_file),
+            Err(err) if self.config().is_system() && core_db_file.is_file() => {
+                debug!(%err, "core database is not writable; opening readonly");
+                DieselDatabase::open_core_readonly(&core_db_file)
             }
-            File::create(&core_db_file)
-                .with_context(|| format!("creating database file {}", core_db_file.display()))?;
+            Err(err) => Err(err),
         }
-
-        DieselDatabase::open_core(&core_db_file)
     }
 
     fn create_metadata_manager(&self) -> SoarResult<MetadataManager> {
