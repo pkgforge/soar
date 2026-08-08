@@ -113,7 +113,7 @@ jobs:
            'printf "\nFile: $(basename {})\n  Type: $(file -b {})\n  B3sum: $(b3sum {} | cut -d" " -f1)\n  SHA256sum: $(sha256sum {} | cut -d" " -f1)\n  Size: $(du -bh {} | cut -f1)\n"'
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v3.0.0
+        uses: actions/attest-build-provenance@v3.1.0
         with:
           subject-name: "soar-nightly-${{ matrix.build.NAME }}"
           subject-path: |
