@@ -19,7 +19,6 @@ use soar_operations::{ApplyDiff, InstalledEntry, PackageListEntry, SearchEntry, 
 pub struct PackageJson {
     pub name: String,
     pub family: Option<String>,
-    pub pkg_id: Option<String>,
     pub repo: String,
     pub version: String,
     pub description: String,
@@ -36,7 +35,6 @@ impl PackageJson {
         Self {
             name: package.pkg_name.clone(),
             family: package.pkg_family.clone(),
-            pkg_id: package.pkg_id.clone(),
             repo: package.repo_name.clone(),
             version: package.version.clone(),
             description: package.description.clone(),
@@ -73,7 +71,6 @@ impl From<&SearchEntry> for PackageJson {
 pub struct InstalledJson {
     pub name: String,
     pub family: Option<String>,
-    pub pkg_id: Option<String>,
     pub repo: String,
     pub version: String,
     pub pkg_type: Option<String>,
@@ -93,7 +90,6 @@ impl From<&InstalledEntry> for InstalledJson {
         Self {
             name: package.pkg_name.clone(),
             family: package.pkg_family.clone(),
-            pkg_id: package.pkg_id.clone(),
             repo: package.repo_name.clone(),
             version: package.version.clone(),
             pkg_type: package.pkg_type.clone(),
@@ -111,7 +107,6 @@ impl From<&InstalledEntry> for InstalledJson {
 pub struct PackageDetailJson {
     pub name: String,
     pub family: Option<String>,
-    pub pkg_id: Option<String>,
     pub repo: String,
     pub version: String,
     pub description: String,
@@ -133,7 +128,6 @@ impl From<&Package> for PackageDetailJson {
         Self {
             name: package.pkg_name.clone(),
             family: package.pkg_family.clone(),
-            pkg_id: package.pkg_id.clone(),
             repo: package.repo_name.clone(),
             version: package.version.clone(),
             description: package.description.clone(),
@@ -156,7 +150,6 @@ impl From<&Package> for PackageDetailJson {
 pub struct UpdateJson {
     pub name: String,
     pub family: Option<String>,
-    pub pkg_id: Option<String>,
     pub repo: String,
     pub current_version: String,
     pub new_version: String,
@@ -169,7 +162,6 @@ impl From<&UpdateInfo> for UpdateJson {
         Self {
             name: update.pkg_name.clone(),
             family: package.pkg_family.clone(),
-            pkg_id: package.pkg_id.clone(),
             repo: update.repo_name.clone(),
             current_version: update.current_version.clone(),
             new_version: update.new_version.clone(),
