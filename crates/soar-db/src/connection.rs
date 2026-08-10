@@ -15,8 +15,8 @@ use crate::migration::{apply_migrations, migrate_json_to_jsonb, DbType};
 
 /// How long to wait for another process to let go of the database.
 ///
-/// SQLite gives up the moment it finds a lock unless it is told otherwise, so
-/// without this two soar processes running at once fail rather than queue.
+/// Without it SQLite gives up the moment it finds a lock, so two soar
+/// processes running at once fail rather than queue.
 const BUSY_TIMEOUT_MS: u32 = 5_000;
 
 /// Database connection wrapper with migration support.

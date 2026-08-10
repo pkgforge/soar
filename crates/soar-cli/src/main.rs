@@ -69,10 +69,8 @@ pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
 }
 
 /// Build the context, putting the event stream where the command leaves room
-/// for it.
-///
-/// A command that answers with one JSON document keeps stdout for the answer,
-/// so anything it does on the way there is reported beside it instead.
+/// for it: a command answering with one JSON document keeps stdout for the
+/// answer, so its events go to stderr.
 pub fn create_context_for(answers_with_document: bool) -> (SoarContext, Option<ProgressGuard>) {
     let config = get_config();
 
@@ -192,8 +190,7 @@ async fn handle_cli() -> SoarResult<()> {
 
     if args.json {
         *utils::EVENT_STREAM.write().unwrap() = true;
-        // The rendered progress display writes to the same stream the events
-        // go to, so only one of them can have it.
+        // The progress display writes to the same stream as the events.
         *utils::PROGRESS.write().unwrap() = false;
     }
 
