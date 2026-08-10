@@ -163,6 +163,16 @@ args = ["--json", "query", "{{selector}}"]
 output = {{ format = "json", select = "$.items[*]" }}
 fields = {{ name = "name", family = "family", version = "version", repo = "repo", description = "description", size = "size", checksum = "checksum", homepage = "homepages", license = "licenses", category = "categories", pkg_type = "pkg_type", source = "source_urls", build_date = "build_date", download_url = "download_url" }}
 
+# Everything else soar knows about a package. A frontend shows these as
+# given, so the labels are what a reader sees.
+[[ops.info.extra]]
+label = "Maintainer"
+field = "maintainers"
+
+[[ops.info.extra]]
+label = "Checksum"
+field = "checksum"
+
 [ops.list_updates]
 args = ["--json", "update", "--check"]
 output = {{ format = "json", select = "$.items[*]" }}

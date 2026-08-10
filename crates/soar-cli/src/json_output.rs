@@ -121,6 +121,9 @@ pub struct PackageDetailJson {
     pub notes: Vec<String>,
     pub download_url: String,
     pub build_date: Option<String>,
+    /// Written as a person would read them, since that is all a frontend
+    /// does with them.
+    pub maintainers: Vec<String>,
 }
 
 impl From<&Package> for PackageDetailJson {
@@ -141,6 +144,11 @@ impl From<&Package> for PackageDetailJson {
             notes: package.notes.clone().unwrap_or_default(),
             download_url: package.download_url.clone(),
             build_date: package.build_date.clone(),
+            maintainers: package
+                .maintainers
+                .as_ref()
+                .map(|all| all.iter().map(ToString::to_string).collect())
+                .unwrap_or_default(),
         }
     }
 }

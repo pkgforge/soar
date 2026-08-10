@@ -348,6 +348,30 @@ pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec
         packages
     };
 
+    // Who packaged it is kept beside the package rather than on it, so it
+    // takes a second look to say.
+    for package in &mut packages {
+        let found = metadata_mgr.query_repo(&package.repo_name.clone(), |conn| {
+            MetadataRepository::get_maintainers(conn, package.id as i32)
+        });
+
+        if let Ok(Some(maintainers)) = found {
+            let named: Vec<_> = maintainers
+                .into_iter()
+                .map(|m| {
+                    soar_core::database::models::Maintainer {
+                        name: m.name,
+                        contact: m.contact,
+                    }
+                })
+                .collect();
+
+            if !named.is_empty() {
+                package.maintainers = Some(named);
+            }
+        }
+    }
+
     // The query is ordered by name, which says nothing about several versions
     // of one package. Newest first, so the one that would be installed is on
     // top.
