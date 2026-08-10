@@ -46,6 +46,13 @@ version = "{version}"
 # and one published without a family is named on its own.
 selector = ["{{family}}/{{name}}", "{{name}}"]
 
+# Soar manages a separate set of packages for everyone, reached with the same
+# command and one more flag. It elevates itself when it has to, which a window
+# cannot answer, so it is run elevated instead.
+[system]
+args = ["--system"]
+elevate = true
+
 [detect]
 command = "soar"
 version = ["--version"]
@@ -119,13 +126,6 @@ key = "portable_dirs"
 label = "Portable dirs"
 type = "path_list"
 section = "Paths"
-
-[[config]]
-key = "ghcr_concurrency"
-label = "GHCR concurrency"
-type = "number"
-default = 8
-section = "Advanced"
 
 [[config]]
 key = "sync_interval"
