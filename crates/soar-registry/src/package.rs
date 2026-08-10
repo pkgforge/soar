@@ -117,7 +117,6 @@ where
 ///
 /// # Required Fields
 ///
-/// - `pkg_id` - Unique package identifier
 /// - `pkg_name` - Human-readable package name
 /// - `description` - Package description
 /// - `version` - Package version string

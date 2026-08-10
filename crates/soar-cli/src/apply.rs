@@ -10,7 +10,10 @@ use tabled::{
 };
 use tracing::{info, warn};
 
-use crate::utils::{display_settings, icon_or, Colored, Icons};
+use crate::{
+    json_output::{self, ApplyDiffJson},
+    utils::{display_settings, event_stream_enabled, icon_or, Colored, Icons},
+};
 
 pub async fn apply_packages(
     ctx: &SoarContext,
@@ -23,7 +26,7 @@ pub async fn apply_packages(
     let config = PackagesConfig::load(packages_config.as_deref())?;
     let resolved = config.resolved_packages();
 
-    if resolved.is_empty() {
+    if resolved.is_empty() && !(dry_run && event_stream_enabled()) {
         info!("No packages declared in configuration");
         return Ok(());
     }
@@ -31,6 +34,13 @@ pub async fn apply_packages(
     info!("Loaded {} package declaration(s)", resolved.len());
 
     let diff = apply::compute_diff(ctx, &resolved, prune).await?;
+
+    // A dry run is a question rather than an operation, so it answers with the
+    // diff itself instead of streaming what it would do.
+    if dry_run && event_stream_enabled() {
+        json_output::emit(&ApplyDiffJson::new(&diff));
+        return Ok(());
+    }
 
     display_diff(&diff, prune);
 
