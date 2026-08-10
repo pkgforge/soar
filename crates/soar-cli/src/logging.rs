@@ -56,11 +56,19 @@ where
     }
 }
 
-struct WriterBuilder;
+/// Chooses which stream log records go to.
+///
+/// Info goes to stdout and the rest to stderr, unless soar is emitting an
+/// event stream, in which case stdout carries only that.
+struct WriterBuilder {
+    logs_to_stderr: bool,
+}
 
 impl WriterBuilder {
-    fn new() -> Self {
-        Self
+    fn new(logs_to_stderr: bool) -> Self {
+        Self {
+            logs_to_stderr,
+        }
     }
 }
 
@@ -117,11 +125,11 @@ impl<'a> MakeWriter<'a> for WriterBuilder {
     type Writer = SuspendingWriter;
 
     fn make_writer(&'a self) -> Self::Writer {
-        SuspendingWriter::new(false)
+        SuspendingWriter::new(self.logs_to_stderr)
     }
 
     fn make_writer_for(&'a self, meta: &tracing::Metadata<'_>) -> Self::Writer {
-        SuspendingWriter::new(meta.level() != &tracing::Level::INFO)
+        SuspendingWriter::new(self.logs_to_stderr || meta.level() != &tracing::Level::INFO)
     }
 }
 
@@ -144,7 +152,7 @@ pub fn setup_logging(args: &Args) {
         .with_file(false)
         .with_line_number(false)
         .with_span_events(FmtSpan::NONE)
-        .with_writer(WriterBuilder::new())
+        .with_writer(WriterBuilder::new(args.json))
         .compact()
         .without_time();
 

@@ -13,9 +13,31 @@ use tracing::{debug, trace};
 
 use crate::migration::{apply_migrations, migrate_json_to_jsonb, DbType};
 
+/// How long to wait for another process to let go of the database.
+///
+/// Without it SQLite gives up the moment it finds a lock, so two soar
+/// processes running at once fail rather than queue.
+const BUSY_TIMEOUT_MS: u32 = 5_000;
+
 /// Database connection wrapper with migration support.
 pub struct DbConnection {
     conn: SqliteConnection,
+}
+
+/// Set the pragmas every connection wants, before anything reads or writes.
+fn prepare(conn: &mut SqliteConnection) -> Result<(), ConnectionError> {
+    sql_query(format!("PRAGMA busy_timeout = {BUSY_TIMEOUT_MS};"))
+        .execute(conn)
+        .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+
+    // WAL mode for better concurrent access
+    sql_query("PRAGMA journal_mode = WAL;")
+        .execute(conn)
+        .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+
+    trace!("busy timeout and WAL journal mode set");
+
+    Ok(())
 }
 
 impl DbConnection {
@@ -36,10 +58,7 @@ impl DbConnection {
         let mut conn = SqliteConnection::establish(&path_str)?;
         trace!("database connection established");
 
-        sql_query("PRAGMA journal_mode = WAL;")
-            .execute(&mut conn)
-            .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
-        trace!("WAL journal mode enabled");
+        prepare(&mut conn)?;
 
         apply_migrations(&mut conn, &db_type)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
@@ -92,11 +111,7 @@ impl DbConnection {
         let mut conn = SqliteConnection::establish(&path_str)?;
         trace!("database connection established");
 
-        // WAL mode for better concurrent access
-        sql_query("PRAGMA journal_mode = WAL;")
-            .execute(&mut conn)
-            .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
-        trace!("WAL journal mode enabled");
+        prepare(&mut conn)?;
 
         debug!(path = %path_str, "database opened successfully");
         Ok(Self {
@@ -117,11 +132,7 @@ impl DbConnection {
         let mut conn = SqliteConnection::establish(&path_str)?;
         trace!("metadata database connection established");
 
-        // WAL mode for better concurrent access
-        sql_query("PRAGMA journal_mode = WAL;")
-            .execute(&mut conn)
-            .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
-        trace!("WAL journal mode enabled");
+        prepare(&mut conn)?;
 
         // Migrate text JSON to JSONB binary format
         migrate_json_to_jsonb(&mut conn, DbType::Metadata)

@@ -10,8 +10,12 @@ use tabled::{
 };
 use tracing::{debug, info};
 
-use crate::utils::{
-    display_settings, icon_or, pretty_package_size, term_width, vec_string, Colored, Icons,
+use crate::{
+    json_output::{self, InstalledJson, Listing, PackageDetailJson, PackageJson},
+    utils::{
+        display_settings, icon_or, json_enabled, pretty_package_size, term_width, vec_string,
+        Colored, Icons,
+    },
 };
 
 pub async fn search_packages(
@@ -28,6 +32,12 @@ pub async fn search_packages(
     );
 
     let result = search::search_packages(ctx, &query, case_sensitive, limit).await?;
+
+    if json_enabled() {
+        let items: Vec<PackageJson> = result.packages.iter().map(Into::into).collect();
+        json_output::emit(&Listing::new(items, result.total_count));
+        return Ok(());
+    }
 
     let total = result.total_count;
     let display_count = result.packages.len();
@@ -129,6 +139,13 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
     debug!(query = query_str, "querying package info");
 
     let packages = search::query_package(ctx, &query_str).await?;
+
+    if json_enabled() {
+        let items: Vec<PackageDetailJson> = packages.iter().map(Into::into).collect();
+        let total = items.len();
+        json_output::emit(&Listing::new(items, total));
+        return Ok(());
+    }
 
     for package in packages {
         let mut builder = Builder::new();
@@ -289,6 +306,12 @@ pub async fn list_packages(ctx: &SoarContext, repo_name: Option<String>) -> Soar
 
     let result = list::list_packages(ctx, repo_name.as_deref()).await?;
 
+    if json_enabled() {
+        let items: Vec<PackageJson> = result.packages.iter().map(Into::into).collect();
+        json_output::emit(&Listing::new(items, result.total));
+        return Ok(());
+    }
+
     let total = result.total;
     let mut installed_count = 0;
     let mut available_count = 0;
@@ -386,6 +409,12 @@ pub async fn list_installed_packages(
     }
 
     let result = list::list_installed(ctx, repo_name.as_deref())?;
+
+    if json_enabled() {
+        let items: Vec<InstalledJson> = result.packages.iter().map(Into::into).collect();
+        json_output::emit(&Listing::new(items, result.total_count));
+        return Ok(());
+    }
 
     let mut unique_pkgs = HashSet::new();
     let settings = display_settings();

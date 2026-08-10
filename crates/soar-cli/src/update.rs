@@ -1,37 +1,37 @@
 use nu_ansi_term::Color::{Blue, Cyan, Green, Red};
 use soar_core::SoarResult;
-use soar_operations::{update, SoarContext, UpdateReport};
+use soar_operations::{update, SoarContext, UpdateInfo, UpdateReport};
 use tabled::{
     builder::Builder,
     settings::{themes::BorderCorrection, Panel, Style},
 };
 use tracing::{error, info};
 
-use crate::utils::{ask_target_action, display_settings, icon_or, Colored, Icons};
+use crate::{
+    json_output::{self, Listing, UpdateJson},
+    utils::{ask_target_action, display_settings, icon_or, json_enabled, Colored, Icons},
+};
 
 pub async fn update_packages(
     ctx: &SoarContext,
     packages: Option<Vec<String>>,
     keep: bool,
     ask: bool,
+    check: bool,
     no_verify: bool,
 ) -> SoarResult<()> {
     let updates = update::check_updates(ctx, packages.as_deref()).await?;
+
+    if check {
+        return report_pending(&updates);
+    }
 
     if updates.is_empty() {
         info!("No packages to update.");
         return Ok(());
     }
 
-    // Display update info
-    for update_info in &updates {
-        info!(
-            "{}: {} -> {}",
-            Colored(Blue, &update_info.pkg_name),
-            Colored(Red, &update_info.current_version),
-            Colored(Green, &update_info.new_version),
-        );
-    }
+    display_pending(&updates);
 
     if ask {
         let install_targets: Vec<_> = updates.iter().map(|u| u.target.clone()).collect();
@@ -42,6 +42,35 @@ pub async fn update_packages(
     display_update_report(&report);
 
     Ok(())
+}
+
+/// Say what is waiting to be updated, and stop there.
+fn report_pending(updates: &[UpdateInfo]) -> SoarResult<()> {
+    if json_enabled() {
+        let items: Vec<UpdateJson> = updates.iter().map(Into::into).collect();
+        json_output::emit(&Listing::new(items, updates.len()));
+        return Ok(());
+    }
+
+    if updates.is_empty() {
+        info!("No packages to update.");
+        return Ok(());
+    }
+
+    display_pending(updates);
+
+    Ok(())
+}
+
+fn display_pending(updates: &[UpdateInfo]) {
+    for update_info in updates {
+        info!(
+            "{}: {} -> {}",
+            Colored(Blue, &update_info.pkg_name),
+            Colored(Red, &update_info.current_version),
+            Colored(Green, &update_info.new_version),
+        );
+    }
 }
 
 fn display_update_report(report: &UpdateReport) {

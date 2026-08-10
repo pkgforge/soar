@@ -45,8 +45,10 @@ mod health;
 mod inspect;
 mod install;
 mod json2db;
+mod json_output;
 mod list;
 mod logging;
+mod plugin_manifest;
 mod progress;
 mod remove;
 mod repo;
@@ -63,7 +65,23 @@ mod self_actions;
 use self_actions::process_self_action;
 
 pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
+    create_context_for(false)
+}
+
+/// Build the context, putting the event stream where the command leaves room
+/// for it: a command answering with one JSON document keeps stdout for the
+/// answer, so its events go to stderr.
+pub fn create_context_for(answers_with_document: bool) -> (SoarContext, Option<ProgressGuard>) {
     let config = get_config();
+
+    if utils::json_enabled() {
+        let events: EventSinkHandle = if answers_with_document {
+            Arc::new(soar_events::JsonLinesSink::stderr())
+        } else {
+            Arc::new(soar_events::JsonLinesSink::stdout())
+        };
+        return (SoarContext::new(config, events), None);
+    }
 
     if progress_enabled() {
         let (sink, receiver) = soar_events::ChannelSink::new();
@@ -76,6 +94,29 @@ pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
         let ctx = SoarContext::new(config, events);
         (ctx, None)
     }
+}
+
+/// Whether `--json` makes this command answer with a single JSON document.
+fn answers_with_document(command: &cli::Commands) -> bool {
+    matches!(
+        command,
+        cli::Commands::ListPackages { .. }
+            | cli::Commands::ListInstalledPackages { .. }
+            | cli::Commands::Search { .. }
+            | cli::Commands::Query { .. }
+            | cli::Commands::Env
+            | cli::Commands::Update {
+                check: true,
+                ..
+            }
+            | cli::Commands::Apply {
+                dry_run: true,
+                ..
+            }
+            | cli::Commands::Repo {
+                action: cli::RepoAction::List,
+            }
+    )
 }
 
 /// Handle system mode - check for root privileges and re-exec with sudo/doas if needed
@@ -147,6 +188,12 @@ async fn handle_cli() -> SoarResult<()> {
         *progress = false;
     }
 
+    if args.json {
+        *utils::JSON.write().unwrap() = true;
+        // The progress display writes to the same stream as the events.
+        *utils::PROGRESS.write().unwrap() = false;
+    }
+
     if args.system {
         handle_system_mode()?;
     }
@@ -213,7 +260,7 @@ async fn handle_cli() -> SoarResult<()> {
 
             setup_required_paths().unwrap();
 
-            let (ctx, progress_guard) = create_context();
+            let (ctx, progress_guard) = create_context_for(answers_with_document(&command));
             let mut run_exit_code = None;
 
             match command {
@@ -290,9 +337,10 @@ async fn handle_cli() -> SoarResult<()> {
                     packages,
                     keep,
                     ask,
+                    check,
                     no_verify,
                 } => {
-                    update_packages(&ctx, packages, keep, ask, no_verify).await?;
+                    update_packages(&ctx, packages, keep, ask, check, no_verify).await?;
                 }
                 cli::Commands::ListInstalledPackages {
                     repo_name,
@@ -389,21 +437,36 @@ async fn handle_cli() -> SoarResult<()> {
                 } => {
                     repo::handle_repo_action(&ctx, action)?;
                 }
+                cli::Commands::PluginManifest => {
+                    let profiles: Vec<String> = get_config().profile.keys().cloned().collect();
+                    print!("{}", plugin_manifest::manifest(&profiles));
+                }
                 cli::Commands::Env => {
                     let config = get_config();
+                    let paths = json_output::EnvJson {
+                        config: CONFIG_PATH.read()?.display().to_string(),
+                        packages_config: soar_config::packages::PACKAGES_CONFIG_PATH
+                            .read()?
+                            .display()
+                            .to_string(),
+                        bin: config.get_bin_path()?.display().to_string(),
+                        db: config.get_db_path()?.display().to_string(),
+                        cache: config.get_cache_path()?.display().to_string(),
+                        packages: config.get_packages_path(None)?.display().to_string(),
+                        repositories: config.get_repositories_path()?.display().to_string(),
+                    };
 
-                    info!("SOAR_CONFIG={}", CONFIG_PATH.read()?.display());
-                    info!("SOAR_BIN={}", config.get_bin_path()?.display());
-                    info!("SOAR_DB={}", config.get_db_path()?.display());
-                    info!("SOAR_CACHE={}", config.get_cache_path()?.display());
-                    info!(
-                        "SOAR_PACKAGES={}",
-                        config.get_packages_path(None)?.display()
-                    );
-                    info!(
-                        "SOAR_REPOSITORIES={}",
-                        config.get_repositories_path()?.display()
-                    );
+                    if utils::json_enabled() {
+                        json_output::emit(&paths);
+                    } else {
+                        info!("SOAR_CONFIG={}", paths.config);
+                        info!("SOAR_PACKAGES_CONFIG={}", paths.packages_config);
+                        info!("SOAR_BIN={}", paths.bin);
+                        info!("SOAR_DB={}", paths.db);
+                        info!("SOAR_CACHE={}", paths.cache);
+                        info!("SOAR_PACKAGES={}", paths.packages);
+                        info!("SOAR_REPOSITORIES={}", paths.repositories);
+                    }
                 }
                 #[cfg(feature = "self")]
                 cli::Commands::SelfCmd {
@@ -529,5 +592,8 @@ async fn main() {
     if let Err(err) = handle_cli().await {
         // Use miette's error display for Diagnostic errors
         eprintln!("{:?}", miette::Report::new(err));
+        // Anything driving soar reads the exit code to know whether the work
+        // happened, so a failure has to say so.
+        std::process::exit(1);
     }
 }

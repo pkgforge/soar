@@ -10,7 +10,10 @@ use tabled::{
 };
 use tracing::{info, warn};
 
-use crate::utils::{display_settings, icon_or, Colored, Icons};
+use crate::{
+    json_output::{self, ApplyDiffJson},
+    utils::{display_settings, icon_or, json_enabled, Colored, Icons},
+};
 
 pub async fn apply_packages(
     ctx: &SoarContext,
@@ -23,7 +26,11 @@ pub async fn apply_packages(
     let config = PackagesConfig::load(packages_config.as_deref())?;
     let resolved = config.resolved_packages();
 
-    if resolved.is_empty() {
+    // A dry run with --json is a question: it answers with the diff, and an
+    // empty configuration is still an answer.
+    let answers_with_diff = dry_run && json_enabled();
+
+    if resolved.is_empty() && !answers_with_diff {
         info!("No packages declared in configuration");
         return Ok(());
     }
@@ -31,6 +38,11 @@ pub async fn apply_packages(
     info!("Loaded {} package declaration(s)", resolved.len());
 
     let diff = apply::compute_diff(ctx, &resolved, prune).await?;
+
+    if answers_with_diff {
+        json_output::emit(&ApplyDiffJson::new(&diff));
+        return Ok(());
+    }
 
     display_diff(&diff, prune);
 

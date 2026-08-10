@@ -1,5 +1,9 @@
 //! Metadata database repository for package queries.
 
+// `QueryableByName` expands to `Type { field: field }`, which clippy
+// reports against the field it was generated from.
+#![allow(clippy::redundant_field_names)]
+
 use std::sync::OnceLock;
 
 use diesel::{dsl::sql, prelude::*, sql_types::Text};

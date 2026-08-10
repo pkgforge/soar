@@ -313,6 +313,10 @@ pub enum Commands {
         #[arg(required = false, long, short)]
         ask: bool,
 
+        /// Report what would be updated, without updating anything
+        #[arg(required = false, long, conflicts_with_all = ["ask", "keep", "no_verify"])]
+        check: bool,
+
         /// Skip checksum verification
         #[arg(required = false, long)]
         no_verify: bool,
@@ -486,6 +490,10 @@ pub enum Commands {
     /// View env
     #[clap(name = "env")]
     Env,
+
+    /// Print how a frontend should drive this soar
+    #[clap(name = "plugin-manifest")]
+    PluginManifest,
 
     /// Garbage collection
     #[clap(name = "clean")]

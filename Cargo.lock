@@ -2331,6 +2331,10 @@ dependencies = [
 [[package]]
 name = "soar-events"
 version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "soar-operations"

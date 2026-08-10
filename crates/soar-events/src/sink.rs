@@ -1,4 +1,10 @@
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::{
+    io::{self, Write},
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Mutex,
+    },
+};
 
 use crate::SoarEvent;
 
@@ -47,7 +53,7 @@ impl EventSink for NullSink {
 /// Useful in tests to verify that expected events were emitted.
 #[derive(Default)]
 pub struct CollectorSink {
-    events: std::sync::Mutex<Vec<SoarEvent>>,
+    events: Mutex<Vec<SoarEvent>>,
 }
 
 impl CollectorSink {
@@ -67,5 +73,50 @@ impl CollectorSink {
 impl EventSink for CollectorSink {
     fn emit(&self, event: SoarEvent) {
         self.events.lock().unwrap().push(event);
+    }
+}
+
+/// Writes each event as one JSON object per line.
+///
+/// A line is a complete event, so a reader needs no closing bracket and a
+/// stream cut short still parses up to the last full line.
+pub struct JsonLinesSink<W: Write + Send + Sync> {
+    writer: Mutex<W>,
+}
+
+impl<W: Write + Send + Sync> JsonLinesSink<W> {
+    pub fn new(writer: W) -> Self {
+        Self {
+            writer: Mutex::new(writer),
+        }
+    }
+}
+
+impl JsonLinesSink<io::Stdout> {
+    /// Writes to stdout, where a frontend expects the stream.
+    pub fn stdout() -> Self {
+        Self::new(io::stdout())
+    }
+}
+
+impl JsonLinesSink<io::Stderr> {
+    /// Writes beside the answer, for a command whose stdout carries one JSON
+    /// document.
+    pub fn stderr() -> Self {
+        Self::new(io::stderr())
+    }
+}
+
+impl<W: Write + Send + Sync> EventSink for JsonLinesSink<W> {
+    fn emit(&self, event: SoarEvent) {
+        let Ok(line) = serde_json::to_string(&event) else {
+            return;
+        };
+        let Ok(mut writer) = self.writer.lock() else {
+            return;
+        };
+        // Flushed per event: a frontend needs it now, not when the buffer fills.
+        let _ = writeln!(writer, "{line}");
+        let _ = writer.flush();
     }
 }
