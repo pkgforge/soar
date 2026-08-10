@@ -63,11 +63,8 @@ pub fn handle_repo_action(ctx: &SoarContext, action: RepoAction) -> SoarResult<(
             let config = soar_config::config::get_config();
 
             if event_stream_enabled() {
-                let items: Vec<RepositoryJson> = config
-                    .repositories
-                    .iter()
-                    .map(RepositoryJson::from)
-                    .collect();
+                let items: Vec<RepositoryJson> =
+                    config.repositories.iter().map(Into::into).collect();
                 json_output::emit(&Listing::new(items, config.repositories.len()));
                 return Ok(());
             }

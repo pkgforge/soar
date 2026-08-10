@@ -47,7 +47,7 @@ pub async fn update_packages(
 /// Say what is waiting to be updated, and stop there.
 fn report_pending(updates: &[UpdateInfo]) -> SoarResult<()> {
     if event_stream_enabled() {
-        let items: Vec<UpdateJson> = updates.iter().map(UpdateJson::from).collect();
+        let items: Vec<UpdateJson> = updates.iter().map(Into::into).collect();
         json_output::emit(&Listing::new(items, updates.len()));
         return Ok(());
     }

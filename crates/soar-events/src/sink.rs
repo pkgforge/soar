@@ -1,4 +1,10 @@
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::{
+    io::{self, Write},
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Mutex,
+    },
+};
 
 use crate::SoarEvent;
 
@@ -47,7 +53,7 @@ impl EventSink for NullSink {
 /// Useful in tests to verify that expected events were emitted.
 #[derive(Default)]
 pub struct CollectorSink {
-    events: std::sync::Mutex<Vec<SoarEvent>>,
+    events: Mutex<Vec<SoarEvent>>,
 }
 
 impl CollectorSink {
@@ -72,40 +78,36 @@ impl EventSink for CollectorSink {
 
 /// Writes each event as one JSON object per line.
 ///
-/// This is the shape a frontend driving soar over a pipe reads: a line is a
-/// complete event, so a reader never has to buffer for a closing bracket, and
-/// a stream cut short mid-operation still parses up to the last full line.
-pub struct JsonLinesSink<W: std::io::Write + Send + Sync> {
-    writer: std::sync::Mutex<W>,
+/// A line is a complete event, so a reader needs no closing bracket and a
+/// stream cut short still parses up to the last full line.
+pub struct JsonLinesSink<W: Write + Send + Sync> {
+    writer: Mutex<W>,
 }
 
-impl<W: std::io::Write + Send + Sync> JsonLinesSink<W> {
+impl<W: Write + Send + Sync> JsonLinesSink<W> {
     pub fn new(writer: W) -> Self {
         Self {
-            writer: std::sync::Mutex::new(writer),
+            writer: Mutex::new(writer),
         }
     }
 }
 
-impl JsonLinesSink<std::io::Stdout> {
-    /// A sink writing to stdout, which is where a frontend expects the stream.
+impl JsonLinesSink<io::Stdout> {
+    /// Writes to stdout, where a frontend expects the stream.
     pub fn stdout() -> Self {
-        Self::new(std::io::stdout())
+        Self::new(io::stdout())
     }
 }
 
-impl JsonLinesSink<std::io::Stderr> {
-    /// A sink writing beside the answer rather than into it.
-    ///
-    /// A command answering with one JSON document cannot carry a stream on the
-    /// same output, since a reader expecting a document would find a second
-    /// thing after it.
+impl JsonLinesSink<io::Stderr> {
+    /// Writes beside the answer, for a command whose stdout carries one JSON
+    /// document.
     pub fn stderr() -> Self {
-        Self::new(std::io::stderr())
+        Self::new(io::stderr())
     }
 }
 
-impl<W: std::io::Write + Send + Sync> EventSink for JsonLinesSink<W> {
+impl<W: Write + Send + Sync> EventSink for JsonLinesSink<W> {
     fn emit(&self, event: SoarEvent) {
         let Ok(line) = serde_json::to_string(&event) else {
             return;
@@ -113,8 +115,7 @@ impl<W: std::io::Write + Send + Sync> EventSink for JsonLinesSink<W> {
         let Ok(mut writer) = self.writer.lock() else {
             return;
         };
-        // Flushed per event: a frontend rendering progress needs it now, not
-        // when the buffer happens to fill.
+        // Flushed per event: a frontend needs it now, not when the buffer fills.
         let _ = writeln!(writer, "{line}");
         let _ = writer.flush();
     }

@@ -348,10 +348,9 @@ pub async fn query_package(ctx: &SoarContext, query_str: &str) -> SoarResult<Vec
         packages
     };
 
-    // Who packaged it is kept beside the package rather than on it, so it
-    // takes a second look to say.
+    // Maintainers live in their own table, so they take a second query.
     for package in &mut packages {
-        let found = metadata_mgr.query_repo(&package.repo_name.clone(), |conn| {
+        let found = metadata_mgr.query_repo(&package.repo_name, |conn| {
             MetadataRepository::get_maintainers(conn, package.id as i32)
         });
 

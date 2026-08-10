@@ -58,9 +58,8 @@ where
 
 /// Chooses which stream log records go to.
 ///
-/// Normally informational output belongs on stdout with everything else on
-/// stderr. When soar is emitting a machine-readable event stream, stdout
-/// carries only that stream, so logs move aside entirely.
+/// Info goes to stdout and the rest to stderr, unless soar is emitting an
+/// event stream, in which case stdout carries only that.
 struct WriterBuilder {
     logs_to_stderr: bool,
 }

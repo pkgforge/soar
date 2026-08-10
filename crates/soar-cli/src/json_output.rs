@@ -1,10 +1,8 @@
 //! The shapes `--json` reports for the query commands.
 //!
-//! These are written out rather than derived from the internal models on
-//! purpose. Anything a caller can read is a contract soar has to keep, and the
-//! models carry fields that exist for the installer's benefit and would be
-//! awkward to promise. Adding a field here is safe; a model gaining one is not
-//! meant to change the output.
+//! Written out rather than derived from the internal models: what a caller can
+//! read is a contract, and the models carry fields meant for the installer.
+//! Adding a field here is safe; a model gaining one should not change output.
 
 use serde::Serialize;
 use soar_config::repository::Repository;
@@ -25,8 +23,7 @@ pub struct PackageJson {
     pub pkg_type: Option<String>,
     pub size: Option<u64>,
     pub installed: bool,
-    /// Other versions the repository publishes, newest first. Only the newest
-    /// is reported above, so these say what is not being shown.
+    /// Other versions the repository publishes, newest first.
     pub other_versions: Vec<String>,
 }
 
@@ -76,11 +73,10 @@ pub struct InstalledJson {
     pub pkg_type: Option<String>,
     pub installed_path: String,
     pub installed_date: String,
-    /// What the package occupies on disk, which is not the download size.
+    /// Size on disk, which is not the download size.
     pub disk_size: u64,
     pub pinned: bool,
-    /// False when the install did not finish, so the package is on disk but
-    /// not usable.
+    /// False when the install did not finish.
     pub healthy: bool,
 }
 
@@ -112,7 +108,7 @@ pub struct PackageDetailJson {
     pub description: String,
     pub pkg_type: Option<String>,
     pub size: Option<u64>,
-    /// blake3, which is what a download is verified against.
+    /// blake3, as a download is verified against.
     pub checksum: Option<String>,
     pub homepages: Vec<String>,
     pub source_urls: Vec<String>,
@@ -121,8 +117,7 @@ pub struct PackageDetailJson {
     pub notes: Vec<String>,
     pub download_url: String,
     pub build_date: Option<String>,
-    /// Written as a person would read them, since that is all a frontend
-    /// does with them.
+    /// Formatted for display.
     pub maintainers: Vec<String>,
 }
 
@@ -200,8 +195,7 @@ impl From<&Repository> for RepositoryJson {
     }
 }
 
-/// Where soar keeps everything, so a frontend can read and write the same
-/// files rather than guessing at their locations.
+/// Where soar keeps its files, so a frontend can read and write the same ones.
 #[derive(Serialize)]
 pub struct EnvJson {
     pub config: String,
@@ -269,8 +263,7 @@ impl ApplyDiffJson {
     }
 }
 
-/// What a command returns, wrapped so fields can be added later without
-/// changing the shape a caller already reads.
+/// Wraps a listing so fields can be added without changing the shape.
 #[derive(Serialize)]
 pub struct Listing<T: Serialize> {
     pub items: Vec<T>,
@@ -287,9 +280,6 @@ impl<T: Serialize> Listing<T> {
 }
 
 /// Write a result to stdout as a single JSON document.
-///
-/// Query commands answer once, so unlike the event stream this is one object
-/// rather than a line per record.
 pub fn emit<T: Serialize>(value: &T) {
     if let Ok(json) = serde_json::to_string(value) {
         println!("{json}");
