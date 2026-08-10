@@ -74,7 +74,7 @@ pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
 pub fn create_context_for(answers_with_document: bool) -> (SoarContext, Option<ProgressGuard>) {
     let config = get_config();
 
-    if utils::event_stream_enabled() {
+    if utils::json_enabled() {
         let events: EventSinkHandle = if answers_with_document {
             Arc::new(soar_events::JsonLinesSink::stderr())
         } else {
@@ -189,7 +189,7 @@ async fn handle_cli() -> SoarResult<()> {
     }
 
     if args.json {
-        *utils::EVENT_STREAM.write().unwrap() = true;
+        *utils::JSON.write().unwrap() = true;
         // The progress display writes to the same stream as the events.
         *utils::PROGRESS.write().unwrap() = false;
     }
@@ -456,7 +456,7 @@ async fn handle_cli() -> SoarResult<()> {
                         repositories: config.get_repositories_path()?.display().to_string(),
                     };
 
-                    if utils::event_stream_enabled() {
+                    if utils::json_enabled() {
                         json_output::emit(&paths);
                     } else {
                         info!("SOAR_CONFIG={}", paths.config);

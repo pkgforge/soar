@@ -13,8 +13,8 @@ use tracing::{debug, info};
 use crate::{
     json_output::{self, InstalledJson, Listing, PackageDetailJson, PackageJson},
     utils::{
-        display_settings, event_stream_enabled, icon_or, pretty_package_size, term_width,
-        vec_string, Colored, Icons,
+        display_settings, icon_or, json_enabled, pretty_package_size, term_width, vec_string,
+        Colored, Icons,
     },
 };
 
@@ -33,7 +33,7 @@ pub async fn search_packages(
 
     let result = search::search_packages(ctx, &query, case_sensitive, limit).await?;
 
-    if event_stream_enabled() {
+    if json_enabled() {
         let items: Vec<PackageJson> = result.packages.iter().map(Into::into).collect();
         json_output::emit(&Listing::new(items, result.total_count));
         return Ok(());
@@ -140,7 +140,7 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
 
     let packages = search::query_package(ctx, &query_str).await?;
 
-    if event_stream_enabled() {
+    if json_enabled() {
         let items: Vec<PackageDetailJson> = packages.iter().map(Into::into).collect();
         let total = items.len();
         json_output::emit(&Listing::new(items, total));
@@ -306,7 +306,7 @@ pub async fn list_packages(ctx: &SoarContext, repo_name: Option<String>) -> Soar
 
     let result = list::list_packages(ctx, repo_name.as_deref()).await?;
 
-    if event_stream_enabled() {
+    if json_enabled() {
         let items: Vec<PackageJson> = result.packages.iter().map(Into::into).collect();
         json_output::emit(&Listing::new(items, result.total));
         return Ok(());
@@ -410,7 +410,7 @@ pub async fn list_installed_packages(
 
     let result = list::list_installed(ctx, repo_name.as_deref())?;
 
-    if event_stream_enabled() {
+    if json_enabled() {
         let items: Vec<InstalledJson> = result.packages.iter().map(Into::into).collect();
         json_output::emit(&Listing::new(items, result.total_count));
         return Ok(());

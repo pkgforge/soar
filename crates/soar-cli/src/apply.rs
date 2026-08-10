@@ -12,7 +12,7 @@ use tracing::{info, warn};
 
 use crate::{
     json_output::{self, ApplyDiffJson},
-    utils::{display_settings, event_stream_enabled, icon_or, Colored, Icons},
+    utils::{display_settings, icon_or, json_enabled, Colored, Icons},
 };
 
 pub async fn apply_packages(
@@ -26,7 +26,11 @@ pub async fn apply_packages(
     let config = PackagesConfig::load(packages_config.as_deref())?;
     let resolved = config.resolved_packages();
 
-    if resolved.is_empty() && !(dry_run && event_stream_enabled()) {
+    // A dry run with --json is a question: it answers with the diff, and an
+    // empty configuration is still an answer.
+    let answers_with_diff = dry_run && json_enabled();
+
+    if resolved.is_empty() && !answers_with_diff {
         info!("No packages declared in configuration");
         return Ok(());
     }
@@ -35,9 +39,7 @@ pub async fn apply_packages(
 
     let diff = apply::compute_diff(ctx, &resolved, prune).await?;
 
-    // A dry run is a question rather than an operation, so it answers with the
-    // diff itself instead of streaming what it would do.
-    if dry_run && event_stream_enabled() {
+    if answers_with_diff {
         json_output::emit(&ApplyDiffJson::new(&diff));
         return Ok(());
     }

@@ -6,7 +6,7 @@ use tracing::info;
 use crate::{
     cli::RepoAction,
     json_output::{self, Listing, RepositoryJson},
-    utils::event_stream_enabled,
+    utils::json_enabled,
 };
 
 pub fn handle_repo_action(ctx: &SoarContext, action: RepoAction) -> SoarResult<()> {
@@ -62,7 +62,7 @@ pub fn handle_repo_action(ctx: &SoarContext, action: RepoAction) -> SoarResult<(
         RepoAction::List => {
             let config = soar_config::config::get_config();
 
-            if event_stream_enabled() {
+            if json_enabled() {
                 let items: Vec<RepositoryJson> =
                     config.repositories.iter().map(Into::into).collect();
                 json_output::emit(&Listing::new(items, config.repositories.len()));

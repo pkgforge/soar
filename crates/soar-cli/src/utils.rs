@@ -65,15 +65,15 @@ pub fn term_width() -> usize {
 
 pub static COLOR: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
 pub static PROGRESS: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(true));
-/// Whether stdout carries the machine-readable event stream.
-pub static EVENT_STREAM: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(false));
+/// Whether `--json` was passed, so output is machine readable.
+pub static JSON: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(false));
 
 pub fn progress_enabled() -> bool {
     *PROGRESS.read().unwrap()
 }
 
-pub fn event_stream_enabled() -> bool {
-    *EVENT_STREAM.read().unwrap()
+pub fn json_enabled() -> bool {
+    *JSON.read().unwrap()
 }
 
 pub fn interactive_ask(ques: &str) -> SoarResult<String> {

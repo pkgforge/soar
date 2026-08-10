@@ -9,7 +9,7 @@ use tracing::{error, info};
 
 use crate::{
     json_output::{self, Listing, UpdateJson},
-    utils::{ask_target_action, display_settings, event_stream_enabled, icon_or, Colored, Icons},
+    utils::{ask_target_action, display_settings, icon_or, json_enabled, Colored, Icons},
 };
 
 pub async fn update_packages(
@@ -46,7 +46,7 @@ pub async fn update_packages(
 
 /// Say what is waiting to be updated, and stop there.
 fn report_pending(updates: &[UpdateInfo]) -> SoarResult<()> {
-    if event_stream_enabled() {
+    if json_enabled() {
         let items: Vec<UpdateJson> = updates.iter().map(Into::into).collect();
         json_output::emit(&Listing::new(items, updates.len()));
         return Ok(());
