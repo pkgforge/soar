@@ -1,4 +1,10 @@
 
+## [0.3.0](https://github.com/pkgforge/soar/compare/soar-events-v0.2.0...soar-events-v0.3.0) - 2026-08-10
+
+### ⛰️  Features
+
+- *(cli)* Expose soar to frontends with JSON output and a plugin manifest ([#192](https://github.com/pkgforge/soar/pull/192)) - ([1ea7f51](https://github.com/pkgforge/soar/commit/1ea7f51c854c007de53b734de5a3892baaba2c2e))
+
 ## [0.2.0](https://github.com/pkgforge/soar/compare/soar-events-v0.1.0...soar-events-v0.2.0) - 2026-08-02
 
 ### ⛰️  Features

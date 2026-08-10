@@ -1,4 +1,10 @@
 
+## [0.6.2](https://github.com/pkgforge/soar/compare/soar-db-v0.6.1...soar-db-v0.6.2) - 2026-08-10
+
+### ⛰️  Features
+
+- *(cli)* Expose soar to frontends with JSON output and a plugin manifest ([#192](https://github.com/pkgforge/soar/pull/192)) - ([1ea7f51](https://github.com/pkgforge/soar/commit/1ea7f51c854c007de53b734de5a3892baaba2c2e))
+
 ## [0.6.1](https://github.com/pkgforge/soar/compare/soar-db-v0.6.0...soar-db-v0.6.1) - 2026-08-05
 
 ### ⚙️ Miscellaneous Tasks
