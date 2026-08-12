@@ -1,9 +1,8 @@
 //! Handling of `soar://` links.
 //!
-//! Any web page can send the browser to a `soar://` URL, so what arrives here
-//! is attacker-controlled input that reached the machine without the user
-//! typing anything. It is matched against a strict allowlist, never handed to
-//! a shell, and always confirmed on the terminal before soar acts on it.
+//! Any web page can send the browser here, so a link is untrusted input that
+//! reached the machine without the user typing anything: it is matched against
+//! an allowlist and confirmed on a terminal before soar acts on it.
 
 use std::{env, fs, io::IsTerminal, path::PathBuf, process::Command, sync::OnceLock};
 
@@ -22,21 +21,16 @@ use crate::{
     utils::{interactive_ask, Colored},
 };
 
-/// Long enough for any real package query, short enough to bound the work.
 const MAX_URL_LEN: usize = 512;
 
 const DESKTOP_FILE_NAME: &str = "soar-url-handler.desktop";
 const SCHEME_MIME: &str = "x-scheme-handler/soar";
 
-/// Set on the copy of soar running inside the terminal, so a terminal that
-/// fails to give it one cannot start the search over again.
+/// Guards against searching for a terminal again inside the one just opened.
 const IN_TERMINAL: &str = "SOAR_URL_IN_TERMINAL";
 
-/// How each terminal takes a command to run. There is no agreed flag, and
-/// `Terminal=true` in a desktop entry only covers the handful GLib knows, so
-/// the search happens here instead.
+/// How each terminal takes a command to run, since they never agreed on a flag.
 const TERMINALS: &[(&str, &[&str])] = &[
-    // The freedesktop tool for exactly this, when it is installed.
     ("xdg-terminal-exec", &[]),
     ("wezterm", &["start", "--"]),
     ("ghostty", &["-e"]),
@@ -52,7 +46,6 @@ const TERMINALS: &[(&str, &[&str])] = &[
     ("xterm", &["-e"]),
 ];
 
-/// What a `soar://` link is asking for.
 #[derive(Debug, PartialEq, Eq)]
 pub enum UrlRequest {
     /// Install a package, given as a normal `family/name@version:repo` query.
@@ -63,24 +56,21 @@ fn invalid(reason: &str) -> SoarError {
     SoarError::Custom(format!("Invalid soar:// URL: {reason}"))
 }
 
-/// Parse a `soar://` URL into the action it requests.
-///
-/// Rejects anything outside the allowlist rather than trying to sanitize it,
-/// so a name can never turn into a flag, a path, or a shell word.
+/// Parse a `soar://` URL, rejecting anything outside the allowlist rather
+/// than trying to sanitize it.
 pub fn parse(url: &str) -> SoarResult<UrlRequest> {
     if url.len() > MAX_URL_LEN {
         return Err(invalid("too long"));
     }
 
-    // Schemes are case-insensitive, and a browser passes on whatever the page
-    // wrote.
+    // Schemes are case-insensitive.
     let (_, rest) = url
         .split_once("://")
         .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("soar"))
         .ok_or_else(|| invalid("expected a soar:// link"))?;
 
-    // The allowed characters never need escaping, so an escape is a sign of
-    // someone trying to smuggle one past the allowlist.
+    // Nothing in the allowlist needs escaping, so an escape is only ever an
+    // attempt to smuggle something past it.
     if rest.contains(['%', '?', '#']) {
         return Err(invalid("escapes and query strings are not accepted"));
     }
@@ -88,7 +78,6 @@ pub fn parse(url: &str) -> SoarResult<UrlRequest> {
     let (action, spec) = rest
         .split_once('/')
         .ok_or_else(|| invalid("expected soar://install/<package>"))?;
-    // A browser may keep the trailing slash that ends an authority.
     let spec = spec.trim_end_matches('/');
 
     match action {
@@ -100,9 +89,8 @@ pub fn parse(url: &str) -> SoarResult<UrlRequest> {
     }
 }
 
-/// Accept only the shape of a package query, spelled out character by
-/// character. Notably a segment cannot start with `-`, so no part of a link
-/// can arrive at soar looking like a flag.
+/// A segment cannot start with `-`, so no part of a link can reach soar
+/// looking like a flag.
 fn validate_spec(spec: &str) -> SoarResult<()> {
     static SPEC_RE: OnceLock<Regex> = OnceLock::new();
     let re = SPEC_RE.get_or_init(|| {
@@ -151,7 +139,6 @@ fn desktop_entry(exe: &str) -> String {
     )
 }
 
-/// Find a terminal, preferring the one the user named.
 fn find_terminal() -> Option<(String, Vec<String>)> {
     let known = |name: &str| {
         TERMINALS
@@ -167,7 +154,7 @@ fn find_terminal() -> Option<(String, Vec<String>)> {
             .next()
             .unwrap_or(&preferred)
             .to_string();
-        // An unrecognized terminal still gets a try: `-e` is the common form.
+        // An unknown terminal still gets a try: `-e` is the common form.
         let args = known(&base).unwrap_or_else(|| vec!["-e".to_string()]);
         if which(&preferred).is_some() {
             return Some((preferred, args));
@@ -191,15 +178,13 @@ fn which(name: &str) -> Option<String> {
     })
 }
 
-/// Re-run soar inside a terminal, so a link opened from a browser has
-/// somewhere to show what it is about to do and to ask.
+/// Re-run soar inside a terminal, which a link from a browser has none of.
 fn relaunch_in_terminal(url: &str) -> SoarResult<()> {
     let exe = env::current_exe()
         .map_err(|e| SoarError::Custom(format!("Failed to get current executable path: {e}")))?;
 
     let Some((terminal, args)) = find_terminal() else {
-        // Nothing is watching stderr when a browser starts this, so say it
-        // somewhere the user will actually see.
+        // Nothing is watching stderr when a browser starts this.
         let _ = Command::new("notify-send")
             .args(["Soar", "No terminal found to open the soar:// link in"])
             .status();
@@ -229,8 +214,7 @@ pub fn register() -> SoarResult<PathBuf> {
     fs::write(&path, desktop_entry(&exe.to_string_lossy()))
         .with_context(|| format!("writing {}", path.display()))?;
 
-    // Both are best-effort: the entry is already in place, and a desktop that
-    // reads it directly will find it without them.
+    // Best-effort: the entry is already in place without them.
     let _ = Command::new("update-desktop-database").arg(&dir).status();
     let _ = Command::new("xdg-mime")
         .args(["default", DESKTOP_FILE_NAME, SCHEME_MIME])
@@ -252,13 +236,13 @@ pub async fn handle(ctx: &SoarContext, url: Option<String>, register_only: bool)
     })?;
     let UrlRequest::Install(spec) = parse(&url)?;
 
-    // Started from a browser there is no terminal to ask in, so get one first.
+    // Started from a browser there is nowhere to ask, so get a terminal first.
     if !std::io::stdin().is_terminal() && env::var_os(IN_TERMINAL).is_none() {
         return relaunch_in_terminal(&url);
     }
 
-    // A link can arrive from any page the user happens to visit. The browser
-    // does not say which one, so the warning claims no more than it knows.
+    // The browser never says which page sent the link, so the warning claims
+    // no more than that.
     info!("\n{}\n", Colored(Blue, "Install request from a link"));
     info!("    {}\n", Colored(Yellow, &spec));
     info!("A page you opened asked for this, rather than you typing it.");
@@ -292,8 +276,7 @@ pub async fn handle(ctx: &SoarContext, url: Option<String>, register_only: bool)
     )
     .await;
 
-    // The terminal a desktop entry opens closes the moment this returns, so
-    // the outcome is held on screen either way.
+    // The terminal closes the moment this returns, so hold the outcome.
     if let Err(ref err) = result {
         info!("{err}");
     }
