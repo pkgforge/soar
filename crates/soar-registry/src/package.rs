@@ -192,7 +192,7 @@ pub struct RemotePackage {
     #[serde(default, deserialize_with = "empty_is_none")]
     pub build_id: Option<String>,
 
-    #[serde(default, deserialize_with = "empty_is_none")]
+    #[serde(default, deserialize_with = "empty_is_none", alias = "date")]
     pub build_date: Option<String>,
 
     #[serde(default, deserialize_with = "empty_is_none", alias = "build_gha")]
