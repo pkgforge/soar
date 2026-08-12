@@ -72,9 +72,11 @@ pub fn parse(url: &str) -> SoarResult<UrlRequest> {
         return Err(invalid("too long"));
     }
 
-    let rest = url
-        .strip_prefix("soar://")
-        .or_else(|| url.strip_prefix("SOAR://"))
+    // Schemes are case-insensitive, and a browser passes on whatever the page
+    // wrote.
+    let (_, rest) = url
+        .split_once("://")
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("soar"))
         .ok_or_else(|| invalid("expected a soar:// link"))?;
 
     // The allowed characters never need escaping, so an escape is a sign of
@@ -347,6 +349,21 @@ mod tests {
             "soar://install/rip grep",
         ] {
             assert!(parse(url).is_err(), "{url} should be rejected");
+        }
+    }
+
+    #[test]
+    fn accepts_the_scheme_in_any_case() {
+        for url in [
+            "SOAR://install/ripgrep",
+            "Soar://install/ripgrep",
+            "sOaR://install/ripgrep",
+        ] {
+            assert_eq!(
+                parse(url).unwrap(),
+                UrlRequest::Install("ripgrep".into()),
+                "{url} should be accepted"
+            );
         }
     }
 
