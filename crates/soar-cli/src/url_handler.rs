@@ -4,7 +4,14 @@
 //! reached the machine without the user typing anything: it is matched against
 //! an allowlist and confirmed on a terminal before soar acts on it.
 
-use std::{env, fs, io::IsTerminal, path::PathBuf, process::Command, sync::OnceLock};
+use std::{
+    env, fs,
+    io::IsTerminal,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::OnceLock,
+};
 
 use nu_ansi_term::Color::{Blue, Yellow};
 use regex::Regex;
@@ -116,14 +123,39 @@ fn validate_spec(spec: &str) -> SoarResult<()> {
     Ok(())
 }
 
-fn desktop_entry(exe: &str) -> String {
+/// Encode a path for the `Exec` key.
+///
+/// Two layers apply: `%` starts a field code, so a literal one doubles, and
+/// inside quotes a backslash guards `"`, a backtick, `$` and itself, which the
+/// desktop-entry string layer then escapes a second time.
+fn escape_exec(exe: &str) -> String {
+    const RESERVED: &str = " \t\n\"'\\><~|&;$*?#()`";
+
+    let exe = exe.replace('%', "%%");
     // Quoted only when it has to be: xdg-open's generic fallback resolves the
     // Exec path with a plain `command -v` and finds nothing behind quotes.
-    let exec = if exe.contains(|c: char| c.is_whitespace() || "\"\\$`".contains(c)) {
-        format!("\"{exe}\"")
-    } else {
-        exe.to_string()
-    };
+    if !exe.contains(|c| RESERVED.contains(c)) {
+        return exe;
+    }
+
+    let mut out = String::with_capacity(exe.len() + 2);
+    out.push('"');
+    for c in exe.chars() {
+        match c {
+            '\\' => out.push_str(r"\\\\"),
+            '"' | '`' | '$' => {
+                out.push_str(r"\\");
+                out.push(c);
+            }
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn desktop_entry(exe: &str) -> String {
+    let exec = escape_exec(exe);
 
     // Terminal=false: soar opens the terminal itself, because GLib only knows
     // a fixed list of them and silently does nothing when yours is not on it.
@@ -166,14 +198,20 @@ fn find_terminal() -> Option<(String, Vec<String>)> {
     })
 }
 
+fn is_executable(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
 fn which(name: &str) -> Option<String> {
     if name.contains('/') {
-        return fs::metadata(name).is_ok().then(|| name.to_string());
+        return is_executable(Path::new(name)).then(|| name.to_string());
     }
     env::var_os("PATH").and_then(|paths| {
         env::split_paths(&paths)
             .map(|dir| dir.join(name))
-            .find(|candidate| candidate.is_file())
+            .find(|candidate| is_executable(candidate))
             .map(|candidate| candidate.to_string_lossy().into_owned())
     })
 }
@@ -241,12 +279,13 @@ pub async fn handle(ctx: &SoarContext, url: Option<String>, register_only: bool)
         return relaunch_in_terminal(&url);
     }
 
-    // The browser never says which page sent the link, so the warning claims
-    // no more than that.
-    info!("\n{}\n", Colored(Blue, "Install request from a link"));
-    info!("    {}\n", Colored(Yellow, &spec));
-    info!("A page you opened asked for this, rather than you typing it.");
-    info!("Continue only if you trust where the link came from.");
+    // Printed rather than logged: this is the context for the prompt below, and
+    // `--quiet` or `--json` would filter it out while leaving the prompt behind.
+    // The browser never says which page sent the link, so it claims no more.
+    println!("\n{}\n", Colored(Blue, "Install request from a link"));
+    println!("    {}\n", Colored(Yellow, &spec));
+    println!("A page you opened asked for this, rather than you typing it.");
+    println!("Continue only if you trust where the link came from.");
 
     let answer = interactive_ask(&format!("\nInstall {spec}? [y/N]: "))?;
     if !answer.eq_ignore_ascii_case("y") && !answer.eq_ignore_ascii_case("yes") {
@@ -276,12 +315,16 @@ pub async fn handle(ctx: &SoarContext, url: Option<String>, register_only: bool)
     )
     .await;
 
-    // The terminal closes the moment this returns, so hold the outcome.
-    if let Err(ref err) = result {
-        info!("{err}");
+    // The terminal closes the moment this returns, so hold the outcome. Failing
+    // to wait must not stand in for what actually went wrong.
+    match result {
+        Err(err) => {
+            info!("{err}");
+            let _ = wait_for_close();
+            Err(err)
+        }
+        Ok(()) => wait_for_close(),
     }
-    wait_for_close()?;
-    result
 }
 
 fn wait_for_close() -> SoarResult<()> {
@@ -291,7 +334,48 @@ fn wait_for_close() -> SoarResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, UrlRequest};
+    use super::{desktop_entry, parse, validate_spec, UrlRequest};
+
+    fn exec_line(exe: &str) -> String {
+        desktop_entry(exe)
+            .lines()
+            .find_map(|line| line.strip_prefix("Exec=").map(str::to_string))
+            .expect("desktop entry has an Exec line")
+    }
+
+    #[test]
+    fn leaves_an_ordinary_path_unquoted() {
+        // xdg-open's generic fallback resolves this with a plain `command -v`.
+        assert_eq!(exec_line("/usr/bin/soar"), "/usr/bin/soar url %u");
+    }
+
+    #[test]
+    fn encodes_paths_the_exec_key_would_otherwise_misread() {
+        // `%` starts a field code, so a literal one doubles. It is not itself
+        // reserved, so that alone is enough and the path stays unquoted.
+        assert_eq!(exec_line("/opt/100%/soar"), "/opt/100%%/soar url %u");
+        assert_eq!(
+            exec_line("/opt/my apps/soar"),
+            "\"/opt/my apps/soar\" url %u"
+        );
+        // Inside quotes these take a backslash, which the string layer escapes
+        // a second time.
+        assert_eq!(exec_line("/opt/a\"b/soar"), "\"/opt/a\\\\\"b/soar\" url %u");
+        assert_eq!(exec_line("/opt/a$b/soar"), "\"/opt/a\\\\$b/soar\" url %u");
+        assert_eq!(exec_line("/opt/a`b/soar"), "\"/opt/a\\\\`b/soar\" url %u");
+        assert_eq!(
+            exec_line("/opt/a\\b/soar"),
+            "\"/opt/a\\\\\\\\b/soar\" url %u"
+        );
+        // Reserved without needing an escape of its own.
+        assert_eq!(exec_line("/opt/a&b/soar"), "\"/opt/a&b/soar\" url %u");
+    }
+
+    #[test]
+    fn rejects_a_version_that_is_not_there() {
+        assert!(validate_spec("ripgrep@").is_err());
+        assert!(validate_spec("ripgrep@1.2.3").is_ok());
+    }
 
     #[test]
     fn accepts_the_shapes_a_package_query_can_take() {

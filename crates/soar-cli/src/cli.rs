@@ -496,6 +496,7 @@ pub enum Commands {
     PluginManifest,
 
     /// Act on a soar:// link, or register soar as its handler
+    #[command(arg_required_else_help = true)]
     #[clap(name = "url")]
     Url {
         /// The soar:// link to act on
