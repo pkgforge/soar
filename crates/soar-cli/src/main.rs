@@ -54,6 +54,7 @@ mod remove;
 mod repo;
 mod run;
 mod update;
+mod url_handler;
 #[path = "use.rs"]
 mod use_package;
 mod utils;
@@ -440,6 +441,12 @@ async fn handle_cli() -> SoarResult<()> {
                 cli::Commands::PluginManifest => {
                     let profiles: Vec<String> = get_config().profile.keys().cloned().collect();
                     print!("{}", plugin_manifest::manifest(&profiles));
+                }
+                cli::Commands::Url {
+                    url,
+                    register,
+                } => {
+                    url_handler::handle(&ctx, url, register).await?;
                 }
                 cli::Commands::Env => {
                     let config = get_config();
