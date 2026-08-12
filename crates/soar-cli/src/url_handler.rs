@@ -25,7 +25,7 @@ use tracing::info;
 
 use crate::{
     install::install_packages,
-    utils::{interactive_ask, Colored},
+    utils::{interactive_ask, json_enabled, Colored},
 };
 
 const MAX_URL_LEN: usize = 512;
@@ -263,6 +263,12 @@ pub fn register() -> SoarResult<PathBuf> {
 
 /// Act on a `soar://` link, or register soar as their handler.
 pub async fn handle(ctx: &SoarContext, url: Option<String>, register_only: bool) -> SoarResult<()> {
+    // The prompt writes straight to stdout, so there is no coherent document to
+    // be had here. Refuse rather than hand back a stream with a question in it.
+    if json_enabled() {
+        return Err(SoarError::Custom("soar url has no JSON output".into()));
+    }
+
     if register_only {
         let path = register()?;
         info!("Registered soar for soar:// links: {}", path.display());
