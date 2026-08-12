@@ -33,6 +33,12 @@ const MAX_URL_LEN: usize = 512;
 const DESKTOP_FILE_NAME: &str = "soar-url-handler.desktop";
 const SCHEME_MIME: &str = "x-scheme-handler/soar";
 
+/// The entry a package would ship, which registering rewrites for one user.
+const DESKTOP_ENTRY: &str = include_str!("../assets/soar-url-handler.desktop");
+
+/// The line in it that names the soar to run. A test keeps the two in step.
+const PACKAGED_EXEC: &str = "Exec=soar url %u";
+
 /// Guards against searching for a terminal again inside the one just opened.
 const IN_TERMINAL: &str = "SOAR_URL_IN_TERMINAL";
 
@@ -154,21 +160,11 @@ fn escape_exec(exe: &str) -> String {
     out
 }
 
+/// The shipped entry, pointed at the soar doing the registering rather than at
+/// whichever one `PATH` happens to hold.
 fn desktop_entry(exe: &str) -> String {
-    let exec = escape_exec(exe);
-
-    // Terminal=false: soar opens the terminal itself, because GLib only knows
-    // a fixed list of them and silently does nothing when yours is not on it.
-    format!(
-        "[Desktop Entry]\n\
-         Type=Application\n\
-         Name=Soar\n\
-         Comment=Install packages from soar:// links\n\
-         Exec={exec} url %u\n\
-         Terminal=false\n\
-         NoDisplay=true\n\
-         MimeType={SCHEME_MIME};\n"
-    )
+    let exec = format!("Exec={} url %u", escape_exec(exe));
+    DESKTOP_ENTRY.replace(PACKAGED_EXEC, &exec)
 }
 
 fn find_terminal() -> Option<(String, Vec<String>)> {
@@ -340,13 +336,24 @@ fn wait_for_close() -> SoarResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{desktop_entry, parse, validate_spec, UrlRequest};
+    use super::{
+        desktop_entry, parse, validate_spec, UrlRequest, DESKTOP_ENTRY, PACKAGED_EXEC, SCHEME_MIME,
+    };
 
     fn exec_line(exe: &str) -> String {
         desktop_entry(exe)
             .lines()
             .find_map(|line| line.strip_prefix("Exec=").map(str::to_string))
             .expect("desktop entry has an Exec line")
+    }
+
+    #[test]
+    fn the_shipped_entry_still_says_what_registering_rewrites() {
+        // Drift here would leave the registered entry pointing at whatever soar
+        // is on PATH, or at nothing at all.
+        assert!(DESKTOP_ENTRY.contains(PACKAGED_EXEC));
+        assert!(DESKTOP_ENTRY.contains(&format!("MimeType={SCHEME_MIME};")));
+        assert!(DESKTOP_ENTRY.contains("Terminal=false"));
     }
 
     #[test]

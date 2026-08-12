@@ -1,0 +1,15 @@
+# Handler for soar:// links, as shipped by a package.
+#
+# `soar url --register` installs this for a single user, rewriting Exec to the
+# absolute path of the soar that registered it.
+#
+# Terminal is false because soar opens the terminal itself: GLib only knows a
+# fixed list of terminals and silently does nothing when yours is not on it.
+[Desktop Entry]
+Type=Application
+Name=Soar
+Comment=Install packages from soar:// links
+Exec=soar url %u
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/soar;
