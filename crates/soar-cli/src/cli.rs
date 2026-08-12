@@ -495,6 +495,19 @@ pub enum Commands {
     #[clap(name = "plugin-manifest")]
     PluginManifest,
 
+    /// Act on a soar:// link, or register soar as its handler
+    #[command(arg_required_else_help = true)]
+    #[clap(name = "url")]
+    Url {
+        /// The soar:// link to act on
+        #[arg(required = false, conflicts_with = "register")]
+        url: Option<String>,
+
+        /// Register soar as the handler for soar:// links
+        #[arg(required = false, long)]
+        register: bool,
+    },
+
     /// Garbage collection
     #[clap(name = "clean")]
     Clean {
