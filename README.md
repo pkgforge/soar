@@ -27,14 +27,16 @@
 
 ## 📦 What is Soar?
 
-Soar is a **package manager** - it doesn't build or host packages itself. Instead, it consumes package metadata from repositories and handles downloading, installing, and managing packages on your system.
+Soar installs packages; it does not build or host them. Repositories publish
+metadata in a standard format, and Soar reads that metadata to search, install
+and update packages under your home directory.
 
-**How it works:**
-- **Repositories** (like [soarpkgs](https://github.com/pkgforge/soarpkgs) - the default) build and host packages, providing metadata in a standard format
-- **Soar** fetches this metadata, lets you search/install packages, and manages your local installations
-- **You** can use soarpkgs, add third-party repos, or even create your own
+That split is the point: [soarpkgs](https://github.com/pkgforge/soarpkgs) is
+the default repository, but Soar is not tied to it. Add a third-party one, or
+[run your own](https://soar.qaidvoid.dev/configuration#custom-repository-support).
 
-This separation means Soar works with any compatible repository - it's not tied to a specific package source.
+Runs on any Linux distribution, on **x86_64**, **aarch64** and **riscv64**. No
+superuser, no runtime dependencies, no distribution packages touched.
 
 ## 🪄 Quickstart
 
@@ -60,15 +62,37 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 
 | Feature | Description |
 |:--:|:--|
-| **Universal** | Single binary, no dependencies, works on any Unix-like system without superuser privileges. |
+| **Universal** | Single statically-linked binary. No dependencies, no superuser, works on any Linux distribution. |
 | **Portable Formats** | Install static binaries, AppImages, and other self-contained archives with ease. |
 | **System Integration** | Adds desktop entries and icons, and links manual pages and shell completions where your system already looks for them. |
 | **Install From Anywhere** | Install from a repository, a direct URL, or a local file. A package installed from a GitHub or GitLab release is then kept up to date from that release. |
 | **Delta Updates** | An AppImage advertising a zsync feed is updated by fetching only the parts that changed. |
-| **Repository Agnostic** | Works with any repository that provides compatible metadata. Use [official soarpkgs repo](https://github.com/pkgforge/soarpkgs), third-party sources, or [create your own](https://soar.qaidvoid.dev/configuration#custom-repository-support). |
 | **Security First** | Enforces security through checksums and signature verification for package installations. |
 | **Fast & Efficient** | Minimal overhead with parallel downloads and efficient package operations. |
 
+
+## 🚀 Usage
+
+```bash
+soar sync                  # fetch repository metadata
+soar search ripgrep        # find a package
+soar install ripgrep       # install it
+soar run ripgrep           # run it once, without installing
+soar list                  # everything available
+soar info                  # what you have installed
+soar update                # update everything
+soar remove ripgrep        # remove it
+```
+
+A package can also come straight from a URL or a local file, and one installed
+from a GitHub or GitLab release keeps tracking that release:
+
+```bash
+soar install https://github.com/owner/repo/releases/download/v1/tool
+```
+
+`soar --help` lists the rest. Full documentation is at
+[soar.qaidvoid.dev](https://soar.qaidvoid.dev/package-management).
 
 ## 🔑 Forge Tokens
 
