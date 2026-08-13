@@ -93,7 +93,7 @@ pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
             "https://github.com/pkgforge/soarpkgs/releases/latest/download/metadata-{}.sdb.zstd",
         pubkey: Some(SOARPKGS_PUBKEY),
         desktop_integration: Some(true),
-        platforms: vec!["aarch64-linux", "x86_64-linux"],
+        platforms: vec!["aarch64-linux", "riscv64-linux", "x86_64-linux"],
         ..DefaultRepositoryInfo::default()
     }]
 }
