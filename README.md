@@ -2,6 +2,8 @@
 
 [crates-shield]: https://img.shields.io/crates/v/soar-cli
 [crates-url]: https://crates.io/crates/soar-cli
+[downloads-shield]: https://img.shields.io/github/downloads/pkgforge/soar/total?label=downloads
+[downloads-url]: https://github.com/pkgforge/soar/releases
 [discord-shield]: https://img.shields.io/discord/1313385177703256064?logo=%235865F2&label=discord
 [discord-url]: https://discord.gg/djJUs48Zbu
 [doc-shield]: https://img.shields.io/badge/docs-soar.qaidvoid.dev-blue
@@ -9,43 +11,42 @@
 [license-shield]: https://img.shields.io/github/license/pkgforge/soar.svg
 [license-url]: https://github.com/pkgforge/soar/blob/main/LICENSE
 
+# Soar
+
 [![Crates.io][crates-shield]][crates-url]
+[![Downloads][downloads-shield]][downloads-url]
 [![Discord][discord-shield]][discord-url]
 [![Documentation][doc-shield]][doc-url]
 [![License: MIT][license-shield]][license-url]
 
+**A fast, modern, distro-independent package manager that _just works_.**
+
+Install static binaries, AppImages, and other portable formats
+(AppBundle, FlatImage, RunImage, onelf, and more) on any Linux distribution.
+
 </div>
-
-<h4 align="center">
-  <a href="https://soar.qaidvoid.dev">📘 Documentation</a> |
-</h4>
-
-<p align="center">
-    A fast, modern, bloat-free distro-independent package manager that <i>just works</i><br>
-    Supports static binaries, AppImages, and other Portable formats (AppBundle, FlatImage, RunImage, Wrappe, etc.) on any Linux distribution.
-</p>
 
 ## 📦 What is Soar?
 
 Soar installs packages; it does not build or host them. Repositories publish
-metadata in a standard format, and Soar reads that metadata to search, install
-and update packages under your home directory.
+metadata in a standard format, and Soar reads that metadata to search, install,
+and update packages right under your home directory.
 
-That split is the point: [soarpkgs](https://github.com/pkgforge/soarpkgs) is
-the default repository, but Soar is not tied to it. Add a third-party one, or
-[run your own](https://soar.qaidvoid.dev/configuration#custom-repository-support).
+That split is the whole point. [soarpkgs](https://github.com/pkgforge/soarpkgs)
+is the default repository, but Soar is not tied to it. Add a third-party one, or
+[run your own](https://soar.qaidvoid.dev/configuration#repositories).
 
-Runs on any Linux distribution, on **x86_64**, **aarch64** and **riscv64**. No
-superuser, no runtime dependencies, no distribution packages touched.
+It runs on any Linux distribution, with no superuser, no runtime dependencies,
+and no distribution packages touched. What you can install depends on the
+repository. soarpkgs publishes packages for **x86_64**, **aarch64**, and
+**riscv64**.
 
-## 🪄 Quickstart
+## 🪄 Install
 
-> [!TIP]
-> - Soar comes as a single-file, statically-linked executable with no dependencies that you can simply [download](https://github.com/pkgforge/soar/releases/latest) & run.
-> - The [install script](https://github.com/pkgforge/soar/blob/main/install.sh) does this & more automatically for you.
+Soar is a single statically-linked binary. Grab it with the install script:
 
 ```bash
-# cURL
+# curl
 curl -fsSL "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 
 # wget
@@ -53,23 +54,11 @@ wget -qO- "https://raw.githubusercontent.com/pkgforge/soar/main/install.sh" | sh
 ```
 
 > [!NOTE]
-> - Please read & verify what's inside the script before running it
-> - The script is also available through https://soar.qaidvoid.dev/install.sh
-> - Additionally, if you want to customize your installation, please read the docs @ https://soar.qaidvoid.dev/installation.html
-> - Next, check [Configuration](https://soar.qaidvoid.dev/configuration) & [Usage](https://soar.qaidvoid.dev/package-management)
-
-## 🌟 Key Features
-
-| Feature | Description |
-|:--:|:--|
-| **Universal** | Single statically-linked binary. No dependencies, no superuser, works on any Linux distribution. |
-| **Portable Formats** | Install static binaries, AppImages, and other self-contained archives with ease. |
-| **System Integration** | Adds desktop entries and icons, and links manual pages and shell completions where your system already looks for them. |
-| **Install From Anywhere** | Install from a repository, a direct URL, or a local file. A package installed from a GitHub or GitLab release is then kept up to date from that release. |
-| **Delta Updates** | An AppImage advertising a zsync feed is updated by fetching only the parts that changed. |
-| **Security First** | Enforces security through checksums and signature verification for package installations. |
-| **Fast & Efficient** | Minimal overhead with parallel downloads and efficient package operations. |
-
+> - Read and verify the script before piping it to a shell.
+> - It is also served from https://soar.qaidvoid.dev/install.sh.
+> - Prefer to do it yourself? [Download a release](https://github.com/pkgforge/soar/releases/latest)
+>   and drop the binary on your `PATH`.
+> - To customize the install, see the [installation docs](https://soar.qaidvoid.dev/installation).
 
 ## 🚀 Usage
 
@@ -91,25 +80,34 @@ from a GitHub or GitLab release keeps tracking that release:
 soar install https://github.com/owner/repo/releases/download/v1/tool
 ```
 
-`soar --help` lists the rest. Full documentation is at
+`soar --help` lists the rest. Full documentation lives at
 [soar.qaidvoid.dev](https://soar.qaidvoid.dev/package-management).
+
+## 🌟 Features
+
+| Feature | Description |
+|:--|:--|
+| **Universal** | One statically-linked binary. No dependencies, no superuser, any Linux distribution. |
+| **Portable formats** | Static binaries, AppImages, and other self-contained formats, installed the same way. |
+| **Install from anywhere** | From a repository, a direct URL, or a local file. Releases installed from GitHub or GitLab stay up to date. |
+| **Delta updates** | AppImages advertising a zsync feed update by fetching only the parts that changed. |
+| **System integration** | Desktop entries, icons, man pages, and shell completions land where your system already looks. |
+| **Secure by default** | Checksums and signatures are verified before anything is installed. |
+| **Fast** | Parallel downloads and low-overhead package operations. |
 
 ## 🔑 Forge Tokens
 
 Installing or updating from a release uses that forge's API, which is rate
-limited. GitHub's limit of 60 requests an hour is easy to reach, so setting
-`GITHUB_TOKEN` or `GH_TOKEN` is worth doing if you track several packages that
+limited. GitHub allows 60 requests an hour unauthenticated, which is easy to
+reach, so set `GITHUB_TOKEN` or `GH_TOKEN` if you track several packages that
 way. GitLab counts per minute and is rarely a problem, but honours
 `GITLAB_TOKEN` and `GL_TOKEN` all the same.
 
 ## 🤝 Contributing
 
-We welcome contributions! Please feel free to fork the repository and submit pull requests. See [CONTRIBUTING.md](https://github.com/pkgforge/soar/blob/main/CONTRIBUTING.md) for contribution guidelines.
-
-## 💬 Contact
-
-We have a growing community on discord to discuss not only Soar/Pkgforge but also other cool projects, feel free to join & hangout anytime.
-- [![Discord](https://img.shields.io/discord/1313385177703256064?logo=%235865F2&label=Discord)](https://discord.gg/djJUs48Zbu)
+Contributions are welcome. Fork the repository, open a pull request, and see
+[CONTRIBUTING.md](https://github.com/pkgforge/soar/blob/main/CONTRIBUTING.md)
+for the guidelines.
 
 ## Minimum Supported Rust Version (MSRV)
 
