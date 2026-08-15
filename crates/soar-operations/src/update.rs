@@ -157,6 +157,7 @@ fn check_repo_update(
                 pkg.pkg_id.as_deref(),
                 pkg.pkg_family.as_deref(),
                 &pkg.version,
+                pkg.checksum.as_deref(),
             )
         })?
         .flatten()

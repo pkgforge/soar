@@ -27,8 +27,12 @@ use std::cmp::Ordering;
 /// assert_eq!(compare_versions("1.10.0", "1.9.0"), Ordering::Greater);
 /// assert_eq!(compare_versions("1.14.0-2", "1.14.0-1"), Ordering::Greater);
 /// assert_eq!(compare_versions("2026.05.24", "2026.05.23"), Ordering::Greater);
+/// assert_eq!(compare_versions("v2.0.0", "1.0.0"), Ordering::Greater);
+/// assert_eq!(compare_versions("1.0.3-r6", "1.0.3"), Ordering::Greater);
 /// ```
 pub fn compare_versions(a: &str, b: &str) -> Ordering {
+    let (a, b) = (untagged(a), untagged(b));
+
     // Two commit hashes carry no order at all, and segment rules would invent
     // one, letting an arbitrary hash read as an upgrade or a downgrade. A hash
     // ranks below any ordinary version rather than being compared segment-wise
@@ -69,6 +73,29 @@ pub fn is_newer(candidate: &str, current: &str) -> bool {
     compare_versions(candidate, current) == Ordering::Greater
 }
 
+/// A version without the `v` a tag is often written with.
+///
+/// The letter is decoration rather than a segment: `v1.2.3` and `1.2.3` are
+/// one release. Left on, it would be compared against the other version's
+/// leading digit, and text ranks below numeric, so every tagged version would
+/// sort below every bare one whatever the numbers said.
+fn untagged(version: &str) -> &str {
+    version
+        .strip_prefix(['v', 'V'])
+        .filter(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+        .unwrap_or(version)
+}
+
+/// Whether a version carries an order at all.
+///
+/// One built from a commit hash does not: hashes carry no time, so two of them
+/// compare equal and neither can ever supersede the other. Choosing between
+/// such builds takes something the version does not hold, such as the checksum
+/// of the artifact each one names.
+pub fn is_ordered(version: &str) -> bool {
+    !is_commit_hash(version)
+}
+
 /// Whether a version is nothing but a commit hash.
 ///
 /// Requires a letter, so a long run of digits stays a version: 20260412 is a
@@ -105,22 +132,38 @@ fn compare_segment(a: &str, b: &str) -> Ordering {
 fn segments(version: &str) -> impl Iterator<Item = &str> {
     let mut rest = version;
     std::iter::from_fn(move || {
-        while let Some(c) = rest.chars().next() {
-            if c.is_ascii_alphanumeric() {
-                break;
+        loop {
+            let mut after_dash = false;
+            while let Some(c) = rest.chars().next() {
+                if c.is_ascii_alphanumeric() {
+                    break;
+                }
+                after_dash |= c == '-';
+                rest = &rest[c.len_utf8()..];
             }
-            rest = &rest[c.len_utf8()..];
+            if rest.is_empty() {
+                return None;
+            }
+            let numeric = rest.starts_with(|c: char| c.is_ascii_digit());
+            let end = rest
+                .find(|c: char| c.is_ascii_digit() != numeric || !c.is_ascii_alphanumeric())
+                .unwrap_or(rest.len());
+            let (seg, tail) = rest.split_at(end);
+            rest = tail;
+
+            // `-r6` is the sixth build of a release, which `-6` already says.
+            // Dropping the letter lets both take the one path, rather than
+            // this one reading as a prerelease and ranking below the release
+            // it is a rebuild of.
+            if after_dash
+                && seg.eq_ignore_ascii_case("r")
+                && rest.starts_with(|c: char| c.is_ascii_digit())
+            {
+                continue;
+            }
+
+            return Some(seg);
         }
-        if rest.is_empty() {
-            return None;
-        }
-        let numeric = rest.starts_with(|c: char| c.is_ascii_digit());
-        let end = rest
-            .find(|c: char| c.is_ascii_digit() != numeric || !c.is_ascii_alphanumeric())
-            .unwrap_or(rest.len());
-        let (seg, tail) = rest.split_at(end);
-        rest = tail;
-        Some(seg)
     })
 }
 
@@ -141,6 +184,36 @@ mod tests {
         assert_eq!(compare_versions("1.14.0-1", "1.14.0"), Ordering::Greater);
         assert_eq!(compare_versions("2.0.19-4", "2.0.19-3"), Ordering::Greater);
         assert_eq!(compare_versions("0.2.4-4", "0.2.4-3"), Ordering::Greater);
+    }
+
+    #[test]
+    fn a_lettered_revision_is_a_rebuild_like_a_bare_one() {
+        assert_eq!(compare_versions("1.0.3-r6", "1.0.3"), Ordering::Greater);
+        assert_eq!(compare_versions("1.0.3-r7", "1.0.3-r6"), Ordering::Greater);
+        assert_eq!(compare_versions("1.0.3-r6", "1.0.3-6"), Ordering::Equal);
+        // A rebuild of a release still ranks below the next release.
+        assert_eq!(compare_versions("1.0.3-r6", "1.0.4"), Ordering::Less);
+    }
+
+    #[test]
+    fn a_release_candidate_is_not_a_revision() {
+        // `rc` is not `r` followed by digits, so it stays a prerelease.
+        assert_eq!(compare_versions("1.2.0-rc1", "1.2.0"), Ordering::Less);
+        assert_eq!(
+            compare_versions("1.2.0-rc2", "1.2.0-rc1"),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn a_leading_v_is_not_part_of_the_version() {
+        assert_eq!(compare_versions("v1.2.3", "1.2.3"), Ordering::Equal);
+        assert_eq!(compare_versions("v2.0.0", "1.0.0"), Ordering::Greater);
+        assert_eq!(compare_versions("1.0.0", "v2.0.0"), Ordering::Less);
+        assert_eq!(compare_versions("v1.0.3-r6", "1.0.3"), Ordering::Greater);
+        assert_eq!(compare_versions("V1.2.3", "v1.2.3"), Ordering::Equal);
+        // A version that merely starts with a letter keeps it.
+        assert_eq!(compare_versions("vim", "vim"), Ordering::Equal);
     }
 
     #[test]

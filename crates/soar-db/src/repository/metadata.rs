@@ -12,7 +12,7 @@ use serde_json::json;
 use soar_registry::RemotePackage;
 use soar_utils::{
     path::is_safe_component,
-    version::{compare_versions, is_newer},
+    version::{compare_versions, is_newer, is_ordered},
 };
 use tracing::{debug, trace, warn};
 
@@ -72,6 +72,30 @@ pub fn narrow_by_pkg_family(candidates: Vec<Package>, pkg_family: Option<&str>) 
         return candidates;
     }
     candidates.into_iter().filter(matches_family).collect()
+}
+
+/// Whether a candidate supersedes an installed copy whose versions cannot be
+/// ordered against each other.
+///
+/// Two commit hashes carry no order, so no version comparison can ever offer
+/// one over the other. What the artifact is settles it instead: a different
+/// checksum is a different build, and following the repository is the only
+/// coherent thing to do for a package versioned this way. Where either side
+/// keeps no checksum there is nothing to go on, and it is left alone.
+fn supersedes_unordered(
+    offered_version: &str,
+    offered_checksum: Option<&str>,
+    current_version: &str,
+    current_checksum: Option<&str>,
+) -> bool {
+    if is_ordered(offered_version) || is_ordered(current_version) {
+        return false;
+    }
+
+    match (offered_checksum, current_checksum) {
+        (Some(offered), Some(held)) => offered != held,
+        _ => false,
+    }
 }
 
 /// Repository for package metadata operations.
@@ -481,12 +505,16 @@ impl MetadataRepository {
     /// Finds packages with a newer version than the given version.
     /// Used for update checking.
     /// Uses Diesel DSL with raw SQL filter for version comparison.
+    ///
+    /// `current_checksum` is what the installed copy is, which settles the
+    /// packages whose versions carry no order to compare.
     pub fn find_newer_version(
         conn: &mut SqliteConnection,
         pkg_name: &str,
         pkg_id: Option<&str>,
         pkg_family: Option<&str>,
         current_version: &str,
+        current_checksum: Option<&str>,
     ) -> QueryResult<Option<Package>> {
         trace!(
             pkg_name = pkg_name,
@@ -504,7 +532,15 @@ impl MetadataRepository {
 
         let result: QueryResult<Option<Package>> = Ok(candidates
             .into_iter()
-            .filter(|p| is_newer(&p.version, current_version))
+            .filter(|p| {
+                is_newer(&p.version, current_version)
+                    || supersedes_unordered(
+                        &p.version,
+                        p.bsum.as_deref(),
+                        current_version,
+                        current_checksum,
+                    )
+            })
             .max_by(|a, b| compare_versions(&a.version, &b.version)));
         if let Ok(Some(ref p)) = result {
             debug!("newer version available: {} -> {}", pkg_name, p.version);
@@ -680,5 +716,58 @@ impl MetadataRepository {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::supersedes_unordered;
+
+    const HELD: &str = "89c99d2a9";
+    const OFFERED: &str = "0f3a21b";
+
+    #[test]
+    fn a_different_artifact_supersedes_a_version_carrying_no_order() {
+        assert!(supersedes_unordered(
+            OFFERED,
+            Some("bsum-new"),
+            HELD,
+            Some("bsum-old")
+        ));
+    }
+
+    #[test]
+    fn the_same_artifact_supersedes_nothing() {
+        assert!(!supersedes_unordered(
+            OFFERED,
+            Some("bsum-same"),
+            HELD,
+            Some("bsum-same")
+        ));
+    }
+
+    #[test]
+    fn a_version_that_can_be_ordered_is_left_to_the_version() {
+        // Ordinary versions are settled by comparing them, so a rebuild
+        // publishing a new checksum under the same version is not an update
+        // this decides.
+        assert!(!supersedes_unordered(
+            "3.5.2",
+            Some("bsum-new"),
+            "3.5.2",
+            Some("bsum-old")
+        ));
+        assert!(!supersedes_unordered(
+            "3.5.3",
+            Some("bsum-new"),
+            HELD,
+            Some("bsum-old")
+        ));
+    }
+
+    #[test]
+    fn nothing_is_claimed_where_a_checksum_is_missing() {
+        assert!(!supersedes_unordered(OFFERED, None, HELD, Some("bsum-old")));
+        assert!(!supersedes_unordered(OFFERED, Some("bsum-new"), HELD, None));
     }
 }
