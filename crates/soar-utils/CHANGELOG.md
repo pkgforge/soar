@@ -1,4 +1,18 @@
 
+## [0.5.1](https://github.com/pkgforge/soar/compare/soar-utils-v0.5.0...soar-utils-v0.5.1) - 2026-08-15
+
+### ⛰️  Features
+
+- Serve soarpkgs on riscv64 and refresh the readme ([#198](https://github.com/pkgforge/soar/pull/198)) - ([2224691](https://github.com/pkgforge/soar/commit/22246912045678b45969e69b1ee23da6af43fd26))
+
+### 🐛 Bug Fixes
+
+- *(update)* Let the artifact decide where the version cannot - ([c656564](https://github.com/pkgforge/soar/commit/c656564f1d39548f3343acc0d049b1b01b370b00))
+
+### 📚 Documentation
+
+- Refresh README and CONTRIBUTING ([#199](https://github.com/pkgforge/soar/pull/199)) - ([6479cec](https://github.com/pkgforge/soar/commit/6479ceca42d8e1c452aaa11512457f10d98b6f5c))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-utils-v0.4.3...soar-utils-v0.5.0) - 2026-08-02
 
 ### ⛰️  Features

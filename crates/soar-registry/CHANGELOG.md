@@ -1,4 +1,19 @@
 
+## [0.6.2](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.1...soar-registry-v0.6.2) - 2026-08-15
+
+### ⛰️  Features
+
+- *(cli)* Expose soar to frontends with JSON output and a plugin manifest ([#194](https://github.com/pkgforge/soar/pull/194)) - ([6846b89](https://github.com/pkgforge/soar/commit/6846b893dedb373ed6d4254b13548b43be407fe5))
+- Serve soarpkgs on riscv64 and refresh the readme ([#198](https://github.com/pkgforge/soar/pull/198)) - ([2224691](https://github.com/pkgforge/soar/commit/22246912045678b45969e69b1ee23da6af43fd26))
+
+### 🐛 Bug Fixes
+
+- *(registry)* Read the date the metadata actually publishes ([#196](https://github.com/pkgforge/soar/pull/196)) - ([2772841](https://github.com/pkgforge/soar/commit/277284138cfd9e344d72048cca5be6cac7147ae8))
+
+### 📚 Documentation
+
+- Refresh README and CONTRIBUTING ([#199](https://github.com/pkgforge/soar/pull/199)) - ([6479cec](https://github.com/pkgforge/soar/commit/6479ceca42d8e1c452aaa11512457f10d98b6f5c))
+
 ## [0.6.1](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.0...soar-registry-v0.6.1) - 2026-08-05
 
 ### ⚙️ Miscellaneous Tasks

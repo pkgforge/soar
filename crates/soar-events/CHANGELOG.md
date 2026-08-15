@@ -1,4 +1,15 @@
 
+## [0.3.0](https://github.com/pkgforge/soar/compare/soar-events-v0.2.0...soar-events-v0.3.0) - 2026-08-15
+
+### ⛰️  Features
+
+- *(cli)* Expose soar to frontends with JSON output and a plugin manifest ([#194](https://github.com/pkgforge/soar/pull/194)) - ([6846b89](https://github.com/pkgforge/soar/commit/6846b893dedb373ed6d4254b13548b43be407fe5))
+- Serve soarpkgs on riscv64 and refresh the readme ([#198](https://github.com/pkgforge/soar/pull/198)) - ([2224691](https://github.com/pkgforge/soar/commit/22246912045678b45969e69b1ee23da6af43fd26))
+
+### 📚 Documentation
+
+- Refresh README and CONTRIBUTING ([#199](https://github.com/pkgforge/soar/pull/199)) - ([6479cec](https://github.com/pkgforge/soar/commit/6479ceca42d8e1c452aaa11512457f10d98b6f5c))
+
 ## [0.2.0](https://github.com/pkgforge/soar/compare/soar-events-v0.1.0...soar-events-v0.2.0) - 2026-08-02
 
 ### ⛰️  Features

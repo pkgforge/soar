@@ -1,4 +1,24 @@
 
+## [0.13.2](https://github.com/pkgforge/soar/compare/v0.13.1...v0.13.2) - 2026-08-15
+
+### ⛰️  Features
+
+- *(cli)* Install packages from soar:// links ([#197](https://github.com/pkgforge/soar/pull/197)) - ([e447e7c](https://github.com/pkgforge/soar/commit/e447e7cf9ea96a2c06300277b0856c91d557b279))
+- *(cli)* Expose soar to frontends with JSON output and a plugin manifest ([#194](https://github.com/pkgforge/soar/pull/194)) - ([6846b89](https://github.com/pkgforge/soar/commit/6846b893dedb373ed6d4254b13548b43be407fe5))
+- Serve soarpkgs on riscv64 and refresh the readme ([#198](https://github.com/pkgforge/soar/pull/198)) - ([2224691](https://github.com/pkgforge/soar/commit/22246912045678b45969e69b1ee23da6af43fd26))
+
+### 🐛 Bug Fixes
+
+- *(desktop)* Leave no space after a command with no arguments - ([87ae748](https://github.com/pkgforge/soar/commit/87ae74891ccc620dfdf4b27a63d1caf741df3ec8))
+- *(plugin-manifest)* Let update name the package it means - ([fe0397d](https://github.com/pkgforge/soar/commit/fe0397d9eaee30c9ae91b5288ee81c20d705b328))
+- *(registry)* Read the date the metadata actually publishes ([#196](https://github.com/pkgforge/soar/pull/196)) - ([2772841](https://github.com/pkgforge/soar/commit/277284138cfd9e344d72048cca5be6cac7147ae8))
+- *(search)* Match a package whose family the metadata has dropped ([#201](https://github.com/pkgforge/soar/pull/201)) - ([e6057fb](https://github.com/pkgforge/soar/commit/e6057fb7763e4b679beb2e5d8d38c89f4e3218bc))
+- *(update)* Let the artifact decide where the version cannot - ([c656564](https://github.com/pkgforge/soar/commit/c656564f1d39548f3343acc0d049b1b01b370b00))
+
+### 📚 Documentation
+
+- Refresh README and CONTRIBUTING ([#199](https://github.com/pkgforge/soar/pull/199)) - ([6479cec](https://github.com/pkgforge/soar/commit/6479ceca42d8e1c452aaa11512457f10d98b6f5c))
+
 ## [0.13.1](https://github.com/pkgforge/soar/compare/v0.13.0...v0.13.1) - 2026-08-05
 
 ### ⛰️  Features
