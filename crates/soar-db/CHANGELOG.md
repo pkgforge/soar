@@ -1,4 +1,20 @@
 
+## [0.7.0](https://github.com/pkgforge/soar/compare/soar-db-v0.6.1...soar-db-v0.7.0) - 2026-08-15
+
+### ⛰️  Features
+
+- *(cli)* Expose soar to frontends with JSON output and a plugin manifest ([#194](https://github.com/pkgforge/soar/pull/194)) - ([6846b89](https://github.com/pkgforge/soar/commit/6846b893dedb373ed6d4254b13548b43be407fe5))
+- Serve soarpkgs on riscv64 and refresh the readme ([#198](https://github.com/pkgforge/soar/pull/198)) - ([2224691](https://github.com/pkgforge/soar/commit/22246912045678b45969e69b1ee23da6af43fd26))
+
+### 🐛 Bug Fixes
+
+- *(search)* Match a package whose family the metadata has dropped ([#201](https://github.com/pkgforge/soar/pull/201)) - ([e6057fb](https://github.com/pkgforge/soar/commit/e6057fb7763e4b679beb2e5d8d38c89f4e3218bc))
+- *(update)* Let the artifact decide where the version cannot - ([c656564](https://github.com/pkgforge/soar/commit/c656564f1d39548f3343acc0d049b1b01b370b00))
+
+### 📚 Documentation
+
+- Refresh README and CONTRIBUTING ([#199](https://github.com/pkgforge/soar/pull/199)) - ([6479cec](https://github.com/pkgforge/soar/commit/6479ceca42d8e1c452aaa11512457f10d98b6f5c))
+
 ## [0.6.1](https://github.com/pkgforge/soar/compare/soar-db-v0.6.0...soar-db-v0.6.1) - 2026-08-05
 
 ### ⚙️ Miscellaneous Tasks

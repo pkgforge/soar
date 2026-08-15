@@ -1,4 +1,18 @@
 
+## [0.5.1](https://github.com/pkgforge/soar/compare/soar-package-v0.5.0...soar-package-v0.5.1) - 2026-08-15
+
+### ⛰️  Features
+
+- Serve soarpkgs on riscv64 and refresh the readme ([#198](https://github.com/pkgforge/soar/pull/198)) - ([2224691](https://github.com/pkgforge/soar/commit/22246912045678b45969e69b1ee23da6af43fd26))
+
+### 🐛 Bug Fixes
+
+- *(desktop)* Leave no space after a command with no arguments - ([87ae748](https://github.com/pkgforge/soar/commit/87ae74891ccc620dfdf4b27a63d1caf741df3ec8))
+
+### 📚 Documentation
+
+- Refresh README and CONTRIBUTING ([#199](https://github.com/pkgforge/soar/pull/199)) - ([6479cec](https://github.com/pkgforge/soar/commit/6479ceca42d8e1c452aaa11512457f10d98b6f5c))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-package-v0.4.2...soar-package-v0.5.0) - 2026-08-02
 
 ### ⛰️  Features
