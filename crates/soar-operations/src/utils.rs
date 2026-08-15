@@ -521,17 +521,38 @@ pub type PackageKey = (String, String, Option<String>, Option<String>);
 /// installed under, so a package sharing a name is not mistaken for it.
 pub type InstalledIndex = HashMap<(String, String), Vec<(Option<String>, bool)>>;
 
+/// How many packages a repository offers under each name.
+pub type NameCounts = HashMap<(String, String), usize>;
+
 pub fn is_installed(
     map: &InstalledIndex,
+    offered: &NameCounts,
     repo_name: &str,
     pkg_name: &str,
     pkg_family: Option<&str>,
 ) -> bool {
-    map.get(&(repo_name.to_string(), pkg_name.to_string()))
-        .is_some_and(|rows| {
-            rows.iter()
-                .any(|(family, installed)| *installed && family.as_deref() == pkg_family)
-        })
+    let key = (repo_name.to_string(), pkg_name.to_string());
+    let Some(rows) = map.get(&key) else {
+        return false;
+    };
+
+    if rows
+        .iter()
+        .any(|(family, installed)| *installed && family.as_deref() == pkg_family)
+    {
+        return true;
+    }
+
+    // Metadata can drop or rename the family a package was installed under,
+    // leaving nothing to match on. Where the repository offers the name once
+    // and one package is held under it, there is nothing else either could
+    // mean. Anything less certain is left unmatched rather than guessed.
+    if offered.get(&key).copied().unwrap_or(0) != 1 {
+        return false;
+    }
+
+    let mut held = rows.iter().filter(|(_, installed)| *installed);
+    held.next().is_some() && held.next().is_none()
 }
 
 /// The installed packages a URL or local path refers to.
@@ -595,6 +616,7 @@ fn package_from_source(source: &str) -> Option<(String, Option<String>)> {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::HashMap,
         fs::{self, File},
         path::PathBuf,
     };
@@ -602,7 +624,132 @@ mod tests {
     use soar_db::models::types::PackageProvide;
     use tempfile::{tempdir, TempDir};
 
-    use super::create_provide_symlinks;
+    use super::{create_provide_symlinks, is_installed, InstalledIndex, NameCounts};
+
+    /// One installed package of `name`, recorded under `family`.
+    fn installed_as(name: &str, family: Option<&str>, installed: bool) -> InstalledIndex {
+        HashMap::from([(
+            ("soarpkgs".to_string(), name.to_string()),
+            vec![(family.map(str::to_string), installed)],
+        )])
+    }
+
+    /// A repository offering `name` that many times over.
+    fn offering(name: &str, times: usize) -> NameCounts {
+        HashMap::from([(("soarpkgs".to_string(), name.to_string()), times)])
+    }
+
+    #[test]
+    fn a_family_dropped_by_later_metadata_still_matches_what_was_installed() {
+        // Installed when the metadata named the family after the package
+        // itself. The repository has since stopped carrying one.
+        let index = installed_as("widget", Some("widget"), true);
+
+        assert!(is_installed(
+            &index,
+            &offering("widget", 1),
+            "soarpkgs",
+            "widget",
+            None
+        ));
+        assert!(is_installed(
+            &index,
+            &offering("widget", 1),
+            "soarpkgs",
+            "widget",
+            Some("widget")
+        ));
+    }
+
+    #[test]
+    fn a_family_that_tells_two_packages_apart_still_has_to_match() {
+        // busybox is not the package's own name, so it goes on counting.
+        let index = installed_as("cat", Some("busybox"), true);
+
+        assert!(is_installed(
+            &index,
+            &offering("cat", 2),
+            "soarpkgs",
+            "cat",
+            Some("busybox")
+        ));
+        assert!(!is_installed(
+            &index,
+            &offering("cat", 2),
+            "soarpkgs",
+            "cat",
+            Some("toybox")
+        ));
+        assert!(!is_installed(
+            &index,
+            &offering("cat", 2),
+            "soarpkgs",
+            "cat",
+            None
+        ));
+    }
+
+    #[test]
+    fn a_family_renamed_outright_matches_where_the_name_stands_for_one_package() {
+        // Installed under a family the metadata no longer carries at all, so
+        // there is nothing left to match on but the name.
+        let index = installed_as("newpipe", Some("some.long.upstream-appimage"), true);
+
+        assert!(is_installed(
+            &index,
+            &offering("newpipe", 1),
+            "soarpkgs",
+            "newpipe",
+            None
+        ));
+    }
+
+    #[test]
+    fn a_name_the_repository_offers_twice_is_never_matched_on_the_name_alone() {
+        let index = installed_as("cat", Some("busybox"), true);
+
+        assert!(!is_installed(
+            &index,
+            &offering("cat", 2),
+            "soarpkgs",
+            "cat",
+            None
+        ));
+    }
+
+    #[test]
+    fn a_name_held_twice_over_is_not_matched_on_the_name_alone() {
+        // Two builds of the name held at once, so which was meant is unclear
+        // however few the repository offers.
+        let index: InstalledIndex = HashMap::from([(
+            ("soarpkgs".to_string(), "cat".to_string()),
+            vec![
+                (Some("busybox".to_string()), true),
+                (Some("toybox".to_string()), true),
+            ],
+        )]);
+
+        assert!(!is_installed(
+            &index,
+            &offering("cat", 1),
+            "soarpkgs",
+            "cat",
+            None
+        ));
+    }
+
+    #[test]
+    fn a_package_only_ever_uninstalled_is_not_installed() {
+        let index = installed_as("widget", Some("widget"), false);
+
+        assert!(!is_installed(
+            &index,
+            &offering("widget", 1),
+            "soarpkgs",
+            "widget",
+            None
+        ));
+    }
 
     fn setup() -> (TempDir, PathBuf, PathBuf) {
         let root = tempdir().unwrap();
