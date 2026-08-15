@@ -133,6 +133,24 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(real_path: P, system_mode: bool) -
     Ok(final_path)
 }
 
+/// An `Exec` or `TryExec` line pointed at the command as installed.
+///
+/// The arguments the entry carried are kept after it. With none to keep,
+/// nothing follows the command: a launcher reading the line whole would take
+/// a trailing space as part of the command and fail to find it.
+fn exec_line(field: &str, old: &str, command: &str) -> String {
+    if old.contains("{{pkg_path}}") {
+        return format!("{field}={}", old.replace("{{pkg_path}}", command));
+    }
+
+    let args: Vec<&str> = old.split_whitespace().skip(1).collect();
+    if args.is_empty() {
+        format!("{field}={command}")
+    } else {
+        format!("{field}={command} {}", args.join(" "))
+    }
+}
+
 /// Creates a symlink for a desktop file with modified fields.
 ///
 /// Updates the Exec and TryExec fields in the desktop file to point to the
@@ -189,18 +207,11 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
                 "Icon" if has_icon => format!("Icon={}-soar", file_name.to_string_lossy()),
                 "Icon" => caps[0].to_string(),
                 "Exec" | "TryExec" => {
-                    let old_cmd = &caps[2];
-                    let parts: Vec<&str> = old_cmd.split_whitespace().collect();
-                    let new_cmd = format!("{}/{}", bin_path.display(), pkg_name);
-
-                    if old_cmd.contains("{{pkg_path}}") {
-                        caps[0].replace("{{pkg_path}}", &new_cmd)
-                    } else if parts.is_empty() {
-                        format!("{}={}", &caps[1], new_cmd)
-                    } else {
-                        let args = if parts.len() > 1 { &parts[1..] } else { &[] };
-                        format!("{}={} {}", &caps[1], new_cmd, args.join(" "))
-                    }
+                    exec_line(
+                        &caps[1],
+                        &caps[2],
+                        &format!("{}/{}", bin_path.display(), pkg_name),
+                    )
                 }
                 _ => unreachable!(),
             }
@@ -500,4 +511,34 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         "package integration completed"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exec_line;
+
+    #[test]
+    fn a_command_with_no_arguments_ends_the_line() {
+        assert_eq!(exec_line("Exec", "/old/bin", "/new/bin"), "Exec=/new/bin");
+        assert_eq!(
+            exec_line("TryExec", "/old/bin", "/new/bin"),
+            "TryExec=/new/bin"
+        );
+    }
+
+    #[test]
+    fn the_arguments_an_entry_carried_are_kept() {
+        assert_eq!(
+            exec_line("Exec", "/old/bin --flag %U", "/new/bin"),
+            "Exec=/new/bin --flag %U"
+        );
+    }
+
+    #[test]
+    fn a_placeholder_is_filled_where_it_stands() {
+        assert_eq!(
+            exec_line("Exec", "env FOO=1 {{pkg_path}} %F", "/new/bin"),
+            "Exec=env FOO=1 /new/bin %F"
+        );
+    }
 }
