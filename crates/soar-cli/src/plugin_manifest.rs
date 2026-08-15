@@ -185,6 +185,11 @@ output = { format = "ndjson" }
 progress = { event = "type", stage = "stage", message = "pkg_name" }
 
 [ops.update]
+args = ["--json", "update", "{selector}"]
+output = { format = "ndjson" }
+progress = { event = "type", stage = "stage", current = "current", total = "total", message = "pkg_name" }
+
+[ops.update_all]
 args = ["--json", "update"]
 output = { format = "ndjson" }
 progress = { event = "type", stage = "stage", current = "current", total = "total", message = "pkg_name" }
