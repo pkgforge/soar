@@ -368,6 +368,23 @@ impl MetadataRepository {
         packages::table.count().get_result(conn)
     }
 
+    /// How many packages the repository offers under each name, counting a
+    /// name once per family it is published under.
+    ///
+    /// A name standing for a single package means the same package however
+    /// its family is recorded, which is what lets one installed under a
+    /// family since dropped go on being recognised.
+    pub fn count_names(conn: &mut SqliteConnection) -> QueryResult<Vec<(String, i64)>> {
+        trace!("counting what each package name stands for");
+        packages::table
+            .group_by(packages::pkg_name)
+            .select((
+                packages::pkg_name,
+                sql::<diesel::sql_types::BigInt>("COUNT(DISTINCT COALESCE(pkg_family, ''))"),
+            ))
+            .load(conn)
+    }
+
     /// Counts packages matching a search pattern using Diesel DSL.
     pub fn count_search(conn: &mut SqliteConnection, pattern: &str) -> QueryResult<i64> {
         let like_pattern = format!("%{}%", pattern.to_lowercase());

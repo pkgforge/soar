@@ -18,7 +18,7 @@ use soar_utils::version::compare_versions;
 use tracing::{debug, trace};
 
 use crate::{
-    utils::{is_installed, InstalledIndex, PackageKey},
+    utils::{is_installed, InstalledIndex, NameCounts, PackageKey},
     SearchEntry, SearchResult, SoarContext,
 };
 
@@ -122,6 +122,16 @@ pub async fn search_packages(
             acc
         });
 
+    let offered: NameCounts = metadata_mgr
+        .query_all(|_repo_name, conn| MetadataRepository::count_names(conn))?
+        .into_iter()
+        .flat_map(|(repo_name, rows)| {
+            rows.into_iter().map(move |(pkg_name, offered)| {
+                ((repo_name.clone(), pkg_name), offered.max(0) as usize)
+            })
+        })
+        .collect();
+
     let total_count = packages.len();
 
     let entries: Vec<SearchEntry> = packages
@@ -130,6 +140,7 @@ pub async fn search_packages(
         .map(|package| {
             let installed = is_installed(
                 &installed_pkgs,
+                &offered,
                 &package.repo_name,
                 &package.pkg_name,
                 package.pkg_family.as_deref(),
