@@ -26,7 +26,11 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
     let packages: Vec<RemotePackage> = soar_registry::parse_index(json_content.as_bytes())
         .map_err(|e| SoarError::Custom(format!("parsing JSON from {}: {}", input_path, e)))?;
 
-    info!(count = packages.len(), "Parsed JSON metadata");
+    // The count is both said and recorded: the message is what a reader sees,
+    // since info fields are the event stream's rather than the terminal's, and
+    // the field is what `--json` carries.
+    let count = packages.len();
+    info!(count, "Parsed JSON metadata for {count} packages");
 
     if packages.is_empty() {
         info!("No packages found in JSON file");

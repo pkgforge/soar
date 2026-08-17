@@ -145,7 +145,11 @@ impl SoarContext {
             .iter()
             .filter(|r| r.is_enabled())
         {
-            trace!(repo_name = repo.name, "scheduling repository sync");
+            trace!(
+                repo_name = repo.name,
+                url = repo.url,
+                "scheduling repository sync"
+            );
             let repo_clone = repo.clone();
             let etag = self.read_repo_etag(&repo_clone);
             let events = self.inner.events.clone();
@@ -355,6 +359,12 @@ impl SoarContext {
             return None;
         }
 
+        trace!(
+            repo_name = repo.name,
+            url = repo.url,
+            path = %metadata_db.display(),
+            "reading stored etag"
+        );
         let mut conn = DbConnection::open(&metadata_db, DbType::Metadata).ok()?;
         MetadataRepository::get_repo_etag(conn.conn())
             .ok()
