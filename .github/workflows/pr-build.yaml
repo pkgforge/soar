@@ -1,0 +1,245 @@
+# Binaries built from a pull request, for testing a change without releasing
+# one. Comment on the pull request:
+#
+#   /build                             every target
+#   /build x86_64-linux                one target
+#   /build x86_64-linux aarch64-linux  a few
+#
+# The build finishes with a comment linking each artifact and its b3sum.
+name: soar pr build
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.issue.number }}"
+  cancel-in-progress: true
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  request:
+    name: Read the request
+    # A build runs the pull request's own code, including its build scripts, so
+    # asking for one is as good as pushing to a branch here. Only someone who
+    # could do that anyway gets to ask.
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/build') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+      sha: ${{ steps.head.outputs.sha }}
+      short_sha: ${{ steps.head.outputs.short_sha }}
+    steps:
+      - name: Choose the targets
+        id: targets
+        env:
+          # Read from the environment rather than interpolated into the script,
+          # which would run whatever the comment happens to contain.
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          all=(aarch64-linux riscv64-linux x86_64-linux)
+          triple_for() {
+            case "$1" in
+              aarch64-linux) echo aarch64-unknown-linux-musl ;;
+              riscv64-linux) echo riscv64gc-unknown-linux-musl ;;
+              x86_64-linux) echo x86_64-unknown-linux-musl ;;
+              *) return 1 ;;
+            esac
+          }
+
+          read -ra words <<< "$(printf '%s' "$BODY" | tr -d '\r' | head -n 1)"
+          # `/buildsomething` is somebody else's command, not a bare `/build`.
+          if [ "${words[0]}" != "/build" ]; then
+            echo "not a build request; ignoring"
+            exit 0
+          fi
+
+          asked=("${words[@]:1}")
+          if [ ${#asked[@]} -eq 0 ]; then
+            asked=("${all[@]}")
+          fi
+
+          entries=()
+          chosen=()
+          for name in "${asked[@]}"; do
+            if ! triple=$(triple_for "$name"); then
+              echo "unknown=$name" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # A name asked for twice would build twice and collide on upload.
+            case " ${chosen[*]} " in
+              *" $name "*) continue ;;
+            esac
+            chosen+=("$name")
+            entries+=("{\"NAME\":\"$name\",\"TARGET\":\"$triple\"}")
+          done
+
+          printf 'matrix=[%s]\n' "$(IFS=,; echo "${entries[*]}")" >> "$GITHUB_OUTPUT"
+          echo "building: ${chosen[*]}"
+
+      - name: Say which targets exist
+        if: ${{ steps.targets.outputs.unknown }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.issue.number }}
+          UNKNOWN: ${{ steps.targets.outputs.unknown }}
+        run: |
+          gh pr comment "$PR" --body "$(printf 'No target named `%s`. Pick from `aarch64-linux`, `riscv64-linux`, `x86_64-linux`, or say `/build` on its own to build all three.' "$UNKNOWN")"
+          exit 1
+
+      - name: Acknowledge the comment
+        if: ${{ steps.targets.outputs.matrix }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT: ${{ github.event.comment.url }}
+        run: gh api --silent -X POST "$COMMENT/reactions" -f content=eyes
+
+      - name: Resolve the head commit
+        id: head
+        if: ${{ steps.targets.outputs.matrix }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          sha=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${sha:0:7}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.build.NAME }}
+    needs: request
+    if: ${{ needs.request.outputs.matrix }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        build: ${{ fromJSON(needs.request.outputs.matrix) }}
+    steps:
+      - name: Checkout the pull request
+        uses: actions/checkout@v5
+        with:
+          # The commit itself, so the binary matches what the comment reports
+          # even if the pull request is pushed to while this runs.
+          ref: ${{ needs.request.outputs.sha }}
+          persist-credentials: false
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          sudo apt update -y
+          sudo apt install b3sum findutils file -y
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.build.TARGET }}
+
+      # The released binary, rather than a build from git that spends minutes
+      # compiling before anything of ours does.
+      - name: Install Cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross@0.2.5
+
+      - name: Build
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static \
+                      -C link-self-contained=yes \
+                      -C link-arg=-Wl,--build-id=none"
+          # A released cross asks for images tagged with its own version, and
+          # 0.2.5 is old enough that the riscv64 musl image was never published
+          # under it. Naming the tag is what keeps that target buildable, and it
+          # is the same `main` that a cross built from git resolves to, so these
+          # binaries come out of the images the releases are built in.
+          CROSS_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_IMAGE: ghcr.io/cross-rs/aarch64-unknown-linux-musl:main
+          CROSS_TARGET_RISCV64GC_UNKNOWN_LINUX_MUSL_IMAGE: ghcr.io/cross-rs/riscv64gc-unknown-linux-musl:main
+          CROSS_TARGET_X86_64_UNKNOWN_LINUX_MUSL_IMAGE: ghcr.io/cross-rs/x86_64-unknown-linux-musl:main
+        run: cross build --release -F self --locked --target "${{ matrix.build.TARGET }}" --jobs="$(($(nproc)+1))" --verbose
+
+      - name: Create build artifacts
+        env:
+          ARTIFACT: "soar-${{ matrix.build.NAME }}"
+        shell: bash
+        run: |
+          cp "target/${{ matrix.build.TARGET }}/release/soar" "${ARTIFACT}"
+          b3sum "${ARTIFACT}" > "${ARTIFACT}.b3sum"
+          printf "\nFile: ${ARTIFACT}\n  Type: $(file -b "${ARTIFACT}")\n  B3sum: $(cut -d' ' -f1 "${ARTIFACT}.b3sum")\n  Size: $(du -bh "${ARTIFACT}" | cut -f1)\n"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: soar-${{ matrix.build.NAME }}-${{ needs.request.outputs.short_sha }}
+          path: soar-${{ matrix.build.NAME }}*
+
+  report:
+    name: Report back
+    needs: [request, build]
+    if: ${{ !cancelled() && needs.request.outputs.matrix }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      pull-requests: write
+    steps:
+      # Only for the checksums. A build that produced nothing leaves this with
+      # nothing to fetch, which is what the comment is for.
+      - name: Download the artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: soar-*
+          path: artifacts
+
+      - name: Comment with the result
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+          SERVER: ${{ github.server_url }}
+          SHA: ${{ needs.request.outputs.sha }}
+          SHORT_SHA: ${{ needs.request.outputs.short_sha }}
+          RESULT: ${{ needs.build.result }}
+        run: |
+          run_url="$SERVER/$REPO/actions/runs/$RUN"
+          commit_url="$SERVER/$REPO/commit/$SHA"
+
+          # Each target builds on its own, so the run as a whole failing does
+          # not mean every target did. The artifacts that exist are listed
+          # either way.
+          gh api "repos/$REPO/actions/runs/$RUN/artifacts" \
+            --jq '.artifacts[] | [.name, .id] | @tsv' > built.tsv
+
+          {
+            if [ ! -s built.tsv ]; then
+              printf 'Build of [`%s`](%s) %s, with nothing to show for it. See the [run](%s).\n' \
+                "$SHORT_SHA" "$commit_url" "$RESULT" "$run_url"
+            else
+              printf 'Built [`%s`](%s):\n\n' "$SHORT_SHA" "$commit_url"
+              printf '| target | artifact | b3sum |\n| --- | --- | --- |\n'
+              while IFS=$'\t' read -r name id; do
+                target=${name%-*}
+                target=${target#soar-}
+                sum=$(cut -d' ' -f1 "artifacts/$name/soar-$target.b3sum" 2>/dev/null || true)
+                printf '| `%s` | [%s](%s/artifacts/%s) | `%s` |\n' \
+                  "$target" "$name" "$run_url" "$id" "${sum:-unknown}"
+              done < built.tsv
+
+              if [ "$RESULT" != "success" ]; then
+                printf '\nSome targets did not build. See the [run](%s).\n' "$run_url"
+              fi
+
+              printf '\nDownloading an artifact needs a GitHub login, and it arrives as a zip. '
+              printf 'They expire with this repository'"'"'s retention setting.\n'
+            fi
+          } > comment.md
+
+          gh pr comment "$PR" --body-file comment.md
