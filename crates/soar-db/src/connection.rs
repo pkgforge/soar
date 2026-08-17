@@ -11,7 +11,7 @@ use std::{collections::HashMap, path::Path};
 use diesel::{sql_query, Connection, ConnectionError, RunQueryDsl, SqliteConnection};
 use tracing::{debug, trace};
 
-use crate::migration::{apply_migrations, migrate_json_to_jsonb, DbType};
+use crate::migration::{apply_migrations, migrate_metadata_json_to_jsonb, DbType};
 
 /// How long to wait for another process to let go of the database.
 ///
@@ -63,14 +63,6 @@ impl DbConnection {
         apply_migrations(&mut conn, &db_type)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
         trace!("migrations applied");
-
-        // Migrate text JSON to JSONB for core database
-        // Metadata databases are generated externally and migrated on fetch
-        if matches!(db_type, DbType::Core) {
-            migrate_json_to_jsonb(&mut conn, db_type)
-                .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
-            trace!("JSON to JSONB migration completed");
-        }
 
         debug!(path = %path_str, "database opened successfully");
         Ok(Self {
@@ -134,8 +126,7 @@ impl DbConnection {
 
         prepare(&mut conn)?;
 
-        // Migrate text JSON to JSONB binary format
-        migrate_json_to_jsonb(&mut conn, DbType::Metadata)
+        migrate_metadata_json_to_jsonb(&mut conn)
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
         trace!("JSON to JSONB migration completed");
 
