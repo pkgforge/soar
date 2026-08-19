@@ -17,6 +17,11 @@ on:
 
 permissions: {}
 
+# Only the build job checks out anything, so `gh` has no git remote to read the
+# repository from and has to be told which one it is working in.
+env:
+  GH_REPO: ${{ github.repository }}
+
 jobs:
   request:
     name: Read the request

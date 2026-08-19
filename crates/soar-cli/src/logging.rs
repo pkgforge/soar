@@ -11,16 +11,33 @@ use tracing_subscriber::{
 
 use crate::{cli::Args, utils::Colored};
 
+/// Collects an event's message and the fields recorded alongside it.
+///
+/// The fields are what say which repository or database a record is about, so a
+/// log that drops them leaves every repetition of a message looking the same.
 #[derive(Default)]
 struct MessageVisitor {
     message: Option<String>,
+    fields: Vec<(&'static str, String)>,
+}
+
+impl MessageVisitor {
+    fn record(&mut self, field: &tracing::field::Field, value: String) {
+        if field.name() == "message" {
+            self.message = Some(value);
+        } else {
+            self.fields.push((field.name(), value));
+        }
+    }
 }
 
 impl tracing::field::Visit for MessageVisitor {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.record(field, value.to_string());
+    }
+
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            self.message = Some(format!("{value:?}"));
-        }
+        self.record(field, format!("{value:?}"));
     }
 }
 
@@ -40,7 +57,8 @@ where
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
 
-        match *event.metadata().level() {
+        let level = *event.metadata().level();
+        match level {
             Level::TRACE => write!(writer, "{} ", Colored(Magenta, "[TRACE]")),
             Level::DEBUG => write!(writer, "{} ", Colored(Blue, "[DEBUG]")),
             Level::INFO => write!(writer, ""),
@@ -49,10 +67,18 @@ where
         }?;
 
         if let Some(message) = visitor.message {
-            writeln!(writer, "{message}")
-        } else {
-            writeln!(writer)
+            write!(writer, "{message}")?;
         }
+
+        // Info is soar's own output, where the fields carry what `--json` prints
+        // rather than anything a reader of the line needs appended to it.
+        if level != Level::INFO {
+            for (name, value) in visitor.fields {
+                write!(writer, " {}={value}", Colored(Blue, name))?;
+            }
+        }
+
+        writeln!(writer)
     }
 }
 

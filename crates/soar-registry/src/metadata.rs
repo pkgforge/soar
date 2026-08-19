@@ -191,7 +191,7 @@ pub async fn fetch_metadata(
         .map(String::from)
         .ok_or(RegistryError::MissingEtag)?;
 
-    debug!("Fetching metadata from {}", repo.url);
+    debug!(repo_name = repo.name, url = repo.url, "fetching metadata");
 
     let content = resp
         .into_body()
