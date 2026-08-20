@@ -151,6 +151,7 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
             ($batch_job:expr, $batch_msg:expr) => {
                 if let Some(old) = $batch_job.take() {
                     old.finish_and_clear();
+                    MULTI.remove(&old);
                     if let Some(ref msg) = $batch_msg {
                         let new = MULTI.add(ProgressBar::new_spinner());
                         new.set_style(spinner_style());
@@ -467,6 +468,15 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     total,
                     failed,
                 } => {
+                    if completed >= total {
+                        if let Some(pb) = batch_job.take() {
+                            pb.finish_and_clear();
+                            MULTI.remove(&pb);
+                        }
+                        batch_msg = None;
+                        continue;
+                    }
+
                     let fail_msg = if failed > 0 {
                         format!(" ({failed} failed)")
                     } else {
