@@ -1,4 +1,15 @@
 
+## [0.13.3](https://github.com/pkgforge/soar/compare/v0.13.2...v0.13.3) - 2026-08-21
+
+### ⛰️  Features
+
+- *(progress)* Show feedback while waiting on the remote ([#206](https://github.com/pkgforge/soar/pull/206)) - ([c2b536d](https://github.com/pkgforge/soar/commit/c2b536da1f1238cc34c40efceab35516c9b95366))
+
+### 🐛 Bug Fixes
+
+- *(db)* Stop reconverting JSONB metadata columns on every open ([#203](https://github.com/pkgforge/soar/pull/203)) - ([a5ea564](https://github.com/pkgforge/soar/commit/a5ea564b6ac8840b4d0fbc8790fe960265c83e3b))
+- *(progress)* Clear the batch bar when the batch finishes - ([6cfe25e](https://github.com/pkgforge/soar/commit/6cfe25e8be64aa6492f2e145c921a536c1a344f7))
+
 ## [0.13.2](https://github.com/pkgforge/soar/compare/v0.13.1...v0.13.2) - 2026-08-15
 
 ### ⛰️  Features

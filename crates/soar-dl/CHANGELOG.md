@@ -1,4 +1,10 @@
 
+## [0.12.2](https://github.com/pkgforge/soar/compare/soar-dl-v0.12.1...soar-dl-v0.12.2) - 2026-08-21
+
+### ⛰️  Features
+
+- *(progress)* Show feedback while waiting on the remote ([#206](https://github.com/pkgforge/soar/pull/206)) - ([c2b536d](https://github.com/pkgforge/soar/commit/c2b536da1f1238cc34c40efceab35516c9b95366))
+
 ## [0.12.1](https://github.com/pkgforge/soar/compare/soar-dl-v0.12.0...soar-dl-v0.12.1) - 2026-08-15
 
 ### ⛰️  Features
