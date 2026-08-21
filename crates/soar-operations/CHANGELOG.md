@@ -1,4 +1,14 @@
 
+## [0.5.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.5.0...soar-operations-v0.5.1) - 2026-08-21
+
+### ⛰️  Features
+
+- *(progress)* Show feedback while waiting on the remote ([#206](https://github.com/pkgforge/soar/pull/206)) - ([c2b536d](https://github.com/pkgforge/soar/commit/c2b536da1f1238cc34c40efceab35516c9b95366))
+
+### 🐛 Bug Fixes
+
+- *(db)* Stop reconverting JSONB metadata columns on every open ([#203](https://github.com/pkgforge/soar/pull/203)) - ([a5ea564](https://github.com/pkgforge/soar/commit/a5ea564b6ac8840b4d0fbc8790fe960265c83e3b))
+
 ## [0.5.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.4.1...soar-operations-v0.5.0) - 2026-08-15
 
 ### ⛰️  Features
