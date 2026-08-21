@@ -9,6 +9,7 @@ use tracing::{error, info};
 
 use crate::{
     json_output::{self, Listing, UpdateJson},
+    progress::create_wait_job,
     utils::{ask_target_action, display_settings, icon_or, json_enabled, Colored, Icons},
 };
 
@@ -20,7 +21,11 @@ pub async fn update_packages(
     check: bool,
     no_verify: bool,
 ) -> SoarResult<()> {
-    let updates = update::check_updates(ctx, packages.as_deref()).await?;
+    // Packages installed from a remote source are checked over the network here.
+    let spinner = create_wait_job("checking for updates");
+    let checked = update::check_updates(ctx, packages.as_deref()).await;
+    spinner.finish_and_clear();
+    let updates = checked?;
 
     if check {
         return report_pending(&updates);

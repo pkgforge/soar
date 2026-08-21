@@ -64,6 +64,12 @@ fn spinner_style() -> ProgressStyle {
     ProgressStyle::with_template("{spinner:.cyan} {msg}").unwrap()
 }
 
+/// Spinner that also shows how long the wait has lasted, for stages that block on
+/// a remote and have nothing else to report.
+fn waiting_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner:.cyan} {msg} {elapsed:.dim}").unwrap()
+}
+
 /// Create a download progress bar with a progress bar, bytes, and ETA.
 pub fn create_download_job(prefix: &str) -> ProgressBar {
     let pb = if progress_enabled() {
@@ -73,6 +79,23 @@ pub fn create_download_job(prefix: &str) -> ProgressBar {
     };
     pb.set_style(download_style());
     pb.set_prefix(prefix.to_string());
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb
+}
+
+/// Create a spinner job for a stage that blocks on a remote, showing elapsed time.
+///
+/// Unlike [`create_spinner_job`] this ignores the `spinners` display setting: it is the
+/// only feedback such a stage has, and without it the run looks stuck.
+pub fn create_wait_job(message: &str) -> ProgressBar {
+    // Left out of MULTI entirely: adding a bar to it overrides the hidden draw
+    // target, so a hidden bar added to it still draws.
+    if !progress_enabled() {
+        return ProgressBar::hidden();
+    }
+    let pb = MULTI.add(ProgressBar::new_spinner());
+    pb.set_style(waiting_style());
+    pb.set_message(message.to_string());
     pb.enable_steady_tick(Duration::from_millis(100));
     pb
 }
@@ -93,17 +116,25 @@ pub fn create_spinner_job(message: &str) -> ProgressBar {
 /// Handle download progress events and update a progress bar.
 pub fn handle_download_progress(state: Progress, pb: &ProgressBar) {
     match state {
+        Progress::Preparing => {
+            pb.set_style(waiting_style());
+            pb.set_message("connecting");
+        }
         Progress::Starting {
             total,
         } => {
+            pb.reset();
             pb.set_length(total);
+            pb.set_style(download_style());
         }
         Progress::Resuming {
             current,
             total,
         } => {
+            pb.reset();
             pb.set_length(total);
             pb.set_position(current);
+            pb.set_style(download_style());
         }
         Progress::Chunk {
             current, ..
@@ -117,6 +148,18 @@ pub fn handle_download_progress(state: Progress, pb: &ProgressBar) {
         }
         _ => {}
     }
+}
+
+/// Create the bar an operation's download uses, from the wait for the remote through
+/// the transfer itself. It starts in the waiting state, which is where every
+/// download begins.
+fn create_download_bar(pkg_name: &str) -> ProgressBar {
+    let pb = MULTI.add(ProgressBar::new(0));
+    pb.set_style(waiting_style());
+    pb.set_prefix(colored_prefix(pkg_name));
+    pb.set_message(format!("{pkg_name}: connecting"));
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb
 }
 
 /// Create a spinner-style progress bar for an operation.
@@ -166,18 +209,40 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
         while let Ok(event) = receiver.recv() {
             match event {
                 // ── Download lifecycle ──────────────────────────────────
+                // The bar is created here so the wait for a slow remote is
+                // visible, and reused once the transfer starts.
+                SoarEvent::DownloadPreparing {
+                    op_id,
+                    pkg_name,
+                    ..
+                } => {
+                    let is_new = !jobs.contains_key(&op_id);
+                    let pb = jobs
+                        .entry(op_id)
+                        .or_insert_with(|| create_download_bar(&pkg_name));
+                    pb.set_style(waiting_style());
+                    pb.set_message(format!("{pkg_name}: connecting"));
+                    if is_new {
+                        reposition_batch!(batch_job, batch_msg);
+                    }
+                }
                 SoarEvent::DownloadStarting {
                     op_id,
                     pkg_name,
                     total,
                     ..
                 } => {
-                    let pb = MULTI.add(ProgressBar::new(total));
+                    let is_new = !jobs.contains_key(&op_id);
+                    let pb = jobs
+                        .entry(op_id)
+                        .or_insert_with(|| create_download_bar(&pkg_name));
+                    pb.reset();
+                    pb.set_length(total);
+                    // Set last: a draw between the two would paint a full bar at 0/0.
                     pb.set_style(download_style());
-                    pb.set_prefix(colored_prefix(&pkg_name));
-                    pb.enable_steady_tick(Duration::from_millis(100));
-                    jobs.insert(op_id, pb);
-                    reposition_batch!(batch_job, batch_msg);
+                    if is_new {
+                        reposition_batch!(batch_job, batch_msg);
+                    }
                 }
                 SoarEvent::DownloadResuming {
                     op_id,
@@ -187,15 +252,13 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     ..
                 } => {
                     let is_new = !jobs.contains_key(&op_id);
-                    let pb = jobs.entry(op_id).or_insert_with(|| {
-                        let pb = MULTI.add(ProgressBar::new(0));
-                        pb.set_style(download_style());
-                        pb.set_prefix(colored_prefix(&pkg_name));
-                        pb.enable_steady_tick(Duration::from_millis(100));
-                        pb
-                    });
+                    let pb = jobs
+                        .entry(op_id)
+                        .or_insert_with(|| create_download_bar(&pkg_name));
+                    pb.reset();
                     pb.set_length(total);
                     pb.set_position(current);
+                    pb.set_style(download_style());
                     if is_new {
                         reposition_batch!(batch_job, batch_msg);
                     }
@@ -220,10 +283,14 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     }
                 }
                 SoarEvent::DownloadRetry {
-                    op_id, ..
+                    op_id,
+                    pkg_name,
+                    ..
                 } => {
                     if let Some(pb) = jobs.get(&op_id) {
+                        pb.set_style(waiting_style());
                         pb.set_position(0);
+                        pb.set_message(format!("{pkg_name}: retrying"));
                     }
                 }
                 SoarEvent::DownloadAborted {
@@ -239,13 +306,8 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     ..
                 } => {
                     let is_new = !jobs.contains_key(&op_id);
-                    jobs.entry(op_id).or_insert_with(|| {
-                        let pb = MULTI.add(ProgressBar::new(0));
-                        pb.set_style(download_style());
-                        pb.set_prefix(colored_prefix(&pkg_name));
-                        pb.enable_steady_tick(Duration::from_millis(100));
-                        pb
-                    });
+                    jobs.entry(op_id)
+                        .or_insert_with(|| create_download_bar(&pkg_name));
                     if is_new {
                         reposition_batch!(batch_job, batch_msg);
                     }

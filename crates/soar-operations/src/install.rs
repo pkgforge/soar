@@ -748,6 +748,15 @@ pub async fn perform_installation(
     let completed = Arc::new(AtomicU32::new(0));
     let failed_count = Arc::new(AtomicU32::new(0));
 
+    // Without this the count only appears once the first package is done.
+    if total > 1 {
+        ctx.events().emit(SoarEvent::BatchProgress {
+            completed: 0,
+            total,
+            failed: 0,
+        });
+    }
+
     let mut handles = Vec::new();
 
     for target in targets {
