@@ -7,9 +7,12 @@ use tabled::{
 };
 use tracing::{debug, error, info, warn};
 
-use crate::utils::{
-    ask_target_action, display_settings, icon_or, select_package_interactively,
-    select_package_interactively_with_installed, Colored, Icons,
+use crate::{
+    progress::create_wait_job,
+    utils::{
+        ask_target_action, display_settings, icon_or, select_package_interactively,
+        select_package_interactively_with_installed, Colored, Icons,
+    },
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -59,7 +62,11 @@ pub async fn install_packages(
         return install_with_show(ctx, packages, &options, yes, force, ask, no_notes).await;
     }
 
-    let results = install::resolve_packages(ctx, packages, &options).await?;
+    // A URL or OCI reference is resolved against its remote here.
+    let spinner = create_wait_job("resolving packages");
+    let resolution = install::resolve_packages(ctx, packages, &options).await;
+    spinner.finish_and_clear();
+    let results = resolution?;
 
     let mut install_targets = Vec::new();
     for result in results {
@@ -148,9 +155,11 @@ async fn install_with_show(
         if soar_core::package::local::LocalPackage::is_local(package)
             || soar_core::package::url::UrlPackage::is_remote(package)
         {
-            let results =
-                install::resolve_packages(ctx, std::slice::from_ref(package), options).await?;
-            for result in results {
+            let spinner = create_wait_job("resolving packages");
+            let resolution =
+                install::resolve_packages(ctx, std::slice::from_ref(package), options).await;
+            spinner.finish_and_clear();
+            for result in resolution? {
                 match result {
                     ResolveResult::Resolved(targets) => install_targets.extend(targets),
                     ResolveResult::AlreadyInstalled {

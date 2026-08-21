@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 /// Download progress events
+///
+/// `Preparing` is the wait on the remote: the request is out, but no byte has
+/// arrived and the size is still unknown.
 #[derive(Debug, Clone, Copy)]
 pub enum Progress {
+    Preparing,
     Starting { total: u64 },
     Resuming { current: u64, total: u64 },
     Chunk { current: u64, total: u64 },

@@ -12,6 +12,7 @@ use tracing::{info, warn};
 
 use crate::{
     json_output::{self, ApplyDiffJson},
+    progress::create_wait_job,
     utils::{display_settings, icon_or, json_enabled, Colored, Icons},
 };
 
@@ -37,7 +38,14 @@ pub async fn apply_packages(
 
     info!("Loaded {} package declaration(s)", resolved.len());
 
-    let diff = apply::compute_diff(ctx, &resolved, prune).await?;
+    // Declarations backed by a remote source are resolved over the network here.
+    let spinner = create_wait_job(&format!(
+        "resolving {} package declaration(s)",
+        resolved.len()
+    ));
+    let resolution = apply::compute_diff(ctx, &resolved, prune).await;
+    spinner.finish_and_clear();
+    let diff = resolution?;
 
     if answers_with_diff {
         json_output::emit(&ApplyDiffJson::new(&diff));

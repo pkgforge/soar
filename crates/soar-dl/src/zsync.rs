@@ -114,6 +114,10 @@ pub fn download<F>(
 where
     F: Fn(Progress) + Send + Sync + 'static,
 {
+    if let Some(ref callback) = on_progress {
+        callback(Progress::Preparing);
+    }
+
     let mut assembly = ZsyncAssembly::from_url(url, output)
         .map_err(|e| DownloadError::Zsync(format!("reading zsync control file: {e}")))?;
 

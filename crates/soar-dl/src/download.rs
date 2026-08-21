@@ -232,6 +232,10 @@ impl Download {
     pub fn execute(self) -> Result<PathBuf, DownloadError> {
         debug!(url = self.url, "starting download");
 
+        if let Some(ref cb) = self.on_progress {
+            cb(Progress::Preparing);
+        }
+
         if self.output.as_deref() == Some("-") {
             trace!("output is stdout");
             return self.download_to_stdout();
@@ -423,6 +427,10 @@ impl Download {
 
         if let Some(offset) = resume_from {
             debug!(offset = offset, "attempting to resume download");
+        }
+
+        if let Some(ref cb) = self.on_progress {
+            cb(Progress::Preparing);
         }
 
         let resp = Http::fetch(&self.url, resume_from, etag, self.ghcr_blob)?;

@@ -4,6 +4,11 @@ use crate::OperationId;
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SoarEvent {
+    /// Contacting the remote. No bytes have moved yet and the size is unknown.
+    DownloadPreparing {
+        op_id: OperationId,
+        pkg_name: String,
+    },
     /// Download is starting.
     DownloadStarting {
         op_id: OperationId,

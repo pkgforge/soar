@@ -421,6 +421,10 @@ impl OciDownload {
             "starting OCI download"
         );
 
+        if let Some(cb) = &self.on_progress {
+            cb(Progress::Preparing);
+        }
+
         // If it's a blob digest, download directly
         if self.reference.tag.starts_with("sha256:") {
             trace!("tag is digest, downloading blob directly");

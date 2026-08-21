@@ -17,6 +17,12 @@ pub fn create_progress_bridge(
 ) -> Arc<dyn Fn(Progress) + Send + Sync> {
     Arc::new(move |progress| {
         let event = match progress {
+            Progress::Preparing => {
+                SoarEvent::DownloadPreparing {
+                    op_id,
+                    pkg_name: pkg_name.clone(),
+                }
+            }
             Progress::Starting {
                 total,
             } => {
@@ -108,6 +114,7 @@ mod tests {
 
         let bridge = create_progress_bridge(events, 1, "pkg".into());
 
+        bridge(Progress::Preparing);
         bridge(Progress::Starting {
             total: 1000,
         });
@@ -127,17 +134,27 @@ mod tests {
         bridge(Progress::Recovered);
 
         let events = collector.events();
-        assert_eq!(events.len(), 7);
+        assert_eq!(events.len(), 8);
 
+        match &events[0] {
+            SoarEvent::DownloadPreparing {
+                op_id,
+                pkg_name,
+            } => {
+                assert_eq!(*op_id, 1);
+                assert_eq!(pkg_name, "pkg");
+            }
+            other => panic!("expected DownloadPreparing, got {other:?}"),
+        }
         assert!(matches!(
-            &events[0],
+            &events[1],
             SoarEvent::DownloadStarting {
                 total: 1000,
                 ..
             }
         ));
         assert!(matches!(
-            &events[1],
+            &events[2],
             SoarEvent::DownloadResuming {
                 current: 500,
                 total: 1000,
@@ -145,7 +162,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            &events[2],
+            &events[3],
             SoarEvent::DownloadProgress {
                 current: 750,
                 total: 1000,
@@ -153,14 +170,14 @@ mod tests {
             }
         ));
         assert!(matches!(
-            &events[3],
+            &events[4],
             SoarEvent::DownloadComplete {
                 total: 1000,
                 ..
             }
         ));
-        assert!(matches!(&events[4], SoarEvent::DownloadRetry { .. }));
-        assert!(matches!(&events[5], SoarEvent::DownloadAborted { .. }));
-        assert!(matches!(&events[6], SoarEvent::DownloadRecovered { .. }));
+        assert!(matches!(&events[5], SoarEvent::DownloadRetry { .. }));
+        assert!(matches!(&events[6], SoarEvent::DownloadAborted { .. }));
+        assert!(matches!(&events[7], SoarEvent::DownloadRecovered { .. }));
     }
 }
