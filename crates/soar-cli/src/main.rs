@@ -1,6 +1,7 @@
 use std::{
     env, fs,
     io::Read,
+    os::unix::fs::PermissionsExt as _,
     process::Command,
     sync::{Arc, Mutex},
 };
@@ -120,9 +121,70 @@ fn answers_with_document(command: &cli::Commands) -> bool {
     )
 }
 
+/// Whether this command writes to the system installation, and so needs root in
+/// system mode.
+///
+/// Everything else only reads, and the system tree is readable without it, so
+/// those run as the invoking user rather than asking for a password to answer a
+/// query.
+fn requires_root(command: &cli::Commands) -> bool {
+    #[cfg(feature = "self")]
+    if matches!(command, cli::Commands::SelfCmd { .. }) {
+        return true;
+    }
+
+    matches!(
+        command,
+        cli::Commands::Install { .. }
+            | cli::Commands::Remove { .. }
+            | cli::Commands::Sync
+            | cli::Commands::Run { .. }
+            | cli::Commands::Use { .. }
+            | cli::Commands::Clean { .. }
+            | cli::Commands::Url { .. }
+            | cli::Commands::DefConfig { .. }
+            | cli::Commands::Update {
+                check: false,
+                ..
+            }
+            | cli::Commands::Apply {
+                dry_run: false,
+                ..
+            }
+            | cli::Commands::Config {
+                edit: Some(_),
+            }
+            | cli::Commands::Repo {
+                action: cli::RepoAction::Add { .. }
+                    | cli::RepoAction::Update { .. }
+                    | cli::RepoAction::Remove { .. },
+            }
+    )
+}
+
+/// Whether an executable by this name exists on `PATH`.
+///
+/// Probing by running the escalation tool would prompt for a password just to
+/// learn whether it is installed, which is what the caller is trying to avoid.
+fn find_on_path(name: &str) -> bool {
+    env::var_os("PATH").is_some_and(|path| {
+        env::split_paths(&path).any(|dir| {
+            fs::metadata(dir.join(name))
+                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        })
+    })
+}
+
 /// Handle system mode - check for root privileges and re-exec with sudo/doas if needed
-fn handle_system_mode() -> SoarResult<()> {
+fn handle_system_mode(command: &cli::Commands) -> SoarResult<()> {
     if nix::unistd::geteuid().is_root() {
+        enable_system_mode();
+        return Ok(());
+    }
+
+    // A read-only command reads exactly what root would, so escalating buys
+    // nothing: point it at the system tree and let it run as the user.
+    if !requires_root(command) {
         enable_system_mode();
         return Ok(());
     }
@@ -131,9 +193,9 @@ fn handle_system_mode() -> SoarResult<()> {
         .map_err(|e| SoarError::Custom(format!("Failed to get current executable path: {e}")))?;
     let args: Vec<String> = env::args().skip(1).collect();
 
-    let escalation_cmd = if Command::new("doas").arg("true").status().is_ok() {
+    let escalation_cmd = if find_on_path("doas") {
         "doas"
-    } else if Command::new("sudo").arg("true").status().is_ok() {
+    } else if find_on_path("sudo") {
         "sudo"
     } else {
         return Err(SoarError::Custom(
@@ -196,7 +258,7 @@ async fn handle_cli() -> SoarResult<()> {
     }
 
     if args.system {
-        handle_system_mode()?;
+        handle_system_mode(&args.command)?;
     }
 
     if let Some(ref c) = args.config {
@@ -259,7 +321,7 @@ async fn handle_cli() -> SoarResult<()> {
                 set_current_profile(profile)?;
             }
 
-            setup_required_paths().unwrap();
+            setup_required_paths()?;
 
             let (ctx, progress_guard) = create_context_for(answers_with_document(&command));
             let mut run_exit_code = None;

@@ -5,7 +5,10 @@ use std::{
 };
 
 use once_cell::sync::OnceCell;
-use soar_config::{config::Config, repository::Repository};
+use soar_config::{
+    config::{is_system_mode, Config},
+    repository::Repository,
+};
 use soar_core::{
     database::connection::{DieselDatabase, MetadataManager},
     error::{ErrorContext, SoarError},
@@ -18,6 +21,7 @@ use soar_db::{
 };
 use soar_events::{EventSinkHandle, LogLevel, SoarEvent, SyncStage};
 use soar_registry::{fetch_metadata, write_metadata_db, MetadataContent, RemotePackage};
+use soar_utils::system::is_root;
 use tokio::sync::OnceCell as AsyncOnceCell;
 use tracing::{debug, trace};
 
@@ -136,6 +140,16 @@ impl SoarContext {
             repos = self.inner.config.repositories.len(),
             "initializing repository databases"
         );
+
+        // The system metadata belongs to root, so a read-only command run
+        // without it cannot refresh the copy on disk and has no business
+        // failing over that: it answers from what is already there. An explicit
+        // `sync` escalates first, so only the implicit refresh is skipped.
+        if !force && is_system_mode() && !is_root() {
+            debug!("system mode without root, skipping implicit metadata refresh");
+            return Ok(());
+        }
+
         let mut tasks = Vec::new();
 
         for repo in self

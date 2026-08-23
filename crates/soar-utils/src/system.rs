@@ -48,6 +48,11 @@ pub fn get_username() -> String {
     get_username_with(&SystemSource)
 }
 
+/// Whether this process runs with an effective uid of root.
+pub fn is_root() -> bool {
+    geteuid().is_root()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
