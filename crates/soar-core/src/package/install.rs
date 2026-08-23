@@ -865,6 +865,27 @@ impl PackageInstaller {
         Ok(())
     }
 
+    /// Check an artifact against the checksum its package pins, where it pins
+    /// one, and discard it on a mismatch.
+    ///
+    /// The direct-download path hands this to the downloader. The paths that
+    /// assemble the file themselves have to ask for it, and a zsync transfer
+    /// especially so: what it verifies against comes from the artifact's own
+    /// host, whereas a pinned checksum comes from the repository.
+    fn verify_pinned_checksum(&self, path: &Path, source: &str) -> SoarResult<()> {
+        let Some(ref bsum) = self.package.bsum else {
+            return Ok(());
+        };
+        let actual = calculate_checksum(path)?;
+        if &actual != bsum {
+            fs::remove_file(path).ok();
+            return Err(SoarError::Custom(format!(
+                "Checksum mismatch for {source}: expected {bsum}, got {actual}"
+            )));
+        }
+        Ok(())
+    }
+
     /// Install a package from a local file by copying it into the install
     /// directory (and extracting it when it is an archive), mirroring the
     /// relevant post-download steps of [`Download::execute`].
@@ -890,19 +911,7 @@ impl PackageInstaller {
         fs::copy(src, dest)
             .with_context(|| format!("copying {} to {}", src.display(), dest.display()))?;
 
-        // Honor checksum pinning the same way the direct-download path does.
-        if let Some(ref bsum) = self.package.bsum {
-            let actual = calculate_checksum(dest)?;
-            if &actual != bsum {
-                fs::remove_file(dest).ok();
-                return Err(SoarError::Custom(format!(
-                    "Checksum mismatch for {}: expected {}, got {}",
-                    src.display(),
-                    bsum,
-                    actual
-                )));
-            }
-        }
+        self.verify_pinned_checksum(dest, &src.display().to_string())?;
 
         // ELF binaries (including AppImages) need the executable bit; archives
         // are extracted below instead of being run directly.
@@ -1045,6 +1054,7 @@ impl PackageInstaller {
                     output_path,
                     callback.map(|cb| move |p| cb(p)),
                 )?;
+                self.verify_pinned_checksum(output_path, &seed.url)?;
                 output_path.to_path_buf()
             } else if let Some(local_src) = local_path_from_url(url) {
                 trace!(source = %local_src.display(), "installing from local file");
