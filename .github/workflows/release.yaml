@@ -111,7 +111,7 @@ jobs:
           prerelease: true
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v3.0.0
+        uses: actions/attest-build-provenance@v3.1.0
         with:
           subject-name: "soar-v${{ env.RELEASE_VERSION }}-${{ matrix.build.NAME }}"
           subject-path: |
