@@ -1,4 +1,10 @@
 
+## [0.5.2](https://github.com/pkgforge/soar/compare/soar-utils-v0.5.1...soar-utils-v0.5.2) - 2026-08-31
+
+### 🐛 Bug Fixes
+
+- *(system)* Only escalate for commands that write - ([1d7f1ef](https://github.com/pkgforge/soar/commit/1d7f1ef39e4cb6860423e365b8a7fbb8c8f15324))
+
 ## [0.5.1](https://github.com/pkgforge/soar/compare/soar-utils-v0.5.0...soar-utils-v0.5.1) - 2026-08-15
 
 ### ⛰️  Features

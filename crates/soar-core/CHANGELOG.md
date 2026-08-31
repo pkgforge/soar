@@ -1,4 +1,10 @@
 
+## [0.17.3](https://github.com/pkgforge/soar/compare/soar-core-v0.17.2...soar-core-v0.17.3) - 2026-08-31
+
+### 🐛 Bug Fixes
+
+- *(zsync)* Require https and honor pinned checksums - ([c1a0d9a](https://github.com/pkgforge/soar/commit/c1a0d9af0bf05c5eddfb4cbfd7946255c09a6d84))
+
 ## [0.17.2](https://github.com/pkgforge/soar/compare/soar-core-v0.17.1...soar-core-v0.17.2) - 2026-08-15
 
 ### ⛰️  Features

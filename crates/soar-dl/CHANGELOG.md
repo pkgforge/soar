@@ -1,4 +1,18 @@
 
+## [0.12.2](https://github.com/pkgforge/soar/compare/soar-dl-v0.12.1...soar-dl-v0.12.2) - 2026-08-31
+
+### ⛰️  Features
+
+- *(progress)* Show feedback while waiting on the remote ([#206](https://github.com/pkgforge/soar/pull/206)) - ([c2b536d](https://github.com/pkgforge/soar/commit/c2b536da1f1238cc34c40efceab35516c9b95366))
+
+### 🐛 Bug Fixes
+
+- *(zsync)* Require https and honor pinned checksums - ([c1a0d9a](https://github.com/pkgforge/soar/commit/c1a0d9af0bf05c5eddfb4cbfd7946255c09a6d84))
+
+### 🎨 Styling
+
+- Fmt - ([3af0b8e](https://github.com/pkgforge/soar/commit/3af0b8ea04a6d2bfd768ecfd55f6e461f6c60b22))
+
 ## [0.12.1](https://github.com/pkgforge/soar/compare/soar-dl-v0.12.0...soar-dl-v0.12.1) - 2026-08-15
 
 ### ⛰️  Features

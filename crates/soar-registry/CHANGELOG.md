@@ -1,4 +1,10 @@
 
+## [0.6.3](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.2...soar-registry-v0.6.3) - 2026-08-31
+
+### 🐛 Bug Fixes
+
+- *(db)* Stop reconverting JSONB metadata columns on every open ([#203](https://github.com/pkgforge/soar/pull/203)) - ([a5ea564](https://github.com/pkgforge/soar/commit/a5ea564b6ac8840b4d0fbc8790fe960265c83e3b))
+
 ## [0.6.2](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.1...soar-registry-v0.6.2) - 2026-08-15
 
 ### ⛰️  Features

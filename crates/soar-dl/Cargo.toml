@@ -1,6 +1,6 @@
 [package]
 name = "soar-dl"
-version = "0.12.1"
+version = "0.12.2"
 description = "Downloader for soar package manager"
 license.workspace = true
 edition.workspace = true
