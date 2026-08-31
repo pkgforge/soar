@@ -20,7 +20,11 @@ use crate::{error::DownloadError, types::Progress};
 /// gets installed. Unlike repository metadata there is no signature to fall
 /// back on, which leaves https as the only thing authenticating an update.
 fn ensure_https(url: &str, what: &str) -> Result<(), DownloadError> {
-    if url.trim_start().to_ascii_lowercase().starts_with("https://") {
+    if url
+        .trim_start()
+        .to_ascii_lowercase()
+        .starts_with("https://")
+    {
         return Ok(());
     }
     Err(DownloadError::Zsync(format!(
@@ -524,6 +528,9 @@ mod tests {
 
         let out = dir.path().join("rebuilt.AppImage");
         let result = assemble(&feed, Path::new("/nonexistent"), &out, None::<fn(Progress)>);
-        assert!(result.is_err(), "a substituted artifact must not be accepted");
+        assert!(
+            result.is_err(),
+            "a substituted artifact must not be accepted"
+        );
     }
 }
