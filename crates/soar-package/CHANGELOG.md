@@ -1,4 +1,10 @@
 
+## [0.5.2](https://github.com/pkgforge/soar/compare/soar-package-v0.5.1...soar-package-v0.5.2) - 2026-08-31
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.toml dependencies - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.5.1](https://github.com/pkgforge/soar/compare/soar-package-v0.5.0...soar-package-v0.5.1) - 2026-08-15
 
 ### ⛰️  Features

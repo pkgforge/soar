@@ -1,4 +1,25 @@
 
+## [0.13.3](https://github.com/pkgforge/soar/compare/v0.13.2...v0.13.3) - 2026-08-31
+
+### ⛰️  Features
+
+- *(progress)* Show feedback while waiting on the remote ([#206](https://github.com/pkgforge/soar/pull/206)) - ([c2b536d](https://github.com/pkgforge/soar/commit/c2b536da1f1238cc34c40efceab35516c9b95366))
+
+### 🐛 Bug Fixes
+
+- *(db)* Stop reconverting JSONB metadata columns on every open ([#203](https://github.com/pkgforge/soar/pull/203)) - ([a5ea564](https://github.com/pkgforge/soar/commit/a5ea564b6ac8840b4d0fbc8790fe960265c83e3b))
+- *(progress)* Clear the batch bar when the batch finishes - ([6cfe25e](https://github.com/pkgforge/soar/commit/6cfe25e8be64aa6492f2e145c921a536c1a344f7))
+- *(system)* Only escalate for commands that write - ([1d7f1ef](https://github.com/pkgforge/soar/commit/1d7f1ef39e4cb6860423e365b8a7fbb8c8f15324))
+- *(zsync)* Require https and honor pinned checksums - ([c1a0d9a](https://github.com/pkgforge/soar/commit/c1a0d9af0bf05c5eddfb4cbfd7946255c09a6d84))
+
+### 🎨 Styling
+
+- Fmt - ([3af0b8e](https://github.com/pkgforge/soar/commit/3af0b8ea04a6d2bfd768ecfd55f6e461f6c60b22))
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.toml dependencies - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.13.2](https://github.com/pkgforge/soar/compare/v0.13.1...v0.13.2) - 2026-08-15
 
 ### ⛰️  Features
