@@ -46,6 +46,10 @@ pub struct PackageDefaults {
     /// Whether to install binary only (exclude logs, desktop files, etc).
     pub binary_only: Option<bool>,
 
+    /// Whether packages are installed into the system tree by default.
+    /// See the per-package `system` option.
+    pub system: Option<bool>,
+
     /// Glob patterns filtering which files an install keeps.
     #[deprecated(
         since = "0.13.0",
@@ -248,6 +252,12 @@ pub struct PackageOptions {
     /// Package type for URL installs (e.g., appimage, flatimage, archive).
     pub pkg_type: Option<String>,
 
+    /// Install this package system-wide, under the system root rather than the
+    /// user's. `soar apply` installs these in a separate step that asks for
+    /// root; a package declared in `/etc/soar/packages.toml` is system-wide
+    /// already and does not need the marker.
+    pub system: Option<bool>,
+
     /// Entrypoint executable name (for URL packages where the binary name differs from package name).
     pub entrypoint: Option<String>,
 
@@ -355,6 +365,7 @@ pub struct ResolvedPackage {
     )]
     pub install_patterns: Option<Vec<String>>,
     pub binary_only: bool,
+    pub system: bool,
     pub arch_map: Option<HashMap<String, String>>,
 }
 
@@ -398,6 +409,7 @@ impl PackageSpec {
                     portable: None,
                     install_patterns: defaults.and_then(|d| d.install_patterns.clone()),
                     binary_only: defaults.and_then(|d| d.binary_only).unwrap_or(false),
+                    system: defaults.and_then(|d| d.system).unwrap_or(false),
                     arch_map: None,
                 }
             }
@@ -448,6 +460,10 @@ impl PackageSpec {
                         .binary_only
                         .or_else(|| defaults.and_then(|d| d.binary_only))
                         .unwrap_or(false),
+                    system: opts
+                        .system
+                        .or_else(|| defaults.and_then(|d| d.system))
+                        .unwrap_or(false),
                     arch_map: opts.arch_map.clone(),
                 }
             }
@@ -456,12 +472,19 @@ impl PackageSpec {
 }
 
 impl PackagesConfig {
-    /// Load packages configuration from file.
-    pub fn load(path: Option<&str>) -> Result<Self> {
-        let config_path = match path {
+    /// The packages file a given `--packages` argument names.
+    ///
+    /// Without one, the configured path, which follows system mode.
+    pub fn resolve_path(path: Option<&str>) -> PathBuf {
+        match path {
             Some(p) => PathBuf::from(p),
             None => PACKAGES_CONFIG_PATH.read().unwrap().clone(),
-        };
+        }
+    }
+
+    /// Load packages configuration from file.
+    pub fn load(path: Option<&str>) -> Result<Self> {
+        let config_path = Self::resolve_path(path);
 
         if !config_path.exists() {
             return Err(ConfigError::PackagesConfigNotFound(
@@ -490,6 +513,7 @@ impl PackagesConfig {
             defaults: Some(PackageDefaults {
                 profile: Some("default".to_string()),
                 binary_only: Some(false),
+                system: None,
                 install_patterns: None,
                 sandbox: None,
             }),
@@ -514,6 +538,10 @@ impl PackagesConfig {
 #   package_name = { version = "1.2" }    # Same as above
 #   package_name = { family = "pkg", repo = "bincache" }
 #   package_name = { pinned = true, portable = { home = "~/.pkg" } }
+#   package_name = { version = "*", system = true }   # Installed system-wide
+#
+# `soar apply` applies the system-wide packages in a second pass that asks for
+# root. Packages declared in /etc/soar/packages.toml are system-wide already.
 
 "#;
         doc.as_table_mut().decor_mut().set_prefix(header);
@@ -640,6 +668,70 @@ pub fn generate_default_packages_config() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_package_is_system_wide_only_where_it_says_so() {
+        let config: PackagesConfig = toml::from_str(
+            r#"
+[defaults]
+profile = "default"
+
+[packages]
+fd = "*"
+
+[packages.ripgrep]
+version = "*"
+system = true
+"#,
+        )
+        .unwrap();
+
+        let resolved = config.resolved_packages();
+        let system_wide = |name: &str| {
+            resolved
+                .iter()
+                .find(|pkg| pkg.name == name)
+                .unwrap_or_else(|| panic!("{name} missing"))
+                .system
+        };
+        assert!(system_wide("ripgrep"));
+        assert!(!system_wide("fd"));
+    }
+
+    #[test]
+    fn a_default_makes_every_package_system_wide() {
+        let config: PackagesConfig = toml::from_str(
+            r#"
+[defaults]
+system = true
+
+[packages]
+fd = "*"
+
+[packages.ripgrep]
+version = "*"
+
+[packages.bat]
+version = "*"
+system = false
+"#,
+        )
+        .unwrap();
+
+        let resolved = config.resolved_packages();
+        let system_wide = |name: &str| {
+            resolved
+                .iter()
+                .find(|pkg| pkg.name == name)
+                .unwrap_or_else(|| panic!("{name} missing"))
+                .system
+        };
+        // The simple form takes the default too.
+        assert!(system_wide("fd"));
+        assert!(system_wide("ripgrep"));
+        // An explicit `false` overrides it.
+        assert!(!system_wide("bat"));
+    }
 
     #[test]
     fn test_simple_package_spec() {

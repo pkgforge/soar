@@ -606,8 +606,18 @@ async fn handle_cli() -> SoarResult<()> {
                     yes,
                     packages_config,
                     no_verify,
+                    only_system,
                 } => {
-                    apply_packages(&ctx, prune, dry_run, yes, packages_config, no_verify).await?;
+                    apply_packages(
+                        &ctx,
+                        prune,
+                        dry_run,
+                        yes,
+                        packages_config,
+                        no_verify,
+                        only_system,
+                    )
+                    .await?;
                 }
                 cli::Commands::DefPackages => {
                     soar_config::packages::generate_default_packages_config()?;

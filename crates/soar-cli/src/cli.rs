@@ -536,7 +536,8 @@ pub enum Commands {
     /// Apply declarative package configuration
     #[clap(name = "apply")]
     Apply {
-        /// Remove packages not declared in packages.toml
+        /// Remove packages not declared in packages.toml.
+        /// The system-wide pass keeps whatever /etc/soar/packages.toml declares.
         #[arg(required = false, long)]
         prune: bool,
 
@@ -555,6 +556,12 @@ pub enum Commands {
         /// Skip checksum verification
         #[arg(required = false, long)]
         no_verify: bool,
+
+        /// In system mode, apply only the packages marked `system = true`.
+        /// Used when `soar apply` hands its system-wide packages to a
+        /// privileged pass over the same file.
+        #[arg(required = false, long)]
+        only_system: bool,
     },
 
     /// Generate default packages configuration
