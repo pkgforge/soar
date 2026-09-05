@@ -82,7 +82,7 @@ remote-tool = { url = "https://example.com/tool.tar.gz" }
 - Remote packages (url/github/gitlab) are never auto-pinned unless you explicitly set `pinned = true`
 - Pinned packages are skipped during auto-update operations
 - Version `*` always resolves to latest and is never pinned
-- After installing a package with version `"*"`, soar updates your `packages.toml` with the specific version installed
+- Only `url`, `github`, `gitlab` and `version_command` packages have the installed version written back to `packages.toml`. A repository package is asked for its version on every apply, so a `"*"` declaration stays `"*"` rather than turning into a pin
 
 ### Detailed Format
 
@@ -107,6 +107,7 @@ portable = { home = "~/.pkg", config = "~/.pkg/config" }
 | `bsum` | String | Expected BLAKE3 checksum (hex) for `url`/`github`/`gitlab` downloads; install aborts on mismatch |
 | `pinned` | Boolean | Prevent automatic updates (default: `false`) |
 | `profile` | String | Install to a specific profile |
+| `system` | Boolean | Install into the system tree rather than your own (see [System-Wide Packages](#system-wide-packages)) |
 | `github` | String | GitHub repo in `owner/repo` format |
 | `gitlab` | String | GitLab repo in `owner/repo` format |
 | `asset_pattern` | String | Glob pattern to match release assets |
@@ -211,6 +212,20 @@ Configure portable mode for AppImage, FlatImage, RunImage, and Wrappe packages. 
 url = "https://example.com/obsidian.AppImage"
 portable = { path = "~/.obsidian-data" }
 ```
+
+### System-Wide Packages
+
+Install a package under the system root rather than your own tree. Requires root, which `soar apply` asks for on its own.
+
+```toml
+[packages.docker]
+version = "*"
+system = true
+```
+
+`soar apply` installs the unmarked packages first, then hands the marked ones to a second pass that asks for root. A file with nothing marked asks for no password. Packages declared in `/etc/soar/packages.toml` are system-wide by definition and need no marker.
+
+`--prune` reaches that pass too, but it keeps whatever `/etc/soar/packages.toml` declares, so pruning against your own file cannot remove an administrator's packages.
 
 ### Architecture Mapping
 
@@ -619,6 +634,7 @@ soar apply
 | Yes | `--yes` | Auto-confirm all prompts |
 | Config | `--packages <path>` | Use custom packages.toml path |
 | No verify | `--no-verify` | Skip checksum verification (security risk) |
+| Only system | `--only-system` | With `--system`, apply only the packages marked `system = true`. `soar apply` passes this to the privileged pass itself |
 
 ### Pruning Unlisted Packages
 
