@@ -1,4 +1,10 @@
 
+## [0.6.0](https://github.com/pkgforge/soar/compare/soar-package-v0.5.2...soar-package-v0.6.0) - 2026-09-05
+
+### 🐛 Bug Fixes
+
+- *(integrate)* Derive icon name from the desktop entry name - ([1a01304](https://github.com/pkgforge/soar/commit/1a0130415a03692d532aec9f202effcca54c8e55))
+
 ## [0.5.2](https://github.com/pkgforge/soar/compare/soar-package-v0.5.1...soar-package-v0.5.2) - 2026-08-31
 
 ### ⚙️ Miscellaneous Tasks

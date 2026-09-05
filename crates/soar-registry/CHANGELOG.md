@@ -1,4 +1,10 @@
 
+## [0.6.4](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.3...soar-registry-v0.6.4) - 2026-09-05
+
+### ⚙️ Miscellaneous Tasks
+
+- Updated the following local packages: soar-config - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.6.3](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.2...soar-registry-v0.6.3) - 2026-08-31
 
 ### 🐛 Bug Fixes

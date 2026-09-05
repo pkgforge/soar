@@ -1,4 +1,10 @@
 
+## [0.17.4](https://github.com/pkgforge/soar/compare/soar-core-v0.17.3...soar-core-v0.17.4) - 2026-09-05
+
+### ⚙️ Miscellaneous Tasks
+
+- Updated the following local packages: soar-config, soar-package, soar-db - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.17.3](https://github.com/pkgforge/soar/compare/soar-core-v0.17.2...soar-core-v0.17.3) - 2026-08-31
 
 ### 🐛 Bug Fixes
