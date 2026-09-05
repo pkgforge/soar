@@ -23,9 +23,24 @@ use soar_events::{RemoveStage, SoarEvent};
 use tracing::{debug, warn};
 
 use crate::{
-    install::perform_installation, progress::next_op_id, utils::get_package_hooks, ApplyDiff,
-    ApplyReport, InstallOptions, SoarContext,
+    install::{newest_per_identity, perform_installation},
+    progress::next_op_id,
+    utils::get_package_hooks,
+    ApplyDiff, ApplyReport, InstallOptions, SoarContext,
 };
+
+/// Whether a declaration carries its own version rather than a registry's.
+///
+/// A registry is asked for the version every time, so recording one in the file
+/// only freezes it: a bare `version = "*"` would come back as a number, which
+/// the format reads as a pin. These sources have nothing to ask, so what was
+/// installed is written down instead.
+fn tracks_own_version(pkg: &ResolvedPackage) -> bool {
+    pkg.url.is_some()
+        || pkg.github.is_some()
+        || pkg.gitlab.is_some()
+        || pkg.version_command.is_some()
+}
 
 /// Status of a URL package compared against installed packages.
 enum UrlPackageStatus {
@@ -112,7 +127,13 @@ pub async fn compute_diff(
             continue;
         }
 
-        let metadata_pkg = found_packages.into_iter().next().unwrap();
+        // Sorted by name, which orders nothing when the name is fixed, so the
+        // rows arrive oldest-first. A declaration without a version asks for
+        // the newest, and the first repository to carry it still wins.
+        let metadata_pkg = newest_per_identity(found_packages)
+            .into_iter()
+            .next()
+            .unwrap();
 
         let installed_packages: Vec<InstalledPackage> = diesel_db
             .with_conn(|conn| {
@@ -236,6 +257,9 @@ pub async fn execute_apply(
     if !diff.to_install.is_empty() {
         let mut version_updates: Vec<(String, String)> = Vec::new();
         for (pkg, target) in &diff.to_install {
+            if !tracks_own_version(pkg) {
+                continue;
+            }
             let declared_version = pkg
                 .version
                 .as_ref()
@@ -286,6 +310,9 @@ pub async fn execute_apply(
     if !diff.to_update.is_empty() {
         let mut update_version_updates: Vec<(String, String)> = Vec::new();
         for (pkg, target) in &diff.to_update {
+            if !tracks_own_version(pkg) {
+                continue;
+            }
             let declared_version = pkg
                 .version
                 .as_ref()

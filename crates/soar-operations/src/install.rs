@@ -594,10 +594,12 @@ fn resolve_normal(
                 ..Default::default()
             }]))
         }
-        _ => Ok(ResolveResult::Ambiguous(crate::AmbiguousPackage {
-            query: package_name.to_string(),
-            candidates,
-        })),
+        _ => {
+            Ok(ResolveResult::Ambiguous(crate::AmbiguousPackage {
+                query: package_name.to_string(),
+                candidates,
+            }))
+        }
     }
 }
 
@@ -607,7 +609,7 @@ fn resolve_normal(
 /// than one. Only the repository, family and id make two of them different
 /// packages worth choosing between; the versions within one are that package
 /// over time, and the newest stands for it.
-fn newest_per_identity(packages: Vec<Package>) -> Vec<Package> {
+pub(crate) fn newest_per_identity(packages: Vec<Package>) -> Vec<Package> {
     let mut newest: Vec<Package> = Vec::new();
     for pkg in packages {
         let known = newest.iter_mut().find(|p| {
