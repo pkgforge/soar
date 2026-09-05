@@ -210,6 +210,7 @@ pub async fn execute_apply(
     ctx: &SoarContext,
     diff: ApplyDiff,
     no_verify: bool,
+    packages_path: &str,
 ) -> SoarResult<ApplyReport> {
     debug!("executing apply");
     let diesel_db = ctx.diesel_core_db()?.clone();
@@ -221,7 +222,9 @@ pub async fn execute_apply(
 
     // Apply pending version updates for in-sync packages
     for (pkg_name, version) in &diff.pending_version_updates {
-        if let Err(e) = PackagesConfig::update_package(pkg_name, None, Some(version), None) {
+        if let Err(e) =
+            PackagesConfig::update_package(pkg_name, None, Some(version), Some(packages_path))
+        {
             warn!(
                 "Failed to update version for '{}' in packages.toml: {}",
                 pkg_name, e
@@ -264,8 +267,12 @@ pub async fn execute_apply(
             .collect();
         for (pkg_name, version) in &version_updates {
             if succeeded.contains(pkg_name.as_str()) {
-                if let Err(e) = PackagesConfig::update_package(pkg_name, None, Some(version), None)
-                {
+                if let Err(e) = PackagesConfig::update_package(
+                    pkg_name,
+                    None,
+                    Some(version),
+                    Some(packages_path),
+                ) {
                     warn!(
                         "Failed to update version for '{}' in packages.toml: {}",
                         pkg_name, e
@@ -310,8 +317,12 @@ pub async fn execute_apply(
             .collect();
         for (pkg_name, version) in &update_version_updates {
             if succeeded.contains(pkg_name.as_str()) {
-                if let Err(e) = PackagesConfig::update_package(pkg_name, None, Some(version), None)
-                {
+                if let Err(e) = PackagesConfig::update_package(
+                    pkg_name,
+                    None,
+                    Some(version),
+                    Some(packages_path),
+                ) {
                     warn!(
                         "Failed to update version for '{}' in packages.toml: {}",
                         pkg_name, e

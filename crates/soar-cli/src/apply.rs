@@ -190,7 +190,8 @@ pub async fn apply_packages(
         }
     }
 
-    let report = apply::execute_apply(ctx, diff, no_verify).await?;
+    let report =
+        apply::execute_apply(ctx, diff, no_verify, &packages_path.to_string_lossy()).await?;
     display_apply_report(&report);
 
     if !deferred_system.is_empty() {
