@@ -143,6 +143,7 @@ fn requires_root(command: &cli::Commands) -> bool {
             | cli::Commands::Clean { .. }
             | cli::Commands::Url { .. }
             | cli::Commands::DefConfig { .. }
+            | cli::Commands::DefPackages
             | cli::Commands::Update {
                 check: false,
                 ..

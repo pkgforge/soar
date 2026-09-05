@@ -129,13 +129,24 @@ pub fn is_system_mode() -> bool {
 }
 
 /// Enable system mode and set appropriate paths
+///
+/// Both config files move to the system location. An explicit `SOAR_CONFIG` or
+/// `SOAR_PACKAGES_CONFIG` names the file to use whatever the mode, so it is
+/// left alone.
 pub fn enable_system_mode() {
     let mut system_mode = SYSTEM_MODE.write().unwrap();
     *system_mode = true;
     drop(system_mode);
 
-    let mut config_path = CONFIG_PATH.write().unwrap();
-    *config_path = PathBuf::from("/etc/soar/config.toml");
+    if std::env::var_os("SOAR_CONFIG").is_none() {
+        let mut config_path = CONFIG_PATH.write().unwrap();
+        *config_path = PathBuf::from("/etc/soar/config.toml");
+    }
+
+    if std::env::var_os("SOAR_PACKAGES_CONFIG").is_none() {
+        let mut packages_config_path = crate::packages::PACKAGES_CONFIG_PATH.write().unwrap();
+        *packages_config_path = PathBuf::from("/etc/soar/packages.toml");
+    }
 }
 
 /// Get the system root path
