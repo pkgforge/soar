@@ -4,7 +4,7 @@
 //! icon handling, desktop file creation, and portable directory setup.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env,
     ffi::OsStr,
     fs::{self, File},
@@ -86,16 +86,22 @@ fn normalize_image(image: DynamicImage) -> DynamicImage {
 ///
 /// Returns [`PackageError`] if image processing or symlink creation fails.
 pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
-    symlink_icon_with_mode(real_path, false)
+    let icon_name = real_path.as_ref().file_stem().unwrap().to_string_lossy();
+    symlink_icon_with_mode(&real_path, &icon_name, false)
 }
 
 /// Creates a symlink for an icon in the appropriate icons directory.
 ///
-/// Uses the provided `system_mode` flag to determine the icons directory.
-pub fn symlink_icon_with_mode<P: AsRef<Path>>(real_path: P, system_mode: bool) -> Result<PathBuf> {
+/// The symlink is named `{icon_name}-soar`, and the `-soar` suffix is what marks
+/// the link as soar-managed. Uses the provided `system_mode` flag to determine
+/// the icons directory.
+pub fn symlink_icon_with_mode<P: AsRef<Path>>(
+    real_path: P,
+    icon_name: &str,
+    system_mode: bool,
+) -> Result<PathBuf> {
     let real_path = real_path.as_ref();
-    trace!(path = %real_path.display(), "creating icon symlink");
-    let icon_name = real_path.file_stem().unwrap();
+    trace!(path = %real_path.display(), icon_name = icon_name, "creating icon symlink");
     let ext = real_path.extension();
 
     let (w, h) = if ext == Some(OsStr::new("svg")) {
@@ -118,8 +124,7 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(real_path: P, system_mode: bool) -
         .join(format!("{w}x{h}"))
         .join("apps")
         .join(format!(
-            "{}-soar.{}",
-            icon_name.to_string_lossy(),
+            "{icon_name}-soar.{}",
             ext.unwrap_or_default().to_string_lossy()
         ));
 
@@ -131,6 +136,54 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(real_path: P, system_mode: bool) -
     create_symlink(real_path, &final_path)?;
     debug!(icon = %final_path.display(), "icon symlink created");
     Ok(final_path)
+}
+
+/// The `Name` of the `[Desktop Entry]` group, if the file declares one.
+///
+/// Localized keys (`Name[de]`) and the `Name` of any other group, such as a
+/// `[Desktop Action ...]`, are not the application's name and are skipped.
+pub(crate) fn desktop_entry_name(content: &str) -> Option<&str> {
+    let mut in_entry = false;
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(group) = line.strip_prefix('[') {
+            in_entry = group.trim_end_matches(']') == "Desktop Entry";
+            continue;
+        }
+        if !in_entry {
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("Name=") {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+/// The name soar gives the icon it manages for a desktop entry.
+///
+/// Derived from the entry's `Name` so that packages whose file name is a
+/// generic word, such as an AppImage that calls itself `desktop`, don't land in
+/// the namespace the icon theme already uses for its own generic icons.
+/// Falls back to `fallback` when the name yields nothing usable.
+pub(crate) fn managed_icon_name(desktop_name: &str, fallback: &str) -> String {
+    let mut name = String::with_capacity(desktop_name.len());
+    for ch in desktop_name.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' {
+            name.extend(ch.to_lowercase());
+        } else if !name.ends_with('-') {
+            name.push('-');
+        }
+    }
+
+    let name = name.trim_matches(['-', '.']);
+    if name.is_empty() || !is_safe_component(name) {
+        return fallback.to_string();
+    }
+    name.to_string()
 }
 
 /// An `Exec` or `TryExec` line pointed at the command as installed.
@@ -156,14 +209,15 @@ fn exec_line(field: &str, old: &str, command: &str) -> String {
 /// Updates the Exec and TryExec fields in the desktop file to point to the
 /// installed package, then creates a symlink in the applications directory.
 /// The Icon field is rewritten to the soar-managed icon only when the package
-/// ships a matching icon (`has_icon`); otherwise it is left untouched so that
+/// ships a matching icon (`icon_name`); otherwise it is left untouched so that
 /// references to generic system icons keep working.
 ///
 /// # Arguments
 ///
 /// * `real_path` - Path to the desktop file
 /// * `package` - Package metadata
-/// * `has_icon` - Whether a matching soar-managed icon exists for this desktop file
+/// * `icon_name` - Name of the soar-managed icon for this desktop file, if the
+///   package ships one
 ///
 /// # Returns
 ///
@@ -175,9 +229,9 @@ fn exec_line(field: &str, old: &str, command: &str) -> String {
 pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     real_path: P,
     package: &T,
-    has_icon: bool,
+    icon_name: Option<&str>,
 ) -> Result<PathBuf> {
-    symlink_desktop_with_config(real_path, package, has_icon, &get_config())
+    symlink_desktop_with_config(real_path, package, icon_name, &get_config())
 }
 
 /// Creates a symlink for a desktop file using the provided config.
@@ -187,7 +241,7 @@ pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
 pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
     real_path: P,
     package: &T,
-    has_icon: bool,
+    icon_name: Option<&str>,
     config: &soar_config::config::Config,
 ) -> Result<PathBuf> {
     let pkg_name = package.pkg_name();
@@ -204,8 +258,12 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
 
         re.replace_all(&content, |caps: &regex::Captures| {
             match &caps[1] {
-                "Icon" if has_icon => format!("Icon={}-soar", file_name.to_string_lossy()),
-                "Icon" => caps[0].to_string(),
+                "Icon" => {
+                    match icon_name {
+                        Some(icon_name) => format!("Icon={icon_name}-soar"),
+                        None => caps[0].to_string(),
+                    }
+                }
                 "Exec" | "TryExec" => {
                     exec_line(
                         &caps[1],
@@ -402,45 +460,69 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
 
     let system_mode = config.is_system();
 
-    let mut has_icon = false;
-    let mut icon_stems: HashSet<String> = HashSet::new();
-    let mut symlink_action = |path: &Path| -> Result<()> {
-        if path == bin_path.as_path() {
-            return Ok(());
-        }
-        let ext = path.extension();
-        if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
-            has_icon = true;
-            if let Some(stem) = path.file_stem() {
-                icon_stems.insert(stem.to_string_lossy().into_owned());
-            }
-            symlink_icon_with_mode(path, system_mode)?;
-        }
-        Ok(())
-    };
-    walk_dir(install_dir, &mut symlink_action)?;
-
-    let mut has_desktop = false;
-    let mut symlink_action = |path: &Path| -> Result<()> {
+    let mut icon_paths: Vec<PathBuf> = Vec::new();
+    let mut desktop_paths: Vec<PathBuf> = Vec::new();
+    let mut collect_action = |path: &Path| -> Result<()> {
         // Never treat the package binary itself as a desktop file. Its name can
         // legitimately end in `.desktop`, but its contents are the executable.
         if path == bin_path.as_path() {
             return Ok(());
         }
         let ext = path.extension();
-        if ext == Some(OsStr::new("desktop")) {
-            has_desktop = true;
-            // Only rewrite the Icon field when this desktop file has a matching
-            // icon shipped by the package (matched by file stem).
-            let desktop_has_icon = path
-                .file_stem()
-                .map(|stem| icon_stems.contains(&*stem.to_string_lossy()))
-                .unwrap_or(false);
-            symlink_desktop_with_config(path, package, desktop_has_icon, config)?;
+        if ext == Some(OsStr::new("png")) || ext == Some(OsStr::new("svg")) {
+            icon_paths.push(path.to_path_buf());
+        } else if ext == Some(OsStr::new("desktop")) {
+            desktop_paths.push(path.to_path_buf());
         }
         Ok(())
     };
-    walk_dir(install_dir, &mut symlink_action)?;
+    walk_dir(install_dir, &mut collect_action)?;
+
+    // An icon is named after the app rather than the file it came from, so the
+    // desktop files have to be read before any icon is linked.
+    let mut icon_names: HashMap<String, String> = HashMap::new();
+    for path in &desktop_paths {
+        let Some(stem) = path.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
+            continue;
+        };
+        let name = fs::read_to_string(path)
+            .ok()
+            .and_then(|content| desktop_entry_name(&content).map(|name| name.to_string()))
+            .map(|name| managed_icon_name(&name, &stem))
+            .unwrap_or_else(|| stem.clone());
+        icon_names.insert(stem, name);
+    }
+
+    let mut icon_stems: HashSet<String> = HashSet::new();
+    for path in &icon_paths {
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+        let icon_name = icon_names.get(&*stem).map(String::as_str).unwrap_or(&stem);
+        symlink_icon_with_mode(path, icon_name, system_mode)?;
+        icon_stems.insert(stem.into_owned());
+    }
+
+    for path in &desktop_paths {
+        // Only rewrite the Icon field when this desktop file has a matching
+        // icon shipped by the package (matched by file stem).
+        let icon_name = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy())
+            .filter(|stem| icon_stems.contains(&**stem))
+            .and_then(|stem| icon_names.get(&*stem))
+            .map(String::as_str);
+        symlink_desktop_with_config(path, package, icon_name, config)?;
+    }
+
+    let has_icon = !icon_paths.is_empty();
+    let has_desktop = !desktop_paths.is_empty();
+    // The formats below extract their desktop file as `{pkg_name}.desktop`, so
+    // only an icon under that stem can be the one it refers to.
+    let pkg_icon_name = icon_stems.contains(pkg_name).then(|| {
+        icon_names
+            .get(pkg_name)
+            .map(String::as_str)
+            .unwrap_or(pkg_name)
+    });
 
     let mut reader = BufReader::new(
         File::open(&bin_path).with_context(|| format!("opening {}", bin_path.display()))?,
@@ -457,6 +539,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                     &bin_path,
                     package,
                     has_icon,
+                    pkg_icon_name,
                     has_desktop,
                     config,
                 )
@@ -492,6 +575,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                 &bin_path,
                 package,
                 has_icon,
+                pkg_icon_name,
                 has_desktop,
                 config,
             )
@@ -515,7 +599,121 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
 
 #[cfg(test)]
 mod tests {
-    use super::exec_line;
+    use std::fs;
+
+    use soar_config::config::Config;
+    use tempfile::TempDir;
+
+    use super::{desktop_entry_name, exec_line, managed_icon_name, symlink_desktop_with_config};
+    use crate::traits::PackageExt;
+
+    struct TestPackage;
+
+    impl PackageExt for TestPackage {
+        fn pkg_name(&self) -> &str {
+            "desktop"
+        }
+
+        fn pkg_id(&self) -> Option<&str> {
+            None
+        }
+
+        fn pkg_family(&self) -> Option<&str> {
+            None
+        }
+
+        fn version(&self) -> &str {
+            "3.5"
+        }
+
+        fn repo_name(&self) -> &str {
+            "local"
+        }
+    }
+
+    /// Writes `ENTRY` into a temporary install dir and integrates it, then
+    /// hands back what the rewritten desktop file ended up saying.
+    fn integrated_desktop(icon_name: Option<&str>) -> (TempDir, String) {
+        let dir = TempDir::new().unwrap();
+        let mut config = Config::default_config::<&str>(&[]);
+        config.bin_path = Some(dir.path().join("bin").to_string_lossy().into_owned());
+        config.desktop_path = Some(
+            dir.path()
+                .join("applications")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        fs::create_dir_all(dir.path().join("applications")).unwrap();
+
+        let real_path = dir.path().join("desktop.desktop");
+        fs::write(&real_path, ENTRY).unwrap();
+        symlink_desktop_with_config(&real_path, &TestPackage, icon_name, &config).unwrap();
+
+        let content = fs::read_to_string(&real_path).unwrap();
+        (dir, content)
+    }
+
+    #[test]
+    fn a_shipped_icon_is_referenced_by_its_managed_name() {
+        let (_dir, content) = integrated_desktop(Some("noteboard"));
+        assert!(content.contains("Icon=noteboard-soar"), "{content}");
+    }
+
+    #[test]
+    fn an_entry_with_no_shipped_icon_keeps_its_own_icon() {
+        let (_dir, content) = integrated_desktop(None);
+        assert!(content.contains("Icon=desktop"), "{content}");
+        assert!(!content.contains("-soar"), "{content}");
+    }
+
+    /// An entry shaped like the ones that motivated naming icons after the app:
+    /// the file it ships as is called `desktop`, but the app is not.
+    const ENTRY: &str = "\
+[Desktop Entry]
+Name[de]=NoteBoard Schreibtisch
+Name=NoteBoard
+Icon=desktop
+
+[Desktop Action new-note]
+Name=New Note
+";
+
+    #[test]
+    fn the_app_name_wins_over_localized_and_action_names() {
+        assert_eq!(desktop_entry_name(ENTRY), Some("NoteBoard"));
+        assert_eq!(desktop_entry_name("[Desktop Entry]\nIcon=desktop\n"), None);
+        assert_eq!(desktop_entry_name("Name=Stray\n"), None);
+        assert_eq!(
+            desktop_entry_name("[Desktop Action open]\nName=Open\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn an_icon_name_is_a_lowercase_slug_of_the_app_name() {
+        assert_eq!(managed_icon_name("NoteBoard", "desktop"), "noteboard");
+        assert_eq!(
+            managed_icon_name("Note Board Studio", "desktop"),
+            "note-board-studio"
+        );
+        assert_eq!(
+            managed_icon_name("Note  Board / Studio", "desktop"),
+            "note-board-studio"
+        );
+    }
+
+    #[test]
+    fn an_unusable_app_name_falls_back_to_the_file_stem() {
+        assert_eq!(managed_icon_name("", "desktop"), "desktop");
+        assert_eq!(managed_icon_name("///", "desktop"), "desktop");
+        assert_eq!(managed_icon_name("...", "desktop"), "desktop");
+    }
+
+    #[test]
+    fn an_app_name_cannot_escape_the_icons_directory() {
+        assert_eq!(managed_icon_name("../../evil", "desktop"), "evil");
+        assert_eq!(managed_icon_name("a/b", "desktop"), "a-b");
+    }
 
     #[test]
     fn a_command_with_no_arguments_ends_the_line() {

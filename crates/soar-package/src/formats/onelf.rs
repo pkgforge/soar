@@ -13,7 +13,9 @@ use std::{
 
 use onelf_format::{Entry, EntryKind, Footer, Manifest, FOOTER_SIZE};
 
-use super::common::{symlink_desktop_with_config, symlink_icon_with_mode};
+use super::common::{
+    desktop_entry_name, managed_icon_name, symlink_desktop_with_config, symlink_icon_with_mode,
+};
 use crate::{
     error::{ErrorContext, PackageError, Result},
     traits::PackageExt,
@@ -173,6 +175,8 @@ fn default_entrypoint_name(manifest: &Manifest) -> String {
 /// * `file_path` - Path to the onelf binary
 /// * `package` - Package metadata
 /// * `has_icon` - Whether an icon was already found in the install directory
+/// * `pkg_icon_name` - Managed name of the already-linked icon that matches this
+///   package, if there is one
 /// * `has_desktop` - Whether a desktop file was already found
 ///
 /// # Errors
@@ -183,6 +187,7 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
     file_path: P,
     package: &T,
     has_icon: bool,
+    pkg_icon_name: Option<&str>,
     has_desktop: bool,
     config: &soar_config::config::Config,
 ) -> Result<()> {
@@ -200,9 +205,31 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
     let dict = read_dict(&mut file, &footer)?;
     let ep_name = default_entrypoint_name(&manifest);
 
-    // Both the extracted icon and desktop file are named after `pkg_name`, so
-    // their stems match and the desktop file can reference the soar-managed icon.
-    let mut icon_available = has_icon;
+    // The extracted icon is named after the app rather than after the package,
+    // whose own name is often a generic word the icon theme already claims, so
+    // the desktop file has to be extracted and read first.
+    let mut desktop_path = None;
+    if !has_desktop {
+        if let Some(idx) = resolve_desktop(&manifest, &ep_name) {
+            let desktop_data =
+                decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
+            let dest = install_dir.join(format!("{pkg_name}.desktop"));
+            fs::write(&dest, &desktop_data)
+                .with_context(|| format!("writing desktop file to {}", dest.display()))?;
+            desktop_path = Some(dest);
+        }
+    }
+
+    let desktop_icon_name = desktop_path
+        .as_ref()
+        .and_then(|dest| fs::read_to_string(dest).ok())
+        .and_then(|content| desktop_entry_name(&content).map(str::to_string))
+        .map_or_else(
+            || pkg_name.to_string(),
+            |name| managed_icon_name(&name, pkg_name),
+        );
+
+    let mut icon_name = pkg_icon_name.map(str::to_string);
     if !has_icon {
         if let Some(idx) = resolve_icon(&manifest, &ep_name) {
             let ext = if manifest.entry_path(idx).ends_with(".svg") {
@@ -215,20 +242,13 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
             let dest = install_dir.join(format!("{pkg_name}.{ext}"));
             fs::write(&dest, &icon_data)
                 .with_context(|| format!("writing icon to {}", dest.display()))?;
-            symlink_icon_with_mode(&dest, config.is_system())?;
-            icon_available = true;
+            symlink_icon_with_mode(&dest, &desktop_icon_name, config.is_system())?;
+            icon_name = Some(desktop_icon_name);
         }
     }
 
-    if !has_desktop {
-        if let Some(idx) = resolve_desktop(&manifest, &ep_name) {
-            let desktop_data =
-                decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
-            let dest = install_dir.join(format!("{pkg_name}.desktop"));
-            fs::write(&dest, &desktop_data)
-                .with_context(|| format!("writing desktop file to {}", dest.display()))?;
-            symlink_desktop_with_config(&dest, package, icon_available, config)?;
-        }
+    if let Some(dest) = desktop_path {
+        symlink_desktop_with_config(&dest, package, icon_name.as_deref(), config)?;
     }
 
     Ok(())

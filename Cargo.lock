@@ -2373,6 +2373,7 @@ dependencies = [
  "soar-config",
  "soar-utils",
  "squishy",
+ "tempfile",
  "thiserror",
  "tracing",
  "xxhash-rust",

@@ -6,7 +6,9 @@ use soar_utils::fs::read_file_signature;
 use squishy::appimage::{AppImage, AppImageEntryKind};
 
 use super::{
-    common::{symlink_desktop_with_config, symlink_icon_with_mode},
+    common::{
+        desktop_entry_name, managed_icon_name, symlink_desktop_with_config, symlink_icon_with_mode,
+    },
     PNG_MAGIC_BYTES,
 };
 use crate::{
@@ -25,6 +27,8 @@ use crate::{
 /// * `file_path` - Path to the AppImage file
 /// * `package` - Package metadata
 /// * `has_icon` - Whether an icon was already found in the install directory
+/// * `pkg_icon_name` - Managed name of the already-linked icon that matches this
+///   package, if there is one
 /// * `has_desktop` - Whether a desktop file was already found
 ///
 /// # Errors
@@ -35,6 +39,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     file_path: P,
     package: &T,
     has_icon: bool,
+    pkg_icon_name: Option<&str>,
     has_desktop: bool,
     config: &soar_config::config::Config,
 ) -> Result<()> {
@@ -46,10 +51,29 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     let pkg_name = package.pkg_name();
     let mut appimage = AppImage::new(None, &file_path, None)?;
 
-    // Track whether an icon ends up available for the extracted desktop file.
-    // Both the extracted icon and desktop file are named after `pkg_name`, so
-    // their stems match.
-    let mut icon_available = has_icon;
+    // The extracted icon is named after the app rather than after the AppImage,
+    // whose own name is often a generic word the icon theme already claims, so
+    // the desktop file has to be extracted and read first.
+    let desktop_path = (!has_desktop)
+        .then(|| appimage.find_desktop())
+        .flatten()
+        .filter(|entry| entry.kind == AppImageEntryKind::File)
+        .map(|entry| {
+            let dest = format!("{}/{}.desktop", install_dir.display(), pkg_name);
+            let _ = appimage.write_entry(&entry, &dest);
+            dest
+        });
+
+    let desktop_icon_name = desktop_path
+        .as_ref()
+        .and_then(|dest| fs::read_to_string(dest).ok())
+        .and_then(|content| desktop_entry_name(&content).map(str::to_string))
+        .map_or_else(
+            || pkg_name.to_string(),
+            |name| managed_icon_name(&name, pkg_name),
+        );
+
+    let mut icon_name = pkg_icon_name.map(str::to_string);
     if !has_icon {
         if let Some(entry) = appimage.find_icon() {
             if entry.kind == AppImageEntryKind::File {
@@ -66,20 +90,14 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
                 fs::rename(&dest, &final_path)
                     .with_context(|| format!("renaming from {dest} to {final_path}"))?;
 
-                symlink_icon_with_mode(final_path, config.is_system())?;
-                icon_available = true;
+                symlink_icon_with_mode(final_path, &desktop_icon_name, config.is_system())?;
+                icon_name = Some(desktop_icon_name);
             }
         }
     }
 
-    if !has_desktop {
-        if let Some(entry) = appimage.find_desktop() {
-            if entry.kind == AppImageEntryKind::File {
-                let dest = format!("{}/{}.desktop", install_dir.display(), pkg_name);
-                let _ = appimage.write_entry(&entry, &dest);
-                symlink_desktop_with_config(dest, package, icon_available, config)?;
-            }
-        }
+    if let Some(dest) = desktop_path {
+        symlink_desktop_with_config(dest, package, icon_name.as_deref(), config)?;
     }
 
     if let Some(entry) = appimage.find_appstream() {
