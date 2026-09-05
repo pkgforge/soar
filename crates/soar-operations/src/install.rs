@@ -549,10 +549,16 @@ fn resolve_normal(
         packages
     };
 
-    match packages.len() {
+    // Several versions of one package are not competing variants, and asking
+    // which to install would be asking the same question the caller already
+    // answered by naming it. Anything but the newest is chosen with an
+    // explicit @version.
+    let candidates = newest_per_identity(packages);
+
+    match candidates.len() {
         0 => Ok(ResolveResult::NotFound(package_name.to_string())),
         1 => {
-            let pkg = packages.into_iter().next().unwrap();
+            let pkg = candidates.into_iter().next().unwrap();
             // Same name from another repository is a different package, so it
             // must not be mistaken for this one already being installed.
             let installed_pkg = installed_packages
@@ -571,7 +577,11 @@ fn resolve_normal(
 
             let existing_install = installed_packages
                 .iter()
-                .find(|ip| ip.version == pkg.version)
+                .find(|ip| {
+                    ip.version == pkg.version
+                        && ip.repo_name == pkg.repo_name
+                        && ip.pkg_family.as_deref() == pkg.pkg_family.as_deref()
+                })
                 .cloned();
 
             let pkg = pkg.resolve(query.version.as_deref());
@@ -584,61 +594,35 @@ fn resolve_normal(
                 ..Default::default()
             }]))
         }
-        _ => {
-            // Several versions of one package are not competing variants, and
-            // asking which to install would be asking the same question the
-            // caller already answered by naming it. The newest wins; anything
-            // else is chosen with an explicit @version.
-            let identity = |p: &Package| {
-                (
-                    p.pkg_name.clone(),
-                    p.pkg_id.clone(),
-                    p.pkg_family.clone(),
-                    p.repo_name.clone(),
-                )
-            };
-            let first = identity(&packages[0]);
-            if packages.iter().all(|p| identity(p) == first) {
-                let newest = packages
-                    .into_iter()
-                    .max_by(|a, b| compare_versions(&a.version, &b.version))
-                    .unwrap();
-                let installed_pkg = installed_packages
-                    .iter()
-                    .find(|ip| ip.is_installed && ip.repo_name == newest.repo_name);
-                if let Some(installed) = installed_pkg {
-                    if !options.force {
-                        return Ok(ResolveResult::AlreadyInstalled {
-                            pkg_name: installed.pkg_name.clone(),
-                            repo_name: installed.repo_name.clone(),
-                            version: installed.version.clone(),
-                        });
-                    }
-                }
-                let existing_install = installed_packages
-                    .iter()
-                    .find(|ip| {
-                        ip.version == newest.version
-                            && ip.repo_name == newest.repo_name
-                            && ip.pkg_family.as_deref() == newest.pkg_family.as_deref()
-                    })
-                    .cloned();
-                let newest = newest.resolve(query.version.as_deref());
-                return Ok(ResolveResult::Resolved(vec![InstallTarget {
-                    package: newest,
-                    existing_install,
-                    pinned: query.version.is_some(),
-                    profile: None,
-                    ..Default::default()
-                }]));
-            }
+        _ => Ok(ResolveResult::Ambiguous(crate::AmbiguousPackage {
+            query: package_name.to_string(),
+            candidates,
+        })),
+    }
+}
 
-            Ok(ResolveResult::Ambiguous(crate::AmbiguousPackage {
-                query: package_name.to_string(),
-                candidates: packages,
-            }))
+/// The newest version of each distinct package among `packages`.
+///
+/// A name can carry several versions within a repository and appear in more
+/// than one. Only the repository, family and id make two of them different
+/// packages worth choosing between; the versions within one are that package
+/// over time, and the newest stands for it.
+fn newest_per_identity(packages: Vec<Package>) -> Vec<Package> {
+    let mut newest: Vec<Package> = Vec::new();
+    for pkg in packages {
+        let known = newest.iter_mut().find(|p| {
+            p.pkg_name == pkg.pkg_name
+                && p.pkg_id == pkg.pkg_id
+                && p.pkg_family == pkg.pkg_family
+                && p.repo_name == pkg.repo_name
+        });
+        match known {
+            Some(known) if compare_versions(&pkg.version, &known.version).is_gt() => *known = pkg,
+            Some(_) => {}
+            None => newest.push(pkg),
         }
     }
+    newest
 }
 
 fn find_packages(
