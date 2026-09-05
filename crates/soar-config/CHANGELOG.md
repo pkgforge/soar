@@ -1,4 +1,14 @@
 
+## [0.13.0](https://github.com/pkgforge/soar/compare/soar-config-v0.12.2...soar-config-v0.13.0) - 2026-09-05
+
+### ⛰️  Features
+
+- *(apply)* Add system = true for system-wide packages - ([57a6f9e](https://github.com/pkgforge/soar/commit/57a6f9e062140c60312e7b2e577a9dbe8ef21485))
+
+### 🐛 Bug Fixes
+
+- *(system)* Read packages.toml from /etc in system mode - ([4a35364](https://github.com/pkgforge/soar/commit/4a353647863c5821f1d36de596544016cacffd5a))
+
 ## [0.12.2](https://github.com/pkgforge/soar/compare/soar-config-v0.12.1...soar-config-v0.12.2) - 2026-08-31
 
 ### ⚙️ Miscellaneous Tasks

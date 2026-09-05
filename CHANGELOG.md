@@ -1,4 +1,18 @@
 
+## [0.13.4](https://github.com/pkgforge/soar/compare/v0.13.3...v0.13.4) - 2026-09-05
+
+### ⛰️  Features
+
+- *(apply)* Add system = true for system-wide packages - ([57a6f9e](https://github.com/pkgforge/soar/commit/57a6f9e062140c60312e7b2e577a9dbe8ef21485))
+
+### 🐛 Bug Fixes
+
+- *(apply)* Write version updates to the file being applied - ([7ac7cf0](https://github.com/pkgforge/soar/commit/7ac7cf02871163a38ddc315019206834e77b9601))
+- *(apply)* Make "*" install the newest and stay unpinned - ([8ddda1c](https://github.com/pkgforge/soar/commit/8ddda1c3a3de3852284986aa3d2138645d638df9))
+- *(install)* Show only the newest of each package in the picker - ([7aab102](https://github.com/pkgforge/soar/commit/7aab102c4a3d1eedb92d57d621ff3ef982bf0521))
+- *(integrate)* Derive icon name from the desktop entry name - ([1a01304](https://github.com/pkgforge/soar/commit/1a0130415a03692d532aec9f202effcca54c8e55))
+- *(system)* Read packages.toml from /etc in system mode - ([4a35364](https://github.com/pkgforge/soar/commit/4a353647863c5821f1d36de596544016cacffd5a))
+
 ## [0.13.3](https://github.com/pkgforge/soar/compare/v0.13.2...v0.13.3) - 2026-08-31
 
 ### ⛰️  Features

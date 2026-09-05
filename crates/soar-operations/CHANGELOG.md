@@ -1,4 +1,12 @@
 
+## [0.6.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.5.1...soar-operations-v0.6.0) - 2026-09-05
+
+### 🐛 Bug Fixes
+
+- *(apply)* Make "*" install the newest and stay unpinned - ([8ddda1c](https://github.com/pkgforge/soar/commit/8ddda1c3a3de3852284986aa3d2138645d638df9))
+- *(apply)* Write version updates to the file being applied - ([7ac7cf0](https://github.com/pkgforge/soar/commit/7ac7cf02871163a38ddc315019206834e77b9601))
+- *(install)* Show only the newest of each package in the picker - ([7aab102](https://github.com/pkgforge/soar/commit/7aab102c4a3d1eedb92d57d621ff3ef982bf0521))
+
 ## [0.5.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.5.0...soar-operations-v0.5.1) - 2026-08-31
 
 ### ⛰️  Features

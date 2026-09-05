@@ -1,4 +1,10 @@
 
+## [0.7.2](https://github.com/pkgforge/soar/compare/soar-db-v0.7.1...soar-db-v0.7.2) - 2026-09-05
+
+### ⚙️ Miscellaneous Tasks
+
+- Updated the following local packages: soar-registry - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.7.1](https://github.com/pkgforge/soar/compare/soar-db-v0.7.0...soar-db-v0.7.1) - 2026-08-31
 
 ### 🐛 Bug Fixes
