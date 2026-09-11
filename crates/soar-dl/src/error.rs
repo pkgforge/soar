@@ -72,6 +72,13 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::multiple_errors))]
     Multiple { errors: Vec<String> },
 
+    #[error("{0}")]
+    #[diagnostic(
+        code(soar_dl::forge_request),
+        help("Check your internet connection or try again later")
+    )]
+    ForgeRequest(String),
+
     #[error("zsync: {0}")]
     #[diagnostic(
         code(soar_dl::zsync),
@@ -100,6 +107,29 @@ impl From<ureq::Error> for DownloadError {
     /// ```
     fn from(e: ureq::Error) -> Self {
         Self::Network(Box::new(e))
+    }
+}
+
+impl From<releasekit::Error> for DownloadError {
+    /// A forge error reported as the download error closest to it.
+    ///
+    /// The status of a refused request is what tells a rate limit apart from a
+    /// project that does not exist, so it is kept rather than flattened into a
+    /// message.
+    fn from(err: releasekit::Error) -> Self {
+        match err {
+            releasekit::Error::Http {
+                status,
+                url,
+            } => {
+                Self::HttpError {
+                    status,
+                    url,
+                }
+            }
+            releasekit::Error::Json(_) => Self::InvalidResponse,
+            other => Self::ForgeRequest(other.to_string()),
+        }
     }
 }
 

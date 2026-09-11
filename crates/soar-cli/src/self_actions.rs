@@ -9,13 +9,7 @@ use soar_core::{
     error::{ErrorContext, SoarError},
     SoarResult,
 };
-use soar_dl::{
-    download::Download,
-    github::Github,
-    http_client::SHARED_AGENT,
-    traits::{Asset as _, Platform as _, Release as _},
-    types::OverwriteMode,
-};
+use soar_dl::{download::Download, forge::Forge, http_client::SHARED_AGENT, types::OverwriteMode};
 use soar_utils::bytes::format_bytes;
 use tracing::{debug, error, info, warn};
 
@@ -44,7 +38,7 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                 _ => is_nightly,
             };
 
-            let releases = Github::fetch_releases("pkgforge/soar", None)?;
+            let releases = Forge::GitHub.fetch_releases("pkgforge/soar", None)?;
 
             let release = releases.iter().find(|release| {
                 let is_nightly_release = release.tag().starts_with("nightly");
@@ -59,7 +53,7 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                 );
 
                 if target_nightly {
-                    is_nightly_release && release.name() != self_version
+                    is_nightly_release && release.name() != Some(self_version)
                 } else {
                     let release_version = release.tag().trim_start_matches("v");
                     let parsed_release_version = Version::parse(release_version).ok();
@@ -137,7 +131,9 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                 let asset = assets
                     .iter()
                     .find(|a| {
-                        a.name.contains(ARCH) && !a.name.contains("tar") && !a.name.contains("sum")
+                        a.name().contains(ARCH)
+                            && !a.name().contains("tar")
+                            && !a.name().contains("sum")
                     })
                     .ok_or_else(|| {
                         SoarError::Custom(format!("No matching asset found for {}", ARCH))

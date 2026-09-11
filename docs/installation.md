@@ -15,7 +15,7 @@ Linux (any distribution), curl or wget, and basic shell access.
 
 - **Architectures:** x86_64, aarch64, riscv64
 - **OS:** Any Linux distribution (kernel 4.0+ recommended)
-- **Building from source:** Rust 1.88.0+
+- **Building from source:** Rust 1.93.1+
 
 ## Quick Installation
 
@@ -93,7 +93,7 @@ cd soar
 cargo install --path .
 ```
 
-Requires Rust 1.88.0+.
+Requires Rust 1.93.1+.
 
 ## PATH Configuration
 
@@ -165,7 +165,7 @@ soar remove --all
 
 **Build from source fails:**
 
-- Check Rust version: `rustc --version` (requires 1.88.0+)
+- Check Rust version: `rustc --version` (requires 1.93.1+)
 - Update Rust: `rustup update`
 - Install dependencies: `sudo apt install build-essential pkg-config libssl-dev`
 

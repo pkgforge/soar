@@ -255,7 +255,7 @@ fn check_local_update(
         return Ok(None);
     }
 
-    let is_github_or_gitlab = resolved.github.is_some() || resolved.gitlab.is_some();
+    let has_forge_source = resolved.has_forge_source();
 
     let (version, download_url, size, update_toml_url) =
         if let Some(ref cmd) = resolved.version_command {
@@ -305,7 +305,7 @@ fn check_local_update(
                 }
             };
 
-            let toml_url = if is_github_or_gitlab || !should_update_toml_url {
+            let toml_url = if has_forge_source || !should_update_toml_url {
                 None
             } else {
                 Some(url.clone())
@@ -313,9 +313,13 @@ fn check_local_update(
             (v, url, result.size, toml_url)
         } else {
             let release_source = match ReleaseSource::from_resolved(resolved) {
-                Some(s) => s,
-                None => {
+                Ok(Some(source)) => source,
+                Ok(None) => {
                     warn!("No release source configured for {}", pkg.pkg_name);
+                    return Ok(None);
+                }
+                Err(e) => {
+                    warn!("Cannot check for updates for {}: {}", pkg.pkg_name, e);
                     return Ok(None);
                 }
             };
@@ -344,7 +348,7 @@ fn check_local_update(
                 return Ok(None);
             }
 
-            let url = if is_github_or_gitlab {
+            let url = if has_forge_source {
                 None
             } else {
                 Some(release.download_url.clone())
@@ -621,7 +625,7 @@ fn check_update_feed(pkg: &InstalledPackage, ctx: &SoarContext) -> SoarResult<Fe
 }
 
 fn has_update_source(resolved: &ResolvedPackage) -> bool {
-    resolved.version_command.is_some() || resolved.github.is_some() || resolved.gitlab.is_some()
+    resolved.version_command.is_some() || resolved.has_forge_source()
 }
 
 fn get_existing(

@@ -1,11 +1,8 @@
-use std::{env, sync::LazyLock};
+use std::sync::LazyLock;
 
 use percent_encoding::percent_decode_str;
 use regex::Regex;
-use ureq::http::header::AUTHORIZATION;
 use url::Url;
-
-use crate::{error::DownloadError, http_client::SHARED_AGENT};
 
 #[derive(Debug)]
 pub enum PlatformUrl {
@@ -14,6 +11,15 @@ pub enum PlatformUrl {
         tag: Option<String>,
     },
     Gitlab {
+        project: String,
+        tag: Option<String>,
+    },
+    Codeberg {
+        project: String,
+        tag: Option<String>,
+    },
+    Gitea {
+        instance: String,
         project: String,
         tag: Option<String>,
     },
@@ -37,12 +43,20 @@ static GITLAB_RE: LazyLock<Regex> = LazyLock::new(|| {
     .expect("unable to compile gitlab release regex")
 });
 
+static CODEBERG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?i)(?:https?://)?(?:codeberg(?:\.org)?[:/])([^/@]+/[^/@]+)(?:@([^\r\n]+))?$")
+        .expect("unable to compile codeberg release regex")
+});
+
 impl PlatformUrl {
     /// Classifies an input string as a platform URL and returns the corresponding `PlatformUrl` variant.
     ///
     /// This inspects the input URL (or reference) and returns:
     /// - `Oci` when the normalized string starts with `ghcr.io/` (treated as an OCI reference).
     /// - `Github` when it matches the GitHub repository pattern, extracting project and optional tag.
+    /// - `Codeberg` when it matches the Codeberg repository pattern.
+    /// - `Gitea` when it is prefixed `gitea:` or `forgejo:`, which is what names an
+    ///   instance soar cannot recognize from its host alone.
     /// - `Gitlab` when it matches the GitLab repository pattern, extracting project and optional tag
     ///   (except when the project looks like an API path or contains `/-/`, which is treated as `Direct`).
     /// - `Direct` when the input parses as a valid URL with a scheme and host.
@@ -75,8 +89,23 @@ impl PlatformUrl {
             });
         }
 
+        if let Some((instance, project, tag)) = parse_gitea_target(url, true) {
+            return Some(Self::Gitea {
+                instance,
+                project,
+                tag,
+            });
+        }
+
         if let Some((project, tag)) = Self::parse_repo(&GITHUB_RE, url) {
             return Some(Self::Github {
+                project,
+                tag,
+            });
+        }
+
+        if let Some((project, tag)) = Self::parse_repo(&CODEBERG_RE, url) {
+            return Some(Self::Codeberg {
                 project,
                 tag,
             });
@@ -114,77 +143,88 @@ impl PlatformUrl {
     fn parse_repo(re: &Regex, url: &str) -> Option<(String, Option<String>)> {
         let caps = re.captures(url)?;
         let project = caps.get(1)?.as_str().to_string();
-        let tag = caps
-            .get(2)
-            .map(|m| m.as_str().trim_matches(&['\'', '"', ' '][..]))
-            .filter(|s| !s.is_empty())
-            .and_then(|s| {
-                percent_decode_str(s)
-                    .decode_utf8()
-                    .ok()
-                    .map(|cow| cow.into_owned())
-            });
+        let tag = caps.get(2).and_then(|m| clean_tag(m.as_str()));
 
         Some((project, tag))
     }
 }
 
-/// Fetches JSON from an API base URL with an optional Bearer token and returns the deserialized
-/// items as a `Vec<T>`.
-///
-/// If the environment variable named by `token_env[0]` (or `token_env[1]` as fallback) is set,
-/// it is included as an `Authorization: Bearer <token>` header. The response body must be either
-/// a JSON array (mapped to `Vec<T>`) or a single JSON object (mapped to a one-element `Vec<T>`);
-/// other shapes produce `DownloadError::InvalidResponse`. Non-success HTTP statuses produce
-/// `DownloadError::HttpError`.
-pub fn fetch_releases_json<T>(
-    path: &str,
-    base: &str,
-    token_env: [&str; 2],
-) -> Result<Vec<T>, DownloadError>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let url = format!("{}{}", base, path);
-    let mut req = SHARED_AGENT.get(&url);
-
-    // An empty variable is set but says nothing, and sending it as a bearer
-    // token earns a 401 on every request rather than the anonymous rate limit.
-    let token = env::var(token_env[0])
-        .or_else(|_| env::var(token_env[1]))
+/// A tag as the publisher spells it, out of how a URL had to carry it.
+fn clean_tag(raw: &str) -> Option<String> {
+    let trimmed = raw.trim_matches(&['\'', '"', ' '][..]);
+    if trimmed.is_empty() {
+        return None;
+    }
+    percent_decode_str(trimmed)
+        .decode_utf8()
         .ok()
-        .map(|token| token.trim().to_string())
-        .filter(|token| !token.is_empty());
-    if let Some(token) = token {
-        req = req.header(AUTHORIZATION, &format!("Bearer {token}"));
+        .map(|cow| cow.into_owned())
+}
+
+/// A Gitea or Forgejo target as its instance, the project on it and an
+/// optional tag.
+///
+/// A bare instance URL looks exactly like a direct download link, so
+/// `require_prefix` asks for the explicit `gitea:` or `forgejo:` marker. A
+/// value passed to `--gitea` already says which forge it is and does not need
+/// one.
+///
+/// The last two path segments name the project, so an instance served under a
+/// path prefix parses the same as one served at the root.
+///
+/// # Examples
+///
+/// ```
+/// use soar_dl::platform::parse_gitea_target;
+///
+/// let (instance, project, tag) =
+///     parse_gitea_target("gitea:git.example.com/owner/repo@v1.0", true).unwrap();
+/// assert_eq!(instance, "https://git.example.com");
+/// assert_eq!(project, "owner/repo");
+/// assert_eq!(tag.as_deref(), Some("v1.0"));
+/// ```
+pub fn parse_gitea_target(
+    input: &str,
+    require_prefix: bool,
+) -> Option<(String, String, Option<String>)> {
+    let target = input.trim();
+    let stripped =
+        strip_prefix_ci(target, "gitea:").or_else(|| strip_prefix_ci(target, "forgejo:"));
+    if require_prefix && stripped.is_none() {
+        return None;
     }
+    let target = stripped.unwrap_or(target);
 
-    let mut resp = req.call()?;
-    let status = resp.status();
-
-    if !status.is_success() {
-        return Err(DownloadError::HttpError {
-            status: status.as_u16(),
-            url: url.clone(),
-        });
-    }
-
-    let json: serde_json::Value = resp
-        .body_mut()
-        .read_json()
-        .map_err(|_| DownloadError::InvalidResponse)?;
-
-    match json {
-        serde_json::Value::Array(_) => {
-            serde_json::from_value(json).map_err(|_| DownloadError::InvalidResponse)
+    let (scheme, rest) = match strip_prefix_ci(target, "https://") {
+        Some(rest) => ("https://", rest),
+        None => {
+            match strip_prefix_ci(target, "http://") {
+                Some(rest) => ("http://", rest),
+                None => ("https://", target),
+            }
         }
-        serde_json::Value::Object(_) => {
-            let single: T =
-                serde_json::from_value(json).map_err(|_| DownloadError::InvalidResponse)?;
-            Ok(vec![single])
-        }
-        _ => Err(DownloadError::InvalidResponse),
+    };
+
+    let last_segment = rest.rfind('/').map(|idx| idx + 1).unwrap_or(0);
+    let (rest, tag) = match rest[last_segment..].split_once('@') {
+        Some((repo, tag)) => (&rest[..last_segment + repo.len()], clean_tag(tag)),
+        None => (rest, None),
+    };
+
+    let (head, repo) = rest.rsplit_once('/')?;
+    let (base, owner) = head.rsplit_once('/')?;
+    if base.is_empty() || owner.is_empty() || repo.is_empty() || base.contains('@') {
+        return None;
     }
+
+    Some((format!("{scheme}{base}"), format!("{owner}/{repo}"), tag))
+}
+
+fn strip_prefix_ci<'a>(input: &'a str, prefix: &str) -> Option<&'a str> {
+    input
+        .get(..prefix.len())
+        .filter(|head| head.eq_ignore_ascii_case(prefix))
+        .map(|head| &input[head.len()..])
 }
 
 #[cfg(test)]
@@ -361,6 +401,66 @@ mod tests {
             }
             _ => panic!("Expected Direct variant for special path"),
         }
+    }
+
+    #[test]
+    fn test_platform_url_parse_codeberg() {
+        let result = PlatformUrl::parse("https://codeberg.org/owner/repo@v1.0");
+        match result {
+            Some(PlatformUrl::Codeberg {
+                project,
+                tag,
+            }) => {
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, Some("v1.0".to_string()));
+            }
+            _ => panic!("Expected Codeberg variant"),
+        }
+
+        assert!(matches!(
+            PlatformUrl::parse("codeberg:owner/repo"),
+            Some(PlatformUrl::Codeberg { .. })
+        ));
+    }
+
+    #[test]
+    fn test_platform_url_parse_gitea() {
+        let result = PlatformUrl::parse("gitea:git.example.com/owner/repo@v1.0");
+        match result {
+            Some(PlatformUrl::Gitea {
+                instance,
+                project,
+                tag,
+            }) => {
+                assert_eq!(instance, "https://git.example.com");
+                assert_eq!(project, "owner/repo");
+                assert_eq!(tag, Some("v1.0".to_string()));
+            }
+            _ => panic!("Expected Gitea variant"),
+        }
+
+        // An instance served under a path prefix, spelled out in full.
+        match PlatformUrl::parse("forgejo:https://example.com/git/owner/repo") {
+            Some(PlatformUrl::Gitea {
+                instance,
+                project,
+                ..
+            }) => {
+                assert_eq!(instance, "https://example.com/git");
+                assert_eq!(project, "owner/repo");
+            }
+            _ => panic!("Expected Gitea variant"),
+        }
+    }
+
+    #[test]
+    fn an_unmarked_host_is_a_direct_download_not_a_gitea_instance() {
+        // Nothing tells a Gitea instance apart from any other host, so one is
+        // only taken as such when the caller says so.
+        assert!(matches!(
+            PlatformUrl::parse("https://git.example.com/owner/repo"),
+            Some(PlatformUrl::Direct { .. })
+        ));
     }
 
     #[test]

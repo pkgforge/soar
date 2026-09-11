@@ -153,7 +153,7 @@ fn requires_root(command: &cli::Commands) -> bool {
                 ..
             }
             | cli::Commands::Config {
-                edit: Some(_),
+                edit: Some(_)
             }
             | cli::Commands::Repo {
                 action: cli::RepoAction::Add { .. }
@@ -317,6 +317,9 @@ async fn handle_cli() -> SoarResult<()> {
         } => generate_default_config(repositories.as_slice())?,
         command => {
             config::init()?;
+            soar_dl::forge::set_instance_token_vars(
+                get_config().forge_tokens.clone().unwrap_or_default(),
+            );
 
             if let Some(ref profile) = args.profile {
                 set_current_profile(profile)?;
@@ -458,6 +461,8 @@ async fn handle_cli() -> SoarResult<()> {
                     exclude_keywords,
                     github,
                     gitlab,
+                    codeberg,
+                    gitea,
                     ghcr,
                     exact_case,
                     extract,
@@ -493,7 +498,7 @@ async fn handle_cli() -> SoarResult<()> {
                         force_overwrite,
                     };
 
-                    download(context, links, github, gitlab, ghcr).await?;
+                    download(context, links, github, gitlab, codeberg, gitea, ghcr).await?;
                 }
                 cli::Commands::Health => display_health(&ctx).await?,
                 cli::Commands::Repo {

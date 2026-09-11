@@ -111,4 +111,4 @@ for the guidelines.
 
 ## Minimum Supported Rust Version (MSRV)
 
-v1.88.0
+v1.93.1

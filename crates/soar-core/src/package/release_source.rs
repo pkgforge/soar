@@ -1,15 +1,16 @@
-//! Release source resolution for GitHub/GitLab packages.
+//! Release source resolution for packages published on a git forge.
 //!
-//! This module provides functionality to resolve package sources from
-//! GitHub or GitLab releases, fetching version and download URL automatically.
+//! This module resolves a package source to a concrete version and download
+//! URL by asking the forge which releases a project has.
 
 use std::{collections::HashMap, process::Command};
 
 use soar_config::packages::ResolvedPackage;
 use soar_dl::{
-    github::{Github, GithubAsset, GithubRelease},
-    gitlab::{GitLab, GitLabAsset, GitLabRelease},
-    traits::{Asset, Platform, Release},
+    error::DownloadError,
+    forge::Forge,
+    platform::parse_gitea_target,
+    releasekit::{Asset, Release},
 };
 
 use crate::{
@@ -17,35 +18,33 @@ use crate::{
     utils::substitute_placeholders, SoarResult,
 };
 
-/// Source for fetching package releases.
+/// Which releases a source will take.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Prerelease {
+    /// The newest release that is not a prerelease.
+    #[default]
+    Exclude,
+    /// The newest release, prerelease or not.
+    Include,
+    /// The newest prerelease, and nothing else.
+    Only,
+}
+
+/// Where a package's releases come from, and which of its assets to take.
 #[derive(Debug, Clone)]
-pub enum ReleaseSource {
-    /// GitHub releases source.
-    GitHub {
-        /// Repository in "owner/repo" format.
-        repo: String,
-        /// Glob pattern to match asset filename.
-        asset_pattern: String,
-        /// Whether to include pre-release versions.
-        include_prerelease: bool,
-        /// Optional glob pattern to match tag names.
-        tag_pattern: Option<String>,
-        /// Custom architecture name mapping.
-        arch_map: Option<HashMap<String, String>>,
-    },
-    /// GitLab releases source.
-    GitLab {
-        /// Repository in "owner/repo" format.
-        repo: String,
-        /// Glob pattern to match asset filename.
-        asset_pattern: String,
-        /// Whether to include pre-release versions.
-        include_prerelease: bool,
-        /// Optional glob pattern to match tag names.
-        tag_pattern: Option<String>,
-        /// Custom architecture name mapping.
-        arch_map: Option<HashMap<String, String>>,
-    },
+pub struct ReleaseSource {
+    /// The forge publishing the releases.
+    pub forge: Forge,
+    /// Repository in "owner/repo" format.
+    pub repo: String,
+    /// Glob pattern to match asset filename.
+    pub asset_pattern: String,
+    /// Which releases to consider.
+    pub prerelease: Prerelease,
+    /// Optional glob pattern to match tag names.
+    pub tag_pattern: Option<String>,
+    /// Custom architecture name mapping.
+    pub arch_map: Option<HashMap<String, String>>,
 }
 
 /// Result of resolving a release source.
@@ -60,6 +59,18 @@ pub struct ResolvedRelease {
 }
 
 impl ReleaseSource {
+    /// A source taking `asset_pattern` from the releases of `repo` on `forge`.
+    pub fn new(forge: Forge, repo: impl Into<String>, asset_pattern: impl Into<String>) -> Self {
+        Self {
+            forge,
+            repo: repo.into(),
+            asset_pattern: asset_pattern.into(),
+            prerelease: Prerelease::default(),
+            tag_pattern: None,
+            arch_map: None,
+        }
+    }
+
     /// The releases a download URL came out of, where its host publishes any.
     ///
     /// A forge download URL names the project, the release it belongs to and
@@ -68,61 +79,63 @@ impl ReleaseSource {
     /// is reported as such rather than guessed at.
     pub fn from_download_url(url: &str) -> Option<Self> {
         let ReleaseDownload {
-            is_github,
-            owner,
+            forge,
             repo,
             tag,
             asset,
         } = ReleaseDownload::parse(url)?;
-        let (owner, repo, tag, asset) = (&owner, &repo, &tag, &asset);
 
-        let source = if is_github {
-            Self::GitHub {
-                repo: format!("{owner}/{repo}"),
-                asset_pattern: asset_glob(tag, asset),
-                include_prerelease: false,
-                tag_pattern: None,
-                arch_map: None,
-            }
-        } else {
-            Self::GitLab {
-                repo: format!("{owner}/{repo}"),
-                asset_pattern: asset_glob(tag, asset),
-                include_prerelease: false,
-                tag_pattern: None,
-                arch_map: None,
-            }
-        };
-        Some(source)
+        Some(Self::new(forge, repo, asset_glob(&tag, &asset)))
     }
 
     /// Create a ReleaseSource from a resolved package configuration.
     ///
-    /// Returns `None` if the package doesn't have github/gitlab source configured.
-    pub fn from_resolved(pkg: &ResolvedPackage) -> Option<Self> {
-        if let Some(ref repo) = pkg.github {
-            let asset_pattern = pkg.asset_pattern.clone()?;
-            return Some(ReleaseSource::GitHub {
-                repo: repo.clone(),
-                asset_pattern,
-                include_prerelease: pkg.include_prerelease.unwrap_or(false),
-                tag_pattern: pkg.tag_pattern.clone(),
-                arch_map: pkg.arch_map.clone(),
-            });
-        }
+    /// `Ok(None)` is a package that names no forge at all, while a package
+    /// that names one soar cannot use is an error saying which part of the
+    /// declaration is missing.
+    pub fn from_resolved(pkg: &ResolvedPackage) -> SoarResult<Option<Self>> {
+        let (forge, repo) = if let Some(ref repo) = pkg.github {
+            (Forge::GitHub, repo.clone())
+        } else if let Some(ref repo) = pkg.gitlab {
+            (Forge::GitLab, repo.clone())
+        } else if let Some(ref repo) = pkg.codeberg {
+            (Forge::Codeberg, repo.clone())
+        } else if let Some(ref target) = pkg.gitea {
+            let (instance, repo, _) = parse_gitea_target(target, false).ok_or_else(|| {
+                SoarError::Custom(format!(
+                    "'{target}' names no Gitea or Forgejo repository; \
+                     a full repository URL does, such as \
+                     'https://git.example.com/owner/repo'"
+                ))
+            })?;
+            (
+                Forge::Gitea {
+                    instance,
+                },
+                repo,
+            )
+        } else {
+            return Ok(None);
+        };
 
-        if let Some(ref repo) = pkg.gitlab {
-            let asset_pattern = pkg.asset_pattern.clone()?;
-            return Some(ReleaseSource::GitLab {
-                repo: repo.clone(),
-                asset_pattern,
-                include_prerelease: pkg.include_prerelease.unwrap_or(false),
-                tag_pattern: pkg.tag_pattern.clone(),
-                arch_map: pkg.arch_map.clone(),
-            });
-        }
+        let asset_pattern = pkg.asset_pattern.clone().ok_or_else(|| {
+            SoarError::Custom(format!(
+                "no asset_pattern to pick an asset out of {repo}'s releases"
+            ))
+        })?;
 
-        None
+        Ok(Some(Self {
+            forge,
+            repo,
+            asset_pattern,
+            prerelease: if pkg.include_prerelease.unwrap_or(false) {
+                Prerelease::Include
+            } else {
+                Prerelease::Exclude
+            },
+            tag_pattern: pkg.tag_pattern.clone(),
+            arch_map: pkg.arch_map.clone(),
+        }))
     }
 
     /// Resolve the release source to get version and download URL.
@@ -139,40 +152,110 @@ impl ReleaseSource {
     /// If `version` is Some, fetches that specific tag instead of the latest.
     /// The version can be with or without 'v' prefix (both "1.0.0" and "v1.0.0" work).
     pub fn resolve_version(&self, version: Option<&str>) -> SoarResult<ResolvedRelease> {
-        match self {
-            ReleaseSource::GitHub {
-                repo,
-                asset_pattern,
-                include_prerelease,
-                tag_pattern,
-                arch_map,
-            } => {
-                resolve_github(
-                    repo,
-                    asset_pattern,
-                    *include_prerelease,
-                    tag_pattern.as_deref(),
-                    version,
-                    arch_map.as_ref(),
-                )
-            }
-            ReleaseSource::GitLab {
-                repo,
-                asset_pattern,
-                include_prerelease,
-                tag_pattern,
-                arch_map,
-            } => {
-                resolve_gitlab(
-                    repo,
-                    asset_pattern,
-                    *include_prerelease,
-                    tag_pattern.as_deref(),
-                    version,
-                    arch_map.as_ref(),
-                )
+        let release = match version {
+            Some(version) => self.tagged_release(version)?,
+            None => self.newest_release()?,
+        };
+
+        let asset_pattern = substitute_placeholders(
+            &self.asset_pattern,
+            Some(release.tag()),
+            self.arch_map.as_ref(),
+        );
+        let asset = find_matching_asset(release.assets(), &asset_pattern)?;
+
+        Ok(ResolvedRelease {
+            version: release.tag().to_string(),
+            download_url: asset.url().to_string(),
+            size: asset.size(),
+        })
+    }
+
+    /// The release a version names.
+    ///
+    /// A forge answers for one tag directly, which a listing cannot: it stops
+    /// at the newest hundred or so releases, and a pinned version is usually
+    /// older than that. Publishers disagree on the leading `v`, so a version
+    /// spelled without one is also asked for with it, and the other way round.
+    fn tagged_release(&self, version: &str) -> SoarResult<Release> {
+        let alternate = alternate_spelling(version);
+
+        let mut failure = None;
+        for tag in [version, alternate.as_str()] {
+            match self.forge.fetch_releases(&self.repo, Some(tag)) {
+                Ok(releases) => {
+                    if let Some(release) = releases.into_iter().next() {
+                        return Ok(release);
+                    }
+                }
+                // A tag the project does not have, which is the other
+                // spelling's turn rather than an error.
+                Err(DownloadError::HttpError {
+                    status: 404, ..
+                }) => {}
+                Err(err) => failure = Some(err),
             }
         }
+
+        Err(match failure {
+            Some(err) => self.fetch_error(err),
+            None => self.no_release_error(Some(version)),
+        })
+    }
+
+    /// The newest release this source accepts.
+    fn newest_release(&self) -> SoarResult<Release> {
+        let releases = self
+            .forge
+            .fetch_releases(&self.repo, None)
+            .map_err(|err| self.fetch_error(err))?;
+
+        releases
+            .into_iter()
+            .find(|r| {
+                let prerelease_ok = match self.prerelease {
+                    Prerelease::Exclude => !r.is_prerelease(),
+                    Prerelease::Include => true,
+                    Prerelease::Only => r.is_prerelease(),
+                };
+                prerelease_ok && matches_tag_pattern(r.tag(), self.tag_pattern.as_deref())
+            })
+            .ok_or_else(|| self.no_release_error(None))
+    }
+
+    fn fetch_error(&self, err: DownloadError) -> SoarError {
+        SoarError::Custom(format!(
+            "Failed to fetch {} releases for {}: {}",
+            self.forge, self.repo, err
+        ))
+    }
+
+    /// Why nothing the project published fits what was asked for.
+    fn no_release_error(&self, version: Option<&str>) -> SoarError {
+        if let Some(ver) = version {
+            SoarError::Custom(format!(
+                "No release found for {} with version '{}'",
+                self.repo, ver
+            ))
+        } else if self.prerelease == Prerelease::Only {
+            SoarError::Custom(format!("No prerelease found for {}", self.repo))
+        } else if let Some(ref pattern) = self.tag_pattern {
+            SoarError::Custom(format!(
+                "No releases found for {} matching tag pattern '{}'",
+                self.repo, pattern
+            ))
+        } else {
+            SoarError::Custom(format!("No releases found for {}", self.repo))
+        }
+    }
+}
+
+/// A version as the other convention spells it, with the leading `v` added
+/// where it is missing and dropped where it is not.
+fn alternate_spelling(version: &str) -> String {
+    match version.strip_prefix('v') {
+        Some(bare) => bare.to_string(),
+        None => format!("v{version}"),
     }
 }
 
@@ -184,11 +267,9 @@ fn matches_tag_pattern(tag: &str, pattern: Option<&str>) -> bool {
     }
 }
 
-/// Resolve a GitHub release source.
 /// A download URL taken apart into the release it came from.
 struct ReleaseDownload {
-    is_github: bool,
-    owner: String,
+    forge: Forge,
     repo: String,
     tag: String,
     asset: String,
@@ -208,23 +289,53 @@ impl ReleaseDownload {
             .collect();
         let segments: Vec<&str> = decoded.iter().map(String::as_str).collect();
 
-        // github.com/{owner}/{repo}/releases/download/{tag}/{asset}
         // gitlab.com/{owner}/{repo}/-/releases/{tag}/downloads/{asset}
-        let (is_github, owner, repo, tag, asset) = match segments.as_slice() {
-            [owner, repo, "releases", "download", tag, asset] if host == "github.com" => {
-                (true, owner, repo, tag, asset)
+        if let [owner, repo, "-", "releases", tag, "downloads", asset] = segments.as_slice() {
+            if host == "gitlab.com" {
+                return Some(Self {
+                    forge: Forge::GitLab,
+                    repo: format!("{owner}/{repo}"),
+                    tag: tag.to_string(),
+                    asset: asset.to_string(),
+                });
             }
-            [owner, repo, "-", "releases", tag, "downloads", asset] if host == "gitlab.com" => {
-                (false, owner, repo, tag, asset)
+        }
+
+        // {prefix}/{owner}/{repo}/releases/download/{tag}/{asset}, which is
+        // GitHub's shape and the one Gitea and Forgejo publish. Anything left
+        // of the project is the path an instance is served under.
+        let marker = (2..segments.len().saturating_sub(3))
+            .find(|&i| segments[i] == "releases" && segments[i + 1] == "download")
+            .filter(|&i| i + 4 == segments.len())?;
+        let (prefix, owner, repo) = (
+            &segments[..marker - 2],
+            segments[marker - 2],
+            segments[marker - 1],
+        );
+
+        let forge = match host {
+            "github.com" | "codeberg.org" if !prefix.is_empty() => return None,
+            "github.com" => Forge::GitHub,
+            "codeberg.org" => Forge::Codeberg,
+            // The port is part of the host, and the prefix part of the path,
+            // so an instance is named by everything ahead of the project.
+            _ => {
+                let mut instance = parsed.origin().ascii_serialization();
+                for segment in prefix {
+                    instance.push('/');
+                    instance.push_str(segment);
+                }
+                Forge::Gitea {
+                    instance,
+                }
             }
-            _ => return None,
         };
+
         Some(Self {
-            is_github,
-            owner: owner.to_string(),
-            repo: repo.to_string(),
-            tag: tag.to_string(),
-            asset: asset.to_string(),
+            forge,
+            repo: format!("{owner}/{repo}"),
+            tag: segments[marker + 2].to_string(),
+            asset: segments[marker + 3].to_string(),
         })
     }
 }
@@ -262,123 +373,8 @@ fn asset_glob(tag: &str, asset: &str) -> String {
     asset.to_string()
 }
 
-fn resolve_github(
-    repo: &str,
-    asset_pattern: &str,
-    include_prerelease: bool,
-    tag_pattern: Option<&str>,
-    specific_version: Option<&str>,
-    arch_map: Option<&HashMap<String, String>>,
-) -> SoarResult<ResolvedRelease> {
-    let releases: Vec<GithubRelease> = Github::fetch_releases(repo, None).map_err(|e| {
-        SoarError::Custom(format!(
-            "Failed to fetch GitHub releases for {}: {}",
-            repo, e
-        ))
-    })?;
-
-    let release = releases
-        .iter()
-        .find(|r| {
-            // If a specific version is requested, match it exactly (with or without 'v' prefix)
-            if let Some(ver) = specific_version {
-                let tag = r.tag();
-                let tag_normalized = tag.strip_prefix('v').unwrap_or(tag);
-                let ver_normalized = ver.strip_prefix('v').unwrap_or(ver);
-                return tag_normalized == ver_normalized || tag == ver;
-            }
-
-            let prerelease_ok = include_prerelease || !r.is_prerelease();
-            let tag_ok = matches_tag_pattern(r.tag(), tag_pattern);
-            prerelease_ok && tag_ok
-        })
-        .ok_or_else(|| {
-            if let Some(ver) = specific_version {
-                SoarError::Custom(format!(
-                    "No release found for {} with version '{}'",
-                    repo, ver
-                ))
-            } else if let Some(pattern) = tag_pattern {
-                SoarError::Custom(format!(
-                    "No releases found for {} matching tag pattern '{}'",
-                    repo, pattern
-                ))
-            } else {
-                SoarError::Custom(format!("No releases found for {}", repo))
-            }
-        })?;
-
-    let assets: &[GithubAsset] = release.assets();
-    let asset_pattern = substitute_placeholders(asset_pattern, Some(release.tag()), arch_map);
-    let asset = find_matching_asset(assets, &asset_pattern)?;
-
-    Ok(ResolvedRelease {
-        version: release.tag().to_string(),
-        download_url: asset.url().to_string(),
-        size: asset.size(),
-    })
-}
-
-/// Resolve a GitLab release source.
-fn resolve_gitlab(
-    repo: &str,
-    asset_pattern: &str,
-    include_prerelease: bool,
-    tag_pattern: Option<&str>,
-    specific_version: Option<&str>,
-    arch_map: Option<&HashMap<String, String>>,
-) -> SoarResult<ResolvedRelease> {
-    let releases: Vec<GitLabRelease> = GitLab::fetch_releases(repo, None).map_err(|e| {
-        SoarError::Custom(format!(
-            "Failed to fetch GitLab releases for {}: {}",
-            repo, e
-        ))
-    })?;
-
-    let release = releases
-        .iter()
-        .find(|r| {
-            // If a specific version is requested, match it exactly (with or without 'v' prefix)
-            if let Some(ver) = specific_version {
-                let tag = r.tag();
-                let tag_normalized = tag.strip_prefix('v').unwrap_or(tag);
-                let ver_normalized = ver.strip_prefix('v').unwrap_or(ver);
-                return tag_normalized == ver_normalized || tag == ver;
-            }
-
-            let prerelease_ok = include_prerelease || !r.is_prerelease();
-            let tag_ok = matches_tag_pattern(r.tag(), tag_pattern);
-            prerelease_ok && tag_ok
-        })
-        .ok_or_else(|| {
-            if let Some(ver) = specific_version {
-                SoarError::Custom(format!(
-                    "No release found for {} with version '{}'",
-                    repo, ver
-                ))
-            } else if let Some(pattern) = tag_pattern {
-                SoarError::Custom(format!(
-                    "No releases found for {} matching tag pattern '{}'",
-                    repo, pattern
-                ))
-            } else {
-                SoarError::Custom(format!("No releases found for {}", repo))
-            }
-        })?;
-
-    let assets: &[GitLabAsset] = release.assets();
-    let asset_pattern = substitute_placeholders(asset_pattern, Some(release.tag()), arch_map);
-    let asset = find_matching_asset(assets, &asset_pattern)?;
-
-    Ok(ResolvedRelease {
-        version: release.tag().to_string(),
-        download_url: asset.url().to_string(),
-        size: asset.size(),
-    })
-}
-
 /// Find an asset matching the given glob pattern.
-fn find_matching_asset<'a, A: Asset>(assets: &'a [A], pattern: &str) -> SoarResult<&'a A> {
+fn find_matching_asset<'a>(assets: &'a [Asset], pattern: &str) -> SoarResult<&'a Asset> {
     if assets.is_empty() {
         return Err(SoarError::Custom("No assets found in release".into()));
     }
@@ -471,22 +467,12 @@ mod tests {
             ..Default::default()
         };
 
-        let source = ReleaseSource::from_resolved(&pkg).unwrap();
-        match source {
-            ReleaseSource::GitHub {
-                repo,
-                asset_pattern,
-                include_prerelease,
-                tag_pattern,
-                ..
-            } => {
-                assert_eq!(repo, "user/repo");
-                assert_eq!(asset_pattern, "*.AppImage");
-                assert!(include_prerelease);
-                assert!(tag_pattern.is_none());
-            }
-            _ => panic!("Expected GitHub source"),
-        }
+        let source = ReleaseSource::from_resolved(&pkg).unwrap().unwrap();
+        assert_eq!(source.forge, Forge::GitHub);
+        assert_eq!(source.repo, "user/repo");
+        assert_eq!(source.asset_pattern, "*.AppImage");
+        assert_eq!(source.prerelease, Prerelease::Include);
+        assert!(source.tag_pattern.is_none());
     }
 
     #[test]
@@ -498,22 +484,44 @@ mod tests {
             ..Default::default()
         };
 
-        let source = ReleaseSource::from_resolved(&pkg).unwrap();
-        match source {
-            ReleaseSource::GitLab {
-                repo,
-                asset_pattern,
-                include_prerelease,
-                tag_pattern,
-                ..
-            } => {
-                assert_eq!(repo, "group/project");
-                assert_eq!(asset_pattern, "*.tar.gz");
-                assert!(!include_prerelease);
-                assert!(tag_pattern.is_none());
+        let source = ReleaseSource::from_resolved(&pkg).unwrap().unwrap();
+        assert_eq!(source.forge, Forge::GitLab);
+        assert_eq!(source.repo, "group/project");
+        assert_eq!(source.asset_pattern, "*.tar.gz");
+        assert_eq!(source.prerelease, Prerelease::Exclude);
+    }
+
+    #[test]
+    fn a_codeberg_package_resolves_against_codeberg() {
+        let pkg = ResolvedPackage {
+            name: "test".to_string(),
+            codeberg: Some("user/repo".to_string()),
+            asset_pattern: Some("*.AppImage".to_string()),
+            ..Default::default()
+        };
+
+        let source = ReleaseSource::from_resolved(&pkg).unwrap().unwrap();
+        assert_eq!(source.forge, Forge::Codeberg);
+        assert_eq!(source.repo, "user/repo");
+    }
+
+    #[test]
+    fn a_gitea_package_names_its_own_instance() {
+        let pkg = ResolvedPackage {
+            name: "test".to_string(),
+            gitea: Some("https://git.example.com/user/repo".to_string()),
+            asset_pattern: Some("*.AppImage".to_string()),
+            ..Default::default()
+        };
+
+        let source = ReleaseSource::from_resolved(&pkg).unwrap().unwrap();
+        assert_eq!(
+            source.forge,
+            Forge::Gitea {
+                instance: "https://git.example.com".to_string()
             }
-            _ => panic!("Expected GitLab source"),
-        }
+        );
+        assert_eq!(source.repo, "user/repo");
     }
 
     #[test]
@@ -524,7 +532,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(ReleaseSource::from_resolved(&pkg).is_none());
+        assert!(ReleaseSource::from_resolved(&pkg).unwrap().is_none());
     }
 
     #[test]
@@ -536,7 +544,21 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(ReleaseSource::from_resolved(&pkg).is_none());
+        let err = ReleaseSource::from_resolved(&pkg).unwrap_err().to_string();
+        assert!(err.contains("asset_pattern"), "{err}");
+    }
+
+    #[test]
+    fn a_gitea_package_without_an_instance_says_so() {
+        let pkg = ResolvedPackage {
+            name: "test".to_string(),
+            gitea: Some("owner/repo".to_string()),
+            asset_pattern: Some("*.AppImage".to_string()),
+            ..Default::default()
+        };
+
+        let err = ReleaseSource::from_resolved(&pkg).unwrap_err().to_string();
+        assert!(err.contains("repository URL"), "{err}");
     }
 
     #[test]
@@ -549,17 +571,72 @@ mod tests {
              tool-1.2.3-abcdef-linux-x86_64.AppImage",
         )
         .unwrap();
-        match source {
-            ReleaseSource::GitHub {
-                repo,
-                asset_pattern,
-                ..
-            } => {
-                assert_eq!(repo, "owner/repo");
-                assert_eq!(asset_pattern, "tool-*-linux-x86_64.AppImage");
+        assert_eq!(source.forge, Forge::GitHub);
+        assert_eq!(source.repo, "owner/repo");
+        assert_eq!(source.asset_pattern, "tool-*-linux-x86_64.AppImage");
+    }
+
+    #[test]
+    fn a_gitea_download_names_the_instance_it_came_from() {
+        let source = ReleaseSource::from_download_url(
+            "https://git.example.com/owner/repo/releases/download/v1.2.3/tool-1.2.3-x86_64.AppImage",
+        )
+        .unwrap();
+        assert_eq!(
+            source.forge,
+            Forge::Gitea {
+                instance: "https://git.example.com".to_string()
             }
-            other => panic!("expected GitHub, got {other:?}"),
-        }
+        );
+        assert_eq!(source.repo, "owner/repo");
+        assert_eq!(source.asset_pattern, "tool-*-x86_64.AppImage");
+
+        let codeberg = ReleaseSource::from_download_url(
+            "https://codeberg.org/owner/repo/releases/download/v1.0/tool-1.0-x86_64.AppImage",
+        )
+        .unwrap();
+        assert_eq!(codeberg.forge, Forge::Codeberg);
+    }
+
+    #[test]
+    fn a_version_is_asked_for_both_ways_publishers_spell_it() {
+        assert_eq!(alternate_spelling("1.2.3"), "v1.2.3");
+        assert_eq!(alternate_spelling("v1.2.3"), "1.2.3");
+        assert_eq!(alternate_spelling("nightly"), "vnightly");
+    }
+
+    #[test]
+    fn a_gitea_instance_keeps_its_port_and_path() {
+        let source = ReleaseSource::from_download_url(
+            "https://git.example.com:3000/o/r/releases/download/v1.2.3/tool-1.2.3-x86_64.AppImage",
+        )
+        .unwrap();
+        assert_eq!(
+            source.forge,
+            Forge::Gitea {
+                instance: "https://git.example.com:3000".to_string()
+            }
+        );
+        assert_eq!(source.repo, "o/r");
+
+        let prefixed = ReleaseSource::from_download_url(
+            "https://example.com/git/o/r/releases/download/v1.2.3/tool-1.2.3-x86_64.AppImage",
+        )
+        .unwrap();
+        assert_eq!(
+            prefixed.forge,
+            Forge::Gitea {
+                instance: "https://example.com/git".to_string()
+            }
+        );
+        assert_eq!(prefixed.repo, "o/r");
+
+        // A host soar knows serves its projects at the root, so a prefix
+        // means the URL is something else.
+        assert!(ReleaseSource::from_download_url(
+            "https://github.com/x/o/r/releases/download/v1/tool.AppImage"
+        )
+        .is_none());
     }
 
     #[test]
