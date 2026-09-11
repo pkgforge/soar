@@ -1,11 +1,11 @@
 ---
 title: Download Files
-description: Download files with Soar from direct URLs, GitHub and GitLab releases, GHCR, or configured repositories, with filtering and automatic extraction.
+description: Download files with Soar from direct URLs, forge releases, GHCR, or configured repositories, with filtering and automatic extraction.
 ---
 
 # Download Files
 
-Soar downloads files from direct URLs, GitHub releases, GitLab releases, and GitHub Container Registry (GHCR). The download command supports filtering to narrow down options, interactive asset selection when several matches remain, and automatic archive extraction.
+Soar downloads files from direct URLs, forge releases (GitHub, GitLab, Codeberg, Gitea and Forgejo), and GitHub Container Registry (GHCR). The download command supports filtering to narrow down options, interactive asset selection when several matches remain, and automatic archive extraction.
 
 ## Basic Usage
 
@@ -91,6 +91,8 @@ Filters narrow down the available assets. If multiple assets remain after filter
 |--------|-------------|
 | `--github` | Download from GitHub releases using format `owner/repo[@tag]` |
 | `--gitlab` | Download from GitLab releases using format `owner/project[@tag]` |
+| `--codeberg` | Download from Codeberg releases using format `owner/repo[@tag]` |
+| `--gitea` | Download from a Gitea or Forgejo instance using the repository URL, such as `https://git.example.com/owner/repo[@tag]`. Also spelled `--forgejo` |
 | `--ghcr` | Download from GitHub Container Registry using format `owner/image[:tag]` |
 
 ### Extraction Options
@@ -125,7 +127,13 @@ soar download https://example.com/file.tar.gz --extract
 ```
 
 ::: info URL auto-detection
-Soar automatically detects GitHub, GitLab, and GHCR URLs. You do not need the `--github`, `--gitlab`, or `--ghcr` flags when using full URLs.
+Soar automatically detects GitHub, GitLab, Codeberg, and GHCR URLs. You do not need the `--github`, `--gitlab`, `--codeberg`, or `--ghcr` flags when using full URLs.
+
+A Gitea or Forgejo instance is a host Soar has no list of, and its repository URL looks exactly like a direct download link. Pass such a target with `--gitea`, or prefix it with `gitea:` or `forgejo:` to have it read as a repository:
+
+```sh
+soar download gitea:git.example.com/owner/repo@v1.0
+```
 :::
 
 ### GitHub Releases
@@ -222,6 +230,40 @@ soar download --gitlab gitlab-org/gitlab --glob '*-arm64*' --yes
 # Exclude debug builds
 soar download --gitlab gitlab-org/gitlab --exclude 'debug'
 ```
+
+### Codeberg Releases
+
+Download assets from Codeberg releases using the `--codeberg` flag:
+
+```sh
+# Basic format: owner/repo
+soar download --codeberg owner/repo
+
+# Specific tag/release
+soar download --codeberg owner/repo@v1.0.0
+
+# Filter by architecture
+soar download --codeberg owner/repo --glob '*x86_64*.AppImage'
+```
+
+### Gitea and Forgejo Releases
+
+Forgejo is a fork of Gitea and speaks the same API, so one flag covers both. The instance is not one Soar knows by name, so each target is the full repository URL:
+
+```sh
+# Basic format: the repository URL
+soar download --gitea https://git.example.com/owner/repo
+
+# Specific tag/release
+soar download --gitea https://git.example.com/owner/repo@v1.0.0
+
+# Filter by architecture
+soar download --forgejo https://git.example.com/owner/repo --glob '*x86_64*'
+```
+
+::: tip Tokens
+GitHub reads `GITHUB_TOKEN` or `GH_TOKEN`, GitLab reads `GITLAB_TOKEN` or `GL_TOKEN`, and Codeberg reads `CODEBERG_TOKEN`. A Gitea or Forgejo instance is sent a token only where you name the variable holding it under [`forge_tokens`](./configuration.md#forge-rate-limits), since an instance URL can come from anywhere.
+:::
 
 ### GitHub Container Registry (GHCR)
 

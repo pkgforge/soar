@@ -105,6 +105,26 @@ pub struct Config {
     /// Display settings for output formatting
     pub display: Option<DisplaySettings>,
 
+    /// Which environment variable holds the access token for each Gitea or
+    /// Forgejo host, keyed by the host as the instance URL spells it
+    /// (including a port, where the instance uses one).
+    ///
+    /// The value names the variable, never the token itself, so no secret is
+    /// written to this file. A host that is not listed here is never sent a
+    /// token, which is what keeps one instance's credential from reaching
+    /// another, or reaching a host named by a download URL rather than by you.
+    /// Tokens are withheld from `http://` instances whatever this says.
+    ///
+    /// ```toml
+    /// [forge_tokens]
+    /// "git.example.com" = "GITEA_TOKEN"
+    /// ```
+    ///
+    /// GitHub, GitLab and Codeberg each run on one known host and read their
+    /// own variable: `GITHUB_TOKEN` or `GH_TOKEN`, `GITLAB_TOKEN` or
+    /// `GL_TOKEN`, and `CODEBERG_TOKEN`.
+    pub forge_tokens: Option<HashMap<String, String>>,
+
     /// Whether this config is for system mode.
     /// Not serialized - set programmatically.
     #[serde(skip)]
@@ -299,6 +319,7 @@ impl Config {
             desktop_integration: None,
             sync_interval: None,
             display: None,
+            forge_tokens: None,
             system_mode: is_system_mode(),
         }
     }
@@ -393,6 +414,7 @@ impl Config {
             desktop_integration: None,
             sync_interval: None,
             display: None,
+            forge_tokens: None,
             system_mode,
         }
     }

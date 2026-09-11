@@ -8,11 +8,10 @@ use soar_dl::{
     download::Download,
     error::DownloadError,
     filter::Filter,
-    github::Github,
-    gitlab::GitLab,
+    forge::Forge,
     oci::OciDownload,
-    platform::PlatformUrl,
-    traits::{Asset, Platform as _, Release as _},
+    platform::{parse_gitea_target, PlatformUrl},
+    releasekit::Asset,
     types::{OverwriteMode, Progress},
 };
 use soar_utils::bytes::format_bytes;
@@ -63,16 +62,24 @@ pub async fn download(
     links: Vec<String>,
     github: Vec<String>,
     gitlab: Vec<String>,
+    codeberg: Vec<String>,
+    gitea: Vec<String>,
     ghcr: Vec<String>,
 ) -> SoarResult<()> {
     handle_direct_downloads(&ctx, links, ctx.output.clone()).await?;
 
-    if !github.is_empty() {
-        handle_github_downloads(&ctx, github).await?;
+    for (forge, projects) in [
+        (Forge::GitHub, github),
+        (Forge::GitLab, gitlab),
+        (Forge::Codeberg, codeberg),
+    ] {
+        if !projects.is_empty() {
+            handle_forge_downloads(&ctx, forge, projects).await?;
+        }
     }
 
-    if !gitlab.is_empty() {
-        handle_gitlab_downloads(&ctx, gitlab).await?;
+    if !gitea.is_empty() {
+        handle_gitea_downloads(&ctx, gitea).await?;
     }
 
     if !ghcr.is_empty() {
@@ -120,7 +127,9 @@ pub async fn handle_direct_downloads(
                 tag,
             }) => {
                 info!("Detected GitHub URL, processing as GitHub release");
-                if let Err(err) = handle_github_release(ctx, &project, tag.as_deref()) {
+                if let Err(err) =
+                    handle_forge_release(ctx, &Forge::GitHub, &project, tag.as_deref())
+                {
                     error!("{}", err);
                 }
             }
@@ -129,7 +138,33 @@ pub async fn handle_direct_downloads(
                 tag,
             }) => {
                 info!("Detected GitLab URL, processing as GitLab release");
-                if let Err(err) = handle_gitlab_release(ctx, &project, tag.as_deref()) {
+                if let Err(err) =
+                    handle_forge_release(ctx, &Forge::GitLab, &project, tag.as_deref())
+                {
+                    error!("{}", err);
+                }
+            }
+            Some(PlatformUrl::Codeberg {
+                project,
+                tag,
+            }) => {
+                info!("Detected Codeberg URL, processing as Codeberg release");
+                if let Err(err) =
+                    handle_forge_release(ctx, &Forge::Codeberg, &project, tag.as_deref())
+                {
+                    error!("{}", err);
+                }
+            }
+            Some(PlatformUrl::Gitea {
+                instance,
+                project,
+                tag,
+            }) => {
+                info!("Detected Gitea URL, processing as Gitea release");
+                let forge = Forge::Gitea {
+                    instance,
+                };
+                if let Err(err) = handle_forge_release(ctx, &forge, &project, tag.as_deref()) {
                     error!("{}", err);
                 }
             }
@@ -311,12 +346,16 @@ pub async fn handle_oci_downloads(
     Ok(())
 }
 
-fn handle_github_release(
+/// Downloads an asset of a release published on `forge`.
+///
+/// Without a tag the newest release that is not a prerelease is taken.
+fn handle_forge_release(
     ctx: &DownloadContext,
+    forge: &Forge,
     project: &str,
     tag: Option<&str>,
 ) -> SoarResult<()> {
-    let releases = Github::fetch_releases(project, tag)?;
+    let releases = forge.fetch_releases(project, tag)?;
 
     let release = if let Some(tag) = tag {
         releases.iter().find(|r| r.tag() == tag)
@@ -327,76 +366,7 @@ fn handle_github_release(
             .or_else(|| releases.first())
     };
 
-    let release = release.ok_or_else(|| DownloadError::InvalidResponse)?;
-
-    info!("Found release: {}", release.tag());
-    let filter = ctx.create_filter();
-
-    let assets: Vec<_> = release
-        .assets()
-        .iter()
-        .filter(|a| filter.matches(a.name()))
-        .collect();
-
-    if assets.is_empty() {
-        let available = release
-            .assets()
-            .iter()
-            .map(|a| a.name().to_string())
-            .collect::<Vec<String>>();
-
-        Err(DownloadError::NoMatch {
-            available,
-        })?
-    }
-
-    let selected_asset = if assets.len() == 1 || ctx.yes {
-        assets[0]
-    } else {
-        &select_asset_interactively(assets)?
-    };
-
-    info!("Downloading asset: {}", selected_asset.name());
-
-    let mut dl = Download::new(selected_asset.url())
-        .overwrite(ctx.get_overwrite_mode())
-        .extract(ctx.extract);
-
-    if let Some(ref out) = ctx.output {
-        dl = dl.output(out);
-    }
-
-    if let Some(ref extract_dir) = ctx.extract_dir {
-        dl = dl.extract_to(extract_dir);
-    }
-
-    let cb = ctx.progress_callback.clone();
-    dl = dl.progress(move |p| {
-        cb(p);
-    });
-
-    dl.execute()?;
-
-    Ok(())
-}
-
-fn handle_gitlab_release(
-    ctx: &DownloadContext,
-    project: &str,
-    tag: Option<&str>,
-) -> SoarResult<()> {
-    let releases = GitLab::fetch_releases(project, tag)?;
-
-    let release = if let Some(tag) = tag {
-        releases.iter().find(|r| r.tag() == tag)
-    } else {
-        releases
-            .iter()
-            .find(|r| !r.is_prerelease())
-            .or_else(|| releases.first())
-    };
-
-    let release = release.ok_or_else(|| DownloadError::InvalidResponse)?;
+    let release = release.ok_or(DownloadError::InvalidResponse)?;
 
     info!("Found release: {}", release.tag());
     let filter = ctx.create_filter();
@@ -461,48 +431,57 @@ pub fn create_regex_patterns(regex_patterns: Option<Vec<String>>) -> SoarResult<
     }
 }
 
-pub async fn handle_github_downloads(
+/// Downloads from each `owner/repo` on `forge`, a tag named after `@` where
+/// one is given.
+pub async fn handle_forge_downloads(
     ctx: &DownloadContext,
+    forge: Forge,
     projects: Vec<String>,
 ) -> SoarResult<()> {
     for project in &projects {
-        info!("Fetching releases from GitHub: {}", project);
+        info!("Fetching releases from {}: {}", forge, project);
 
-        let (project, tag) = match project.trim().split_once('@') {
-            Some((proj, tag)) if !tag.trim().is_empty() => (proj, Some(tag.trim())),
-            _ => (project.trim_end_matches('@'), None),
-        };
+        let (project, tag) = split_tag(project);
 
-        if let Err(err) = handle_github_release(ctx, project, tag) {
+        if let Err(err) = handle_forge_release(ctx, &forge, project, tag) {
             error!("{}", err);
         }
     }
     Ok(())
 }
 
-pub async fn handle_gitlab_downloads(
-    ctx: &DownloadContext,
-    projects: Vec<String>,
-) -> SoarResult<()> {
-    for project in &projects {
-        info!("Fetching releases from GitLab: {}", project);
-
-        let (project, tag) = match project.trim().split_once('@') {
-            Some((proj, tag)) if !tag.trim().is_empty() => (proj, Some(tag.trim())),
-            _ => (project.trim_end_matches('@'), None),
+/// Downloads from each Gitea or Forgejo repository URL.
+///
+/// The instance is not one soar knows by name, so each target carries its own:
+/// `https://git.example.com/owner/repo@v1.0`.
+pub async fn handle_gitea_downloads(ctx: &DownloadContext, targets: Vec<String>) -> SoarResult<()> {
+    for target in &targets {
+        let Some((instance, project, tag)) = parse_gitea_target(target, false) else {
+            error!("Invalid Gitea repository URL '{}'", target);
+            continue;
         };
 
-        if let Err(err) = handle_gitlab_release(ctx, project, tag) {
+        info!("Fetching releases from {}: {}", instance, project);
+
+        let forge = Forge::Gitea {
+            instance,
+        };
+        if let Err(err) = handle_forge_release(ctx, &forge, &project, tag.as_deref()) {
             error!("{}", err);
         }
     }
     Ok(())
 }
 
-fn select_asset_interactively<A>(assets: Vec<&A>) -> SoarResult<A>
-where
-    A: Asset + Clone,
-{
+/// A project reference split from the tag written after its `@`.
+fn split_tag(project: &str) -> (&str, Option<&str>) {
+    match project.trim().split_once('@') {
+        Some((proj, tag)) if !tag.trim().is_empty() => (proj, Some(tag.trim())),
+        _ => (project.trim().trim_end_matches('@'), None),
+    }
+}
+
+fn select_asset_interactively(assets: Vec<&Asset>) -> SoarResult<Asset> {
     info!("\nAvailable assets:");
     for (i, asset) in assets.iter().enumerate() {
         let size = asset
