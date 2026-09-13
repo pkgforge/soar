@@ -714,6 +714,10 @@ export SOAR_PACKAGES_CONFIG=/path/to/my-packages.toml
 soar apply
 ```
 
+In system mode the variable is `SOAR_SYSTEM_PACKAGES_CONFIG`, defaulting to
+`/etc/soar/packages.toml`. `SOAR_PACKAGES_CONFIG` is ignored there, so a user's
+file never becomes the machine's file by accident.
+
 ## Best Practices
 
 - **Version Pinning**: Pin versions for production tools, use `*` for development

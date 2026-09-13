@@ -209,6 +209,35 @@ sudo soar --system install docker
 | `SOAR_NIGHTLY` | Force nightly update channel (self update) | `export SOAR_NIGHTLY=1` |
 | `SOAR_RELEASE` | Force stable update channel (self update) | `export SOAR_RELEASE=1` |
 
+### System mode
+
+With `--system`, Soar reads the `SOAR_SYSTEM_`-prefixed variant of every path
+variable above and ignores the unprefixed one, so an exported `SOAR_ROOT` never
+redirects the system tree into your home:
+
+| User mode | System mode | Default in system mode |
+|-----------|-------------|------------------------|
+| `SOAR_CONFIG` | `SOAR_SYSTEM_CONFIG` | `/etc/soar/config.toml` |
+| `SOAR_PACKAGES_CONFIG` | `SOAR_SYSTEM_PACKAGES_CONFIG` | `/etc/soar/packages.toml` |
+| `SOAR_ROOT` | `SOAR_SYSTEM_ROOT` | `/opt/soar` |
+| `SOAR_BIN` | `SOAR_SYSTEM_BIN` | `/opt/soar/bin` |
+| `SOAR_DB` | `SOAR_SYSTEM_DB` | `/opt/soar/db` |
+| `SOAR_CACHE` | `SOAR_SYSTEM_CACHE` | `/opt/soar/cache` |
+| `SOAR_PACKAGES` | `SOAR_SYSTEM_PACKAGES` | `/opt/soar/packages` |
+| `SOAR_REPOSITORIES` | `SOAR_SYSTEM_REPOSITORIES` | `/opt/soar/repos` |
+| `SOAR_PORTABLE_DIRS` | `SOAR_SYSTEM_PORTABLE_DIRS` | `/opt/soar/portable-dirs` |
+| `SOAR_DESKTOP` | `SOAR_SYSTEM_DESKTOP` | `/usr/local/share/applications` |
+
+A `$SOAR_*` reference inside a system config file follows the same rule, so
+`db_path = "$SOAR_ROOT/db"` in `/etc/soar/config.toml` reads `SOAR_SYSTEM_ROOT`.
+
+The `SOAR_SYSTEM_*` values are forwarded across the `sudo` or `doas` escalation,
+so a read-only `--system` command and a privileged one always resolve to the
+same tree. Forwarding makes the escalation `sudo env VAR=... soar ...`, which a
+sudoers rule that whitelists the `soar` binary by path will reject. Whitelist
+`/usr/bin/env` as well, or leave the `SOAR_SYSTEM_*` variables unset, in which
+case Soar invokes the binary directly as before.
+
 ## See Also
 
 - [Configuration](./configuration.md) for the configuration file reference

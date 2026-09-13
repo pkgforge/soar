@@ -8,7 +8,8 @@ use std::{
 use documented::{Documented, DocumentedFields};
 use serde::{Deserialize, Serialize};
 use soar_utils::{
-    path::{is_safe_component, resolve_path, xdg_config_home, xdg_data_home},
+    error::PathResult,
+    path::{is_safe_component, resolve_path_with, xdg_config_home, xdg_data_home},
     system::platform,
 };
 use toml_edit::DocumentMut;
@@ -36,15 +37,15 @@ pub struct Config {
     pub repositories: Vec<Repository>,
 
     /// Path to the local cache directory.
-    /// Default: $SOAR_ROOT/cache
+    /// Default: root_path/cache
     pub cache_path: Option<String>,
 
     /// Path where the Soar package database is stored.
-    /// Default: $SOAR_ROOT/db
+    /// Default: root_path/db
     pub db_path: Option<String>,
 
     /// Directory where binary symlinks are placed.
-    /// Default: $SOAR_ROOT/bin
+    /// Default: root_path/bin
     pub bin_path: Option<String>,
 
     /// Directory where desktop files are stored.
@@ -52,11 +53,11 @@ pub struct Config {
     pub desktop_path: Option<String>,
 
     /// Path to the local clone of all repositories.
-    /// Default: $SOAR_ROOT/repos
+    /// Default: root_path/repos
     pub repositories_path: Option<String>,
 
     /// Portable dirs path
-    /// Default: $SOAR_ROOT/portable-dirs
+    /// Default: root_path/portable-dirs
     pub portable_dirs: Option<String>,
 
     /// If true, enables parallel downloading of packages.
@@ -150,28 +151,91 @@ pub fn is_system_mode() -> bool {
 
 /// Enable system mode and set appropriate paths
 ///
-/// Both config files move to the system location. An explicit `SOAR_CONFIG` or
-/// `SOAR_PACKAGES_CONFIG` names the file to use whatever the mode, so it is
-/// left alone.
+/// Both config files move to the system location, discarding whatever the
+/// user's `SOAR_CONFIG` and `SOAR_PACKAGES_CONFIG` named. `SOAR_SYSTEM_CONFIG`
+/// and `SOAR_SYSTEM_PACKAGES_CONFIG` name the system files instead.
 pub fn enable_system_mode() {
     let mut system_mode = SYSTEM_MODE.write().unwrap();
     *system_mode = true;
     drop(system_mode);
 
-    if std::env::var_os("SOAR_CONFIG").is_none() {
-        let mut config_path = CONFIG_PATH.write().unwrap();
-        *config_path = PathBuf::from("/etc/soar/config.toml");
-    }
+    let mut config_path = CONFIG_PATH.write().unwrap();
+    *config_path = path_env("CONFIG", true)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/etc/soar/config.toml"));
+    drop(config_path);
 
-    if std::env::var_os("SOAR_PACKAGES_CONFIG").is_none() {
-        let mut packages_config_path = crate::packages::PACKAGES_CONFIG_PATH.write().unwrap();
-        *packages_config_path = PathBuf::from("/etc/soar/packages.toml");
-    }
+    let mut packages_config_path = crate::packages::PACKAGES_CONFIG_PATH.write().unwrap();
+    *packages_config_path = path_env("PACKAGES_CONFIG", true)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/etc/soar/packages.toml"));
 }
 
 /// Get the system root path
 pub fn system_root() -> PathBuf {
     PathBuf::from("/opt/soar")
+}
+
+/// Suffixes of the path override variables.
+///
+/// User mode reads `SOAR_<SUFFIX>` and system mode reads
+/// `SOAR_SYSTEM_<SUFFIX>`, so a user's exported variables never redirect the
+/// system tree.
+pub const PATH_ENV_SUFFIXES: &[&str] = &[
+    "ROOT",
+    "BIN",
+    "DB",
+    "CACHE",
+    "PACKAGES",
+    "REPOSITORIES",
+    "PORTABLE_DIRS",
+    "DESKTOP",
+    "CONFIG",
+    "PACKAGES_CONFIG",
+];
+
+/// Name of the variable that overrides `suffix` in the given mode.
+pub fn path_env_var(suffix: &str, system_mode: bool) -> String {
+    if system_mode {
+        format!("SOAR_SYSTEM_{suffix}")
+    } else {
+        format!("SOAR_{suffix}")
+    }
+}
+
+/// Value of the path override for `suffix` in the given mode, if it is set.
+pub fn path_env(suffix: &str, system_mode: bool) -> Option<String> {
+    std::env::var(path_env_var(suffix, system_mode)).ok()
+}
+
+/// Name the given mode reads in place of `var`.
+///
+/// A `SOAR_*` reference inside a system config means the system variable, so
+/// a system path never resolves through a user's environment.
+pub fn mode_env_name(var: &str, system_mode: bool) -> String {
+    match var.strip_prefix("SOAR_") {
+        Some(suffix) if system_mode && !var.starts_with("SOAR_SYSTEM_") => {
+            format!("SOAR_SYSTEM_{suffix}")
+        }
+        _ => var.to_string(),
+    }
+}
+
+/// Resolves a configured path, reading `SOAR_*` references from the variables
+/// the given mode owns.
+pub(crate) fn resolve_mode_path(path: &str, system_mode: bool) -> PathResult<PathBuf> {
+    resolve_path_with(path, |var| mode_env_name(var, system_mode))
+}
+
+/// Root directory of the tree the given mode owns.
+fn resolve_soar_root(system_mode: bool) -> String {
+    path_env("ROOT", system_mode).unwrap_or_else(|| {
+        if system_mode {
+            system_root().display().to_string()
+        } else {
+            format!("{}/soar", xdg_data_home().display())
+        }
+    })
 }
 
 pub fn init() -> Result<()> {
@@ -234,13 +298,8 @@ impl Config {
     #[allow(deprecated)]
     pub fn default_config<T: AsRef<str>>(selected_repos: &[T]) -> Self {
         trace!("creating default configuration");
-        let soar_root = if is_system_mode() {
-            std::env::var("SOAR_ROOT").unwrap_or_else(|_| system_root().display().to_string())
-        } else {
-            std::env::var("SOAR_ROOT")
-                .unwrap_or_else(|_| format!("{}/soar", xdg_data_home().display()))
-        };
-        trace!(soar_root = soar_root, "resolved SOAR_ROOT");
+        let soar_root = resolve_soar_root(is_system_mode());
+        trace!(soar_root = soar_root, "resolved soar root");
 
         let default_profile = Profile {
             root_path: soar_root.clone(),
@@ -332,13 +391,8 @@ impl Config {
             "creating default configuration for system_mode={}",
             system_mode
         );
-        let soar_root = if system_mode {
-            std::env::var("SOAR_ROOT").unwrap_or_else(|_| system_root().display().to_string())
-        } else {
-            std::env::var("SOAR_ROOT")
-                .unwrap_or_else(|_| format!("{}/soar", xdg_data_home().display()))
-        };
-        trace!(soar_root = soar_root, "resolved SOAR_ROOT");
+        let soar_root = resolve_soar_root(system_mode);
+        trace!(soar_root = soar_root, "resolved soar root");
 
         let default_profile = Profile {
             root_path: soar_root.clone(),
@@ -520,13 +574,13 @@ impl Config {
     }
 
     pub fn get_bin_path(&self) -> Result<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_BIN") {
-            return Ok(resolve_path(&env_path)?);
+        if let Some(env_path) = path_env("BIN", self.system_mode) {
+            return Ok(resolve_mode_path(&env_path, self.system_mode)?);
         }
         if let Some(bin_path) = &self.bin_path {
-            return Ok(resolve_path(bin_path)?);
+            return Ok(resolve_mode_path(bin_path, self.system_mode)?);
         }
-        self.default_profile()?.get_bin_path()
+        self.default_profile()?.get_bin_path(self.system_mode)
     }
 
     /// Shells whose completions should be linked.
@@ -548,11 +602,11 @@ impl Config {
     }
 
     pub fn get_desktop_path(&self) -> Result<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_DESKTOP") {
-            return Ok(resolve_path(&env_path)?);
+        if let Some(env_path) = path_env("DESKTOP", self.system_mode) {
+            return Ok(resolve_mode_path(&env_path, self.system_mode)?);
         }
         if let Some(desktop_path) = &self.desktop_path {
-            return Ok(resolve_path(desktop_path)?);
+            return Ok(resolve_mode_path(desktop_path, self.system_mode)?);
         }
         Ok(soar_utils::path::desktop_dir(self.system_mode))
     }
@@ -586,52 +640,55 @@ impl Config {
     }
 
     pub fn get_db_path(&self) -> Result<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_DB") {
-            return Ok(resolve_path(&env_path)?);
+        if let Some(env_path) = path_env("DB", self.system_mode) {
+            return Ok(resolve_mode_path(&env_path, self.system_mode)?);
         }
         if let Some(soar_db) = &self.db_path {
-            return Ok(resolve_path(soar_db)?);
+            return Ok(resolve_mode_path(soar_db, self.system_mode)?);
         }
-        self.default_profile()?.get_db_path()
+        self.default_profile()?.get_db_path(self.system_mode)
     }
 
     pub fn get_packages_path(&self, profile_name: Option<String>) -> Result<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_PACKAGES") {
-            return Ok(resolve_path(&env_path)?);
+        if let Some(env_path) = path_env("PACKAGES", self.system_mode) {
+            return Ok(resolve_mode_path(&env_path, self.system_mode)?);
         }
         let profile_name = profile_name.unwrap_or_else(get_current_profile);
-        self.get_profile(&profile_name)?.get_packages_path()
+        self.get_profile(&profile_name)?
+            .get_packages_path(self.system_mode)
     }
 
     pub fn get_cache_path(&self) -> Result<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_CACHE") {
-            return Ok(resolve_path(&env_path)?);
+        if let Some(env_path) = path_env("CACHE", self.system_mode) {
+            return Ok(resolve_mode_path(&env_path, self.system_mode)?);
         }
         if let Some(soar_cache) = &self.cache_path {
-            return Ok(resolve_path(soar_cache)?);
+            return Ok(resolve_mode_path(soar_cache, self.system_mode)?);
         }
-        self.get_profile(&get_current_profile())?.get_cache_path()
+        self.get_profile(&get_current_profile())?
+            .get_cache_path(self.system_mode)
     }
 
     pub fn get_repositories_path(&self) -> Result<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_REPOSITORIES") {
-            return Ok(resolve_path(&env_path)?);
+        if let Some(env_path) = path_env("REPOSITORIES", self.system_mode) {
+            return Ok(resolve_mode_path(&env_path, self.system_mode)?);
         }
         if let Some(repositories_path) = &self.repositories_path {
-            return Ok(resolve_path(repositories_path)?);
+            return Ok(resolve_mode_path(repositories_path, self.system_mode)?);
         }
-        self.default_profile()?.get_repositories_path()
+        self.default_profile()?
+            .get_repositories_path(self.system_mode)
     }
 
     pub fn get_portable_dirs(&self) -> Result<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_PORTABLE_DIRS") {
-            return Ok(resolve_path(&env_path)?);
+        if let Some(env_path) = path_env("PORTABLE_DIRS", self.system_mode) {
+            return Ok(resolve_mode_path(&env_path, self.system_mode)?);
         }
 
         if let Some(portable_dirs) = &self.portable_dirs {
-            return Ok(resolve_path(portable_dirs)?);
+            return Ok(resolve_mode_path(portable_dirs, self.system_mode)?);
         }
-        self.default_profile()?.get_portable_dirs()
+        self.default_profile()?.get_portable_dirs(self.system_mode)
     }
 
     pub fn get_repository(&self, repo_name: &str) -> Option<&Repository> {
@@ -941,6 +998,112 @@ mod tests {
             let config = Config::default_config::<&str>(&[]);
             let bin_path = config.get_bin_path().unwrap();
             assert_eq!(bin_path, PathBuf::from("/custom/bin"));
+        });
+    }
+
+    #[test]
+    fn a_user_path_variable_does_not_reach_the_system_tree() {
+        let vars = vec![("SOAR_BIN", "/custom/bin"), ("SOAR_ROOT", "/custom/root")];
+        with_env(vars, || {
+            let config = Config::default_config_for_mode::<&str>(&[], true);
+            assert_eq!(config.get_bin_path().unwrap(), system_root().join("bin"));
+            assert_eq!(
+                config.default_profile().unwrap().root_path,
+                system_root().display().to_string()
+            );
+        });
+    }
+
+    #[test]
+    fn the_system_variables_override_the_system_tree() {
+        let vars = vec![
+            ("SOAR_SYSTEM_ROOT", "/srv/soar"),
+            ("SOAR_SYSTEM_BIN", "/usr/local/bin"),
+        ];
+        with_env(vars, || {
+            let config = Config::default_config_for_mode::<&str>(&[], true);
+            assert_eq!(
+                config.get_bin_path().unwrap(),
+                PathBuf::from("/usr/local/bin")
+            );
+            assert_eq!(config.get_db_path().unwrap(), PathBuf::from("/srv/soar/db"));
+        });
+    }
+
+    /// Covers the profile fall-through: a config that declares only a root
+    /// leaves every path to `Profile`, which is where the mode used to come
+    /// from the global flag rather than the config.
+    #[test]
+    fn a_system_config_resolves_its_profile_root_without_the_user_environment() {
+        let dir = std::env::temp_dir().join(format!("soar-cfg-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        fs::write(
+            &path,
+            "default_profile = \"default\"\nrepositories = []\n\n[profile.default]\nroot_path = \"/srv/soar\"\n",
+        )
+        .unwrap();
+
+        with_env(vec![("SOAR_ROOT", "/home/me/leak")], || {
+            let config = Config::new_for_mode(&path, true).unwrap();
+            assert_eq!(config.get_db_path().unwrap(), PathBuf::from("/srv/soar/db"));
+            assert_eq!(
+                config.get_bin_path().unwrap(),
+                PathBuf::from("/srv/soar/bin")
+            );
+            assert_eq!(
+                config.get_packages_path(None).unwrap(),
+                PathBuf::from("/srv/soar/packages")
+            );
+        });
+
+        with_env(vec![("SOAR_SYSTEM_ROOT", "/srv/other")], || {
+            let config = Config::new_for_mode(&path, true).unwrap();
+            assert_eq!(
+                config.get_db_path().unwrap(),
+                PathBuf::from("/srv/other/db")
+            );
+        });
+
+        with_env(vec![("SOAR_ROOT", "/home/me/mine")], || {
+            let config = Config::new_for_mode(&path, false).unwrap();
+            assert_eq!(
+                config.get_db_path().unwrap(),
+                PathBuf::from("/home/me/mine/db")
+            );
+        });
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_soar_reference_inside_a_config_value_follows_the_mode() {
+        let vars = vec![
+            ("SOAR_ROOT", "/home/me/leak"),
+            ("SOAR_SYSTEM_ROOT", "/srv/soar"),
+        ];
+        with_env(vars, || {
+            let mut system = Config::default_config_for_mode::<&str>(&[], true);
+            system.db_path = Some("$SOAR_ROOT/db".to_string());
+            assert_eq!(system.get_db_path().unwrap(), PathBuf::from("/srv/soar/db"));
+
+            let mut user = Config::default_config_for_mode::<&str>(&[], false);
+            user.db_path = Some("$SOAR_ROOT/db".to_string());
+            assert_eq!(
+                user.get_db_path().unwrap(),
+                PathBuf::from("/home/me/leak/db")
+            );
+        });
+    }
+
+    #[test]
+    fn the_system_variables_do_not_reach_the_user_tree() {
+        with_env(vec![("SOAR_SYSTEM_BIN", "/usr/local/bin")], || {
+            let config = Config::default_config_for_mode::<&str>(&[], false);
+            assert_ne!(
+                config.get_bin_path().unwrap(),
+                PathBuf::from("/usr/local/bin")
+            );
         });
     }
 }
