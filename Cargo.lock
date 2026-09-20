@@ -1923,6 +1923,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "releasekit"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6785f50e6f228cf6a6025f4974d57ce80636962a38c6dd35319b66f613b613d5"
+dependencies = [
+ "fast-glob",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "urlencoding",
+]
+
+[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2319,6 +2332,7 @@ dependencies = [
  "miette",
  "percent-encoding",
  "regex",
+ "releasekit",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2936,6 +2950,12 @@ dependencies = [
  "percent-encoding",
  "serde",
 ]
+
+[[package]]
+name = "urlencoding"
+version = "2.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "utf8-zero"

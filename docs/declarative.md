@@ -79,10 +79,10 @@ remote-tool = { url = "https://example.com/tool.tar.gz" }
 
 **Key points:**
 - Repository packages with a specific version are always pinned. Setting `pinned = false` does not override this. A versioned non-remote package stays pinned.
-- Remote packages (url/github/gitlab) are never auto-pinned unless you explicitly set `pinned = true`
+- Remote packages (url and forge sources) are never auto-pinned unless you explicitly set `pinned = true`
 - Pinned packages are skipped during auto-update operations
 - Version `*` always resolves to latest and is never pinned
-- Only `url`, `github`, `gitlab` and `version_command` packages have the installed version written back to `packages.toml`. A repository package is asked for its version on every apply, so a `"*"` declaration stays `"*"` rather than turning into a pin
+- Only `url`, forge (`github`, `gitlab`, `codeberg`, `gitea`) and `version_command` packages have the installed version written back to `packages.toml`. A repository package is asked for its version on every apply, so a `"*"` declaration stays `"*"` rather than turning into a pin
 
 ### Detailed Format
 
@@ -104,12 +104,14 @@ portable = { home = "~/.pkg", config = "~/.pkg/config" }
 | `pkg_id` | String | **Deprecated.** Repositories publishing the declarative format have no package id; use `family` |
 | `repo` | String | Install from a specific repository |
 | `url` | String | Install directly from a URL |
-| `bsum` | String | Expected BLAKE3 checksum (hex) for `url`/`github`/`gitlab` downloads; install aborts on mismatch |
+| `bsum` | String | Expected BLAKE3 checksum (hex) for `url` and forge downloads; install aborts on mismatch |
 | `pinned` | Boolean | Prevent automatic updates (default: `false`) |
 | `profile` | String | Install to a specific profile |
 | `system` | Boolean | Install into the system tree rather than your own (see [System-Wide Packages](#system-wide-packages)) |
 | `github` | String | GitHub repo in `owner/repo` format |
 | `gitlab` | String | GitLab repo in `owner/repo` format |
+| `codeberg` | String | Codeberg repo in `owner/repo` format |
+| `gitea` | String | Gitea or Forgejo repo URL, such as `https://git.example.com/owner/repo`. Also spelled `forgejo` |
 | `asset_pattern` | String | Glob pattern to match release assets |
 | `tag_pattern` | String | Glob pattern to match release tags |
 | `include_prerelease` | Boolean | Include pre-release versions |
@@ -250,9 +252,9 @@ used as-is. The `{os}` placeholder resolves to the operating system (e.g.
 `linux`), and `{version}` resolves to the package version with any leading
 `v` stripped.
 
-## GitHub/GitLab Integration
+## Forge Integration
 
-Install packages directly from GitHub or GitLab releases:
+Install packages directly from the releases of GitHub, GitLab, Codeberg, Gitea or Forgejo:
 
 ```toml
 [packages]
@@ -274,7 +276,26 @@ gh-beta = {
 
 # From GitLab
 gl-release = { gitlab = "gitlab-org/gitlab" }
+
+# From Codeberg
+cb-release = { codeberg = "owner/repo", asset_pattern = "*x86_64*.AppImage" }
+
+# From any Gitea or Forgejo instance, named by the full repository URL
+self-hosted = {
+  gitea = "https://git.example.com/owner/repo",
+  asset_pattern = "*x86_64*.AppImage"
+}
 ```
+
+Every forge field takes the same asset and tag options. `gitea` and `forgejo`
+are the same field under two names: the two forges speak one API, so an
+instance running either is asked the same way. Codeberg has its own field
+because soar knows the host already.
+
+Set `GITHUB_TOKEN`, `GITLAB_TOKEN` or `CODEBERG_TOKEN` to raise rate limits or
+reach a private repository. A Gitea or Forgejo instance has no fixed host, so
+it is sent a token only where you name the variable holding it under
+[`forge_tokens`](./configuration.md#forge-rate-limits).
 
 ::: warning Glob patterns, not regex
 `asset_pattern` and `tag_pattern` use **glob patterns**, not regex. Supported patterns include:
@@ -322,7 +343,7 @@ Use `version_command` for custom URL packages when:
 4. **You want to provide a custom download URL** that differs from the template
 
 ::: info
-For GitHub/GitLab packages, soar already handles version detection automatically. You typically don't need `version_command` unless you have special requirements.
+For forge packages, soar already handles version detection automatically. You typically don't need `version_command` unless you have special requirements.
 :::
 
 ### Examples
@@ -445,7 +466,7 @@ pinned = true
 ```
 
 **Use detailed tables when you need:**
-- GitHub/GitLab releases with `asset_pattern`, `tag_pattern`, or `include_prerelease`
+- Forge releases with `asset_pattern`, `tag_pattern`, or `include_prerelease`
 - Direct URL installation with `url`
 - Version fetching via `version_command` for URL packages
 - Build from source with `build` commands and dependencies
@@ -463,7 +484,7 @@ pinned = true
 | Latest version from repo | Simple string | `pkg = "*"` |
 | Specific version from repo | Simple string | `pkg = "1.2.3"` |
 | From custom repository | Inline table | `pkg = { version = "*", repo = "custom" }` |
-| GitHub/GitLab releases | Full table | See GitHub/GitLab sections above |
+| Forge releases | Full table | See the Forge Integration section above |
 | Direct URL download | Full table | `pkg = { url = "https://..." }` |
 | Build from source | Full table | See BuildConfig section |
 | Multiple binaries | Full table | See BinaryMapping section |
@@ -520,7 +541,7 @@ sandbox = { require = true, network = false }
 The configuration below uses every available option at least once. Because several options are alternatives to one another, the example spreads them across multiple packages rather than forcing them into a single entry.
 
 ::: info Pick one source per package
-Each package draws from a single source: a registry entry (`family` and `repo`), a direct `url`, a `github` repo, a `gitlab` repo, or a `version_command`. The source-specific fields follow from that choice, so treat this as a field reference rather than a template to copy verbatim.
+Each package draws from a single source: a registry entry (`family` and `repo`), a direct `url`, a forge repo (`github`, `gitlab`, `codeberg` or `gitea`), or a `version_command`. The source-specific fields follow from that choice, so treat this as a field reference rather than a template to copy verbatim.
 :::
 
 ```toml
@@ -562,6 +583,16 @@ arch_map = { x86_64 = "amd64", aarch64 = "arm64" }  # remap arch names for the s
 gitlab = "gitlab-org/cli"
 asset_pattern = "*linux_amd64.tar.gz"
 bsum = "9f2d...hex..."                        # BLAKE3 checksum; install aborts on mismatch
+
+# Codeberg release.
+[packages.cb-tool]
+codeberg = "owner/repo"                      # owner/repo on codeberg.org
+asset_pattern = "*x86_64*.AppImage"
+
+# Gitea or Forgejo release, on an instance soar has to be told about.
+[packages.self-hosted-tool]
+gitea = "https://git.example.com/owner/repo"  # full repository URL; `forgejo` also works
+asset_pattern = "*x86_64*.AppImage"
 
 # Direct URL install with custom type, entrypoint, nested archive, and binaries.
 [packages.custom-tool]

@@ -411,7 +411,7 @@ pub enum Commands {
         #[arg(required = false, short, long, value_hint = ValueHint::AnyPath)]
         output: Option<String>,
 
-        /// Regex to select the asset. Only works for github downloads
+        /// Regex to select the asset. Only works for forge downloads
         #[arg(required = false, short = 'r', long = "regex")]
         regexes: Option<Vec<String>>,
 
@@ -434,6 +434,15 @@ pub enum Commands {
         /// Gitlab project
         #[arg(required = false, long)]
         gitlab: Vec<String>,
+
+        /// Codeberg project
+        #[arg(required = false, long)]
+        codeberg: Vec<String>,
+
+        /// Gitea or Forgejo repository URL, such as
+        /// https://git.example.com/owner/repo
+        #[arg(required = false, long, visible_alias = "forgejo")]
+        gitea: Vec<String>,
 
         /// OCI reference
         #[arg(required = false, long)]

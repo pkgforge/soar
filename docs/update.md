@@ -97,10 +97,25 @@ Soar decides what to update to in this order.
 1. **The feed the artifact carries.** An AppImage can record where its updates
    come from in a `.upd_info` section. That is the publisher's own statement of
    how the package updates, so it is followed first, and the new artifact is
-   fetched over [zsync](#delta-updates-over-zsync).
-2. **The release the download came from.** Where the URL points at a GitHub or
-   GitLab release, the newest release of that project decides. This is what
-   covers archives and plain binaries, which have nowhere to carry a feed.
+   fetched over [zsync](#delta-updates-over-zsync). Soar reads every form
+   [appimageupdate](https://github.com/pkgforge-dev/appimageupdate) publishes:
+
+   | Form |
+   |------|
+   | `zsync\|<url>` |
+   | `gh-releases-zsync\|<owner>\|<repo>\|<tag>\|<filename>` |
+   | `gl-releases-zsync\|<owner>\|<repo>\|<tag>\|<filename>` |
+   | `cb-releases-zsync\|<owner>\|<repo>\|<tag>\|<filename>` |
+   | `gitea-releases-zsync\|<instance>\|<owner>\|<repo>\|<tag>\|<filename>` |
+   | `forgejo-releases-zsync\|<instance>\|<owner>\|<repo>\|<tag>\|<filename>` |
+
+   `<filename>` is a glob. `<tag>` is a tag name, or `latest` for the newest
+   stable release, `latest-pre` for the newest prerelease, or `latest-all` for
+   whichever of the two is newest.
+2. **The release the download came from.** Where the URL points at a release on
+   GitHub, GitLab, Codeberg, Gitea or Forgejo, the newest release of that
+   project decides. This is what covers archives and plain binaries, which have
+   nowhere to carry a feed.
 3. **Neither**, for a URL that is not a forge release and whose artifact
    declares nothing. There is no way to tell a new build from the installed one,
    so the package is left alone.

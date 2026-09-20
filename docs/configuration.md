@@ -221,6 +221,25 @@ to different endpoints, so a token is rarely needed. Set `GITLAB_TOKEN` or
 `GL_TOKEN` if you do meet one; the current figures are listed under
 [rate limits on GitLab.com](https://docs.gitlab.com/user/gitlab_com/#rate-limits-on-gitlabcom).
 
+**Codeberg** reads `CODEBERG_TOKEN`. What a self-hosted instance allows is up
+to whoever runs it.
+
+**Gitea and Forgejo** have no fixed host, so each instance names the variable
+holding its token, and a host that is not listed is never sent one:
+
+```toml
+[forge_tokens]
+"git.example.com" = "GITEA_TOKEN"
+"git.other.org:3000" = "OTHER_FORGE_TOKEN"
+```
+
+The key is the host the instance URL spells, including a port where it uses
+one, and the value is the name of the environment variable, not the token, so
+no secret is written to the file. Soar talks to an instance it was never told
+about, since a download URL can name one, but it does so without a credential.
+A token is also withheld from an `http://` instance, which would carry it in
+the clear.
+
 A token variable may be left unset, and one that is set but empty is ignored
 rather than sent, since sending an empty token earns a 401 on every request.
 

@@ -4,10 +4,27 @@
 //! section. Every form names a zsync control file, either directly or as an
 //! asset of a forge release, so resolving one always ends at a URL soar can
 //! fetch.
+//!
+//! The forms are the ones [appimageupdate] publishes:
+//!
+//! - `zsync|<url>`
+//! - `gh-releases-zsync|<owner>|<repo>|<tag>|<filename>`
+//! - `gl-releases-zsync|<owner>|<repo>|<tag>|<filename>`
+//! - `cb-releases-zsync|<owner>|<repo>|<tag>|<filename>`
+//! - `gitea-releases-zsync|<instance>|<owner>|<repo>|<tag>|<filename>`
+//! - `forgejo-releases-zsync|<instance>|<owner>|<repo>|<tag>|<filename>`
+//!
+//! [appimageupdate]: https://github.com/pkgforge-dev/appimageupdate
 
 use std::path::Path;
 
-use crate::{error::SoarError, package::release_source::ReleaseSource, SoarResult};
+use soar_dl::forge::Forge;
+
+use crate::{
+    error::SoarError,
+    package::release_source::{Prerelease, ReleaseSource},
+    SoarResult,
+};
 
 /// The section an AppImage records its update information in.
 const SECTION: &str = ".upd_info";
@@ -26,13 +43,6 @@ pub enum UpdateInfo {
         /// Glob matching the asset filename.
         filename: String,
     },
-}
-
-/// A forge that publishes releases soar can resolve an asset from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Forge {
-    GitHub,
-    GitLab,
 }
 
 impl UpdateInfo {
@@ -72,16 +82,24 @@ impl UpdateInfo {
                     }
                 })
             }
-            // Codeberg and Gitea are GitLab-shaped in the string but not in
-            // their API, so they are left unresolved rather than resolved
-            // against the wrong host.
-            "gh-releases-zsync" | "gl-releases-zsync" => {
-                let [owner, repo, tag, filename] = rest[..].try_into().ok()?;
-                let forge = if kind == "gh-releases-zsync" {
-                    Forge::GitHub
-                } else {
-                    Forge::GitLab
+            "gh-releases-zsync"
+            | "gl-releases-zsync"
+            | "cb-releases-zsync"
+            | "gitea-releases-zsync"
+            | "forgejo-releases-zsync" => {
+                let (forge, fields): (Forge, &[&str]) = match kind {
+                    "gh-releases-zsync" => (Forge::GitHub, &rest),
+                    "gl-releases-zsync" => (Forge::GitLab, &rest),
+                    "cb-releases-zsync" => (Forge::Codeberg, &rest),
+                    _ => {
+                        let (instance, fields) = rest.split_first()?;
+                        let forge = Forge::Gitea {
+                            instance: gitea_instance(instance)?,
+                        };
+                        (forge, fields)
+                    }
                 };
+                let [owner, repo, tag, filename] = fields.try_into().ok()?;
                 (!owner.is_empty() && !repo.is_empty() && !filename.is_empty()).then(|| {
                     Self::Forge {
                         forge,
@@ -110,34 +128,12 @@ impl UpdateInfo {
                 tag,
                 filename,
             } => {
-                // `latest-pre` is the only form that asks for a prerelease;
-                // any other tag is matched literally.
-                let include_prerelease = tag == "latest-pre";
-                let tag_pattern = match tag.as_str() {
-                    "latest" | "latest-pre" | "" => None,
-                    other => Some(other.to_string()),
+                let (prerelease, exact_tag) = release_selection(tag);
+                let source = ReleaseSource {
+                    prerelease,
+                    ..ReleaseSource::new(forge.clone(), repo, filename)
                 };
-                let source = match forge {
-                    Forge::GitHub => {
-                        ReleaseSource::GitHub {
-                            repo: repo.clone(),
-                            asset_pattern: filename.clone(),
-                            include_prerelease,
-                            tag_pattern,
-                            arch_map: None,
-                        }
-                    }
-                    Forge::GitLab => {
-                        ReleaseSource::GitLab {
-                            repo: repo.clone(),
-                            asset_pattern: filename.clone(),
-                            include_prerelease,
-                            tag_pattern,
-                            arch_map: None,
-                        }
-                    }
-                };
-                let release = source.resolve()?;
+                let release = source.resolve_version(exact_tag)?;
                 if release.download_url.is_empty() {
                     return Err(SoarError::Custom(format!(
                         "no zsync asset matching '{filename}' in {repo}"
@@ -146,6 +142,38 @@ impl UpdateInfo {
                 Ok(release.download_url)
             }
         }
+    }
+}
+
+/// Which release a feed's tag field asks for.
+///
+/// `latest` takes the newest stable release, `latest-pre` the newest
+/// prerelease and `latest-all` whichever of the two is newest. Any other tag
+/// names one release, and names it exactly: a tag is not a pattern, and one
+/// carrying `*` or `[` would otherwise select a different release.
+fn release_selection(tag: &str) -> (Prerelease, Option<&str>) {
+    match tag {
+        "latest" | "" => (Prerelease::Exclude, None),
+        "latest-pre" => (Prerelease::Only, None),
+        "latest-all" => (Prerelease::Include, None),
+        other => (Prerelease::Include, Some(other)),
+    }
+}
+
+/// The base URL of a Gitea or Forgejo instance, as a feed spells it.
+///
+/// The scheme is optional there, and https is the only one worth assuming for
+/// a host publishing releases.
+fn gitea_instance(raw: &str) -> Option<String> {
+    let instance = raw.trim().trim_end_matches('/');
+    if instance.is_empty() {
+        return None;
+    }
+    let lowered = instance.to_ascii_lowercase();
+    if lowered.starts_with("https://") || lowered.starts_with("http://") {
+        Some(instance.to_string())
+    } else {
+        Some(format!("https://{instance}"))
     }
 }
 
@@ -200,6 +228,24 @@ mod tests {
     }
 
     #[test]
+    fn the_tag_keywords_pick_which_releases_count() {
+        assert_eq!(release_selection("latest"), (Prerelease::Exclude, None));
+        assert_eq!(release_selection(""), (Prerelease::Exclude, None));
+        assert_eq!(release_selection("latest-pre"), (Prerelease::Only, None));
+        assert_eq!(release_selection("latest-all"), (Prerelease::Include, None));
+        // A named tag is taken as it is, prerelease or not, and is matched
+        // rather than globbed.
+        assert_eq!(
+            release_selection("v1.2.3"),
+            (Prerelease::Include, Some("v1.2.3"))
+        );
+        assert_eq!(
+            release_selection("v1.0[beta]"),
+            (Prerelease::Include, Some("v1.0[beta]"))
+        );
+    }
+
+    #[test]
     fn a_direct_feed_needs_no_network_to_resolve() {
         let info = UpdateInfo::parse("zsync|https://e.test/a.zsync").unwrap();
         assert_eq!(info.zsync_url().unwrap(), "https://e.test/a.zsync");
@@ -231,9 +277,66 @@ mod tests {
     }
 
     #[test]
+    fn parses_a_gitea_feed_naming_its_instance() {
+        assert_eq!(
+            UpdateInfo::parse(
+                "gitea-releases-zsync|git.example.com|owner|repo|latest|App*.AppImage.zsync"
+            ),
+            Some(UpdateInfo::Forge {
+                forge: Forge::Gitea {
+                    instance: "https://git.example.com".into()
+                },
+                repo: "owner/repo".into(),
+                tag: "latest".into(),
+                filename: "App*.AppImage.zsync".into(),
+            })
+        );
+
+        // Forgejo is the same API under another name, and an instance may
+        // spell out its scheme.
+        assert_eq!(
+            UpdateInfo::parse(
+                "forgejo-releases-zsync|http://git.example.com/|owner|repo|latest|App*.zsync"
+            ),
+            Some(UpdateInfo::Forge {
+                forge: Forge::Gitea {
+                    instance: "http://git.example.com".into()
+                },
+                repo: "owner/repo".into(),
+                tag: "latest".into(),
+                filename: "App*.zsync".into(),
+            })
+        );
+
+        // Without an instance there is nothing to ask.
+        assert_eq!(
+            UpdateInfo::parse("gitea-releases-zsync||owner|repo|latest|App*.zsync"),
+            None
+        );
+        // The project alone, in the shape the other forges use, is one field short.
+        assert_eq!(
+            UpdateInfo::parse("gitea-releases-zsync|owner|repo|latest|App*.zsync"),
+            None
+        );
+    }
+
+    #[test]
+    fn parses_a_codeberg_feed() {
+        assert_eq!(
+            UpdateInfo::parse("cb-releases-zsync|owner|repo|latest|App*.AppImage.zsync"),
+            Some(UpdateInfo::Forge {
+                forge: Forge::Codeberg,
+                repo: "owner/repo".into(),
+                tag: "latest".into(),
+                filename: "App*.AppImage.zsync".into(),
+            })
+        );
+    }
+
+    #[test]
     fn unknown_and_malformed_forms_are_not_a_feed() {
         // A form soar does not resolve, rather than one it resolves wrongly.
-        assert_eq!(UpdateInfo::parse("cb-releases-zsync|o|r|latest|f"), None);
+        assert_eq!(UpdateInfo::parse("gt-releases-zsync|o|r|latest|f"), None);
         assert_eq!(UpdateInfo::parse("gh-releases-zsync|o|r|latest"), None);
         assert_eq!(UpdateInfo::parse("zsync|"), None);
         assert_eq!(UpdateInfo::parse(""), None);

@@ -217,8 +217,8 @@ pub struct PackageOptions {
     /// Direct URL to download the package from (makes it a "local" package).
     pub url: Option<String>,
 
-    /// Expected BLAKE3 checksum (hex) of the downloaded artifact, for `url`/`github`/
-    /// `gitlab` packages. When set, soar verifies the download against it and refuses to
+    /// Expected BLAKE3 checksum (hex) of the downloaded artifact, for `url` and forge
+    /// packages. When set, soar verifies the download against it and refuses to
     /// install on mismatch.
     /// Without it, these user-declared sources install on implicit trust.
     /// Has no effect on registry packages, which already ship their own checksum.
@@ -232,11 +232,22 @@ pub struct PackageOptions {
     /// When set, soar fetches the latest release and downloads the matching asset.
     pub gitlab: Option<String>,
 
+    /// Codeberg repository in "owner/repo" format for installing from releases.
+    /// When set, soar fetches the latest release and downloads the matching asset.
+    pub codeberg: Option<String>,
+
+    /// Gitea or Forgejo repository, as the full repository URL
+    /// (e.g., "https://git.example.com/owner/repo"), since the instance is not
+    /// one soar knows by name. `forgejo` is accepted as the same key: the two
+    /// forges speak the same API.
+    #[serde(alias = "forgejo")]
+    pub gitea: Option<String>,
+
     /// Glob pattern to match release asset filename (e.g., "*linux*.AppImage").
-    /// Required when github/gitlab is set to select the correct asset.
+    /// Required when a forge source is set to select the correct asset.
     pub asset_pattern: Option<String>,
 
-    /// Whether to include pre-release versions when using github/gitlab sources.
+    /// Whether to include pre-release versions when using forge sources.
     #[serde(default)]
     pub include_prerelease: Option<bool>,
 
@@ -246,7 +257,7 @@ pub struct PackageOptions {
 
     /// Custom command to fetch version and download URL.
     /// Output format: line 1 = version, line 2 = download URL, line 3 = size in bytes (optional).
-    /// If not set and github/gitlab is used, version is fetched from releases API.
+    /// If not set and a forge source is used, version is fetched from releases API.
     pub version_command: Option<String>,
 
     /// Package type for URL installs (e.g., appimage, flatimage, archive).
@@ -344,6 +355,8 @@ pub struct ResolvedPackage {
     pub bsum: Option<String>,
     pub github: Option<String>,
     pub gitlab: Option<String>,
+    pub codeberg: Option<String>,
+    pub gitea: Option<String>,
     pub asset_pattern: Option<String>,
     pub include_prerelease: Option<bool>,
     pub tag_pattern: Option<String>,
@@ -392,6 +405,8 @@ impl PackageSpec {
                     bsum: None,
                     github: None,
                     gitlab: None,
+                    codeberg: None,
+                    gitea: None,
                     asset_pattern: None,
                     include_prerelease: None,
                     tag_pattern: None,
@@ -416,10 +431,13 @@ impl PackageSpec {
             PackageSpec::Detailed(opts) => {
                 // Treat "*" as None (latest version)
                 let version = opts.version.as_ref().filter(|v| v.as_str() != "*").cloned();
-                // URL/GitHub/GitLab packages: only pinned if explicitly set
+                // URL and forge packages: only pinned if explicitly set
                 // Other packages: pinned if explicitly set or if a specific version is requested
-                let is_remote =
-                    opts.url.is_some() || opts.github.is_some() || opts.gitlab.is_some();
+                let is_remote = opts.url.is_some()
+                    || opts.github.is_some()
+                    || opts.gitlab.is_some()
+                    || opts.codeberg.is_some()
+                    || opts.gitea.is_some();
                 let pinned = opts.pinned || (version.is_some() && !is_remote);
                 ResolvedPackage {
                     name: name.to_string(),
@@ -431,6 +449,8 @@ impl PackageSpec {
                     bsum: opts.bsum.clone(),
                     github: opts.github.clone(),
                     gitlab: opts.gitlab.clone(),
+                    codeberg: opts.codeberg.clone(),
+                    gitea: opts.gitea.clone(),
                     asset_pattern: opts.asset_pattern.clone(),
                     include_prerelease: opts.include_prerelease,
                     tag_pattern: opts.tag_pattern.clone(),
@@ -468,6 +488,17 @@ impl PackageSpec {
                 }
             }
         }
+    }
+}
+
+impl ResolvedPackage {
+    /// Whether this package installs from a forge release rather than a
+    /// registry or a fixed URL.
+    pub fn has_forge_source(&self) -> bool {
+        self.github.is_some()
+            || self.gitlab.is_some()
+            || self.codeberg.is_some()
+            || self.gitea.is_some()
     }
 }
 
@@ -668,6 +699,47 @@ pub fn generate_default_packages_config() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forgejo_declares_the_same_source_as_gitea() {
+        let config: PackagesConfig = toml::from_str(
+            r#"
+[packages.tool]
+forgejo = "https://git.example.com/owner/repo"
+asset_pattern = "*.AppImage"
+
+[packages.other]
+gitea = "https://git.example.com/owner/other"
+asset_pattern = "*.AppImage"
+
+[packages.cb]
+codeberg = "owner/repo"
+asset_pattern = "*.AppImage"
+"#,
+        )
+        .unwrap();
+
+        let resolved = config.resolved_packages();
+        let pkg = |name: &str| {
+            resolved
+                .iter()
+                .find(|pkg| pkg.name == name)
+                .unwrap_or_else(|| panic!("{name} missing"))
+        };
+        assert_eq!(
+            pkg("tool").gitea.as_deref(),
+            Some("https://git.example.com/owner/repo")
+        );
+        assert_eq!(
+            pkg("other").gitea.as_deref(),
+            Some("https://git.example.com/owner/other")
+        );
+        assert_eq!(pkg("cb").codeberg.as_deref(), Some("owner/repo"));
+        // A forge package takes the version its releases report, so it is not
+        // pinned by declaring one.
+        assert!(!pkg("tool").pinned);
+        assert!(resolved.iter().all(|pkg| pkg.has_forge_source()));
+    }
 
     #[test]
     fn a_package_is_system_wide_only_where_it_says_so() {

@@ -36,10 +36,7 @@ use crate::{
 /// the format reads as a pin. These sources have nothing to ask, so what was
 /// installed is written down instead.
 fn tracks_own_version(pkg: &ResolvedPackage) -> bool {
-    pkg.url.is_some()
-        || pkg.github.is_some()
-        || pkg.gitlab.is_some()
-        || pkg.version_command.is_some()
+    pkg.url.is_some() || pkg.has_forge_source() || pkg.version_command.is_some()
 }
 
 /// Status of a URL package compared against installed packages.
@@ -72,9 +69,9 @@ pub async fn compute_diff(
     for pkg in resolved {
         declared_keys.insert(declared_key(pkg));
 
-        let is_github_or_gitlab = pkg.github.is_some() || pkg.gitlab.is_some();
-        if is_github_or_gitlab || pkg.url.is_some() {
-            handle_local_package(pkg, is_github_or_gitlab, &diesel_db, &mut diff)?;
+        let has_forge_source = pkg.has_forge_source();
+        if has_forge_source || pkg.url.is_some() {
+            handle_local_package(pkg, has_forge_source, &diesel_db, &mut diff)?;
             continue;
         }
 
@@ -414,7 +411,7 @@ pub async fn execute_apply(
     })
 }
 
-/// Handle local (URL/github/gitlab) packages in apply diff.
+/// Handle local (URL and forge) packages in apply diff.
 /// What a declaration identifies: name, package id, family and repository.
 type DeclaredKeys = HashSet<(String, Option<String>, Option<String>, Option<String>)>;
 
@@ -438,7 +435,7 @@ fn declared_key(pkg: &ResolvedPackage) -> (String, Option<String>, Option<String
 
 fn handle_local_package(
     pkg: &ResolvedPackage,
-    is_github_or_gitlab: bool,
+    has_forge_source: bool,
     diesel_db: &DieselDatabase,
     diff: &mut ApplyDiff,
 ) -> SoarResult<()> {
@@ -542,8 +539,8 @@ fn handle_local_package(
         return Ok(());
     }
 
-    // Handle github/gitlab packages
-    if is_github_or_gitlab {
+    // Handle forge packages
+    if has_forge_source {
         if let Some(ref declared) = pkg.version {
             let normalized = declared.strip_prefix('v').unwrap_or(declared);
             if let Some(ref existing) = installed {
@@ -555,12 +552,10 @@ fn handle_local_package(
         }
 
         let source = match ReleaseSource::from_resolved(pkg) {
-            Some(s) => s,
-            None => {
-                diff.not_found.push(format!(
-                    "{} (missing asset_pattern for github/gitlab source)",
-                    pkg.name
-                ));
+            Ok(Some(source)) => source,
+            Ok(None) => return Ok(()),
+            Err(e) => {
+                diff.not_found.push(format!("{} ({})", pkg.name, e));
                 return Ok(());
             }
         };
