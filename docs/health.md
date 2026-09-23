@@ -109,6 +109,9 @@ This command displays:
 - `SOAR_PACKAGES`: packages directory path.
 - `SOAR_REPOSITORIES`: repository directory path.
 
+In system mode the same command reports the `SOAR_SYSTEM_`-prefixed names, which
+are the ones that mode reads.
+
 These environment variables can be set to override Soar's default paths and
 behavior. For example:
 

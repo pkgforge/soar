@@ -2,9 +2,11 @@ use std::path::PathBuf;
 
 use documented::{Documented, DocumentedFields};
 use serde::{Deserialize, Serialize};
-use soar_utils::path::resolve_path;
 
-use crate::error::Result;
+use crate::{
+    config::{path_env, resolve_mode_path},
+    error::Result,
+};
 
 /// A profile defines a local package store and its configuration.
 #[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
@@ -21,39 +23,45 @@ pub struct Profile {
 }
 
 impl Profile {
-    pub(crate) fn get_bin_path(&self) -> Result<PathBuf> {
-        Ok(self.get_root_path()?.join("bin"))
+    pub(crate) fn get_bin_path(&self, system_mode: bool) -> Result<PathBuf> {
+        Ok(self.get_root_path(system_mode)?.join("bin"))
     }
 
-    pub(crate) fn get_db_path(&self) -> Result<PathBuf> {
-        Ok(self.get_root_path()?.join("db"))
+    pub(crate) fn get_db_path(&self, system_mode: bool) -> Result<PathBuf> {
+        Ok(self.get_root_path(system_mode)?.join("db"))
     }
 
-    pub fn get_packages_path(&self) -> Result<PathBuf> {
+    /// Directory holding this profile's packages.
+    pub fn get_packages_path(&self, system_mode: bool) -> Result<PathBuf> {
         if let Some(ref packages_path) = self.packages_path {
-            Ok(resolve_path(packages_path)?)
+            Ok(resolve_mode_path(packages_path, system_mode)?)
         } else {
-            Ok(self.get_root_path()?.join("packages"))
+            Ok(self.get_root_path(system_mode)?.join("packages"))
         }
     }
 
-    pub fn get_cache_path(&self) -> Result<PathBuf> {
-        Ok(self.get_root_path()?.join("cache"))
+    /// Directory holding this profile's download cache.
+    pub fn get_cache_path(&self, system_mode: bool) -> Result<PathBuf> {
+        Ok(self.get_root_path(system_mode)?.join("cache"))
     }
 
-    pub(crate) fn get_repositories_path(&self) -> Result<PathBuf> {
-        Ok(self.get_root_path()?.join("repos"))
+    pub(crate) fn get_repositories_path(&self, system_mode: bool) -> Result<PathBuf> {
+        Ok(self.get_root_path(system_mode)?.join("repos"))
     }
 
-    pub(crate) fn get_portable_dirs(&self) -> Result<PathBuf> {
-        Ok(self.get_root_path()?.join("portable-dirs"))
+    pub(crate) fn get_portable_dirs(&self, system_mode: bool) -> Result<PathBuf> {
+        Ok(self.get_root_path(system_mode)?.join("portable-dirs"))
     }
 
-    pub fn get_root_path(&self) -> Result<PathBuf> {
-        if let Ok(env_path) = std::env::var("SOAR_ROOT") {
-            return Ok(resolve_path(&env_path)?);
+    /// Root of this profile's tree.
+    ///
+    /// The mode is a parameter rather than the global flag so a config built
+    /// for one mode never resolves through the other mode's variables.
+    pub fn get_root_path(&self, system_mode: bool) -> Result<PathBuf> {
+        if let Some(env_path) = path_env("ROOT", system_mode) {
+            return Ok(resolve_mode_path(&env_path, system_mode)?);
         }
-        Ok(resolve_path(&self.root_path)?)
+        Ok(resolve_mode_path(&self.root_path, system_mode)?)
     }
 }
 
@@ -80,7 +88,7 @@ mod tests {
             packages_path: Some("/custom/packages".to_string()),
         };
 
-        let path = profile.get_packages_path().unwrap();
+        let path = profile.get_packages_path(false).unwrap();
         assert!(path.ends_with("packages"));
     }
 
@@ -91,7 +99,7 @@ mod tests {
             packages_path: None,
         };
 
-        let path = profile.get_packages_path().unwrap();
+        let path = profile.get_packages_path(false).unwrap();
         assert!(path.ends_with("packages"));
     }
 
@@ -103,7 +111,7 @@ mod tests {
                 packages_path: None,
             };
 
-            let path = profile.get_root_path().unwrap();
+            let path = profile.get_root_path(false).unwrap();
             assert_eq!(path, PathBuf::from("/custom/root"));
         });
     }

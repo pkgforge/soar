@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     io::Read,
     os::unix::fs::PermissionsExt as _,
     process::Command,
@@ -21,8 +23,8 @@ use progress::{create_download_job, handle_download_progress, spawn_event_handle
 use remove::remove_packages;
 use run::run_package;
 use soar_config::config::{
-    self, enable_system_mode, generate_default_config, get_config, set_current_profile, Config,
-    CONFIG_PATH,
+    self, enable_system_mode, generate_default_config, get_config, path_env_var,
+    set_current_profile, Config, CONFIG_PATH, PATH_ENV_SUFFIXES,
 };
 use soar_core::{
     error::{ErrorContext, SoarError},
@@ -209,7 +211,27 @@ fn handle_system_mode(command: &cli::Commands) -> SoarResult<()> {
         escalation_cmd
     );
 
-    let status = Command::new(escalation_cmd)
+    // sudo and doas both reset the environment, so the system overrides are
+    // handed to the privileged process explicitly. Without this, a read-only
+    // `--system` command and a privileged one would resolve different trees.
+    let forwarded: Vec<OsString> = PATH_ENV_SUFFIXES
+        .iter()
+        .filter_map(|suffix| {
+            let var = path_env_var(suffix, true);
+            env::var_os(&var).map(|value| {
+                let mut assignment = OsString::from(format!("{var}="));
+                assignment.push(value);
+                assignment
+            })
+        })
+        .collect();
+
+    let mut command = Command::new(escalation_cmd);
+    if !forwarded.is_empty() {
+        command.arg("env").args(&forwarded);
+    }
+
+    let status = command
         .arg(&current_exe)
         .args(&args)
         .status()
@@ -534,13 +556,14 @@ async fn handle_cli() -> SoarResult<()> {
                     if utils::json_enabled() {
                         json_output::emit(&paths);
                     } else {
-                        info!("SOAR_CONFIG={}", paths.config);
-                        info!("SOAR_PACKAGES_CONFIG={}", paths.packages_config);
-                        info!("SOAR_BIN={}", paths.bin);
-                        info!("SOAR_DB={}", paths.db);
-                        info!("SOAR_CACHE={}", paths.cache);
-                        info!("SOAR_PACKAGES={}", paths.packages);
-                        info!("SOAR_REPOSITORIES={}", paths.repositories);
+                        let name = |suffix| path_env_var(suffix, config.is_system());
+                        info!("{}={}", name("CONFIG"), paths.config);
+                        info!("{}={}", name("PACKAGES_CONFIG"), paths.packages_config);
+                        info!("{}={}", name("BIN"), paths.bin);
+                        info!("{}={}", name("DB"), paths.db);
+                        info!("{}={}", name("CACHE"), paths.cache);
+                        info!("{}={}", name("PACKAGES"), paths.packages);
+                        info!("{}={}", name("REPOSITORIES"), paths.repositories);
                     }
                 }
                 #[cfg(feature = "self")]

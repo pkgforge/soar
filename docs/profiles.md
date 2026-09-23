@@ -19,7 +19,7 @@ root_path = "/path/to/profile/root"
 packages_path = "/path/to/packages"  # Optional
 ```
 
-- **`root_path`** (required): Root directory for the profile. Defaults to `~/.local/share/soar` or `$SOAR_ROOT/soar` if not in system mode.
+- **`root_path`** (required): Root directory for the profile. Defaults to `$XDG_DATA_HOME/soar`, or `/opt/soar` in system mode.
 - **`packages_path`** (optional): Custom location for package storage. If not set, defaults to `<root_path>/packages`.
 
 ### Path Resolution Priority
@@ -98,6 +98,10 @@ The `SOAR_ROOT` environment variable overrides the `root_path` setting for any p
 SOAR_ROOT=/tmp/test-soar soar install neovim
 ```
 
+In system mode the variable is `SOAR_SYSTEM_ROOT`. `SOAR_ROOT` is ignored there,
+including inside a config value such as `db_path = "$SOAR_ROOT/db"`, which a
+system config reads as `SOAR_SYSTEM_ROOT`.
+
 ### System Mode
 
 Use the `--system` flag (`-S`) to operate in system-wide mode. This changes the config location to `/etc/soar/config.toml` and typically requires root privileges:
@@ -163,4 +167,4 @@ Profiles provide simple, file-based environment isolation:
 - **Path Priority**: Environment variables > global config overrides > profile-computed paths
 - **Computed Paths**: bin, db, cache, repos, portable-dirs are automatically derived from `root_path` unless overridden
 - **System Mode**: Use `--system` flag for system-wide installations
-- **Environment Override**: `SOAR_ROOT` overrides profile `root_path` at runtime
+- **Environment Override**: `SOAR_ROOT` overrides profile `root_path` at runtime, and `SOAR_SYSTEM_ROOT` does the same in system mode

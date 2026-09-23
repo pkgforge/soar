@@ -63,13 +63,22 @@ pub fn is_safe_component(name: &str) -> bool {
 /// }
 /// ```
 pub fn resolve_path(path: &str) -> PathResult<PathBuf> {
+    resolve_path_with(path, |var| var.to_string())
+}
+
+/// Resolves a path, mapping every environment variable name through `rename`
+/// before it is looked up.
+///
+/// Callers that own a namespaced set of variables use this to redirect the
+/// references a path contains without rewriting the path itself.
+pub fn resolve_path_with(path: &str, rename: impl Fn(&str) -> String) -> PathResult<PathBuf> {
     let path = path.trim();
 
     if path.is_empty() {
         return Err(PathError::Empty);
     }
 
-    let resolved = expand_variables(path)?;
+    let resolved = expand_variables(path, &rename)?;
     let path_buf = PathBuf::from(resolved);
 
     if path_buf.is_absolute() {
@@ -179,7 +188,7 @@ pub fn icons_dir(system: bool) -> PathBuf {
     }
 }
 
-fn expand_variables(path: &str) -> PathResult<String> {
+fn expand_variables(path: &str, rename: &impl Fn(&str) -> String) -> PathResult<String> {
     let mut result = String::with_capacity(path.len());
     let mut chars = path.chars().peekable();
 
@@ -189,13 +198,13 @@ fn expand_variables(path: &str) -> PathResult<String> {
                 if chars.peek() == Some(&'{') {
                     chars.next();
                     let var_name = consume_until(&mut chars, '}')?;
-                    expand_env_var(&var_name, &mut result, path)?;
+                    expand_env_var(&var_name, &mut result, path, rename)?;
                 } else {
                     let var_name = consume_var_name(&mut chars);
                     if var_name.is_empty() {
                         result.push('$');
                     } else {
-                        expand_env_var(&var_name, &mut result, path)?;
+                        expand_env_var(&var_name, &mut result, path, rename)?;
                     }
                 }
             }
@@ -239,17 +248,23 @@ fn consume_var_name(chars: &mut std::iter::Peekable<std::str::Chars>) -> String 
     var_name
 }
 
-fn expand_env_var(var_name: &str, result: &mut String, original: &str) -> PathResult<()> {
-    match var_name {
+fn expand_env_var(
+    var_name: &str,
+    result: &mut String,
+    original: &str,
+    rename: &impl Fn(&str) -> String,
+) -> PathResult<()> {
+    let var_name = rename(var_name);
+    match var_name.as_str() {
         "HOME" => result.push_str(&home_dir().to_string_lossy()),
         "XDG_CONFIG_HOME" => result.push_str(&xdg_config_home().to_string_lossy()),
         "XDG_DATA_HOME" => result.push_str(&xdg_data_home().to_string_lossy()),
         "XDG_CACHE_HOME" => result.push_str(&xdg_cache_home().to_string_lossy()),
         _ => {
-            let value = env::var(var_name).map_err(|_| {
+            let value = env::var(&var_name).map_err(|_| {
                 PathError::MissingEnvVar {
                     input: original.into(),
-                    var: var_name.into(),
+                    var: var_name.clone(),
                 }
             })?;
             result.push_str(&value);
@@ -260,6 +275,10 @@ fn expand_env_var(var_name: &str, result: &mut String, original: &str) -> PathRe
 
 #[cfg(test)]
 mod tests {
+    fn no_rename(var: &str) -> String {
+        var.to_string()
+    }
+
     #[test]
     fn test_is_safe_component() {
         assert!(super::is_safe_component("clipcat"));
@@ -285,7 +304,7 @@ mod tests {
     fn test_expand_variables_simple() {
         env::set_var("TEST_VAR", "test_value");
 
-        let result = expand_variables("$TEST_VAR/path").unwrap();
+        let result = expand_variables("$TEST_VAR/path", &no_rename).unwrap();
         assert_eq!(result, "test_value/path");
 
         env::remove_var("TEST_VAR");
@@ -295,7 +314,7 @@ mod tests {
     fn test_expand_variables_braces() {
         env::set_var("TEST_VAR_BRACES", "test_value");
 
-        let result = expand_variables("${TEST_VAR_BRACES}/path").unwrap();
+        let result = expand_variables("${TEST_VAR_BRACES}/path", &no_rename).unwrap();
         assert_eq!(result, "test_value/path");
 
         env::remove_var("TEST_VAR_BRACES");
@@ -305,7 +324,7 @@ mod tests {
     fn test_expand_variables_missing_braces() {
         env::set_var("TEST_VAR_MISSING_BRACES", "test_value");
 
-        let result = expand_variables("${TEST_VAR_MISSING_BRACES");
+        let result = expand_variables("${TEST_VAR_MISSING_BRACES", &no_rename);
         assert!(result.is_err());
 
         env::remove_var("TEST_VAR_MISSING_BRACES");
@@ -313,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_expand_variables_missing_var() {
-        let result = expand_variables("$THIS_VAR_DOESNT_EXIST");
+        let result = expand_variables("$THIS_VAR_DOESNT_EXIST", &no_rename);
         assert!(result.is_err());
     }
 
@@ -361,6 +380,34 @@ mod tests {
         env::remove_var("XDG_DATA_HOME");
         env::remove_var("XDG_CACHE_HOME");
         env::remove_var("HOME");
+    }
+
+    #[test]
+    #[serial]
+    fn resolve_path_with_renames_the_variable_it_reads() {
+        env::set_var("SOAR_RENAMED_ROOT", "/srv/soar");
+        env::set_var("SOAR_ROOT", "/home/me");
+
+        let rename = |var: &str| format!("SOAR_RENAMED_{}", &var[5..]);
+
+        assert_eq!(
+            resolve_path_with("$SOAR_ROOT/db", rename).unwrap(),
+            PathBuf::from("/srv/soar/db")
+        );
+        assert_eq!(
+            resolve_path_with("${SOAR_ROOT}/db", rename).unwrap(),
+            PathBuf::from("/srv/soar/db")
+        );
+        assert_eq!(
+            resolve_path("$SOAR_ROOT/db").unwrap(),
+            PathBuf::from("/home/me/db")
+        );
+
+        let missing = resolve_path_with("$SOAR_ROOT/db", |_| "SOAR_ABSENT".to_string());
+        assert!(missing.is_err());
+
+        env::remove_var("SOAR_RENAMED_ROOT");
+        env::remove_var("SOAR_ROOT");
     }
 
     #[test]
@@ -421,29 +468,32 @@ mod tests {
         env::set_var("HOME", "/tmp/home");
 
         // Dollar at the end
-        assert_eq!(expand_variables("path/$").unwrap(), "path/$");
+        assert_eq!(expand_variables("path/$", &no_rename).unwrap(), "path/$");
 
         // Dollar with invalid char
         assert_eq!(
-            expand_variables("path/$!invalid").unwrap(),
+            expand_variables("path/$!invalid", &no_rename).unwrap(),
             "path/$!invalid"
         );
 
         // Multiple variables
         env::set_var("VAR1", "val1");
         env::set_var("VAR2", "val2");
-        assert_eq!(expand_variables("$VAR1/${VAR2}").unwrap(), "val1/val2");
+        assert_eq!(
+            expand_variables("$VAR1/${VAR2}", &no_rename).unwrap(),
+            "val1/val2"
+        );
         env::remove_var("VAR1");
         env::remove_var("VAR2");
 
         // Tilde expansion
         let home_str = home_dir().to_string_lossy().to_string();
         assert_eq!(
-            expand_variables("~/path").unwrap(),
+            expand_variables("~/path", &no_rename).unwrap(),
             format!("{}/path", home_str)
         );
-        assert_eq!(expand_variables("~").unwrap(), home_str);
-        assert_eq!(expand_variables("a/~/b").unwrap(), "a/~/b");
+        assert_eq!(expand_variables("~", &no_rename).unwrap(), home_str);
+        assert_eq!(expand_variables("a/~/b", &no_rename).unwrap(), "a/~/b");
         env::remove_var("HOME");
     }
 
@@ -474,19 +524,25 @@ mod tests {
         env::remove_var("XDG_CACHE_HOME");
 
         let mut result = String::new();
-        expand_env_var("HOME", &mut result, "$HOME").unwrap();
+        expand_env_var("HOME", &mut result, "$HOME", &no_rename).unwrap();
         assert_eq!(result, "/tmp/home");
 
         result.clear();
-        expand_env_var("XDG_CONFIG_HOME", &mut result, "$XDG_CONFIG_HOME").unwrap();
+        expand_env_var(
+            "XDG_CONFIG_HOME",
+            &mut result,
+            "$XDG_CONFIG_HOME",
+            &no_rename,
+        )
+        .unwrap();
         assert_eq!(result, "/tmp/home/.config");
 
         result.clear();
-        expand_env_var("XDG_DATA_HOME", &mut result, "$XDG_DATA_HOME").unwrap();
+        expand_env_var("XDG_DATA_HOME", &mut result, "$XDG_DATA_HOME", &no_rename).unwrap();
         assert_eq!(result, "/tmp/home/.local/share");
 
         result.clear();
-        expand_env_var("XDG_CACHE_HOME", &mut result, "$XDG_CACHE_HOME").unwrap();
+        expand_env_var("XDG_CACHE_HOME", &mut result, "$XDG_CACHE_HOME", &no_rename).unwrap();
         assert_eq!(result, "/tmp/home/.cache");
 
         env::remove_var("HOME");

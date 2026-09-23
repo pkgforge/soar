@@ -192,6 +192,12 @@ soar -c /path/to/config.toml [subcommand]
 Environment variables take precedence over configuration file settings and profile paths.
 :::
 
+::: warning
+System mode (`--system`) reads the `SOAR_SYSTEM_`-prefixed variant of each path
+variable, such as `SOAR_SYSTEM_ROOT` and `SOAR_SYSTEM_CONFIG`, and ignores the
+unprefixed ones. See the [CLI reference](./cli-reference.md#system-mode).
+:::
+
 ## Common Issues
 
 ### Invalid TOML Syntax
