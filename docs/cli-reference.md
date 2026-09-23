@@ -234,9 +234,22 @@ A `$SOAR_*` reference inside a system config file follows the same rule, so
 The `SOAR_SYSTEM_*` values are forwarded across the `sudo` or `doas` escalation,
 so a read-only `--system` command and a privileged one always resolve to the
 same tree. Forwarding makes the escalation `sudo env VAR=... soar ...`, which a
-sudoers rule that whitelists the `soar` binary by path will reject. Whitelist
-`/usr/bin/env` as well, or leave the `SOAR_SYSTEM_*` variables unset, in which
-case Soar invokes the binary directly as before.
+sudoers rule that whitelists the `soar` binary by path will reject.
+
+Do not whitelist `/usr/bin/env` to work around that. A sudoers rule permitting
+`env` grants arbitrary root, because `sudo env /bin/sh` then becomes a root
+shell. Use one of these instead:
+
+- Leave the `SOAR_SYSTEM_*` variables unset in the calling shell and put the
+  system paths in `/etc/soar/config.toml`. The config file needs no forwarding,
+  and with nothing to forward Soar invokes the binary directly.
+- Become root first, with `sudo -i` or equivalent, and run `soar --system` from
+  that shell. No escalation happens, so the root shell's own environment is
+  read directly.
+
+Sudoers environment settings such as `env_keep` do not help here. The wrapper is
+added whenever a `SOAR_SYSTEM_*` variable is set in the calling shell, before
+sudo is involved at all.
 
 ## See Also
 
