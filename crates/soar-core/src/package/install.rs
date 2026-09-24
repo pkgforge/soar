@@ -1005,7 +1005,7 @@ impl PackageInstaller {
                             DownloadError::HttpError {
                                 status: 429,
                                 ..
-                            } | DownloadError::Network(_)
+                            } | DownloadError::Network { .. }
                         ) {
                             warn!(
                                 retry = retries,

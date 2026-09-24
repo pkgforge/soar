@@ -12,7 +12,10 @@ use releasekit::{
     Forge as _, Release,
 };
 
-use crate::{error::DownloadError, http_client::SHARED_AGENT};
+use crate::{
+    error::{describe_request_error, DownloadError},
+    http_client::SHARED_AGENT,
+};
 
 const CODEBERG_URL: &str = "https://codeberg.org";
 
@@ -144,7 +147,7 @@ impl HttpClient for SoarClient {
                         url: url.to_string(),
                     }
                 }
-                other => releasekit::Error::Network(other.to_string()),
+                other => releasekit::Error::Network(describe_request_error(&other, url)),
             }
         })?;
 

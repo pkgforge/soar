@@ -733,7 +733,8 @@ impl OciDownload {
                 application/vnd.oci.image.index.v1+json",
             )
             .header(AUTHORIZATION, "Bearer QQ==")
-            .call()?;
+            .call()
+            .map_err(|err| DownloadError::network(&url, err))?;
 
         trace!(
             status = resp.status().as_u16(),
@@ -916,7 +917,9 @@ fn download_layer_impl(
         }
     }
 
-    let resp = req.call()?;
+    let resp = req
+        .call()
+        .map_err(|err| DownloadError::network(&url, err))?;
 
     if !resp.status().is_success() {
         debug!(

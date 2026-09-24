@@ -14,7 +14,10 @@ pub struct Http;
 impl Http {
     pub fn head(url: &str) -> Result<Response<Body>, DownloadError> {
         trace!(url = url, "sending HEAD request");
-        let result = SHARED_AGENT.head(url).call().map_err(DownloadError::from);
+        let result = SHARED_AGENT
+            .head(url)
+            .call()
+            .map_err(|err| DownloadError::network(url, err));
         if let Ok(ref resp) = result {
             trace!(status = resp.status().as_u16(), "HEAD response received");
             Self::log_response_headers(resp, "HEAD");
@@ -96,7 +99,7 @@ impl Http {
             }
         }
 
-        let result = req.call().map_err(DownloadError::from);
+        let result = req.call().map_err(|err| DownloadError::network(url, err));
         if let Ok(ref resp) = result {
             Self::log_response_headers(resp, "GET");
         }
@@ -123,7 +126,8 @@ impl Http {
         debug!(url = url, "fetching JSON");
         let result = SHARED_AGENT
             .get(url)
-            .call()?
+            .call()
+            .map_err(|err| DownloadError::network(url, err))?
             .body_mut()
             .read_json()
             .map_err(|_| DownloadError::InvalidResponse);

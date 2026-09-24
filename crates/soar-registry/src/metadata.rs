@@ -13,7 +13,7 @@ use std::{
 use minisign_verify::{PublicKey, Signature};
 use serde::Deserialize;
 use soar_config::repository::Repository;
-use soar_dl::http_client::SHARED_AGENT;
+use soar_dl::{error::describe_request_error, http_client::SHARED_AGENT};
 use soar_utils::path::resolve_path;
 use tracing::{debug, warn};
 use ureq::http::{
@@ -171,9 +171,9 @@ pub async fn fetch_metadata(
         req = req.header(IF_NONE_MATCH, etag);
     }
 
-    let resp = req
-        .call()
-        .map_err(|err| RegistryError::FailedToFetchRemote(err.to_string()))?;
+    let resp = req.call().map_err(|err| {
+        RegistryError::FailedToFetchRemote(describe_request_error(&err, &repo.url))
+    })?;
 
     if resp.status() == StatusCode::NOT_MODIFIED {
         return Ok(None);
@@ -359,7 +359,7 @@ fn fetch_signature_text(url: &str) -> std::result::Result<String, String> {
         .header(CACHE_CONTROL, "no-cache")
         .header(PRAGMA, "no-cache")
         .call()
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| describe_request_error(&err, url))?;
 
     if !resp.status().is_success() {
         return Err(format!("{} [{}]", url, resp.status()));

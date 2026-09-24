@@ -317,7 +317,7 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
                     DownloadError::HttpError {
                         status: 429,
                         ..
-                    } | DownloadError::Network(_)
+                    } | DownloadError::Network { .. }
                 ) && retries < max_retries =>
             {
                 retries += 1;

@@ -2,7 +2,7 @@ use std::{fmt::Display, fs, path::PathBuf};
 
 use soar_core::{
     database::{connection::DieselDatabase, models::Package},
-    error::ErrorContext,
+    error::{ErrorContext, SoarError},
     package::query::PackageQuery,
     SoarResult,
 };
@@ -10,7 +10,7 @@ use soar_db::repository::{
     core::{CoreRepository, SortDirection},
     metadata::MetadataRepository,
 };
-use soar_dl::http_client::SHARED_AGENT;
+use soar_dl::{error::describe_request_error, http_client::SHARED_AGENT};
 use soar_operations::search;
 use soar_utils::bytes::format_bytes;
 use tracing::{error, info};
@@ -189,7 +189,10 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
             None
         };
 
-        let resp = SHARED_AGENT.get(url).call()?;
+        let resp = SHARED_AGENT
+            .get(url)
+            .call()
+            .map_err(|err| SoarError::Custom(describe_request_error(&err, url)))?;
 
         if let Some(ref s) = spinner {
             s.finish_and_clear();

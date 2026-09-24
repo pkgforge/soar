@@ -15,12 +15,12 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::extract_error))]
     ExtractError(#[from] compak::error::ArchiveError),
 
-    #[error(transparent)]
+    #[error("{}", describe_request_error(err, url))]
     #[diagnostic(
         code(soar_dl::network),
         help("Check your internet connection or try again later")
     )]
-    Network(#[from] Box<ureq::Error>),
+    Network { url: String, err: Box<ureq::Error> },
 
     #[error("HTTP {status}: {url}")]
     #[diagnostic(code(soar_dl::http_error))]
@@ -89,25 +89,40 @@ pub enum DownloadError {
 
 pub type Result<T> = miette::Result<T>;
 
-impl From<ureq::Error> for DownloadError {
-    /// Converts a `ureq::Error` into a `DownloadError::Network` variant.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use soar_dl::error::DownloadError;
-    ///
-    /// // Given a `ureq::Error` `e`, convert it into a `DownloadError`
-    /// let e: ureq::Error = /* obtained from a ureq request */ unimplemented!();
-    /// let err: DownloadError = DownloadError::from(e);
-    /// match err {
-    ///     DownloadError::Network(_) => (),
-    ///     _ => panic!("expected DownloadError::Network"),
-    /// }
-    /// ```
-    fn from(e: ureq::Error) -> Self {
-        Self::Network(Box::new(e))
+impl DownloadError {
+    /// A request to `url` that failed before any response came back.
+    pub fn network(url: &str, err: ureq::Error) -> Self {
+        Self::Network {
+            url: url.to_string(),
+            err: Box::new(err),
+        }
     }
+}
+
+/// Describes a failed request, naming the host when the failure was a DNS
+/// lookup, since the host a request goes to is rarely the one users test by
+/// hand.
+pub fn describe_request_error(err: &ureq::Error, url: &str) -> String {
+    let reason = match err {
+        ureq::Error::HostNotFound => "no address found".to_string(),
+        ureq::Error::Io(e) => {
+            match e
+                .to_string()
+                .strip_prefix("failed to lookup address information: ")
+            {
+                Some(reason) => reason.to_string(),
+                None => return err.to_string(),
+            }
+        }
+        _ => return err.to_string(),
+    };
+
+    let host = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_else(|| url.to_string());
+
+    format!("could not resolve {host} ({reason}); check your DNS settings")
 }
 
 impl From<releasekit::Error> for DownloadError {
@@ -221,14 +236,22 @@ mod tests {
     }
 
     #[test]
-    fn test_from_ureq_error() {
-        let ureq_err = ureq::Error::ConnectionFailed;
-        let download_err: DownloadError = ureq_err.into();
-
-        match download_err {
-            DownloadError::Network(_) => (),
-            _ => panic!("Expected Network error variant"),
-        }
+    fn a_failed_lookup_names_the_host() {
+        let err = ureq::Error::Io(std::io::Error::other(
+            "failed to lookup address information: Try again",
+        ));
+        assert_eq!(
+            DownloadError::network("https://api.github.com/repos/o/r/releases", err).to_string(),
+            "could not resolve api.github.com (Try again); check your DNS settings"
+        );
+        assert_eq!(
+            describe_request_error(&ureq::Error::HostNotFound, "https://codeberg.org/api"),
+            "could not resolve codeberg.org (no address found); check your DNS settings"
+        );
+        assert_eq!(
+            describe_request_error(&ureq::Error::ConnectionFailed, "https://codeberg.org"),
+            "connection failed"
+        );
     }
 
     #[test]
