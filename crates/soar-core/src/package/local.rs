@@ -74,8 +74,12 @@ impl LocalPackage {
         let trimmed = input.trim();
         let candidate = trimmed.strip_prefix(LOCAL_SCHEME).unwrap_or(trimmed);
 
-        let path = resolve_path(candidate)
-            .map_err(|err| SoarError::Custom(format!("Invalid local path '{input}': {err}")))?;
+        // Collecting the components drops the `.` a relative input leaves
+        // behind, which would otherwise end up in every recorded path.
+        let path: PathBuf = resolve_path(candidate)
+            .map_err(|err| SoarError::Custom(format!("Invalid local path '{input}': {err}")))?
+            .components()
+            .collect();
 
         if !path.is_file() {
             return Err(SoarError::Custom(format!(

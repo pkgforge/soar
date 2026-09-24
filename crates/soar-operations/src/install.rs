@@ -112,6 +112,12 @@ pub async fn resolve_packages(
             continue;
         }
 
+        if options.integrate {
+            return Err(SoarError::Custom(format!(
+                "--integrate only works with local files, not '{package}'"
+            )));
+        }
+
         if UrlPackage::is_remote(package) {
             results.push(resolve_url_package(diesel_db, package, options)?);
             continue;
@@ -230,6 +236,7 @@ fn resolve_synthetic_target(
         existing_install,
         pinned: false,
         profile: None,
+        integrate: options.integrate,
         ..Default::default()
     }]))
 }

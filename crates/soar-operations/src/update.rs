@@ -386,6 +386,7 @@ fn check_local_update(
         entrypoint: resolved.entrypoint.clone(),
         binaries: resolved.binaries.clone(),
         zsync: None,
+        integrate: false,
         nested_extract: resolved.nested_extract.clone(),
         extract_root: resolved.extract_root.clone(),
         hooks: resolved.hooks.clone(),

@@ -309,6 +309,7 @@ pub async fn handle(ctx: &SoarContext, url: Option<String>, register_only: bool)
         false,
         false,
         false,
+        false,
         None,
         None,
         None,

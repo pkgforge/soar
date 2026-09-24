@@ -170,6 +170,22 @@ soar add https://example.com/app.AppImage \
   --portable-home ~/myapp
 ```
 
+### Local file
+
+You can install a file that is already on disk. Soar copies it into its packages directory. The path must look like a path, so a file in the current directory is written as `./file`.
+
+```sh
+soar add ./myapp-1.0.0-x86_64.AppImage
+```
+
+To leave the file where it is, pass `--integrate`. Soar links the file into the bin directory without copying it. For an AppImage or onelf binary, it also adds the desktop entry and icon the file ships. Any executable can be integrated, but archives are rejected, because they have to be extracted.
+
+```sh
+soar add ~/Applications/myapp.AppImage --integrate
+```
+
+An integrated file is listed and removed like any other package. `soar remove` takes away the links, desktop entry and icon, and leaves the file itself alone. `soar update` does not update it, because replacing the file is up to you. If you move or delete the file, the links stop working until you integrate it again.
+
 ## Installing Multiple Packages
 
 List several packages after the command to install them together.

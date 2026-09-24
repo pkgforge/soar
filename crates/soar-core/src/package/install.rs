@@ -451,6 +451,7 @@ pub struct PackageInstaller {
     sandbox: Option<SandboxConfig>,
     arch_map: Option<std::collections::HashMap<String, String>>,
     zsync: Option<ZsyncSeed>,
+    integrate: bool,
     events: EventSinkHandle,
     op_id: OperationId,
 }
@@ -488,6 +489,8 @@ pub struct InstallTarget {
     pub arch_map: Option<std::collections::HashMap<String, String>>,
     /// Set when the new artifact can be rebuilt from the installed one.
     pub zsync: Option<ZsyncSeed>,
+    /// Link a local file where it lies instead of copying it in.
+    pub integrate: bool,
 }
 
 impl PackageInstaller {
@@ -614,6 +617,7 @@ impl PackageInstaller {
             sandbox: target.sandbox.clone(),
             arch_map: target.arch_map.clone(),
             zsync: target.zsync.clone(),
+            integrate: target.integrate,
             events,
             op_id,
         })
@@ -937,6 +941,52 @@ impl PackageInstaller {
         Ok(dest.to_path_buf())
     }
 
+    /// Integrate a local file by linking to it where it lies, so the package
+    /// is only ever as current as that file.
+    fn link_local_source(&self, src: &Path, dest: &Path) -> SoarResult<PathBuf> {
+        if !src.is_file() {
+            return Err(SoarError::Custom(format!(
+                "Local source is not a file: {}",
+                src.display()
+            )));
+        }
+
+        if compak::detect_from_file(src).is_ok() {
+            return Err(SoarError::Custom(format!(
+                "Cannot integrate {}: an archive has to be extracted, so install it instead",
+                src.display()
+            )));
+        }
+
+        self.verify_pinned_checksum(src, &src.display().to_string())?;
+
+        if is_elf(src) {
+            let mode = fs::metadata(src)
+                .with_context(|| format!("reading metadata of {}", src.display()))?
+                .permissions()
+                .mode();
+            if mode & 0o111 != 0o111 {
+                fs::set_permissions(src, std::fs::Permissions::from_mode(mode | 0o111))
+                    .with_context(|| format!("setting permissions on {}", src.display()))?;
+            }
+        }
+
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("creating directory {}", parent.display()))?;
+        }
+
+        // A link left by an interrupted attempt would make the new one fail.
+        if dest.symlink_metadata().is_ok() {
+            fs::remove_file(dest).with_context(|| format!("removing {}", dest.display()))?;
+        }
+
+        std::os::unix::fs::symlink(src, dest)
+            .with_context(|| format!("linking {} to {}", dest.display(), src.display()))?;
+
+        Ok(dest.to_path_buf())
+    }
+
     pub async fn download_package(&self) -> SoarResult<Option<String>> {
         debug!(
             pkg_name = self.package.pkg_name,
@@ -1057,8 +1107,13 @@ impl PackageInstaller {
                 self.verify_pinned_checksum(output_path, &seed.url)?;
                 output_path.to_path_buf()
             } else if let Some(local_src) = local_path_from_url(url) {
-                trace!(source = %local_src.display(), "installing from local file");
-                self.copy_local_source(local_src, output_path, should_extract, &extract_dir)?
+                if self.integrate {
+                    trace!(source = %local_src.display(), "integrating local file in place");
+                    self.link_local_source(local_src, output_path)?
+                } else {
+                    trace!(source = %local_src.display(), "installing from local file");
+                    self.copy_local_source(local_src, output_path, should_extract, &extract_dir)?
+                }
             } else {
                 trace!(url = url.as_str(), "using direct download");
                 let mut dl = Download::new(url.as_str())
@@ -1352,8 +1407,13 @@ impl PackageInstaller {
         // package is found again through the index. The update feed lives in
         // the artifact, which is in place by the time this runs.
         if repo_name == "local" {
-            let artifact = self.install_dir.join(pkg_name);
-            let update_info = UpdateInfo::raw_from_artifact(&artifact);
+            // An integrated file is the user's to replace, so it is given no
+            // feed that would have soar install a copy over it.
+            let update_info = if self.integrate {
+                None
+            } else {
+                UpdateInfo::raw_from_artifact(self.install_dir.join(pkg_name))
+            };
             self.db.with_conn(|conn| {
                 CoreRepository::set_install_source(
                     conn,

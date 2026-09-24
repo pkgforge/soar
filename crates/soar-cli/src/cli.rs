@@ -222,6 +222,13 @@ pub enum Commands {
         #[arg(required = false, long)]
         binary_only: bool,
 
+        /// Integrate local files where they are instead of copying them
+        ///
+        /// The file is linked into soar's bin dir, desktop entries and icons.
+        /// Removing the package leaves the file itself alone.
+        #[arg(required = false, long)]
+        integrate: bool,
+
         /// Ask for confirmation before installation
         #[arg(required = false, long, short)]
         ask: bool,

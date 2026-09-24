@@ -17,6 +17,8 @@ pub struct InstallOptions {
     pub portable_share: Option<String>,
     pub portable_cache: Option<String>,
     pub binary_only: bool,
+    /// Link local files where they lie instead of copying them.
+    pub integrate: bool,
     pub no_verify: bool,
     pub name_override: Option<String>,
     pub version_override: Option<String>,
