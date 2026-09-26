@@ -1,4 +1,11 @@
 
+## [0.7.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.6.0...soar-operations-v0.7.0) - 2026-09-26
+
+### ⛰️  Features
+
+- *(install)* Integrate local files in place with --integrate - ([8f14c0b](https://github.com/pkgforge/soar/commit/8f14c0b09526a53ee8fde549809adc986922ec85))
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
 ## [0.6.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.5.1...soar-operations-v0.6.0) - 2026-09-05
 
 ### 🐛 Bug Fixes

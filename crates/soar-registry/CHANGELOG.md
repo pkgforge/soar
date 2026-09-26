@@ -1,4 +1,14 @@
 
+## [0.6.5](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.4...soar-registry-v0.6.5) - 2026-09-26
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- Name the host when a request lookup fails - ([eb6e0ab](https://github.com/pkgforge/soar/commit/eb6e0ab9b20e9837b03a1156092894d07602418a))
+
 ## [0.6.4](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.3...soar-registry-v0.6.4) - 2026-09-05
 
 ### ⚙️ Miscellaneous Tasks
