@@ -1,4 +1,16 @@
 
+## [0.13.5](https://github.com/pkgforge/soar/compare/v0.13.4...v0.13.5) - 2026-09-26
+
+### ⛰️  Features
+
+- *(install)* Integrate local files in place with --integrate - ([8f14c0b](https://github.com/pkgforge/soar/commit/8f14c0b09526a53ee8fde549809adc986922ec85))
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(config)* Isolate system-mode paths behind SOAR_SYSTEM_* ([#212](https://github.com/pkgforge/soar/pull/212)) - ([d079157](https://github.com/pkgforge/soar/commit/d079157517c4dd0418a62e103d721067e8447743))
+- Name the host when a request lookup fails - ([eb6e0ab](https://github.com/pkgforge/soar/commit/eb6e0ab9b20e9837b03a1156092894d07602418a))
+
 ## [0.13.4](https://github.com/pkgforge/soar/compare/v0.13.3...v0.13.4) - 2026-09-05
 
 ### ⛰️  Features

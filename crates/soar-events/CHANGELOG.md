@@ -1,4 +1,10 @@
 
+## [0.3.2](https://github.com/pkgforge/soar/compare/soar-events-v0.3.1...soar-events-v0.3.2) - 2026-09-26
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
 ## [0.3.1](https://github.com/pkgforge/soar/compare/soar-events-v0.3.0...soar-events-v0.3.1) - 2026-08-31
 
 ### ⛰️  Features

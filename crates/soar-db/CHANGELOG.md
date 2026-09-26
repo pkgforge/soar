@@ -1,4 +1,10 @@
 
+## [0.7.3](https://github.com/pkgforge/soar/compare/soar-db-v0.7.2...soar-db-v0.7.3) - 2026-09-26
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
 ## [0.7.2](https://github.com/pkgforge/soar/compare/soar-db-v0.7.1...soar-db-v0.7.2) - 2026-09-05
 
 ### ⚙️ Miscellaneous Tasks
