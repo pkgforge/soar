@@ -46,11 +46,13 @@ pub fn run_hook(
             .envs(env_vars);
 
         if let Some(s) = sandbox_config {
-            let config = sandbox::SandboxConfig::new().with_network(if s.allows_network() {
-                sandbox::NetworkConfig::allow_all()
-            } else {
-                sandbox::NetworkConfig::default()
-            });
+            let config = sandbox::SandboxConfig::new()
+                .with_network(if s.allows_network() {
+                    sandbox::NetworkConfig::allow_all()
+                } else {
+                    sandbox::NetworkConfig::default()
+                })
+                .require(s.is_required());
             cmd = cmd.config(config);
             for path in &s.fs_read {
                 cmd = cmd.read_path(path);

@@ -246,6 +246,32 @@ pub struct RemotePackage {
     pub files: Option<Vec<RemoteFile>>,
 }
 
+/// One file the package installs, as published in the index.
+///
+/// `to` is a path inside the package directory, so the directory it lands in
+/// says what it is: `bin/` is a command, `share/man/` a manual page. An empty
+/// `source` means the artifact is itself the file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemoteFile {
+    #[serde(default)]
+    pub source: String,
+    pub to: String,
+    /// Extra paths, relative to the package directory, resolving to this file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alias: Vec<String>,
+}
+
+/// A pinned side file as published in the index.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemoteExtra {
+    pub url: String,
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blake3: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,30 +320,4 @@ mod tests {
         let pkg: RemotePackage = serde_json::from_str(json).unwrap();
         assert_eq!(pkg.disabled, Some(true));
     }
-}
-
-/// One file the package installs, as published in the index.
-///
-/// `to` is a path inside the package directory, so the directory it lands in
-/// says what it is: `bin/` is a command, `share/man/` a manual page. An empty
-/// `source` means the artifact is itself the file.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RemoteFile {
-    #[serde(default)]
-    pub source: String,
-    pub to: String,
-    /// Extra paths, relative to the package directory, resolving to this file.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub alias: Vec<String>,
-}
-
-/// A pinned side file as published in the index.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RemoteExtra {
-    pub url: String,
-    pub to: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blake3: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sha256: Option<String>,
 }

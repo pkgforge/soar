@@ -79,6 +79,14 @@ impl TryFrom<&str> for PackageQuery {
     }
 }
 
+impl std::str::FromStr for PackageQuery {
+    type Err = SoarError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::try_from(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::PackageQuery;
