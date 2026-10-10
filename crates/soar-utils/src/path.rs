@@ -111,7 +111,6 @@ pub fn resolve_path_with(path: &str, rename: impl Fn(&str) -> String) -> PathRes
 /// ```
 pub fn home_dir() -> PathBuf {
     env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| {
-        // No name anywhere: fall back to the uid itself rather than panic.
         let user = get_username().unwrap_or_else(|| Uid::current().to_string());
         PathBuf::from(format!("/home/{user}"))
     })

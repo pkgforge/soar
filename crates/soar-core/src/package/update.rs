@@ -14,18 +14,14 @@ use crate::{
     SoarResult,
 };
 
-/// What `partition_old_versions` decides: `(clear, keep)`, where `clear`
-/// pairs each record id with its directory and `keep` holds the refused paths
-/// for the warning.
+/// What `partition_old_versions` decides: `(clear, keep)`.
 type PartitionedRows = (Vec<(i32, PathBuf)>, Vec<String>);
 
 /// Splits old-version rows into records to clear and paths to keep.
 ///
-/// Pure so the policy is testable without a database: `packages_root` maps a
-/// row's profile to its packages directory. A missing directory needs no
-/// filesystem work but its record still goes; a row outside its own tree is
-/// kept with its record. A resolver failure aborts the whole cleanup rather
-/// than guessing roots.
+/// Pure so the policy is testable without a database. A missing directory
+/// needs no filesystem work but its record still goes; a row outside its
+/// own tree is kept with its record.
 fn partition_old_versions(
     rows: &[(i32, String, String)],
     packages_root: &dyn Fn(&str) -> SoarResult<PathBuf>,
@@ -54,9 +50,8 @@ fn partition_old_versions(
 /// that are older than the current version and removes them from disk and database.
 /// If `force` is true, removes pinned packages too. Otherwise only unpinned packages.
 ///
-/// A row pointing outside its own tree is never chmodded, never deleted, and
-/// keeps its record: it is skipped with a warning on every run until somebody
-/// looks at it.
+/// A row pointing outside its own tree keeps its record and is skipped
+/// with a warning.
 pub fn remove_old_versions(
     package: &Package,
     db: &DieselDatabase,
@@ -92,8 +87,7 @@ pub fn remove_old_versions(
         );
     }
 
-    // Rows cleared from disk, in order. A filesystem failure still aborts
-    // before any record is deleted, the way it always has.
+    // A filesystem failure aborts before any record is deleted.
     let mut cleared = Vec::new();
     for (id, installed_path) in &clear {
         if installed_path.exists() {
@@ -181,7 +175,7 @@ mod tests {
         let root2 = tmp.path().join("root2");
         fs::create_dir_all(&root1).unwrap();
         fs::create_dir_all(&root2).unwrap();
-        // Inside root1 but outside root2: the row's own profile decides.
+        // Inside root1 but outside root2.
         let dir = root1.join("foo-1.0-abc");
         fs::create_dir_all(&dir).unwrap();
         let path = dir.to_string_lossy().into_owned();
@@ -202,8 +196,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let dir = tmp.path().join("foo-1.0-abc");
         fs::create_dir_all(&dir).unwrap();
-        // Existing, so the resolver runs: an unknown profile must fail the
-        // whole cleanup rather than clear against a guessed root.
+        // Existing, so the resolver runs.
         let rows = vec![(1, dir.to_string_lossy().into_owned(), "nope".to_string())];
         let root = std::path::PathBuf::from("/tmp/root");
         assert!(partition_old_versions(&rows, &roots(&root, &root)).is_err());

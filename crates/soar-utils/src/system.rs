@@ -31,18 +31,17 @@ impl UsernameSource for SystemSource {
 
 fn get_username_with<S: UsernameSource>(src: &S) -> Option<String> {
     // The uid answers for the process; the environment answers for whoever
-    // set it. Trust the former first: `USER` is trivially spoofed and feeds
-    // the home-directory fallback in `path`.
+    // set it. Empty values select nothing.
+    let non_empty = |key: &str| src.env_var(key).filter(|s| !s.is_empty());
     src.uid_name()
-        .or_else(|| src.env_var("USER"))
-        .or_else(|| src.env_var("LOGNAME"))
+        .filter(|s| !s.is_empty())
+        .or_else(|| non_empty("USER"))
+        .or_else(|| non_empty("LOGNAME"))
 }
 
 /// Returns the username of the current user, if it can be determined.
 ///
-/// This function prefers the name the effective uid resolves to over the
-/// `USER` and `LOGNAME` environment variables, which anyone can set. Returns
-/// `None` when every source comes up empty instead of panicking.
+/// Prefers the effective uid over `USER`/`LOGNAME`, which anyone can set.
 pub fn get_username() -> Option<String> {
     get_username_with(&SystemSource)
 }
@@ -84,9 +83,29 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_env_falls_through_to_logname() {
+        struct EmptyUser;
+        impl UsernameSource for EmptyUser {
+            fn env_var(&self, key: &str) -> Option<String> {
+                match key {
+                    "USER" => Some(String::new()),
+                    "LOGNAME" => Some("logger".to_string()),
+                    _ => None,
+                }
+            }
+
+            fn uid_name(&self) -> Option<String> {
+                None
+            }
+        }
+        assert_eq!(get_username_with(&EmptyUser), Some("logger".to_string()));
+    }
+
+    #[test]
     fn test_get_username() {
-        let username = get_username();
-        assert!(username.is_some_and(|u| !u.is_empty()));
+        // Uids without a name and no environment exist, for example in
+        // minimal containers, so only a present name is asserted on.
+        assert!(get_username().is_none_or(|u| !u.is_empty()));
     }
 
     #[test]
@@ -109,7 +128,6 @@ mod tests {
         env::remove_var("USER");
         env::remove_var("LOGNAME");
 
-        let username = get_username();
-        assert!(username.is_some_and(|u| !u.is_empty()));
+        assert!(get_username().is_none_or(|u| !u.is_empty()));
     }
 }

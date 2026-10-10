@@ -8,10 +8,8 @@ use crate::error::{HashError, HashResult};
 /// hex-encoded string. The specific hashing algorithm depends on the implementation. The
 /// default implementation uses the `blake3` crate.
 ///
-/// Reads stream through a buffered reader rather than memory-mapping: a map
-/// faults pages on the calling thread, which stalls an async executor, and a
-/// file truncated under the map ends the process with `SIGBUS` instead of an
-/// error.
+/// Streams through a buffered reader rather than memory-mapping, which
+/// stalls async executors and turns truncation into `SIGBUS`.
 ///
 /// # Arguments
 ///

@@ -51,10 +51,8 @@ pub fn get_package_hooks(pkg_name: &str) -> (Option<PackageHooks>, Option<Sandbo
 
 /// Whether soar may replace whatever stands at `link` in a bin directory.
 ///
-/// Only a link soar owns, one pointing into its own packages tree, or a
-/// dangling link answering to nothing. A real file or a foreign link belongs
-/// to someone else: a distro package, another manager, or the user's own
-/// hand, and replacing it would silently delete their command.
+/// Only a link soar owns, pointing into its own packages tree, or a
+/// dangling link. Anything else belongs to someone else and is left alone.
 ///
 /// The target comparison is lexical and component-wise, the same rule
 /// `link_shared_files` uses.
@@ -204,8 +202,7 @@ pub async fn mangle_package_symlinks(
     files: Option<&[PackageFile]>,
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
     let mut symlinks = Vec::new();
-    // Everything linked below points into this tree, so its parent is what
-    // ownership is measured against.
+    // Bin links point into this tree, so its parent measures ownership.
     let packages_root = install_dir.parent().unwrap_or(install_dir);
 
     // A package laid out by its file list has already said what its commands
@@ -243,9 +240,8 @@ pub async fn mangle_package_symlinks(
                 let Some(name) = path.strip_prefix("bin/") else {
                     continue;
                 };
-                // The file list comes from package metadata. A bare
-                // slash check is not enough: `bin/..` holds no slash but
-                // still escapes the bin directory.
+                // `bin/..` holds no slash but still escapes the bin
+                // directory, so a slash check is not enough.
                 if !is_safe_component(name) {
                     warn!(entry = name, "skipping file list entry with unsafe name");
                     continue;
@@ -354,9 +350,8 @@ pub async fn mangle_package_symlinks(
                             .and_then(|n| n.to_str())
                             .unwrap_or(&mapping.source)
                     });
-                    // `link_as` and the `source` fallback both come from
-                    // package metadata. Without this gate either one escapes
-                    // the bin directory and deletes what it lands on first.
+                    // `link_as` comes from package metadata; ungated it
+                    // escapes the bin directory.
                     if !is_safe_component(link_name) {
                         warn!(
                             link_as = link_name,
@@ -420,8 +415,7 @@ pub async fn mangle_package_symlinks(
         {
             set_executable(&executable, install_dir)?;
 
-            // The install flow refuses unsafe names earlier; this holds the
-            // line for direct callers, since the join below deletes first.
+            // Upstream refuses these too; this holds for direct callers.
             if !is_safe_component(pkg_name) {
                 return Err(SoarError::Custom(format!(
                     "Refusing to link binary: package name is not a valid path component: {pkg_name}"
@@ -458,13 +452,10 @@ pub async fn mangle_package_symlinks(
 
 /// Adds the executable bits to `path`, which must live under `dir`.
 ///
-/// `path` itself may be a symlink: recipe aliases are relative links beside
-/// their target, and an integrated file is the user's own link into their
-/// tree. Then the whole chain has to resolve inside `dir` for the chmod to
-/// happen, since following an archive-shipped link would chmod whatever it
-/// points at. An outside target is linked as-is with a warning instead, so
-/// its owner decides its mode. Anything else that is not a regular file is
-/// refused.
+/// `path` may itself be a symlink: recipe aliases are relative links, and
+/// an integrated file is the user's own. The chain must resolve inside
+/// `dir` for the chmod to happen; an outside target is linked as-is with a
+/// warning, and anything else non-regular is refused.
 fn set_executable(path: &Path, dir: &Path) -> SoarResult<()> {
     let meta = fs::symlink_metadata(path)
         .with_context(|| format!("reading metadata for {}", path.display()))?;
@@ -482,8 +473,7 @@ fn set_executable(path: &Path, dir: &Path) -> SoarResult<()> {
             .canonicalize()
             .with_context(|| format!("resolving {}", dir.display()))?;
         if !resolved.starts_with(&root) {
-            // The target keeps its mode: only its owner decides it. The
-            // caller links it as-is.
+            // The target keeps its mode; the caller links it as-is.
             warn!(
                 path = %path.display(),
                 "leaving mode alone outside the package tree; make it executable yourself"
@@ -948,7 +938,6 @@ mod tests {
         assert!(victim.symlink_metadata().unwrap().file_type().is_file());
     }
 
-    /// A user's own binary under a colliding provide name is left alone.
     #[test]
     fn leaves_a_foreign_file_for_provide_names() {
         let (_root, install, bin) = setup();
@@ -963,7 +952,6 @@ mod tests {
         assert_eq!(fs::read(&keep).unwrap(), b"mine");
     }
 
-    /// A stale link from an older version of the same package is soar's own.
     #[test]
     fn replaces_an_owned_provide_symlink() {
         use std::os::unix::fs::symlink;
@@ -979,7 +967,6 @@ mod tests {
         assert_eq!(fs::read_link(bin.join("clipcat")).unwrap(), target);
     }
 
-    /// A user's own binary under a colliding mapped name is left alone.
     #[tokio::test]
     async fn a_foreign_file_in_bin_dir_survives_mangling() {
         let (_root, install, bin) = setup();
@@ -1009,7 +996,6 @@ mod tests {
         assert_eq!(fs::read(&keep).unwrap(), b"mine");
     }
 
-    /// A link pointing outside soar's tree belongs to someone else.
     #[tokio::test]
     async fn a_foreign_symlink_in_bin_dir_survives_mangling() {
         use std::os::unix::fs::symlink;
@@ -1042,7 +1028,6 @@ mod tests {
         assert_eq!(fs::read_link(bin.join("tool")).unwrap(), foreign_target);
     }
 
-    /// A stale link from an older version of the same package is replaced.
     #[tokio::test]
     async fn an_owned_link_is_replaced() {
         use std::os::unix::fs::symlink;
@@ -1073,7 +1058,6 @@ mod tests {
         assert_eq!(fs::read_link(bin.join("tool")).unwrap(), source);
     }
 
-    /// A link answering to nothing harms no one by being claimed.
     #[tokio::test]
     async fn a_dangling_link_is_claimed() {
         use std::os::unix::fs::symlink;
@@ -1104,9 +1088,6 @@ mod tests {
         assert_eq!(fs::read_link(bin.join("tool")).unwrap(), source);
     }
 
-    /// A symlink standing where a command is linked must not lend its target
-    /// a chmod. The link is created as-is with a warning; the victim keeps
-    /// its mode, so a non-executable target stays non-executable.
     #[tokio::test]
     async fn a_symlinked_source_is_never_chmodded_through() {
         use std::os::unix::fs::{symlink, PermissionsExt};
@@ -1146,8 +1127,6 @@ mod tests {
         );
     }
 
-    /// Recipe aliases are relative links beside their target. They resolve
-    /// inside the tree, so they keep working after the hardening above.
     #[tokio::test]
     async fn an_alias_beside_its_target_still_links() {
         use std::os::unix::fs::symlink;
@@ -1183,8 +1162,7 @@ mod tests {
         );
     }
 
-    /// `bin/..` holds no slash but still escapes the bin directory. The file
-    /// list comes from package metadata, so the gate has to see through it.
+    /// `bin/..` slips past a slash check; the gate must see through it.
     #[tokio::test]
     async fn a_dotdot_file_list_entry_never_leaves_the_bin_dir() {
         let (root, install, bin) = setup();
@@ -1217,8 +1195,7 @@ mod tests {
         );
     }
 
-    /// `link_as` is a free-form string from package metadata. Joined onto the
-    /// bin directory unchecked, it deletes and then claims any path.
+    /// `link_as` is free-form metadata; unchecked it escapes the bin dir.
     #[tokio::test]
     async fn an_unsafe_link_as_never_leaves_the_bin_dir() {
         let (root, install, bin) = setup();
@@ -1251,8 +1228,7 @@ mod tests {
         );
     }
 
-    /// The last-resort link is named after the package, and the join below
-    /// deletes first. An unsafe name is refused instead of followed.
+    /// The fallback link deletes first, so an unsafe name is refused here.
     #[tokio::test]
     async fn an_unsafe_package_name_refuses_the_fallback_link() {
         let (_root, install, bin) = setup();

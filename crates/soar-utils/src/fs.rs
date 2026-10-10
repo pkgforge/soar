@@ -1,8 +1,20 @@
 use std::{
+    ffi::{OsStr, OsString},
     fs::{self, File},
     io::{BufReader, Read},
-    os,
+    os::{
+        self,
+        fd::{AsFd, OwnedFd},
+        unix::ffi::OsStrExt,
+    },
     path::Path,
+};
+
+use nix::{
+    dir::Dir,
+    errno::Errno,
+    fcntl::{openat, OFlag},
+    sys::stat::{fstat, Mode, SFlag},
 };
 
 use crate::error::{FileSystemError, FileSystemResult, IoOperation, IoResultExt};
@@ -127,16 +139,14 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
     let source = source.as_ref();
     let target = target.as_ref();
 
-    // A target without a parent lives in the current directory: nothing to
-    // create, and `ensure_dir_exists("")` would only fail confusingly.
+    // A parentless target lives in the current directory: nothing to
+    // create.
     if let Some(parent) = target.parent().filter(|p| !p.as_os_str().is_empty()) {
         ensure_dir_exists(parent)?;
     }
 
-    // Only a link is ever cleared here. Anything else standing where the link
-    // goes is refused by symlink() below with EEXIST: only the caller knows
-    // whether skipping is acceptable, and removing a stranger's file is never
-    // the default. Lstat, so a link to a directory is still just a link.
+    // Only a link is ever cleared; anything else is refused by symlink()
+    // with EEXIST for the caller to decide on.
     if fs::symlink_metadata(target).is_ok_and(|m| m.file_type().is_symlink()) {
         fs::remove_file(target).with_path(target, IoOperation::RemoveFile)?;
     }
@@ -151,10 +161,12 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
 
 /// Walks a directory recursively and calls the provided function on each file or directory.
 ///
-/// Symlinked directories are reported to `action` as links and never
-/// descended into, so a looped tree always terminates. Entries that vanish
-/// or become unreadable mid-walk are skipped silently: the caller asked what
-/// is there, not for an audit, and a raced entry is not an error.
+/// Traversal is bound to open descriptors, not pathnames: entries are
+/// classified and descended through `O_NOFOLLOW` opens, so a swap for a
+/// link fails the open instead of redirecting the walk.
+///
+/// Links are reported, never descended into. Vanished entries skip; an
+/// unreadable subdirectory fails, keeping the old contract.
 ///
 /// # Arguments
 ///
@@ -190,37 +202,95 @@ where
 {
     let dir = dir.as_ref();
 
-    if !dir.is_dir() {
-        return Err(FileSystemError::NotADirectory {
-            path: dir.to_path_buf(),
+    // Open without following: a symlinked root is refused rather than walked.
+    let mut root = Dir::open(
+        dir,
+        OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|err| {
+        let source = std::io::Error::from(err);
+        if dir.is_dir() {
+            FileSystemError::ReadDirectory {
+                path: dir.to_path_buf(),
+                source,
+            }
+            .into()
+        } else {
+            FileSystemError::NotADirectory {
+                path: dir.to_path_buf(),
+            }
+            .into()
         }
-        .into());
-    }
+    })?;
 
-    for entry in fs::read_dir(dir)
-        .with_path(dir, IoOperation::ReadDirectory)
-        .map_err(|e| e.into())?
-    {
-        let Ok(entry) = entry else {
+    walk_dir_fd(&mut root, dir, action)
+}
+
+/// Traverses an already-opened directory against its descriptor.
+fn walk_dir_fd<F, E>(dir: &mut Dir, prefix: &Path, action: &mut F) -> Result<(), E>
+where
+    F: FnMut(&Path) -> Result<(), E>,
+    FileSystemError: Into<E>,
+{
+    // Names snapshot first: entries borrow the directory buffer.
+    let names: Vec<OsString> = dir
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .ok()
+                .map(|entry| OsStr::from_bytes(entry.file_name().to_bytes()).to_owned())
+        })
+        .collect();
+    for name in &names {
+        let name = name.as_os_str();
+        if name == "." || name == ".." {
             continue;
-        };
-
-        let path = entry.path();
-
-        let file_type = match entry.file_type() {
-            Ok(file_type) => file_type,
+        }
+        let path = prefix.join(name);
+        // Classify through a descriptor that follows nothing.
+        let fd: OwnedFd = match openat(
+            dir.as_fd(),
+            name,
+            OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(fd) => fd,
             Err(_) => continue,
         };
-        if file_type.is_symlink() {
+        let kind = match fstat(&fd) {
+            Ok(stat) => SFlag::from_bits_truncate(stat.st_mode),
+            Err(_) => continue,
+        };
+        if kind.contains(SFlag::S_IFDIR) {
+            let child = match openat(
+                dir.as_fd(),
+                name,
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            ) {
+                Ok(fd) => fd,
+                // Changed kind mid-walk (gone, link, or non-directory):
+                // none can be descended into, so skip. Anything else keeps
+                // the old contract and fails the walk.
+                Err(Errno::ENOENT | Errno::ELOOP | Errno::ENOTDIR) => continue,
+                Err(err) => {
+                    return Err(FileSystemError::ReadDirectory {
+                        path: path.clone(),
+                        source: std::io::Error::from(err),
+                    }
+                    .into());
+                }
+            };
+            let mut child = match Dir::from_fd(child) {
+                Ok(child) => child,
+                Err(_) => continue,
+            };
+            walk_dir_fd(&mut child, &path, action)?;
+        } else {
+            // Reported, never descended into.
             action(&path)?;
-            continue;
         }
-        if file_type.is_dir() {
-            walk_dir(&path, action)?;
-            continue;
-        }
-
-        action(&path)?;
     }
 
     Ok(())
@@ -578,6 +648,74 @@ mod tests {
         let mut expected = vec![file, nested_file];
         expected.sort();
         assert_eq!(results, expected);
+    }
+
+    /// Contended swaps must not redirect the walk: descent is `O_NOFOLLOW`,
+    /// so a thousand walks under a flipping victim all stay in-tree.
+    #[test]
+    fn test_walk_dir_survives_concurrent_dir_to_symlink_swaps() {
+        use std::{
+            os::unix::fs::symlink,
+            sync::{
+                atomic::{AtomicBool, Ordering},
+                Arc,
+            },
+            thread,
+        };
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path().join("root");
+        let victim = root.join("victim");
+        let stash = root.join("stash");
+        let outside = tempdir.path().join("outside");
+        fs::create_dir_all(&victim).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        for i in 0..5 {
+            File::create(victim.join(format!("f{i:03}"))).unwrap();
+        }
+        fs::write(outside.join("ESCAPED"), b"escape").unwrap();
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let swapper = {
+            let stop = stop.clone();
+            let victim = victim.clone();
+            let stash = stash.clone();
+            let outside = outside.clone();
+            thread::spawn(move || {
+                // No sleeps: flip as fast as the syscalls go, so swaps land
+                // inside walks as often as scheduling allows.
+                while !stop.load(Ordering::Relaxed) {
+                    if fs::rename(&victim, &stash).is_ok() {
+                        let _ = symlink(&outside, &victim);
+                        let _ = fs::remove_file(&victim);
+                        let _ = fs::rename(&stash, &victim);
+                    }
+                }
+            })
+        };
+
+        for _ in 0..1000 {
+            let mut visited = Vec::new();
+            walk_dir(&root, &mut |p| -> FileSystemResult<()> {
+                visited.push(p.to_path_buf());
+                Ok(())
+            })
+            .expect("a swapped entry must skip or report, never fail the walk");
+            for path in &visited {
+                assert!(
+                    path.starts_with(&root),
+                    "walk escaped the root: {}",
+                    path.display()
+                );
+            }
+            assert!(
+                !visited.iter().any(|p| p.ends_with("ESCAPED")),
+                "walk entered the outside tree"
+            );
+        }
+
+        stop.store(true, Ordering::Relaxed);
+        swapper.join().expect("swapper thread panicked");
     }
 
     #[test]

@@ -2384,6 +2384,7 @@ dependencies = [
  "miette",
  "onelf-format",
  "regex",
+ "serial_test",
  "soar-config",
  "soar-utils",
  "squishy",

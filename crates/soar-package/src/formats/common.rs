@@ -116,10 +116,8 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
     icon_name: &str,
     system_mode: bool,
 ) -> Result<PathBuf> {
-    // The name is interpolated into a path under the icons directory, so a
-    // value holding `/` or `..` would land the symlink outside it. Every
-    // caller today sanitizes first; the check lives here so the guarantee
-    // does not depend on that staying true.
+    // The name is interpolated into a path under the icons directory, so
+    // `/` or `..` in it would land the symlink outside it.
     if !is_safe_component(icon_name) {
         return Err(PackageError::Custom(format!(
             "refusing to create icon symlink with unsafe name: {icon_name}"
@@ -127,9 +125,8 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
     }
     let real_path = real_path.as_ref();
     trace!(path = %real_path.display(), icon_name = icon_name, "creating icon symlink");
-    // The source comes from package content. A symlink here would make the
-    // reads and the normalize-and-save below follow it out of the install
-    // tree, so only a regular file is integrated.
+    // The source comes from package content; only a regular file is
+    // integrated, so a shipped symlink is never followed out of the tree.
     let meta = fs::symlink_metadata(real_path)
         .with_context(|| format!("reading metadata of {}", real_path.display()))?;
     if !meta.is_file() {
@@ -150,8 +147,8 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
         let (w, h) = normalized_image.dimensions();
 
         if (w, h) != (orig_w, orig_h) {
-            // Write beside the original and rename over it, so a failure
-            // never leaves a half-written icon behind.
+            // Rename over the original so a failure never leaves a
+            // half-written icon behind.
             let tmp = real_path.with_extension(format!(
                 "soar-tmp.{}",
                 ext.unwrap_or_default().to_string_lossy()
@@ -179,8 +176,8 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
             ext.unwrap_or_default().to_string_lossy()
         ));
 
-    // A stranger's file under our managed name is left alone, loudly. Only a
-    // link is ever replaced, and create_symlink does that itself.
+    // A stranger's file under a managed name is left alone; only a link is
+    // ever replaced.
     if let Ok(meta) = fs::symlink_metadata(&final_path) {
         if !meta.file_type().is_symlink() {
             warn!(path = %final_path.display(), "leaving a file soar does not own");
@@ -304,17 +301,15 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
     let pkg_name = package.pkg_name();
     let real_path = real_path.as_ref();
     trace!(path = %real_path.display(), pkg_name = pkg_name, "creating desktop file symlink");
-    // Resolve the link name before reading anything: a path with no file
-    // name must be an error, never a panic.
+    // A path with no file name is an error, never a panic.
     let file_name = real_path.file_stem().ok_or_else(|| {
         PackageError::Custom(format!(
             "cannot determine desktop file name for path: {}",
             real_path.display()
         ))
     })?;
-    // The entry comes from package content. Without this gate `File::create`
-    // below would follow a shipped symlink and truncate whatever it points
-    // to, so only a regular file is rewritten.
+    // Only a regular file is rewritten, so a shipped symlink is never
+    // followed and truncated.
     let meta = fs::symlink_metadata(real_path)
         .with_context(|| format!("reading metadata of {}", real_path.display()))?;
     if !meta.is_file() {
@@ -352,9 +347,8 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
         .to_string()
     };
 
-    // Rewrite beside the original and rename over it: a crash leaves the old
-    // entry intact, never a half-written one. The temp name keeps no
-    // `.desktop` suffix so a failed run is not picked up as an entry later.
+    // Rewrite beside the original and rename over it; the temp name keeps
+    // no `.desktop` suffix so a failed run is not picked up as an entry.
     let tmp = real_path.with_extension("soar-tmp");
     let rewrite = (|| -> Result<()> {
         let mut writer = BufWriter::new(
@@ -384,8 +378,8 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
         .get_desktop_path()?
         .join(format!("{}-soar.desktop", file_name.to_string_lossy()));
 
-    // A stranger's file under our managed name is left alone, loudly. Only a
-    // link is ever replaced, and create_symlink does that itself.
+    // A stranger's file under a managed name is left alone; only a link is
+    // ever replaced.
     if let Ok(meta) = fs::symlink_metadata(&final_path) {
         if !meta.file_type().is_symlink() {
             warn!(path = %final_path.display(), "leaving a file soar does not own");
@@ -417,8 +411,7 @@ pub fn create_portable_link<P: AsRef<Path>>(
     pkg_name: &str,
     extension: &str,
 ) -> Result<()> {
-    // The name is joined onto the portable root, so `..` in it would escape
-    // that root. Reject it here rather than trusting every caller.
+    // `..` in the name would escape the portable root.
     if !is_safe_component(pkg_name) {
         return Err(PackageError::Custom(format!(
             "refusing to create portable link with unsafe package name: {pkg_name}"
@@ -468,9 +461,8 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     portable_share: Option<&str>,
     portable_cache: Option<&str>,
 ) -> Result<()> {
-    // The package name is interpolated into the portable directory name
-    // below, so it must be a single path component before anything else.
-    // (The install flow validates it earlier; this holds for direct callers.)
+    // The package name lands in the portable directory name, so it must be
+    // a single path component.
     if !is_safe_component(package.pkg_name()) {
         return Err(PackageError::Custom(format!(
             "refusing to set up portable directories with unsafe package name: {}",
@@ -571,8 +563,8 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
 ) -> Result<()> {
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
-    // The name is joined onto the install dir for the default binary path
-    // and interpolated into portable paths below.
+    // The name is joined onto the install dir and interpolated into
+    // portable paths below.
     if !is_safe_component(pkg_name) {
         return Err(PackageError::Custom(format!(
             "refusing to integrate package with unsafe name: {pkg_name}"
@@ -593,10 +585,8 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         if path == bin_path.as_path() {
             return Ok(());
         }
-        // A shipped symlink is never integrated: its target is outside soar's
-        // control, and following it would read or write out of the tree. The
-        // link itself stays in place, untouched. Anything that cannot even
-        // be confirmed a regular file is skipped the same way, loudly.
+        // Shipped links stay in place, untouched; anything not provably a
+        // regular file is skipped the same way.
         if !fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
             warn!(path = %path.display(), "skipping package entry that is not a regular file");
             return Ok(());
@@ -997,8 +987,7 @@ Name=New Note
         assert!(content.contains("Icon=noteboard-soar"), "{content}");
     }
 
-    /// Shipped symlinks are skipped where they stand: the targets stay
-    /// untouched and integration still succeeds.
+    /// Shipped symlinks are skipped where they stand.
     #[tokio::test]
     async fn integration_skips_shipped_symlinks_and_leaves_targets_alone() {
         use std::os::unix::fs::symlink;
@@ -1032,8 +1021,6 @@ Name=New Note
         assert_eq!(fs::read_to_string(&victim_entry).unwrap(), ENTRY);
     }
 
-    /// A stranger's file under our managed desktop name is left alone. The
-    /// entry itself is still rewritten; only the link is skipped.
     #[test]
     fn a_foreign_file_at_the_desktop_destination_survives() {
         let dir = TempDir::new().unwrap();
@@ -1052,9 +1039,10 @@ Name=New Note
         assert_eq!(fs::read(&occupant).unwrap(), b"mine");
     }
 
-    /// Same rule for icons: a foreign file under the managed name survives,
-    /// and the source icon is still normalized in place.
+    /// Serialized: this test repoints `XDG_DATA_HOME`, so any future test
+    /// touching the icons directory needs `#[serial]` too.
     #[test]
+    #[serial_test::serial]
     fn a_foreign_file_at_the_icon_destination_survives() {
         let dir = TempDir::new().unwrap();
         let saved = std::env::var("XDG_DATA_HOME").ok();
@@ -1082,8 +1070,6 @@ Name=New Note
         }
     }
 
-    /// A portable target that already holds a real file is an error, never a
-    /// deletion: the user resolves it.
     #[test]
     fn a_portable_target_holding_a_file_is_an_error_not_a_deletion() {
         let dir = TempDir::new().unwrap();

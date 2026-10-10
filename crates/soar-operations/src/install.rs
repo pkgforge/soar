@@ -893,9 +893,7 @@ async fn install_single_package(
         "installing package"
     );
 
-    // pkg_name is joined into the lock name, install_dir, and resource
-    // paths downstream, so it must not be able to escape any of them. This
-    // runs before the lock is taken, not after work has started.
+    // Refused before the lock is taken, not after work has started.
     if !is_safe_component(&pkg.pkg_name) {
         return Err(SoarError::Custom(format!(
             "Refusing to install {}: package name is not a valid path component",
@@ -1014,8 +1012,8 @@ async fn install_single_package(
         .as_ref()
         .and_then(|provides| provides.iter().find(|p| !p.symlink_to_bin))
         .map(|p| p.name.as_str())
-        // An unsafe provides name must not become a path: the link step skips
-        // it, so the checksum pre-check falls back to the package name too.
+        // An unsafe provides name falls back to the package name, matching
+        // the link step which skips it.
         .filter(|name| is_safe_component(name))
         .unwrap_or(&pkg.pkg_name);
     let real_bin = install_dir.join(main_binary_name);
@@ -1295,8 +1293,7 @@ fn verify_signatures(pubkey_str: &str, install_dir: &Path) -> SoarResult<usize> 
             .path();
         let is_signature_file = path.extension().is_some_and(|ext| ext == "sig");
         let original_file = path.with_extension("");
-        // Lstat, not stat: a shipped link must never be opened as a signature,
-        // nor have its target verified in place of the package file.
+        // Lstat: a shipped link is never opened as a signature.
         let is_regular = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.is_file());
         if is_signature_file && is_regular(&path) && is_regular(&original_file) {
             let signature = Signature::from_file(&path).map_err(|err| {

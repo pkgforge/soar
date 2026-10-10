@@ -27,18 +27,26 @@ pub struct FileLock {
 }
 
 impl FileLock {
-    /// The fallback lock directory: uid-scoped under the temp dir, so users
-    /// never share lock space when no runtime dir is set.
+    /// The fallback lock directory: uid-scoped under the temp dir.
     fn fallback_lock_dir() -> PathBuf {
         std::env::temp_dir().join(format!("soar-locks-{}", Uid::current()))
     }
 
     /// Prepares a fallback lock directory in shared temp space.
     ///
-    /// Creates it owner-only, and re-verifies on every use: a directory or
-    /// symlink someone else planted under the same name is refused instead of
-    /// used.
+    /// Creates it owner-only and re-verifies on every use; plants are
+    /// refused, and the creation itself is never trusted.
     fn ensure_lock_dir(dir: &Path) -> LockResult<()> {
+        if fs::symlink_metadata(dir).is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound) {
+            // Only the leaf may be missing; an `AlreadyExists` rival is
+            // revalidated below, never trusted.
+            match fs::DirBuilder::new().mode(0o700).create(dir) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(err) => return Err(err.into()),
+            }
+        }
+        // Revalidate whatever is there now.
         match fs::symlink_metadata(dir) {
             Ok(meta) if meta.file_type().is_symlink() => {
                 return Err(LockError::AcquireFailed(format!(
@@ -53,7 +61,7 @@ impl FileLock {
                         dir.display()
                     )));
                 }
-                // Tighten whatever is there: only the owner may look inside.
+                // Only the owner may look inside.
                 fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
             }
             Ok(_) => {
@@ -61,12 +69,6 @@ impl FileLock {
                     "lock path {} is not a directory",
                     dir.display()
                 )));
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                fs::DirBuilder::new()
-                    .recursive(true)
-                    .mode(0o700)
-                    .create(dir)?;
             }
             Err(err) => return Err(err.into()),
         }
@@ -76,9 +78,7 @@ impl FileLock {
     /// Get the default lock directory for soar.
     ///
     /// Uses `$XDG_RUNTIME_DIR/soar/locks` or falls back to a uid-scoped
-    /// directory under the temp dir. The fallback lives in shared space, so
-    /// it is created owner-only and re-verified on every use: a directory or
-    /// symlink someone else planted under the same name is refused.
+    /// directory under the temp dir, created owner-only and re-verified.
     fn lock_dir() -> LockResult<PathBuf> {
         if let Some(runtime) = std::env::var("XDG_RUNTIME_DIR")
             .ok()
@@ -115,11 +115,8 @@ impl FileLock {
         Ok(lock_dir.join(filename))
     }
 
-    /// Opens the lock file without following a trailing symlink.
-    ///
-    /// A planted link must never redirect the lock onto another file, so the
-    /// open fails closed with the link left in place. New files are created
-    /// owner-only.
+    /// Opens the lock file without following a trailing symlink: a plant
+    /// fails the open with the link left in place.
     fn open_lock_file(path: &Path) -> LockResult<File> {
         let fd = nix::fcntl::open(
             path,
@@ -132,10 +129,8 @@ impl FileLock {
 
     /// Acquire an exclusive lock on a package.
     ///
-    /// This will block until the lock can be acquired. The wait is a blocking
-    /// `flock` on a dedicated lock file, so callers that cannot afford to
-    /// block use [`Self::try_acquire`] with their own retry bound instead:
-    /// `install_single_package` retries it for 60 seconds before timing out.
+    /// This will block until the lock can be acquired. Callers that cannot
+    /// afford to block use [`Self::try_acquire`] with their own retry bound.
     ///
     /// # Arguments
     ///
@@ -203,9 +198,7 @@ mod tests {
 
     use super::*;
 
-    /// The runtime dir is process-wide state. Every test that resolves a lock
-    /// path holds this, so the one test that points it elsewhere cannot be
-    /// observed mid-change by another.
+    /// Process-wide env: every test resolving a lock path holds this.
     static ENV_SERIAL: Mutex<()> = Mutex::new(());
 
     #[test]
@@ -266,7 +259,6 @@ mod tests {
         handle.join().unwrap();
     }
 
-    /// Without a runtime dir the fallback is scoped by uid, not shared.
     #[test]
     fn test_fallback_lock_dir_is_uid_scoped() {
         let dir = FileLock::fallback_lock_dir();
@@ -277,7 +269,6 @@ mod tests {
         );
     }
 
-    /// A symlink planted where the fallback directory goes is refused.
     #[test]
     fn test_planted_fallback_dir_is_refused() {
         use tempfile::tempdir;
@@ -289,8 +280,6 @@ mod tests {
         assert!(err.to_string().contains("is a symlink"), "{err}");
     }
 
-    /// A lax pre-existing directory is tightened to owner-only, not trusted
-    /// as found.
     #[test]
     fn test_fallback_dir_permissions_are_tightened() {
         use std::os::unix::fs::PermissionsExt;
@@ -305,11 +294,18 @@ mod tests {
         assert_eq!(dir.metadata().unwrap().permissions().mode() & 0o777, 0o700);
     }
 
-    /// A symlink planted at the lock file name fails the acquisition instead
-    /// of redirecting the lock onto another file.
-    ///
-    /// Serialized with the other lock tests: the runtime dir is process-wide
-    /// state, and a concurrent test must never observe the temporary value.
+    #[test]
+    fn test_planted_file_is_revalidated_not_trusted() {
+        use tempfile::tempdir;
+        let root = tempdir().unwrap();
+        let plant = root.path().join("locks");
+        fs::write(&plant, b"planted").unwrap();
+
+        let err = FileLock::ensure_lock_dir(&plant).unwrap_err();
+        assert!(err.to_string().contains("not a directory"), "{err}");
+    }
+
+    /// Serialized: this test repoints `XDG_RUNTIME_DIR` process-wide.
     #[test]
     fn test_planted_lock_file_is_not_followed() {
         use tempfile::tempdir;
@@ -320,8 +316,7 @@ mod tests {
 
         let victim = runtime.path().join("victim");
         fs::write(&victim, b"victim").unwrap();
-        // Resolve the file name first so the parent directory exists, then
-        // stand a link where the lock file goes.
+        // The parent must exist before the link goes in.
         let lock_file = FileLock::lock_path("planted").unwrap();
         std::os::unix::fs::symlink(&victim, &lock_file).unwrap();
 

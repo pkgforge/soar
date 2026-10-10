@@ -130,9 +130,7 @@ pub async fn prepare_run(
 
     let package = packages.into_iter().next().unwrap().resolve(version);
 
-    // Both are interpolated into the cache directory and the binary path
-    // below. Metadata provides them, so a value holding `/` or `..` would
-    // run the cache out of its own directory.
+    // Metadata names interpolate into the cache directory below.
     if !is_safe_component(&package.pkg_name) || !is_safe_component(&package.version) {
         return Err(SoarError::Custom(format!(
             "Refusing to run {}: package name or version is not a valid path component",
@@ -188,8 +186,7 @@ pub async fn prepare_run(
     let laid_out = package.files.as_deref().and_then(|files| {
         files.iter().find_map(|f| {
             f.to.strip_prefix("bin/")
-                // A bare slash check lets `bin/..` through, and the join
-                // below would hand back the cache directory's parent.
+                // `bin/..` holds no slash; only a safe component joins.
                 .filter(|rest| is_safe_component(rest))
                 .map(|_| (cache_dir.join(&f.to), f.source.is_empty()))
         })

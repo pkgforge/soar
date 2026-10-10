@@ -94,10 +94,8 @@ async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()>
 
 /// Clears `to` so an extracted entry can be renamed over it.
 ///
-/// A leftover symlink is removed as a link, never followed: `to.is_dir()`
-/// would see through it to a directory the archive named, and
-/// `remove_dir_all` must never run through such a link. Missing paths are
-/// simply left for the rename.
+/// A leftover symlink is removed as a link, never followed. Missing
+/// paths are left for the rename.
 fn clear_for_promotion(to: &Path) {
     match fs::symlink_metadata(to) {
         Ok(meta) if meta.is_dir() => {
@@ -122,8 +120,8 @@ pub fn apply_file_layout(
     artifact: &Path,
 ) -> SoarResult<()> {
     let staging = install_dir.join(".soar-layout");
-    // A shipped symlink at the staging path must never be followed: drop the
-    // link itself, and only clear a real directory recursively.
+    // A shipped symlink at the staging path is dropped as a link, never
+    // followed.
     match fs::symlink_metadata(&staging) {
         Ok(meta) if meta.file_type().is_symlink() => {
             fs::remove_file(&staging).ok();
@@ -352,9 +350,7 @@ fn resolve_source(
         .iter()
         .filter(|p| p.file_name().is_some_and(|n| n == name));
     let first = hits.next()?.clone();
-    // Several files answering to one name makes the pick a guess that follows
-    // archive order. That stays working, but loudly: silent first-match once
-    // placed the wrong architecture's binary without a trace.
+    // Same-name files make the pick a guess; keep it working, but loudly.
     if let Some(second) = hits.next() {
         warn!(
             source = source,
@@ -1006,9 +1002,8 @@ impl PackageInstaller {
                 .with_context(|| format!("reading metadata of {}", src.display()))?
                 .permissions()
                 .mode();
-            // The source is the user's own file and stays that way: soar must
-            // not flip mode bits on something it does not own. A non-runnable
-            // file links fine and fails at exec time until its owner chmods it.
+            // The source is the user's own file: never chmod it. A
+            // non-runnable file links fine and fails at exec time.
             if mode & 0o111 != 0o111 {
                 warn!(
                     source = %src.display(),
@@ -1205,9 +1200,8 @@ impl PackageInstaller {
                     let to = self.install_dir.join(entry.file_name());
                     // Renaming a directory rewrites its `..`, so the directory
                     // itself needs the write bit; archives shipping 0555 dirs
-                    // would otherwise fail to promote. Lstat, not stat: a
-                    // shipped link must be moved as a link, never chmodded
-                    // through.
+                    // would otherwise fail to promote. Lstat: a shipped link
+                    // moves as a link, never chmodded through.
                     if let Ok(meta) = fs::symlink_metadata(&from) {
                         let mode = meta.permissions().mode();
                         if meta.is_dir() && mode & 0o200 == 0 {
@@ -1218,8 +1212,6 @@ impl PackageInstaller {
                             .ok();
                         }
                     }
-                    // A leftover from an interrupted install would make rename
-                    // fail, the same way the other promotion paths treat it.
                     // A leftover link is dropped as a link, never followed.
                     clear_for_promotion(&to);
                     fs::rename(&from, &to).with_context(|| {
@@ -1599,8 +1591,6 @@ mod tests {
         assert_eq!(relative_to("fd", "bin/fd").unwrap(), Path::new("bin/fd"));
     }
 
-    /// The last-resort basename match keeps working when several files share
-    /// a name, picking the first in walk order.
     #[test]
     fn ambiguous_basename_resolves_to_first_match() {
         let present = vec![PathBuf::from("/pkg/a/tool"), PathBuf::from("/pkg/b/tool")];
@@ -1613,8 +1603,6 @@ mod tests {
         assert_eq!(hit, Some(PathBuf::from("/pkg/a/tool")));
     }
 
-    /// A leftover link is dropped as a link: the outside directory it points
-    /// to keeps everything it holds.
     #[test]
     fn promotion_clears_a_planted_link_without_following_it() {
         use std::os::unix::fs::symlink;
@@ -1648,9 +1636,6 @@ mod tests {
         clear_for_promotion(&root.path().join("missing"));
     }
 
-    /// A shipped symlink at the staging path is dropped as a link before any
-    /// directory is cleared, so the layout still succeeds and the outside
-    /// tree is untouched.
     #[test]
     fn layout_drops_a_planted_staging_link_without_following_it() {
         use std::os::unix::fs::symlink;

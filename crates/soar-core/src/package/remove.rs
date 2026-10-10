@@ -104,18 +104,19 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-/// Whether `installed_path` names something inside `packages_path`.
+/// Whether `installed_path` names something strictly inside `packages_path`.
 ///
-/// The installed path is read back from the database, so a lexical check is
-/// not enough on its own: `..` components are rejected outright, relative
-/// paths never match an absolute packages root, and the prefix comparison is
-/// component-wise, so `/data/packages-evil` does not match `/data/packages`.
+/// The installed path is read back from the database: `..` is rejected,
+/// the prefix comparison is component-wise, and equality is refused so a
+/// tampered row can never name the whole tree.
 pub(crate) fn path_inside_packages(installed_path: &Path, packages_path: &Path) -> bool {
     installed_path.is_absolute()
         && installed_path
             .components()
             .all(|c| !matches!(c, Component::ParentDir))
-        && installed_path.starts_with(packages_path)
+        && installed_path
+            .strip_prefix(packages_path)
+            .is_ok_and(|rest| rest.components().next().is_some())
 }
 
 use crate::{
@@ -137,8 +138,8 @@ pub struct PackageRemover {
 /// Without it `remove_dir_all` cannot unlink the entries inside, so a package
 /// that installed cleanly could not be removed.
 pub fn make_tree_writable(path: &Path) {
-    // The walk below never descends through links. The top path gets the same
-    // treatment, so a planted link is never chmodded through.
+    // The walk below never descends through links; the top path gets the
+    // same treatment.
     if !fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
         return;
     }
@@ -308,10 +309,8 @@ impl PackageRemover {
         // Archives commonly ship directories read-only, and removing a
         // directory's entries needs the write bit on that directory. soar owns
         // this tree, so it may restore what it needs to delete it.
-        //
-        // The installed path is read back from the database, not built from
-        // this run's inputs. A row pointing outside the packages tree must
-        // never reach the recursive chmod and delete below.
+        // The installed path is read back from the database; a row
+        // pointing outside the packages tree never reaches the delete.
         let packages_path = self
             .config
             .get_packages_path(Some(self.package.profile.clone()))?;
@@ -458,6 +457,13 @@ mod tests {
         // A lexical prefix with an escape folded in.
         assert!(!path_inside_packages(
             Path::new("/data/packages/../evil"),
+            packages
+        ));
+        // The root itself is never a valid target: wiping it would take every
+        // installed package with it.
+        assert!(!path_inside_packages(Path::new("/data/packages"), packages));
+        assert!(!path_inside_packages(
+            Path::new("/data/packages/"),
             packages
         ));
         // Outside the tree entirely, and a relative path never matches.
