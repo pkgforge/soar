@@ -859,7 +859,9 @@ fn finish_executable(
 /// Makes an already-classified regular file executable through a fresh descriptor.
 ///
 /// Opens with `O_NONBLOCK` so a node swapped in for the file cannot hang
-/// the open, then rechecks the kind: only a regular file is ever chmodded.
+/// the open, then verifies the kind from the opened descriptor itself:
+/// the classify-then-open gap and the alias path both end here, so only a
+/// regular file is ever chmodded.
 /// The rule matches the old behavior exactly: add every executable bit,
 /// but only when none is set.
 fn finish_regular(parent: &Dir, name: &OsStr, display: &Path) -> FileSystemResult<bool> {
@@ -883,6 +885,12 @@ fn finish_regular(parent: &Dir, name: &OsStr, display: &Path) -> FileSystemResul
             });
         }
     };
+    // The descriptor may no longer be what classification saw, and the
+    // alias path never classified its target at all: compare the masked
+    // type instead of trusting either.
+    if SFlag::from_bits_truncate(mode) & SFlag::S_IFMT != SFlag::S_IFREG {
+        return Err(deny(display, "not a regular file"));
+    }
     if mode & 0o111 == 0 {
         fchmod(&fd, Mode::from_bits_truncate(mode | 0o111)).map_err(|err| {
             FileSystemError::SetPermissions {
@@ -1604,6 +1612,36 @@ mod tests {
         assert!(make_executable_contained(&dir, &dir).is_err());
         assert!(make_executable_contained(&dir, &dir.join("gone")).is_err());
         assert!(make_executable_contained(&dir, &tempdir.path().join("other")).is_err());
+    }
+
+    /// An alias to a directory fails instead of chmodding it.
+    #[test]
+    fn test_make_executable_contained_refuses_alias_to_dir() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().join("pkg-1.0");
+        let sub = dir.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o555)).unwrap();
+        let alias = dir.join("alias");
+        symlink("sub", &alias).unwrap();
+        assert!(make_executable_contained(&dir, &alias).is_err());
+        assert_eq!(mode_of(&sub), 0o555, "the directory mode is untouched");
+    }
+
+    /// An alias to a fifo fails instead of chmodding (or hanging on) it.
+    #[test]
+    fn test_make_executable_contained_refuses_alias_to_fifo() {
+        use std::os::unix::fs::symlink;
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().join("pkg-1.0");
+        fs::create_dir_all(&dir).unwrap();
+        let fifo = dir.join("pipe");
+        nix::unistd::mkfifo(&fifo, Mode::from_bits_truncate(0o644)).unwrap();
+        let alias = dir.join("alias");
+        symlink("pipe", &alias).unwrap();
+        assert!(make_executable_contained(&dir, &alias).is_err());
+        assert_eq!(mode_of(&fifo) & 0o111, 0, "no exec bits are added");
     }
 
     fn mode_of(path: &Path) -> u32 {
