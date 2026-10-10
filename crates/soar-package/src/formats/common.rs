@@ -357,9 +357,10 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
     // `.desktop` suffix so a failed run is not picked up as an entry later.
     let tmp = real_path.with_extension("soar-tmp");
     let rewrite = (|| -> Result<()> {
-        let mut writer = BufWriter::new(File::create(&tmp).with_context(|| {
-            format!("creating temporary desktop file {}", tmp.display())
-        })?);
+        let mut writer = BufWriter::new(
+            File::create(&tmp)
+                .with_context(|| format!("creating temporary desktop file {}", tmp.display()))?,
+        );
         writer
             .write_all(final_content.as_bytes())
             .with_context(|| format!("writing desktop file to {}", tmp.display()))?;

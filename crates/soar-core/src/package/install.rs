@@ -1568,7 +1568,10 @@ impl PackageInstaller {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::{Path, PathBuf}};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
 
     use soar_db::models::types::PackageFile;
     use tempfile::tempdir;

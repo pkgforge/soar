@@ -33,7 +33,7 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns [`PackageError`] if extraction or symlink creation fails.
+/// Returns [`crate::error::PackageError`] if extraction or symlink creation fails.
 pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
     file_path: P,

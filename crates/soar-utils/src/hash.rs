@@ -35,9 +35,11 @@ use crate::error::{HashError, HashResult};
 /// ```
 pub fn calculate_checksum<P: AsRef<Path>>(file_path: P) -> HashResult<String> {
     let file_path = file_path.as_ref();
-    let file = File::open(file_path).map_err(|err| HashError::ReadFailed {
-        path: file_path.to_path_buf(),
-        source: err,
+    let file = File::open(file_path).map_err(|err| {
+        HashError::ReadFailed {
+            path: file_path.to_path_buf(),
+            source: err,
+        }
     })?;
     let mut reader = BufReader::new(file);
     let mut hasher = blake3::Hasher::new();

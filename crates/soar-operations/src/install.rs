@@ -798,7 +798,8 @@ pub async fn perform_installation(
                             notes: target.package.notes.clone(),
                         });
                     }
-                    if let Err(err) = remove_old_versions(&target.package, &db, false) {
+                    let cleaned = remove_old_versions(&target.package, &db, false, ctx.config());
+                    if let Err(err) = cleaned {
                         warn!(error = %err, "could not remove the superseded version");
                     }
                 }
@@ -806,7 +807,9 @@ pub async fn perform_installation(
                     match err {
                         SoarError::Warning(msg) => {
                             warnings.lock().unwrap().push(msg);
-                            if let Err(err) = remove_old_versions(&target.package, &db, false) {
+                            let cleaned =
+                                remove_old_versions(&target.package, &db, false, ctx.config());
+                            if let Err(err) = cleaned {
                                 warn!(error = %err, "could not remove the superseded version");
                             }
                         }

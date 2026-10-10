@@ -737,7 +737,7 @@ pub async fn perform_update(
                 stage: UpdateCleanupStage::Removing,
             });
 
-            if let Err(err) = remove_old_versions(pkg, &diesel_db, false) {
+            if let Err(err) = remove_old_versions(pkg, &diesel_db, false, ctx.config()) {
                 warn!(error = %err, "could not remove the superseded version");
             }
 

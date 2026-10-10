@@ -717,7 +717,7 @@ impl CoreRepository {
         pkg_name: &str,
         repo_name: &str,
         force: bool,
-    ) -> QueryResult<Vec<(i32, String)>> {
+    ) -> QueryResult<Vec<(i32, String, String)>> {
         let latest: Option<(i32, String)> = packages::table
             .filter(match_pkg_id(pkg_id))
             .filter(match_pkg_family(pkg_family))
@@ -748,7 +748,7 @@ impl CoreRepository {
         };
 
         query
-            .select((packages::id, packages::installed_path))
+            .select((packages::id, packages::installed_path, packages::profile))
             .load(conn)
     }
 

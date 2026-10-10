@@ -149,9 +149,9 @@ impl FileLock {
 
         let file = Self::open_lock_file(&lock_path)?;
 
-        let file = Flock::lock(file, FlockArg::LockExclusive).map_err(
-            |(_, err)| LockError::AcquireFailed(format!("{}: {}", lock_path.display(), err)),
-        )?;
+        let file = Flock::lock(file, FlockArg::LockExclusive).map_err(|(_, err)| {
+            LockError::AcquireFailed(format!("{}: {}", lock_path.display(), err))
+        })?;
 
         Ok(FileLock {
             path: lock_path,
@@ -294,6 +294,7 @@ mod tests {
     #[test]
     fn test_fallback_dir_permissions_are_tightened() {
         use std::os::unix::fs::PermissionsExt;
+
         use tempfile::tempdir;
         let root = tempdir().unwrap();
         let dir = root.path().join("locks");

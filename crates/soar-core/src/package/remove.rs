@@ -110,7 +110,7 @@ fn format_size(bytes: u64) -> String {
 /// not enough on its own: `..` components are rejected outright, relative
 /// paths never match an absolute packages root, and the prefix comparison is
 /// component-wise, so `/data/packages-evil` does not match `/data/packages`.
-fn path_inside_packages(installed_path: &Path, packages_path: &Path) -> bool {
+pub(crate) fn path_inside_packages(installed_path: &Path, packages_path: &Path) -> bool {
     installed_path.is_absolute()
         && installed_path
             .components()

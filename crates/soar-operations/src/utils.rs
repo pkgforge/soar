@@ -745,10 +745,8 @@ mod tests {
     use tempfile::{tempdir, TempDir};
 
     use super::{
-        create_provide_symlinks, is_installed, mangle_package_symlinks, InstalledIndex,
-        NameCounts,
+        create_provide_symlinks, is_installed, mangle_package_symlinks, InstalledIndex, NameCounts,
     };
-
     /// One installed package of `name`, recorded under `family`.
     fn installed_as(name: &str, family: Option<&str>, installed: bool) -> InstalledIndex {
         HashMap::from([(
@@ -1262,15 +1260,7 @@ mod tests {
         fs::write(install.join("tool"), [0x7f, b'E', b'L', b'F']).unwrap();
 
         let err = mangle_package_symlinks(
-            &install,
-            &bin,
-            None,
-            "../evil",
-            "1.0",
-            None,
-            None,
-            None,
-            None,
+            &install, &bin, None, "../evil", "1.0", None, None, None, None,
         )
         .await
         .unwrap_err();
