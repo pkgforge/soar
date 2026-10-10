@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    os::{unix, unix::fs::PermissionsExt},
+    os::unix,
     path::{Path, PathBuf},
 };
 
@@ -23,7 +23,10 @@ use soar_db::{
     models::types::{PackageFile, PackageProvide},
     repository::core::{CoreRepository, SortDirection},
 };
-use soar_utils::{fs::is_elf, path::is_safe_component};
+use soar_utils::{
+    fs::{is_elf, make_executable_contained},
+    path::is_safe_component,
+};
 use tracing::{debug, warn};
 
 /// Check if a package should have desktop integration (desktop files, icons).
@@ -52,29 +55,37 @@ pub fn get_package_hooks(pkg_name: &str) -> (Option<PackageHooks>, Option<Sandbo
 /// Whether soar may replace whatever stands at `link` in a bin directory.
 ///
 /// Only a link soar owns, resolving into its own packages tree, or a
-/// dangling link. Anything else belongs to someone else and is left alone.
+/// genuinely dangling link. Anything else belongs to someone else and is
+/// left alone.
 ///
 /// Targets are resolved before comparing: a raw target can smuggle `..`
-/// past a lexical prefix check. Anything unresolvable stays put.
+/// past a lexical prefix check. Anything unresolvable stays put. A target
+/// that exists but cannot be read is not dangling: `exists` hides every
+/// metadata error, so only `NotFound` permits replacement.
 fn replaceable_link(link: &Path, packages_root: &Path) -> bool {
     match fs::read_link(link) {
-        Ok(target) if !link.exists() => {
-            debug!(path = %link.display(), target = %target.display(), "claiming a dangling link");
-            true
-        }
         Ok(target) => {
-            let absolute = if target.is_absolute() {
-                target
-            } else {
-                link.parent().unwrap_or_else(|| Path::new(".")).join(target)
-            };
-            fs::canonicalize(&absolute)
-                .and_then(|resolved| {
-                    fs::canonicalize(packages_root).map(|root| resolved.starts_with(root))
-                })
-                .unwrap_or(false)
+            match fs::metadata(link) {
+                Ok(_) => {
+                    let absolute = if target.is_absolute() {
+                        target
+                    } else {
+                        link.parent().unwrap_or_else(|| Path::new(".")).join(target)
+                    };
+                    fs::canonicalize(&absolute)
+                        .and_then(|resolved| {
+                            fs::canonicalize(packages_root).map(|root| resolved.starts_with(root))
+                        })
+                        .unwrap_or(false)
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    debug!(path = %link.display(), target = %target.display(), "claiming a dangling link");
+                    true
+                }
+                Err(_) => false,
+            }
         }
-        Err(_) => !link.exists(),
+        Err(_) => fs::metadata(link).is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound),
     }
 }
 
@@ -468,51 +479,17 @@ pub async fn mangle_package_symlinks(
 /// Adds the executable bits to `path`, which must live under `dir`.
 ///
 /// `path` may itself be a symlink: recipe aliases are relative links, and
-/// an integrated file is the user's own. The chain must resolve inside
-/// `dir` for the chmod to happen; an outside target is linked as-is with a
-/// warning, and anything else non-regular is refused.
+/// an integrated file is the user's own. The chmod stays bound to open
+/// descriptors: a symlinked directory on the way down is only descended
+/// through when it resolves inside `dir`, and an alias resolving outside
+/// is linked as-is with a warning. Anything else non-regular is refused.
 fn set_executable(path: &Path, dir: &Path) -> SoarResult<()> {
-    let meta = fs::symlink_metadata(path)
-        .with_context(|| format!("reading metadata for {}", path.display()))?;
-    if !meta.is_file() {
-        if !meta.file_type().is_symlink() {
-            return Err(SoarError::Custom(format!(
-                "Refusing to chmod non-regular file: {}",
-                path.display()
-            )));
-        }
-        let resolved = path
-            .canonicalize()
-            .with_context(|| format!("resolving {}", path.display()))?;
-        let root = dir
-            .canonicalize()
-            .with_context(|| format!("resolving {}", dir.display()))?;
-        if !resolved.starts_with(&root) {
-            // The target keeps its mode; the caller links it as-is.
-            warn!(
-                path = %path.display(),
-                "leaving mode alone outside the package tree; make it executable yourself"
-            );
-            return Ok(());
-        }
-        if !fs::metadata(&resolved)
-            .with_context(|| format!("reading metadata for {}", resolved.display()))?
-            .is_file()
-        {
-            return Err(SoarError::Custom(format!(
-                "Refusing to chmod non-regular file: {}",
-                path.display()
-            )));
-        }
-    }
-    let metadata =
-        fs::metadata(path).with_context(|| format!("reading metadata for {}", path.display()))?;
-    let mut perms = metadata.permissions();
-    let mode = perms.mode();
-    if mode & 0o111 == 0 {
-        perms.set_mode(mode | 0o111);
-        fs::set_permissions(path, perms)
-            .with_context(|| format!("setting executable permissions on {}", path.display()))?;
+    if !make_executable_contained(dir, path)? {
+        // The target keeps its mode; the caller links it as-is.
+        warn!(
+            path = %path.display(),
+            "leaving mode alone outside the package tree; make it executable yourself"
+        );
     }
     Ok(())
 }
@@ -908,6 +885,25 @@ mod tests {
         );
         assert!(!replaceable_link(&link, &packages));
         assert!(link.symlink_metadata().is_ok(), "the link stays");
+    }
+
+    /// A link whose target cannot even be statted is not dangling: a loop
+    /// reads as missing through `exists` but must stay put.
+    #[test]
+    fn an_unreadable_target_is_not_dangling() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let packages = root.path().join("packages");
+        let bin = root.path().join("bin");
+        fs::create_dir_all(&packages).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let a = bin.join("a");
+        let b = bin.join("b");
+        symlink(&b, &a).unwrap();
+        symlink(&a, &b).unwrap();
+        assert!(!a.exists(), "a loop never resolves");
+        assert!(!replaceable_link(&a, &packages));
+        assert!(a.symlink_metadata().is_ok(), "the link stays");
     }
 
     #[test]

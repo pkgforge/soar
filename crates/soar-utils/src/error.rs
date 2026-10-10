@@ -161,6 +161,17 @@ pub enum FileSystemError {
         source: std::io::Error,
     },
 
+    #[error("Failed to set permissions on '{path}'")]
+    #[diagnostic(
+        code(soar_utils::fs::set_permissions),
+        help("Check if the path is inside the expected tree and you own it")
+    )]
+    SetPermissions {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("Failed to create symlink from '{from}' to '{target}'")]
     #[diagnostic(
         code(soar_utils::fs::create_symlink),
@@ -224,6 +235,7 @@ pub enum IoOperation {
     CreateDirectory,
     RemoveDirectory,
     ReadDirectory,
+    SetPermissions,
     CreateSymlink { target: PathBuf },
     RemoveSymlink,
     ReadSymlink,
@@ -263,6 +275,10 @@ impl IoContext {
 
     pub fn remove_directory<P: Into<PathBuf>>(path: P) -> Self {
         Self::new(path.into(), IoOperation::RemoveDirectory)
+    }
+
+    pub fn set_permissions<P: Into<PathBuf>>(path: P) -> Self {
+        Self::new(path.into(), IoOperation::SetPermissions)
     }
 
     pub fn read_symlink<P: Into<PathBuf>>(path: P) -> Self {
@@ -322,6 +338,12 @@ impl From<(IoContext, std::io::Error)> for FileSystemError {
             }
             IoOperation::RemoveDirectory => {
                 FileSystemError::RemoveDirectory {
+                    path: ctx.path,
+                    source,
+                }
+            }
+            IoOperation::SetPermissions => {
+                FileSystemError::SetPermissions {
                     path: ctx.path,
                     source,
                 }

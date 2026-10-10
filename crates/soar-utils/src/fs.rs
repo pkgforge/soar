@@ -7,7 +7,7 @@ use std::{
         fd::{AsFd, OwnedFd},
         unix::ffi::OsStrExt,
     },
-    path::{Component, Path},
+    path::{Component, Path, PathBuf},
 };
 
 use nix::{
@@ -160,14 +160,14 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
     )
 }
 
-/// Opens a directory without following a trailing symlink.
+/// Opens a caller-supplied root directory.
+///
+/// The root itself is trusted configuration and may be a symlink, for
+/// example a packages tree on another disk or a dotfiles-managed
+/// applications directory. Containment comes from opening every entry
+/// below this descriptor with `O_NOFOLLOW`, which is unchanged.
 fn open_dir(dir: &Path) -> FileSystemResult<Dir> {
-    Dir::open(
-        dir,
-        OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|err| {
+    Dir::open(dir, OFlag::O_DIRECTORY | OFlag::O_CLOEXEC, Mode::empty()).map_err(|err| {
         let source = std::io::Error::from(err);
         if dir.is_dir() {
             FileSystemError::ReadDirectory {
@@ -225,7 +225,8 @@ where
 {
     let dir = dir.as_ref();
 
-    // Open without following: a symlinked root is refused rather than walked.
+    // The root is trusted configuration: it may itself be a symlink.
+    // Everything below it is still opened without following.
     let mut root = open_dir(dir).map_err(Into::into)?;
 
     walk_dir_fd(&mut root, dir, action)
@@ -308,6 +309,45 @@ where
     Ok(())
 }
 
+/// Splits `target` into its leaf and ancestor components strictly below `root`, refusing anything else.
+///
+/// The shared lexical gate for contained operations: absolute paths only,
+/// no `..` in either side (a `..` in the root would desynchronize the
+/// display path from the opened directory), and at least one component
+/// below the root.
+fn strict_descendant<'a>(
+    root: &Path,
+    target: &'a Path,
+) -> Result<(&'a OsStr, Vec<&'a OsStr>), String> {
+    if !target.is_absolute() {
+        return Err("path is not absolute".to_string());
+    }
+    if target
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
+        return Err("path contains `..`".to_string());
+    }
+    if root.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err("root contains `..`".to_string());
+    }
+    let rest = target
+        .strip_prefix(root)
+        .map_err(|_| "path is outside the root".to_string())?;
+    let mut normals: Vec<&OsStr> = Vec::new();
+    for comp in rest.components() {
+        match comp {
+            Component::Normal(name) => normals.push(name),
+            Component::CurDir => {}
+            _ => return Err("path is outside the root".to_string()),
+        }
+    }
+    match normals.split_last() {
+        Some((leaf, ancestors)) => Ok((*leaf, ancestors.to_vec())),
+        None => Err("path names the root itself".to_string()),
+    }
+}
+
 /// Deletes `target`, which must lie strictly inside `root`, without trusting pathnames while doing it.
 ///
 /// Opens `root` and descends to `target` one component at a time with
@@ -324,7 +364,9 @@ where
 ///
 /// # Arguments
 ///
-/// * `root` - The directory the deletion is confined to.
+/// * `root` - The directory the deletion is confined to. It may itself be
+///   a symlink, for example a packages tree on another disk; confinement
+///   applies to everything below the opened root.
 /// * `target` - The directory or file to remove. Must be strictly inside `root`.
 ///
 /// # Errors
@@ -349,36 +391,13 @@ where
 /// }
 /// ```
 pub fn remove_contained_dir(root: &Path, target: &Path) -> FileSystemResult<()> {
-    // Lexical gate first: absolute, no `..`, strictly below the root. The
-    // descriptor walk below carries the traversal safety; this only picks
-    // clear errors for plainly wrong inputs.
-    if !target.is_absolute() {
-        return Err(refuse(target, "path is not absolute"));
-    }
-    if target
-        .components()
-        .any(|c| matches!(c, Component::ParentDir))
-    {
-        return Err(refuse(target, "path contains `..`"));
-    }
-    let rest = target
-        .strip_prefix(root)
-        .map_err(|_| refuse(target, "path is outside the root"))?;
-    let mut normals: Vec<&OsStr> = Vec::new();
-    for comp in rest.components() {
-        match comp {
-            Component::Normal(name) => normals.push(name),
-            Component::CurDir => {}
-            _ => return Err(refuse(target, "path is outside the root")),
-        }
-    }
-    let Some((leaf, ancestors)) = normals.split_last() else {
-        return Err(refuse(target, "refusing to remove the root itself"));
-    };
+    // Lexical gate first. The descriptor walk below carries the traversal
+    // safety; this only picks clear errors for plainly wrong inputs.
+    let (leaf, ancestors) = strict_descendant(root, target).map_err(|why| refuse(target, &why))?;
 
     let mut display = root.to_path_buf();
     let mut dir = open_dir(root)?;
-    for &comp in ancestors {
+    for &comp in &ancestors {
         display.push(comp);
         let child = match openat(
             dir.as_fd(),
@@ -583,6 +602,296 @@ fn unlink_entry(
             })
         }
     }
+}
+
+/// Adds the executable bits to `path`, which must lie strictly inside `dir`, without trusting pathnames while doing it.
+///
+/// Every directory on the way down is opened with `O_NOFOLLOW` from the
+/// previous descriptor, and the file itself is validated and chmodded
+/// through its own descriptor. A link swapped in along the way fails the
+/// operation instead of redirecting it.
+///
+/// A directory that is itself a link is descended through only when it
+/// resolves inside `dir`; anything resolving outside fails closed. A link
+/// at the leaf is chmodded through its target when that target resolves
+/// inside, and reported without touching anything when it resolves
+/// outside.
+///
+/// Returns `true` when the file is executable afterwards, `false` when a
+/// leaf alias resolves outside and was left alone.
+///
+/// Missing paths and non-regular files fail: only a real file is ever chmodded.
+///
+/// # Arguments
+///
+/// * `dir` - The package tree the chmod is confined to.
+/// * `path` - The file to make executable. Must be strictly inside `dir`.
+///
+/// # Errors
+///
+/// Returns [`FileSystemError::SetPermissions`] if the target is unsuitable
+/// or cannot be reached without following an outside link.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::path::Path;
+/// use soar_utils::{error::FileSystemResult, fs::make_executable_contained};
+///
+/// fn main() -> FileSystemResult<()> {
+///     make_executable_contained(
+///         Path::new("/data/packages/foo-1.0"),
+///         Path::new("/data/packages/foo-1.0/bin/foo"),
+///     )?;
+///     Ok(())
+/// }
+/// ```
+pub fn make_executable_contained(dir: &Path, path: &Path) -> FileSystemResult<bool> {
+    // Same lexical gate as deletion: absolute, no `..`, strictly below.
+    let (leaf, ancestors) = strict_descendant(dir, path).map_err(|why| deny(path, &why))?;
+    let mut display = dir.to_path_buf();
+    let start = open_dir(dir)?;
+    let parent = descend_dirs(dir, start, &mut display, &ancestors)?;
+    display.push(leaf);
+    finish_executable(dir, &parent, leaf, &display)
+}
+
+/// A refusal to chmod: the input never names a valid target.
+fn deny(path: &Path, why: &str) -> FileSystemError {
+    FileSystemError::SetPermissions {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("refusing to chmod {}: {why}", path.display()),
+        ),
+    }
+}
+
+/// A chmod failure carrying the underlying error.
+fn deny_src(path: &Path, source: std::io::Error) -> FileSystemError {
+    FileSystemError::SetPermissions {
+        path: path.to_path_buf(),
+        source,
+    }
+}
+
+/// Opens each of `comps` below `parent` in turn, returning the last directory.
+///
+/// Every component is opened with `O_NOFOLLOW` from the previous
+/// descriptor. A component that is a link is descended through only when
+/// it resolves inside `root`; anything else unsuitable fails closed.
+/// `display` tracks the current path for errors.
+fn descend_dirs(
+    root: &Path,
+    mut parent: Dir,
+    display: &mut PathBuf,
+    comps: &[&OsStr],
+) -> FileSystemResult<Dir> {
+    for &comp in comps {
+        display.push(comp);
+        parent = open_next(root, parent, display, comp)?;
+    }
+    Ok(parent)
+}
+
+/// Opens one directory component below an open parent without following untrusted links.
+fn open_next(root: &Path, parent: Dir, display: &Path, comp: &OsStr) -> FileSystemResult<Dir> {
+    match openat(
+        parent.as_fd(),
+        comp,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => {
+            Dir::from_fd(fd).map_err(|err| {
+                FileSystemError::ReadDirectory {
+                    path: display.to_path_buf(),
+                    source: std::io::Error::from(err),
+                }
+            })
+        }
+        // Gone, unreadable, or neither a plain directory: find out which
+        // without following anything.
+        Err(err) => follow_inside_link(root, &parent, display, comp, err),
+    }
+}
+
+/// Descends through a component that refused a direct directory open, when it is a link resolving inside the root.
+///
+/// Anything else unsuitable fails closed: only a link staying inside the
+/// root is ever descended through, and then from a fresh descriptor on the
+/// root rather than through the link itself.
+fn follow_inside_link(
+    root: &Path,
+    parent: &Dir,
+    display: &Path,
+    comp: &OsStr,
+    cause: Errno,
+) -> FileSystemResult<Dir> {
+    // Classify without following anything.
+    let kind = match openat(
+        parent.as_fd(),
+        comp,
+        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => {
+            match fstat(&fd) {
+                Ok(stat) => SFlag::from_bits_truncate(stat.st_mode),
+                Err(err) => {
+                    return Err(FileSystemError::ReadDirectory {
+                        path: display.to_path_buf(),
+                        source: std::io::Error::from(err),
+                    });
+                }
+            }
+        }
+        Err(err) => {
+            return Err(FileSystemError::ReadDirectory {
+                path: display.to_path_buf(),
+                source: std::io::Error::from(err),
+            });
+        }
+    };
+    if !kind.contains(SFlag::S_IFLNK) {
+        // A real directory only lands here when it cannot be opened at
+        // all: keep the original error instead of misreporting it.
+        if kind.contains(SFlag::S_IFDIR) {
+            return Err(FileSystemError::ReadDirectory {
+                path: display.to_path_buf(),
+                source: std::io::Error::from(cause),
+            });
+        }
+        return Err(deny(display, "not a directory"));
+    }
+    let Some(rel) = resolve_inside(root, display)? else {
+        return Err(deny(display, "link resolves outside the root"));
+    };
+    let start = open_dir(root)?;
+    let mut restart = root.to_path_buf();
+    let refs: Vec<&OsStr> = rel.iter().map(|s| s.as_os_str()).collect();
+    descend_dirs(root, start, &mut restart, &refs)
+}
+
+/// Resolves `path` to components below `root`, or `None` when it escapes.
+///
+/// Both sides are fully resolved first, so a trusted symlinked root and
+/// `..` anywhere in the chain compare by where they actually land.
+fn resolve_inside(root: &Path, path: &Path) -> FileSystemResult<Option<Vec<OsString>>> {
+    let real_root = std::fs::canonicalize(root).map_err(|err| {
+        FileSystemError::SetPermissions {
+            path: root.to_path_buf(),
+            source: err,
+        }
+    })?;
+    let real = std::fs::canonicalize(path).map_err(|err| {
+        FileSystemError::SetPermissions {
+            path: path.to_path_buf(),
+            source: err,
+        }
+    })?;
+    Ok(real.strip_prefix(&real_root).ok().map(|rel| {
+        rel.components()
+            .filter_map(|c| {
+                match c {
+                    Component::Normal(name) => Some(name.to_owned()),
+                    _ => None,
+                }
+            })
+            .collect()
+    }))
+}
+
+/// Validates the last component and makes it executable through its own descriptor.
+///
+/// Returns `false` (leaving everything alone) when a leaf alias resolves
+/// outside the root; anything else unsuitable fails.
+fn finish_executable(
+    root: &Path,
+    parent: &Dir,
+    name: &OsStr,
+    display: &Path,
+) -> FileSystemResult<bool> {
+    // Classify without following anything.
+    let kind = match openat(
+        parent.as_fd(),
+        name,
+        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => {
+            match fstat(&fd) {
+                Ok(stat) => SFlag::from_bits_truncate(stat.st_mode),
+                Err(err) => {
+                    return Err(FileSystemError::ReadDirectory {
+                        path: display.to_path_buf(),
+                        source: std::io::Error::from(err),
+                    });
+                }
+            }
+        }
+        Err(err) => {
+            return Err(deny_src(display, std::io::Error::from(err)));
+        }
+    };
+    if kind.contains(SFlag::S_IFLNK) {
+        // Aliases resolve through the same confinement: an inside target
+        // chmods through its own descriptor, an outside one is reported.
+        let Some(rel) = resolve_inside(root, display)? else {
+            return Ok(false);
+        };
+        let refs: Vec<&OsStr> = rel.iter().map(|s| s.as_os_str()).collect();
+        let Some((last, dirs)) = refs.split_last() else {
+            return Err(deny(display, "not a regular file"));
+        };
+        let start = open_dir(root)?;
+        let mut restart = root.to_path_buf();
+        let parent = descend_dirs(root, start, &mut restart, dirs)?;
+        restart.push(last);
+        return finish_regular(&parent, last, &restart);
+    }
+    if !kind.contains(SFlag::S_IFREG) {
+        return Err(deny(display, "not a regular file"));
+    }
+    finish_regular(parent, name, display)
+}
+
+/// Makes an already-classified regular file executable through a fresh descriptor.
+///
+/// Opens with `O_NONBLOCK` so a node swapped in for the file cannot hang
+/// the open, then rechecks the kind: only a regular file is ever chmodded.
+/// The rule matches the old behavior exactly: add every executable bit,
+/// but only when none is set.
+fn finish_regular(parent: &Dir, name: &OsStr, display: &Path) -> FileSystemResult<bool> {
+    let fd = match openat(
+        parent.as_fd(),
+        name,
+        OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(err) => {
+            return Err(deny_src(display, std::io::Error::from(err)));
+        }
+    };
+    let mode = match fstat(&fd) {
+        Ok(stat) => stat.st_mode,
+        Err(err) => {
+            return Err(FileSystemError::ReadDirectory {
+                path: display.to_path_buf(),
+                source: std::io::Error::from(err),
+            });
+        }
+    };
+    if mode & 0o111 == 0 {
+        fchmod(&fd, Mode::from_bits_truncate(mode | 0o111)).map_err(|err| {
+            FileSystemError::SetPermissions {
+                path: display.to_path_buf(),
+                source: std::io::Error::from(err),
+            }
+        })?;
+    }
+    Ok(true)
 }
 
 /// Reads the first `bytes` bytes from a file and returns the signature.
@@ -1157,6 +1466,149 @@ mod tests {
             b"keep",
             "linked targets survive"
         );
+    }
+
+    /// A symlinked root walks fine: the root is trusted configuration,
+    /// and containment applies below the opened directory.
+    #[test]
+    fn test_walk_dir_follows_symlinked_root() {
+        use std::os::unix::fs::symlink;
+        let tempdir = tempdir().unwrap();
+        let real = tempdir.path().join("real");
+        let sub = real.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        File::create(sub.join("f")).unwrap();
+        let link = tempdir.path().join("linked");
+        symlink(&real, &link).unwrap();
+        let mut visited = Vec::new();
+        walk_dir(&link, &mut |p| -> FileSystemResult<()> {
+            visited.push(p.to_path_buf());
+            Ok(())
+        })
+        .unwrap();
+        assert!(visited.iter().any(|p| p.ends_with("sub/f")));
+    }
+
+    /// A symlinked root deletes fine: the tree goes, the link stays.
+    #[test]
+    fn test_remove_contained_dir_follows_symlinked_root() {
+        use std::os::unix::fs::symlink;
+        let tempdir = tempdir().unwrap();
+        let real = tempdir.path().join("real");
+        let leaf = real.join("pkg-1.0");
+        fs::create_dir_all(&leaf).unwrap();
+        File::create(leaf.join("bin")).unwrap();
+        let link = tempdir.path().join("linked");
+        symlink(&real, &link).unwrap();
+        remove_contained_dir(&link, &link.join("pkg-1.0")).unwrap();
+        assert!(!leaf.exists(), "the real tree is gone");
+        assert!(
+            link.symlink_metadata()
+                .is_ok_and(|m| m.file_type().is_symlink()),
+            "the root link stays"
+        );
+    }
+
+    /// A regular file gains every executable bit, but only when none is set.
+    #[test]
+    fn test_make_executable_contained_chmods_regular_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().join("pkg-1.0");
+        let bin = dir.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let file = bin.join("tool");
+        File::create(&file).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(make_executable_contained(&dir, &file).unwrap());
+        assert_eq!(mode_of(&file), 0o755);
+        // Already executable: still true, bits untouched.
+        assert!(make_executable_contained(&dir, &file).unwrap());
+        assert_eq!(mode_of(&file), 0o755);
+    }
+
+    /// A shipped `bin` link to an outside tree fails instead of chmodding
+    /// through it.
+    #[test]
+    fn test_make_executable_contained_refuses_outside_symlinked_dir() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().join("pkg-1.0");
+        fs::create_dir_all(&dir).unwrap();
+        let outside = tempdir.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let victim = outside.join("tool");
+        File::create(&victim).unwrap();
+        fs::set_permissions(&victim, fs::Permissions::from_mode(0o644)).unwrap();
+        symlink(&outside, dir.join("bin")).unwrap();
+        assert!(make_executable_contained(&dir, &dir.join("bin").join("tool")).is_err());
+        assert_eq!(mode_of(&victim), 0o644, "the outside file is untouched");
+    }
+
+    /// A `bin` link staying inside the tree keeps working: only escapes fail.
+    #[test]
+    fn test_make_executable_contained_follows_inside_symlinked_dir() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().join("pkg-1.0");
+        let real = dir.join("real");
+        fs::create_dir_all(&real).unwrap();
+        let file = real.join("tool");
+        File::create(&file).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        symlink(&real, dir.join("bin")).unwrap();
+        assert!(make_executable_contained(&dir, &dir.join("bin").join("tool")).unwrap());
+        assert_eq!(mode_of(&file), 0o755);
+    }
+
+    /// An alias resolving inside chmods through its target's descriptor.
+    #[test]
+    fn test_make_executable_contained_chmods_inside_alias() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().join("pkg-1.0");
+        fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("tool");
+        File::create(&target).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        let alias = dir.join("alias");
+        symlink("tool", &alias).unwrap();
+        assert!(make_executable_contained(&dir, &alias).unwrap());
+        assert_eq!(mode_of(&target), 0o755);
+    }
+
+    /// An alias resolving outside reports without touching anything.
+    #[test]
+    fn test_make_executable_contained_leaves_outside_alias_alone() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().join("pkg-1.0");
+        fs::create_dir_all(&dir).unwrap();
+        let outside = tempdir.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let victim = outside.join("tool");
+        File::create(&victim).unwrap();
+        fs::set_permissions(&victim, fs::Permissions::from_mode(0o644)).unwrap();
+        let alias = dir.join("alias");
+        symlink(&victim, &alias).unwrap();
+        assert!(!make_executable_contained(&dir, &alias).unwrap());
+        assert_eq!(mode_of(&victim), 0o644, "the outside file is untouched");
+    }
+
+    /// Directories, missing paths, and outside targets all fail.
+    #[test]
+    fn test_make_executable_contained_refuses_unsuitable_targets() {
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().join("pkg-1.0");
+        fs::create_dir_all(&dir).unwrap();
+        assert!(make_executable_contained(&dir, &dir).is_err());
+        assert!(make_executable_contained(&dir, &dir.join("gone")).is_err());
+        assert!(make_executable_contained(&dir, &tempdir.path().join("other")).is_err());
+    }
+
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path).unwrap().permissions().mode() & 0o777
     }
 
     #[test]
