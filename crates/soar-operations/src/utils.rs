@@ -51,14 +51,29 @@ pub fn get_package_hooks(pkg_name: &str) -> (Option<PackageHooks>, Option<Sandbo
 
 /// Whether soar may replace whatever stands at `link` in a bin directory.
 ///
-/// Only a link soar owns, pointing into its own packages tree, or a
+/// Only a link soar owns, resolving into its own packages tree, or a
 /// dangling link. Anything else belongs to someone else and is left alone.
 ///
-/// The target comparison is lexical and component-wise, the same rule
-/// `link_shared_files` uses.
+/// Targets are resolved before comparing: a raw target can smuggle `..`
+/// past a lexical prefix check. Anything unresolvable stays put.
 fn replaceable_link(link: &Path, packages_root: &Path) -> bool {
     match fs::read_link(link) {
-        Ok(target) => !link.exists() || target.starts_with(packages_root),
+        Ok(target) if !link.exists() => {
+            debug!(path = %link.display(), target = %target.display(), "claiming a dangling link");
+            true
+        }
+        Ok(target) => {
+            let absolute = if target.is_absolute() {
+                target
+            } else {
+                link.parent().unwrap_or_else(|| Path::new(".")).join(target)
+            };
+            fs::canonicalize(&absolute)
+                .and_then(|resolved| {
+                    fs::canonicalize(packages_root).map(|root| resolved.starts_with(root))
+                })
+                .unwrap_or(false)
+        }
         Err(_) => !link.exists(),
     }
 }
@@ -735,7 +750,8 @@ mod tests {
     use tempfile::{tempdir, TempDir};
 
     use super::{
-        create_provide_symlinks, is_installed, mangle_package_symlinks, InstalledIndex, NameCounts,
+        create_provide_symlinks, is_installed, mangle_package_symlinks, replaceable_link,
+        InstalledIndex, NameCounts,
     };
     /// One installed package of `name`, recorded under `family`.
     fn installed_as(name: &str, family: Option<&str>, installed: bool) -> InstalledIndex {
@@ -869,6 +885,45 @@ mod tests {
         fs::create_dir_all(&install).unwrap();
         fs::create_dir_all(&bin).unwrap();
         (root, install, bin)
+    }
+
+    /// A live target that only lexically sits under the packages root is
+    /// someone else's link: `..` resolves outside it.
+    #[test]
+    fn a_dotdot_target_is_not_owned() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let packages = root.path().join("packages");
+        let install = packages.join("pkg-1.0");
+        let bin = root.path().join("bin");
+        fs::create_dir_all(&install).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let outside = root.path().join("outside");
+        fs::write(&outside, b"mine").unwrap();
+        let link = bin.join("tool");
+        symlink(format!("{}/../../outside", install.display()), &link).unwrap();
+        assert!(
+            link.exists(),
+            "target resolves, so the link is not dangling"
+        );
+        assert!(!replaceable_link(&link, &packages));
+        assert!(link.symlink_metadata().is_ok(), "the link stays");
+    }
+
+    #[test]
+    fn a_target_inside_the_root_is_owned() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let packages = root.path().join("packages");
+        let install = packages.join("pkg-1.0");
+        let bin = root.path().join("bin");
+        fs::create_dir_all(&install).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let target = install.join("tool");
+        fs::write(&target, b"#!/bin/sh\n").unwrap();
+        let link = bin.join("tool");
+        symlink(&target, &link).unwrap();
+        assert!(replaceable_link(&link, &packages));
     }
 
     fn is_symlink(path: &std::path::Path) -> bool {

@@ -120,7 +120,7 @@ impl FileLock {
     fn open_lock_file(path: &Path) -> LockResult<File> {
         let fd = nix::fcntl::open(
             path,
-            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_NOFOLLOW,
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
             Mode::from_bits_truncate(0o600),
         )
         .map_err(|err| LockError::AcquireFailed(format!("{}: {}", path.display(), err)))?;

@@ -7,14 +7,15 @@ use std::{
         fd::{AsFd, OwnedFd},
         unix::ffi::OsStrExt,
     },
-    path::Path,
+    path::{Component, Path},
 };
 
 use nix::{
     dir::Dir,
     errno::Errno,
     fcntl::{openat, OFlag},
-    sys::stat::{fstat, Mode, SFlag},
+    sys::stat::{fchmod, fstat, Mode, SFlag},
+    unistd::{unlinkat, UnlinkatFlags},
 };
 
 use crate::error::{FileSystemError, FileSystemResult, IoOperation, IoResultExt};
@@ -159,6 +160,28 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
     )
 }
 
+/// Opens a directory without following a trailing symlink.
+fn open_dir(dir: &Path) -> FileSystemResult<Dir> {
+    Dir::open(
+        dir,
+        OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|err| {
+        let source = std::io::Error::from(err);
+        if dir.is_dir() {
+            FileSystemError::ReadDirectory {
+                path: dir.to_path_buf(),
+                source,
+            }
+        } else {
+            FileSystemError::NotADirectory {
+                path: dir.to_path_buf(),
+            }
+        }
+    })
+}
+
 /// Walks a directory recursively and calls the provided function on each file or directory.
 ///
 /// Traversal is bound to open descriptors, not pathnames: entries are
@@ -203,26 +226,7 @@ where
     let dir = dir.as_ref();
 
     // Open without following: a symlinked root is refused rather than walked.
-    let mut root = Dir::open(
-        dir,
-        OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|err| {
-        let source = std::io::Error::from(err);
-        if dir.is_dir() {
-            FileSystemError::ReadDirectory {
-                path: dir.to_path_buf(),
-                source,
-            }
-            .into()
-        } else {
-            FileSystemError::NotADirectory {
-                path: dir.to_path_buf(),
-            }
-            .into()
-        }
-    })?;
+    let mut root = open_dir(dir).map_err(Into::into)?;
 
     walk_dir_fd(&mut root, dir, action)
 }
@@ -282,9 +286,17 @@ where
                     .into());
                 }
             };
+            // An opened directory that will not stream fails the walk:
+            // silently skipping it would report a partial tree as whole.
             let mut child = match Dir::from_fd(child) {
                 Ok(child) => child,
-                Err(_) => continue,
+                Err(err) => {
+                    return Err(FileSystemError::ReadDirectory {
+                        path: path.clone(),
+                        source: std::io::Error::from(err),
+                    }
+                    .into());
+                }
             };
             walk_dir_fd(&mut child, &path, action)?;
         } else {
@@ -294,6 +306,283 @@ where
     }
 
     Ok(())
+}
+
+/// Deletes `target`, which must lie strictly inside `root`, without trusting pathnames while doing it.
+///
+/// Opens `root` and descends to `target` one component at a time with
+/// `O_NOFOLLOW`, then removes the tree through the open descriptors: every
+/// entry is unlinked relative to its parent directory, so a symlink swapped
+/// in along the way fails the deletion instead of redirecting it.
+///
+/// Missing targets succeed: removal is idempotent. A link at the leaf is
+/// unlinked as a link, never followed; anything else unsuitable on the way
+/// down fails closed.
+///
+/// Directories that archives shipped read-only get the owner write bit
+/// first, or their entries could not be unlinked.
+///
+/// # Arguments
+///
+/// * `root` - The directory the deletion is confined to.
+/// * `target` - The directory or file to remove. Must be strictly inside `root`.
+///
+/// # Errors
+///
+/// Returns [`FileSystemError::RemoveDirectory`] if the target is not strictly
+/// inside `root`, if a link or non-directory blocks the descent, or if an
+/// entry cannot be unlinked. Returns [`FileSystemError::ReadDirectory`] if a
+/// directory cannot be opened or listed.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::path::Path;
+/// use soar_utils::{error::FileSystemResult, fs::remove_contained_dir};
+///
+/// fn main() -> FileSystemResult<()> {
+///     remove_contained_dir(
+///         Path::new("/data/packages"),
+///         Path::new("/data/packages/foo-1.0"),
+///     )?;
+///     Ok(())
+/// }
+/// ```
+pub fn remove_contained_dir(root: &Path, target: &Path) -> FileSystemResult<()> {
+    // Lexical gate first: absolute, no `..`, strictly below the root. The
+    // descriptor walk below carries the traversal safety; this only picks
+    // clear errors for plainly wrong inputs.
+    if !target.is_absolute() {
+        return Err(refuse(target, "path is not absolute"));
+    }
+    if target
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
+        return Err(refuse(target, "path contains `..`"));
+    }
+    let rest = target
+        .strip_prefix(root)
+        .map_err(|_| refuse(target, "path is outside the root"))?;
+    let mut normals: Vec<&OsStr> = Vec::new();
+    for comp in rest.components() {
+        match comp {
+            Component::Normal(name) => normals.push(name),
+            Component::CurDir => {}
+            _ => return Err(refuse(target, "path is outside the root")),
+        }
+    }
+    let Some((leaf, ancestors)) = normals.split_last() else {
+        return Err(refuse(target, "refusing to remove the root itself"));
+    };
+
+    let mut display = root.to_path_buf();
+    let mut dir = open_dir(root)?;
+    for &comp in ancestors {
+        display.push(comp);
+        let child = match openat(
+            dir.as_fd(),
+            comp,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(child) => child,
+            // Gone above the target: nothing left to remove.
+            Err(Errno::ENOENT) => return Ok(()),
+            Err(err) => {
+                return Err(FileSystemError::ReadDirectory {
+                    path: display.clone(),
+                    source: std::io::Error::from(err),
+                });
+            }
+        };
+        dir = match Dir::from_fd(child) {
+            Ok(dir) => dir,
+            Err(err) => {
+                return Err(FileSystemError::ReadDirectory {
+                    path: display.clone(),
+                    source: std::io::Error::from(err),
+                });
+            }
+        };
+    }
+    display.push(leaf);
+    remove_leaf(&dir, leaf, &display)
+}
+
+/// A refusal to delete: the input never names a valid target.
+fn refuse(path: &Path, why: &str) -> FileSystemError {
+    FileSystemError::RemoveDirectory {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("refusing to remove {}: {why}", path.display()),
+        ),
+    }
+}
+
+/// Unlinks the last component of a contained removal through its open parent.
+fn remove_leaf(parent: &Dir, leaf: &OsStr, display: &Path) -> FileSystemResult<()> {
+    // Classify without following anything.
+    let fd = match openat(
+        parent.as_fd(),
+        leaf,
+        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        // Gone already: removal is idempotent.
+        Err(Errno::ENOENT) => return Ok(()),
+        Err(err) => {
+            return Err(FileSystemError::ReadDirectory {
+                path: display.to_path_buf(),
+                source: std::io::Error::from(err),
+            });
+        }
+    };
+    let kind = match fstat(&fd) {
+        Ok(stat) => SFlag::from_bits_truncate(stat.st_mode),
+        // Vanished between open and stat: nothing left to remove.
+        Err(Errno::ENOENT) => return Ok(()),
+        Err(err) => {
+            return Err(FileSystemError::ReadDirectory {
+                path: display.to_path_buf(),
+                source: std::io::Error::from(err),
+            });
+        }
+    };
+    drop(fd);
+    if kind.contains(SFlag::S_IFDIR) {
+        let child = match openat(
+            parent.as_fd(),
+            leaf,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(child) => child,
+            Err(Errno::ENOENT) => return Ok(()),
+            Err(err) => {
+                return Err(FileSystemError::ReadDirectory {
+                    path: display.to_path_buf(),
+                    source: std::io::Error::from(err),
+                });
+            }
+        };
+        let mut child = match Dir::from_fd(child) {
+            Ok(child) => child,
+            Err(err) => {
+                return Err(FileSystemError::ReadDirectory {
+                    path: display.to_path_buf(),
+                    source: std::io::Error::from(err),
+                });
+            }
+        };
+        remove_tree_contents(&mut child, display)?;
+        drop(child);
+        unlink_entry(parent, leaf, display, UnlinkatFlags::RemoveDir)
+    } else {
+        // Files, links, and special nodes unlink as themselves: nothing is
+        // ever traversed here.
+        unlink_entry(parent, leaf, display, UnlinkatFlags::NoRemoveDir)
+    }
+}
+
+/// Empties an open directory, unlinking every entry relative to it.
+///
+/// Entries are handled by what each step finds, never by what an earlier
+/// step saw: only directories opened through their own descriptor are
+/// descended into, and only after they are emptied the same way.
+fn remove_tree_contents(dir: &mut Dir, display: &Path) -> FileSystemResult<()> {
+    ensure_owner_writable(dir, display)?;
+    // Names snapshot first: entries borrow the directory buffer.
+    let names: Vec<OsString> = dir
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .ok()
+                .map(|entry| OsStr::from_bytes(entry.file_name().to_bytes()).to_owned())
+        })
+        .collect();
+    for name in &names {
+        let name = name.as_os_str();
+        if name == "." || name == ".." {
+            continue;
+        }
+        let path = display.join(name);
+        let child = match openat(
+            dir.as_fd(),
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(child) => child,
+            // Gone, a link, or not a directory: unlink the entry itself,
+            // traversing nothing.
+            Err(Errno::ENOENT | Errno::ELOOP | Errno::ENOTDIR) => {
+                unlink_entry(dir, name, &path, UnlinkatFlags::NoRemoveDir)?;
+                continue;
+            }
+            Err(err) => {
+                return Err(FileSystemError::ReadDirectory {
+                    path: path.clone(),
+                    source: std::io::Error::from(err),
+                });
+            }
+        };
+        let mut child = match Dir::from_fd(child) {
+            Ok(child) => child,
+            Err(err) => {
+                return Err(FileSystemError::ReadDirectory {
+                    path: path.clone(),
+                    source: std::io::Error::from(err),
+                });
+            }
+        };
+        remove_tree_contents(&mut child, &path)?;
+        drop(child);
+        unlink_entry(dir, name, &path, UnlinkatFlags::RemoveDir)?;
+    }
+    Ok(())
+}
+
+/// Adds the owner write bit to an open directory, so its entries can be unlinked.
+///
+/// A chmod failure is ignored: the unlink reports the real error either way.
+fn ensure_owner_writable(dir: &Dir, display: &Path) -> FileSystemResult<()> {
+    let mode = match fstat(dir.as_fd()) {
+        Ok(stat) => Mode::from_bits_truncate(stat.st_mode),
+        Err(err) => {
+            return Err(FileSystemError::ReadDirectory {
+                path: display.to_path_buf(),
+                source: std::io::Error::from(err),
+            });
+        }
+    };
+    if !mode.contains(Mode::S_IWUSR) {
+        fchmod(dir.as_fd(), mode | Mode::S_IWUSR).ok();
+    }
+    Ok(())
+}
+
+/// Unlinks one entry relative to its open parent directory.
+///
+/// A vanished entry is already gone: removal is idempotent.
+fn unlink_entry(
+    parent: &Dir,
+    name: &OsStr,
+    display: &Path,
+    flag: UnlinkatFlags,
+) -> FileSystemResult<()> {
+    match unlinkat(parent.as_fd(), name, flag) {
+        Ok(()) => Ok(()),
+        Err(Errno::ENOENT) => Ok(()),
+        Err(err) => {
+            Err(FileSystemError::RemoveDirectory {
+                path: display.to_path_buf(),
+                source: std::io::Error::from(err),
+            })
+        }
+    }
 }
 
 /// Reads the first `bytes` bytes from a file and returns the signature.
@@ -716,6 +1005,158 @@ mod tests {
 
         stop.store(true, Ordering::Relaxed);
         swapper.join().expect("swapper thread panicked");
+    }
+
+    /// A read-only tree still deletes: archives commonly ship without the
+    /// owner write bit the unlinking needs.
+    #[test]
+    fn test_remove_contained_dir_deletes_read_only_tree() {
+        use std::os::unix::fs::PermissionsExt;
+        let tempdir = tempdir().unwrap();
+        let root = tempdir.path().join("packages");
+        let leaf = root.join("pkg-1.0");
+        let sub = leaf.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        File::create(leaf.join("bin")).unwrap();
+        File::create(sub.join("f")).unwrap();
+        for dir in [&leaf, &sub] {
+            let mut perms = fs::metadata(dir).unwrap().permissions();
+            perms.set_mode(0o555);
+            fs::set_permissions(dir, perms).unwrap();
+        }
+        remove_contained_dir(&root, &leaf).unwrap();
+        assert!(!leaf.exists(), "the tree is gone");
+        assert!(root.is_dir(), "the root stays");
+    }
+
+    /// The root itself, anything outside it, and anything smuggling `..`
+    /// are refused before a descriptor is even opened.
+    #[test]
+    fn test_remove_contained_dir_refuses_unclear_targets() {
+        let tempdir = tempdir().unwrap();
+        let root = tempdir.path().join("packages");
+        fs::create_dir_all(&root).unwrap();
+        let outside = tempdir.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep"), b"keep").unwrap();
+        let bad = vec![
+            root.clone(),
+            root.join(""),
+            outside.clone(),
+            outside.join("pkg-1.0"),
+            root.join("..").join("outside"),
+            Path::new("relative/pkg-1.0").to_path_buf(),
+        ];
+        for target in &bad {
+            assert!(
+                remove_contained_dir(&root, target).is_err(),
+                "accepted {target:?}"
+            );
+        }
+        assert_eq!(
+            fs::read(outside.join("keep")).unwrap(),
+            b"keep",
+            "nothing outside is touched"
+        );
+        assert!(root.is_dir(), "the root stays");
+    }
+
+    /// A symlink swapped in below the root fails the deletion; the outside
+    /// tree it points at survives.
+    #[test]
+    fn test_remove_contained_dir_stops_at_planted_symlink() {
+        use std::os::unix::fs::symlink;
+        let tempdir = tempdir().unwrap();
+        let root = tempdir.path().join("packages");
+        let mid = root.join("mid");
+        let leaf = mid.join("pkg-1.0");
+        fs::create_dir_all(&leaf).unwrap();
+        File::create(leaf.join("bin")).unwrap();
+        let outside = tempdir.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep"), b"keep").unwrap();
+        // Swap the middle component for a link to the outside tree.
+        let stash = root.join("stash");
+        fs::rename(&mid, &stash).unwrap();
+        symlink(&outside, &mid).unwrap();
+        assert!(remove_contained_dir(&root, &leaf).is_err());
+        assert_eq!(
+            fs::read(outside.join("keep")).unwrap(),
+            b"keep",
+            "the outside tree survives"
+        );
+        assert!(
+            stash.join("pkg-1.0").join("bin").exists(),
+            "the real tree is untouched"
+        );
+    }
+
+    /// A link at the leaf unlinks as a link: its target is never traversed.
+    #[test]
+    fn test_remove_contained_dir_unlinks_symlink_leaf() {
+        use std::os::unix::fs::symlink;
+        let tempdir = tempdir().unwrap();
+        let root = tempdir.path().join("packages");
+        fs::create_dir_all(&root).unwrap();
+        let outside = tempdir.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep"), b"keep").unwrap();
+        let link = root.join("pkg-1.0");
+        symlink(&outside, &link).unwrap();
+        remove_contained_dir(&root, &link).unwrap();
+        assert!(link.symlink_metadata().is_err(), "the link itself is gone");
+        assert_eq!(
+            fs::read(outside.join("keep")).unwrap(),
+            b"keep",
+            "the target survives"
+        );
+    }
+
+    /// Missing targets succeed: removal is idempotent.
+    #[test]
+    fn test_remove_contained_dir_missing_target_is_ok() {
+        let tempdir = tempdir().unwrap();
+        let root = tempdir.path().join("packages");
+        fs::create_dir_all(&root).unwrap();
+        remove_contained_dir(&root, &root.join("gone-1.0")).unwrap();
+        remove_contained_dir(&root, &root.join("nope").join("gone-1.0")).unwrap();
+    }
+
+    /// A stray file at the leaf unlinks as a file, matching remove_dir_all.
+    #[test]
+    fn test_remove_contained_dir_removes_file_leaf() {
+        let tempdir = tempdir().unwrap();
+        let root = tempdir.path().join("packages");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("pkg-1.0");
+        File::create(&file).unwrap();
+        remove_contained_dir(&root, &file).unwrap();
+        assert!(!file.exists());
+        assert!(root.is_dir(), "the root stays");
+    }
+
+    /// Links inside the tree unlink as links; what they point at survives.
+    #[test]
+    fn test_remove_contained_dir_never_follows_inner_links() {
+        use std::os::unix::fs::symlink;
+        let tempdir = tempdir().unwrap();
+        let root = tempdir.path().join("packages");
+        let leaf = root.join("pkg-1.0");
+        let sub = leaf.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        File::create(sub.join("f")).unwrap();
+        let outside = tempdir.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep"), b"keep").unwrap();
+        symlink(&outside, sub.join("escape")).unwrap();
+        symlink(outside.join("keep"), leaf.join("keep-link")).unwrap();
+        remove_contained_dir(&root, &leaf).unwrap();
+        assert!(!leaf.exists(), "the tree is gone");
+        assert_eq!(
+            fs::read(outside.join("keep")).unwrap(),
+            b"keep",
+            "linked targets survive"
+        );
     }
 
     #[test]

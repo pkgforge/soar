@@ -10,7 +10,10 @@ use soar_config::{
     packages::{PackageHooks, SandboxConfig},
 };
 use soar_db::{models::types::PackageProvide, repository::core::CoreRepository};
-use soar_utils::{error::FileSystemResult, fs::walk_dir};
+use soar_utils::{
+    error::FileSystemResult,
+    fs::{remove_contained_dir, walk_dir},
+};
 use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
@@ -311,6 +314,8 @@ impl PackageRemover {
         // this tree, so it may restore what it needs to delete it.
         // The installed path is read back from the database; a row
         // pointing outside the packages tree never reaches the delete.
+        // The deletion stays bound to open descriptors, so a link swapped
+        // in along the path fails it instead of redirecting it.
         let packages_path = self
             .config
             .get_packages_path(Some(self.package.profile.clone()))?;
@@ -321,19 +326,27 @@ impl PackageRemover {
                 self.package.installed_path
             )));
         }
-        make_tree_writable(Path::new(&self.package.installed_path));
-        if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {
-            // if not found, the package is already removed.
-            if err.kind() != std::io::ErrorKind::NotFound {
-                return Err(err).with_context(|| {
-                    format!("removing package directory {}", self.package.installed_path)
-                })?;
-            } else {
-                warn!(
-                    "package directory already removed: {}",
+        let already_gone = !fs::symlink_metadata(&self.package.installed_path).is_ok();
+        // A missing root holds nothing to delete: warn and keep going, the
+        // way a missing package directory does below.
+        if packages_path.exists() {
+            remove_contained_dir(&packages_path, installed_path).map_err(|err| {
+                SoarError::Custom(format!(
+                    "removing package directory {}: {err}",
                     self.package.installed_path
-                );
-            }
+                ))
+            })?;
+        } else {
+            warn!(
+                "packages directory already removed: {}",
+                packages_path.display()
+            );
+        }
+        if already_gone {
+            warn!(
+                "package directory already removed: {}",
+                self.package.installed_path
+            );
         };
 
         trace!("removing package from database");

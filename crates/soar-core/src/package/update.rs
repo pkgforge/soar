@@ -1,21 +1,22 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use soar_config::config::Config;
 use soar_db::repository::core::CoreRepository;
+use soar_utils::fs::remove_contained_dir;
 use tracing::warn;
 
 use super::remove::path_inside_packages;
 use crate::{
     database::{connection::DieselDatabase, models::Package},
-    error::ErrorContext,
+    error::SoarError,
     SoarResult,
 };
 
 /// What `partition_old_versions` decides: `(clear, keep)`.
-type PartitionedRows = (Vec<(i32, PathBuf)>, Vec<String>);
+///
+/// Cleared rows carry their profile so the deletion can resolve the same
+/// root the row was measured against.
+type PartitionedRows = (Vec<(i32, PathBuf, String)>, Vec<String>);
 
 /// Splits old-version rows into records to clear and paths to keep.
 ///
@@ -31,12 +32,12 @@ fn partition_old_versions(
     for (id, installed_path, profile) in rows {
         let path = Path::new(installed_path);
         if !path.exists() {
-            clear.push((*id, PathBuf::from(installed_path)));
+            clear.push((*id, PathBuf::from(installed_path), profile.clone()));
             continue;
         }
         let root = packages_root(profile)?;
         if path_inside_packages(path, &root) {
-            clear.push((*id, PathBuf::from(installed_path)));
+            clear.push((*id, PathBuf::from(installed_path), profile.clone()));
         } else {
             keep.push(installed_path.clone());
         }
@@ -77,9 +78,10 @@ pub fn remove_old_versions(
         )
     })?;
 
-    let (clear, keep) = partition_old_versions(&old_packages, &|profile| -> SoarResult<PathBuf> {
+    let packages_root = |profile: &str| -> SoarResult<PathBuf> {
         Ok(config.get_packages_path(Some(profile.to_string()))?)
-    })?;
+    };
+    let (clear, keep) = partition_old_versions(&old_packages, &packages_root)?;
     for installed_path in &keep {
         warn!(
             installed_path = installed_path,
@@ -89,16 +91,16 @@ pub fn remove_old_versions(
 
     // A filesystem failure aborts before any record is deleted.
     let mut cleared = Vec::new();
-    for (id, installed_path) in &clear {
+    for (id, installed_path, profile) in &clear {
         if installed_path.exists() {
-            // An archive may ship its directories read-only, and removing an
-            // entry needs write permission on the directory holding it.
-            crate::package::remove::make_tree_writable(installed_path);
-            fs::remove_dir_all(installed_path).with_context(|| {
-                format!(
-                    "removing old package directory {}",
+            // The deletion stays bound to open descriptors, so a link
+            // swapped in along the path fails it instead of redirecting it.
+            let root = packages_root(profile)?;
+            remove_contained_dir(&root, installed_path).map_err(|err| {
+                SoarError::Custom(format!(
+                    "removing old package directory {}: {err}",
                     installed_path.display()
-                )
+                ))
             })?;
         }
         cleared.push(*id);
@@ -162,8 +164,8 @@ mod tests {
         let (clear, keep) = partition_old_versions(&rows, &roots(&root1, &root2)).unwrap();
 
         assert_eq!(clear.len(), 2);
-        assert!(clear.iter().any(|(id, _)| *id == 1));
-        assert!(clear.iter().any(|(id, _)| *id == 2));
+        assert!(clear.iter().any(|(id, _, _)| *id == 1));
+        assert!(clear.iter().any(|(id, _, _)| *id == 2));
         assert_eq!(keep.len(), 1);
         assert!(keep[0].ends_with("outside"));
     }
