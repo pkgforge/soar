@@ -35,7 +35,7 @@ pub fn check_health(ctx: &SoarContext) -> SoarResult<HealthReport> {
                     .split(':')
                     .any(|p| !p.is_empty() && resolve_path(p).unwrap_or_default() == *dir)
             };
-            let from_env = std::env::var("MANPATH").map(&listed).unwrap_or(false);
+            let from_env = std::env::var("MANPATH").map(listed).unwrap_or(false);
             from_env
                 || std::process::Command::new("manpath")
                     .output()

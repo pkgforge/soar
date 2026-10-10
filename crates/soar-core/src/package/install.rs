@@ -787,12 +787,13 @@ impl PackageInstaller {
                     .envs(env_vars);
 
                 if let Some(s) = &self.sandbox {
-                    let config =
-                        sandbox::SandboxConfig::new().with_network(if s.allows_network() {
+                    let config = sandbox::SandboxConfig::new()
+                        .with_network(if s.allows_network() {
                             sandbox::NetworkConfig::allow_all()
                         } else {
                             sandbox::NetworkConfig::default()
-                        });
+                        })
+                        .require(s.is_required());
                     sandbox_cmd = sandbox_cmd.config(config);
                     for path in &s.fs_read {
                         sandbox_cmd = sandbox_cmd.read_path(path);
