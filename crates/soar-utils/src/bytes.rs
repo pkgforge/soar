@@ -94,11 +94,14 @@ pub fn parse_bytes(s: &str) -> BytesResult<u64> {
         .rev()
         .find_map(|(i, p)| {
             size.strip_suffix(p).and_then(|num| {
-                num.trim()
-                    .parse::<f64>()
-                    .ok()
-                    .map(|n| n * base.powi(i.try_into().unwrap()))
-                    .map(|n| n.round() as u64)
+                num.trim().parse::<f64>().ok().and_then(|n| {
+                    let scaled = n * base.powi(i.try_into().unwrap());
+                    // `as u64` saturates infinity and maps NaN to zero, so a
+                    // size like `1e309GB` or `-5B` would silently become
+                    // u64::MAX or 0. Reject anything that is not a finite,
+                    // non-negative count of bytes.
+                    (scaled.is_finite() && scaled >= 0.0).then(|| scaled.round() as u64)
+                })
             })
         })
         .ok_or_else(|| {
@@ -202,5 +205,15 @@ mod tests {
         assert!(parse_bytes(" 1.50Li").is_err());
         assert!(parse_bytes(" MiB ").is_err());
         assert!(parse_bytes("MB").is_err());
+    }
+
+    /// Infinity and NaN must not saturate into a byte count, and a negative
+    /// size must not become zero.
+    #[test]
+    fn test_parse_bytes_rejects_non_finite_and_negative() {
+        assert!(parse_bytes("1e309GB").is_err());
+        assert!(parse_bytes("NaNGB").is_err());
+        assert!(parse_bytes("-5GB").is_err());
+        assert!(parse_bytes("-1B").is_err());
     }
 }

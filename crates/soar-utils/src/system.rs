@@ -29,22 +29,21 @@ impl UsernameSource for SystemSource {
     }
 }
 
-fn get_username_with<S: UsernameSource>(src: &S) -> String {
-    src.env_var("USER")
+fn get_username_with<S: UsernameSource>(src: &S) -> Option<String> {
+    // The uid answers for the process; the environment answers for whoever
+    // set it. Trust the former first: `USER` is trivially spoofed and feeds
+    // the home-directory fallback in `path`.
+    src.uid_name()
+        .or_else(|| src.env_var("USER"))
         .or_else(|| src.env_var("LOGNAME"))
-        .or_else(|| src.uid_name())
-        .expect("Couldn't determine username.")
 }
 
-/// Returns the username of the current user.
+/// Returns the username of the current user, if it can be determined.
 ///
-/// This function first checks the `USER` and `LOGNAME` environment variables. If not set, it
-/// falls back to fetching the username using the effective user ID.
-///
-/// # Panics
-///
-/// This function will panic if it cannot determine the username.
-pub fn get_username() -> String {
+/// This function prefers the name the effective uid resolves to over the
+/// `USER` and `LOGNAME` environment variables, which anyone can set. Returns
+/// `None` when every source comes up empty instead of panicking.
+pub fn get_username() -> Option<String> {
     get_username_with(&SystemSource)
 }
 
@@ -80,15 +79,29 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Couldn't determine username.")]
-    fn test_fails_when_all_sources_missing() {
-        get_username_with(&AlwaysNone);
+    fn test_returns_none_when_all_sources_missing() {
+        assert_eq!(get_username_with(&AlwaysNone), None);
     }
 
     #[test]
     fn test_get_username() {
         let username = get_username();
-        assert!(!username.is_empty());
+        assert!(username.is_some_and(|u| !u.is_empty()));
+    }
+
+    #[test]
+    fn test_uid_is_preferred_over_spoofed_env() {
+        struct Spoofed;
+        impl UsernameSource for Spoofed {
+            fn env_var(&self, _: &str) -> Option<String> {
+                Some("spoofed".to_string())
+            }
+
+            fn uid_name(&self) -> Option<String> {
+                Some("real".to_string())
+            }
+        }
+        assert_eq!(get_username_with(&Spoofed), Some("real".to_string()));
     }
 
     #[test]
@@ -97,6 +110,6 @@ mod tests {
         env::remove_var("LOGNAME");
 
         let username = get_username();
-        assert!(!username.is_empty());
+        assert!(username.is_some_and(|u| !u.is_empty()));
     }
 }

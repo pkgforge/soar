@@ -16,7 +16,7 @@ use crate::error::{FileSystemError, FileSystemResult, IoOperation, IoResultExt};
 ///
 /// # Errors
 ///
-/// Returns a [`FileSystemError::File`] if the removal fails for any reason other than
+/// Returns a [`FileSystemError::RemoveFile`] if the removal fails for any reason other than
 /// the path not existing (e.g., permission denied, path is in use, etc.).
 ///
 /// # Example
@@ -66,7 +66,7 @@ pub fn safe_remove<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
 ///
 /// # Errors
 ///
-/// * [`FileSystemError::Directory`] if the directory could not be created.
+/// * [`FileSystemError::CreateDirectory`] if the directory could not be created.
 /// * [`FileSystemError::NotADirectory`] if the path exists but is not a directory.
 ///
 /// # Example
@@ -95,7 +95,9 @@ pub fn ensure_dir_exists<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
 }
 
 /// Creates symlink from `source` to `target`
-/// If `target` is a file, it will be removed before creating the symlink.
+/// If `target` is already a symlink, it is replaced. Anything else occupying
+/// the path, a regular file or a directory, is never removed: the creation
+/// fails and the caller decides whether skipping is acceptable.
 ///
 /// # Arguments
 ///
@@ -104,8 +106,8 @@ pub fn ensure_dir_exists<P: AsRef<Path>>(path: P) -> FileSystemResult<()> {
 ///
 /// # Errors
 ///
-/// Returns a [`FileSystemError::Symlink`] if the symlink could not be created.
-/// Returns a [`FileSystemError::File`] if the symlink could not be removed.
+/// Returns a [`FileSystemError::CreateSymlink`] if the symlink could not be created.
+/// Returns a [`FileSystemError::RemoveFile`] if the symlink could not be removed.
 ///
 /// # Example
 ///
@@ -125,11 +127,17 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
     let source = source.as_ref();
     let target = target.as_ref();
 
-    if let Some(parent) = target.parent() {
+    // A target without a parent lives in the current directory: nothing to
+    // create, and `ensure_dir_exists("")` would only fail confusingly.
+    if let Some(parent) = target.parent().filter(|p| !p.as_os_str().is_empty()) {
         ensure_dir_exists(parent)?;
     }
 
-    if target.is_file() {
+    // Only a link is ever cleared here. Anything else standing where the link
+    // goes is refused by symlink() below with EEXIST: only the caller knows
+    // whether skipping is acceptable, and removing a stranger's file is never
+    // the default. Lstat, so a link to a directory is still just a link.
+    if fs::symlink_metadata(target).is_ok_and(|m| m.file_type().is_symlink()) {
         fs::remove_file(target).with_path(target, IoOperation::RemoveFile)?;
     }
 
@@ -143,6 +151,11 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
 
 /// Walks a directory recursively and calls the provided function on each file or directory.
 ///
+/// Symlinked directories are reported to `action` as links and never
+/// descended into, so a looped tree always terminates. Entries that vanish
+/// or become unreadable mid-walk are skipped silently: the caller asked what
+/// is there, not for an audit, and a raced entry is not an error.
+///
 /// # Arguments
 ///
 /// * `dir` - The directory to walk
@@ -150,7 +163,7 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
 ///
 /// # Errors
 ///
-/// Returns a [`FileSystemError::Directory`] if the directory could not be read.
+/// Returns a [`FileSystemError::ReadDirectory`] if the directory could not be read.
 /// Returns a [`FileSystemError::NotADirectory`] if the path is not a directory.
 ///
 /// # Example
@@ -194,7 +207,15 @@ where
 
         let path = entry.path();
 
-        if path.is_dir() {
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => continue,
+        };
+        if file_type.is_symlink() {
+            action(&path)?;
+            continue;
+        }
+        if file_type.is_dir() {
             walk_dir(&path, action)?;
             continue;
         }
@@ -215,7 +236,7 @@ where
 /// Returns a byte array of the first `bytes` bytes from the file.
 ///
 /// # Errors
-/// Returns a [`FileSystemError::File`] if the file could not be opened or read.
+/// Returns a [`FileSystemError::ReadFile`] if the file could not be opened or read.
 ///
 /// # Example
 /// ```no_run
@@ -232,6 +253,19 @@ pub fn read_file_signature<P: AsRef<Path>>(path: P, bytes: usize) -> FileSystemR
     let file = File::open(path).with_path(path, IoOperation::ReadFile)?;
 
     let mut reader = BufReader::new(file);
+    // Cap the allocation: the length comes from callers, and a bogus one
+    // must not turn into a huge buffer. Short files already fail below in
+    // `read_exact` instead of reading as zero-padded.
+    const MAX_SIGNATURE: usize = 64 * 1024;
+    if bytes > MAX_SIGNATURE {
+        return Err(FileSystemError::ReadFile {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("signature length {bytes} exceeds {MAX_SIGNATURE} bytes"),
+            ),
+        });
+    }
     let mut buffer = vec![0u8; bytes];
     reader
         .read_exact(&mut buffer)
@@ -250,7 +284,7 @@ pub fn read_file_signature<P: AsRef<Path>>(path: P, bytes: usize) -> FileSystemR
 ///
 /// # Errors
 ///
-/// Returns a [`FileSystemError::Directory`] if the directory itself cannot be read.
+/// Returns a [`FileSystemError::ReadDirectory`] if the directory itself cannot be read.
 ///
 /// # Examples
 ///
@@ -269,6 +303,8 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
             continue;
         };
 
+        // entry.metadata is lstat, so symlinks are never files
+        // or dirs here: linked trees contribute nothing.
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
@@ -287,6 +323,10 @@ pub fn dir_size<P: AsRef<Path>>(path: P) -> FileSystemResult<u64> {
 ///
 /// Checks the file's first four bytes for the ELF magic sequence (0x7F, 'E', 'L', 'F') and
 /// returns `true` if they match, `false` otherwise.
+///
+/// Unreadable files read as `false`: this is a probe for discovery filters,
+/// not a validation. Callers that must tell "not ELF" apart from "cannot be
+/// read" use [`read_file_signature`] directly.
 ///
 /// # Examples
 ///
@@ -443,12 +483,23 @@ mod tests {
     }
 
     #[test]
-    fn test_create_symlink_already_exists() {
+    fn test_create_symlink_refuses_a_regular_file() {
         let dir = tempdir().unwrap();
         let source = dir.path().join("source");
         let target = dir.path().join("target");
         fs::write(&source, "content").unwrap();
-        fs::write(&target, "content").unwrap();
+        fs::write(&target, "mine").unwrap();
+        assert!(create_symlink(&source, &target).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"mine");
+    }
+
+    #[test]
+    fn test_create_symlink_replaces_a_link() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        fs::write(&source, "content").unwrap();
+        std::os::unix::fs::symlink("/nonexistent", &target).unwrap();
         create_symlink(&source, &target).unwrap();
         assert!(target.is_symlink());
         assert_eq!(fs::read_link(&target).unwrap(), source);
@@ -527,6 +578,54 @@ mod tests {
         let mut expected = vec![file, nested_file];
         expected.sort();
         assert_eq!(results, expected);
+    }
+
+    #[test]
+    fn test_walk_dir_does_not_enter_symlinked_dirs() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+        let outside = tempdir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let canary = outside.join("canary");
+        File::create(&canary).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("link")).unwrap();
+        let path = dir.clone();
+        let pid = unsafe { nix::libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            let mut visited = Vec::new();
+            let walked = walk_dir(&path, &mut |p| -> FileSystemResult<()> {
+                visited.push(p.to_path_buf());
+                Ok(())
+            });
+            let leaked = visited != vec![path.join("link")];
+            let code = i32::from(walked.is_err() || leaked);
+            unsafe { nix::libc::_exit(code) };
+        }
+        let mut status = 0;
+        assert_eq!(unsafe { nix::libc::waitpid(pid, &mut status, 0) }, pid);
+        assert!(
+            nix::libc::WIFEXITED(status) && nix::libc::WEXITSTATUS(status) == 0,
+            "walk_dir entered a symlinked dir or failed on a symlink loop"
+        );
+    }
+
+    #[test]
+    fn test_dir_size_ignores_symlinks() {
+        // DirEntry::metadata does not follow a final symlink, so loops
+        // already terminate here. This pins that symlinks contribute
+        // nothing: no double counting, no outside bytes.
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("file"), b"12345678").unwrap();
+        let outside = tempdir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("big"), vec![0u8; 65536]).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("link")).unwrap();
+        std::os::unix::fs::symlink(&dir, dir.join("loop")).unwrap();
+        assert_eq!(dir_size(&dir).unwrap(), 8);
     }
 
     #[test]

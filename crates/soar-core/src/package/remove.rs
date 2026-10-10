@@ -2,7 +2,7 @@ use std::{
     ffi::OsString,
     fs,
     os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use soar_config::{
@@ -104,9 +104,23 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
+/// Whether `installed_path` names something inside `packages_path`.
+///
+/// The installed path is read back from the database, so a lexical check is
+/// not enough on its own: `..` components are rejected outright, relative
+/// paths never match an absolute packages root, and the prefix comparison is
+/// component-wise, so `/data/packages-evil` does not match `/data/packages`.
+fn path_inside_packages(installed_path: &Path, packages_path: &Path) -> bool {
+    installed_path.is_absolute()
+        && installed_path
+            .components()
+            .all(|c| !matches!(c, Component::ParentDir))
+        && installed_path.starts_with(packages_path)
+}
+
 use crate::{
     database::{connection::DieselDatabase, models::InstalledPackage},
-    error::ErrorContext,
+    error::{ErrorContext, SoarError},
     SoarResult,
 };
 
@@ -123,6 +137,11 @@ pub struct PackageRemover {
 /// Without it `remove_dir_all` cannot unlink the entries inside, so a package
 /// that installed cleanly could not be removed.
 pub fn make_tree_writable(path: &Path) {
+    // The walk below never descends through links. The top path gets the same
+    // treatment, so a planted link is never chmodded through.
+    if !fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+        return;
+    }
     let Ok(entries) = fs::read_dir(path) else {
         return;
     };
@@ -289,6 +308,20 @@ impl PackageRemover {
         // Archives commonly ship directories read-only, and removing a
         // directory's entries needs the write bit on that directory. soar owns
         // this tree, so it may restore what it needs to delete it.
+        //
+        // The installed path is read back from the database, not built from
+        // this run's inputs. A row pointing outside the packages tree must
+        // never reach the recursive chmod and delete below.
+        let packages_path = self
+            .config
+            .get_packages_path(Some(self.package.profile.clone()))?;
+        let installed_path = Path::new(&self.package.installed_path);
+        if !path_inside_packages(installed_path, &packages_path) {
+            return Err(SoarError::Custom(format!(
+                "Refusing to remove package directory outside the packages tree: {}",
+                self.package.installed_path
+            )));
+        }
         make_tree_writable(Path::new(&self.package.installed_path));
         if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {
             // if not found, the package is already removed.
@@ -334,7 +367,7 @@ mod tests {
     use soar_db::models::types::PackageProvide;
     use tempfile::tempdir;
 
-    use super::remove_provide_symlinks;
+    use super::{path_inside_packages, remove_provide_symlinks};
 
     #[test]
     fn removes_owned_provide_symlink() {
@@ -407,5 +440,28 @@ mod tests {
             victim.exists(),
             "traversal must not touch files outside bin"
         );
+    }
+
+    #[test]
+    fn only_a_contained_path_may_be_deleted() {
+        use std::path::Path;
+        let packages = Path::new("/data/packages");
+        assert!(path_inside_packages(
+            Path::new("/data/packages/foo-1.0-abc123"),
+            packages
+        ));
+        // A sibling of the root sharing a string prefix is a different component.
+        assert!(!path_inside_packages(
+            Path::new("/data/packages-evil/x"),
+            packages
+        ));
+        // A lexical prefix with an escape folded in.
+        assert!(!path_inside_packages(
+            Path::new("/data/packages/../evil"),
+            packages
+        ));
+        // Outside the tree entirely, and a relative path never matches.
+        assert!(!path_inside_packages(Path::new("/tmp/evil"), packages));
+        assert!(!path_inside_packages(Path::new("foo-1.0"), packages));
     }
 }
