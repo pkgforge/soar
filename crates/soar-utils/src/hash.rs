@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs::File, io::BufReader, path::Path};
 
 use crate::error::{HashError, HashResult};
 
@@ -7,6 +7,9 @@ use crate::error::{HashError, HashResult};
 /// This method reads the contents of a file and computes a checksum, which is returned as a
 /// hex-encoded string. The specific hashing algorithm depends on the implementation. The
 /// default implementation uses the `blake3` crate.
+///
+/// Streams through a buffered reader rather than memory-mapping, which
+/// stalls async executors and turns truncation into `SIGBUS`.
 ///
 /// # Arguments
 ///
@@ -30,8 +33,15 @@ use crate::error::{HashError, HashResult};
 /// ```
 pub fn calculate_checksum<P: AsRef<Path>>(file_path: P) -> HashResult<String> {
     let file_path = file_path.as_ref();
+    let file = File::open(file_path).map_err(|err| {
+        HashError::ReadFailed {
+            path: file_path.to_path_buf(),
+            source: err,
+        }
+    })?;
+    let mut reader = BufReader::new(file);
     let mut hasher = blake3::Hasher::new();
-    hasher.update_mmap(file_path).map_err(|err| {
+    hasher.update_reader(&mut reader).map_err(|err| {
         HashError::ReadFailed {
             path: file_path.to_path_buf(),
             source: err,

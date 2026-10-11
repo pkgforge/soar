@@ -29,22 +29,20 @@ impl UsernameSource for SystemSource {
     }
 }
 
-fn get_username_with<S: UsernameSource>(src: &S) -> String {
-    src.env_var("USER")
-        .or_else(|| src.env_var("LOGNAME"))
-        .or_else(|| src.uid_name())
-        .expect("Couldn't determine username.")
+fn get_username_with<S: UsernameSource>(src: &S) -> Option<String> {
+    // The uid answers for the process; the environment answers for whoever
+    // set it. Empty values select nothing.
+    let non_empty = |key: &str| src.env_var(key).filter(|s| !s.is_empty());
+    src.uid_name()
+        .filter(|s| !s.is_empty())
+        .or_else(|| non_empty("USER"))
+        .or_else(|| non_empty("LOGNAME"))
 }
 
-/// Returns the username of the current user.
+/// Returns the username of the current user, if it can be determined.
 ///
-/// This function first checks the `USER` and `LOGNAME` environment variables. If not set, it
-/// falls back to fetching the username using the effective user ID.
-///
-/// # Panics
-///
-/// This function will panic if it cannot determine the username.
-pub fn get_username() -> String {
+/// Prefers the effective uid over `USER`/`LOGNAME`, which anyone can set.
+pub fn get_username() -> Option<String> {
     get_username_with(&SystemSource)
 }
 
@@ -80,15 +78,49 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Couldn't determine username.")]
-    fn test_fails_when_all_sources_missing() {
-        get_username_with(&AlwaysNone);
+    fn test_returns_none_when_all_sources_missing() {
+        assert_eq!(get_username_with(&AlwaysNone), None);
+    }
+
+    #[test]
+    fn test_empty_env_falls_through_to_logname() {
+        struct EmptyUser;
+        impl UsernameSource for EmptyUser {
+            fn env_var(&self, key: &str) -> Option<String> {
+                match key {
+                    "USER" => Some(String::new()),
+                    "LOGNAME" => Some("logger".to_string()),
+                    _ => None,
+                }
+            }
+
+            fn uid_name(&self) -> Option<String> {
+                None
+            }
+        }
+        assert_eq!(get_username_with(&EmptyUser), Some("logger".to_string()));
     }
 
     #[test]
     fn test_get_username() {
-        let username = get_username();
-        assert!(!username.is_empty());
+        // Uids without a name and no environment exist, for example in
+        // minimal containers, so only a present name is asserted on.
+        assert!(get_username().is_none_or(|u| !u.is_empty()));
+    }
+
+    #[test]
+    fn test_uid_is_preferred_over_spoofed_env() {
+        struct Spoofed;
+        impl UsernameSource for Spoofed {
+            fn env_var(&self, _: &str) -> Option<String> {
+                Some("spoofed".to_string())
+            }
+
+            fn uid_name(&self) -> Option<String> {
+                Some("real".to_string())
+            }
+        }
+        assert_eq!(get_username_with(&Spoofed), Some("real".to_string()));
     }
 
     #[test]
@@ -96,7 +128,6 @@ mod tests {
         env::remove_var("USER");
         env::remove_var("LOGNAME");
 
-        let username = get_username();
-        assert!(!username.is_empty());
+        assert!(get_username().is_none_or(|u| !u.is_empty()));
     }
 }

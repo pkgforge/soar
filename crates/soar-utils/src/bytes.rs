@@ -94,11 +94,13 @@ pub fn parse_bytes(s: &str) -> BytesResult<u64> {
         .rev()
         .find_map(|(i, p)| {
             size.strip_suffix(p).and_then(|num| {
-                num.trim()
-                    .parse::<f64>()
-                    .ok()
-                    .map(|n| n * base.powi(i.try_into().unwrap()))
-                    .map(|n| n.round() as u64)
+                num.trim().parse::<f64>().ok().and_then(|n| {
+                    let scaled = n * base.powi(i.try_into().unwrap());
+                    // `as u64` saturates infinity and zeroes NaN; values at
+                    // or above 2^64 saturate the same way.
+                    (scaled.is_finite() && scaled >= 0.0 && scaled < u64::MAX as f64)
+                        .then(|| scaled.round() as u64)
+                })
             })
         })
         .ok_or_else(|| {
@@ -202,5 +204,25 @@ mod tests {
         assert!(parse_bytes(" 1.50Li").is_err());
         assert!(parse_bytes(" MiB ").is_err());
         assert!(parse_bytes("MB").is_err());
+    }
+
+    #[test]
+    fn test_parse_bytes_rejects_non_finite_and_negative() {
+        assert!(parse_bytes("1e309GB").is_err());
+        assert!(parse_bytes("NaNGB").is_err());
+        assert!(parse_bytes("-5GB").is_err());
+        assert!(parse_bytes("-1B").is_err());
+    }
+
+    /// 2^64 parses as `f64` but is not a byte count; 2^64 - 2048 is the
+    /// largest exactly representable one.
+    #[test]
+    fn test_parse_bytes_rejects_above_u64_max() {
+        assert!(parse_bytes("18446744073709551616B").is_err());
+        assert!(parse_bytes("18446744073709551615B").is_err());
+        assert_eq!(
+            parse_bytes("18446744073709549568B").unwrap(),
+            18446744073709549568
+        );
     }
 }

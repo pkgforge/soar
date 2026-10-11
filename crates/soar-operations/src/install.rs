@@ -798,7 +798,8 @@ pub async fn perform_installation(
                             notes: target.package.notes.clone(),
                         });
                     }
-                    if let Err(err) = remove_old_versions(&target.package, &db, false) {
+                    let cleaned = remove_old_versions(&target.package, &db, false, ctx.config());
+                    if let Err(err) = cleaned {
                         warn!(error = %err, "could not remove the superseded version");
                     }
                 }
@@ -806,7 +807,9 @@ pub async fn perform_installation(
                     match err {
                         SoarError::Warning(msg) => {
                             warnings.lock().unwrap().push(msg);
-                            if let Err(err) = remove_old_versions(&target.package, &db, false) {
+                            let cleaned =
+                                remove_old_versions(&target.package, &db, false, ctx.config());
+                            if let Err(err) = cleaned {
                                 warn!(error = %err, "could not remove the superseded version");
                             }
                         }
@@ -889,6 +892,14 @@ async fn install_single_package(
         version = pkg.version,
         "installing package"
     );
+
+    // Refused before the lock is taken, not after work has started.
+    if !is_safe_component(&pkg.pkg_name) {
+        return Err(SoarError::Custom(format!(
+            "Refusing to install {}: package name is not a valid path component",
+            pkg.pkg_name
+        )));
+    }
 
     // Acquire lock with a bounded retry count to avoid hanging on stale locks
     const MAX_LOCK_ATTEMPTS: u32 = 120; // 60 seconds at 500ms intervals
@@ -985,15 +996,6 @@ async fn install_single_package(
     ))[..12]
         .to_string();
 
-    // pkg_name is joined into install_dir and interpolated into resource paths
-    // downstream, so it must not be able to escape the packages dir.
-    if !is_safe_component(&pkg.pkg_name) {
-        return Err(SoarError::Custom(format!(
-            "Refusing to install {}: package name is not a valid path component",
-            pkg.pkg_name
-        )));
-    }
-
     // The version is in the name so a directory can be read at a glance. It is
     // not the identity: the hash still is, since two builds of one version must
     // not collide.
@@ -1010,6 +1012,9 @@ async fn install_single_package(
         .as_ref()
         .and_then(|provides| provides.iter().find(|p| !p.symlink_to_bin))
         .map(|p| p.name.as_str())
+        // An unsafe provides name falls back to the package name, matching
+        // the link step which skips it.
+        .filter(|name| is_safe_component(name))
         .unwrap_or(&pkg.pkg_name);
     let real_bin = install_dir.join(main_binary_name);
 
@@ -1288,7 +1293,9 @@ fn verify_signatures(pubkey_str: &str, install_dir: &Path) -> SoarResult<usize> 
             .path();
         let is_signature_file = path.extension().is_some_and(|ext| ext == "sig");
         let original_file = path.with_extension("");
-        if is_signature_file && path.is_file() && original_file.is_file() {
+        // Lstat: a shipped link is never opened as a signature.
+        let is_regular = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.is_file());
+        if is_signature_file && is_regular(&path) && is_regular(&original_file) {
             let signature = Signature::from_file(&path).map_err(|err| {
                 SoarError::Custom(format!(
                     "Failed to load signature file from {}: {}",

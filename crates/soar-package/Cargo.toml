@@ -24,3 +24,5 @@ zstd = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tokio = { workspace = true }
+serial_test = { workspace = true }

@@ -92,6 +92,22 @@ async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()>
     Ok(())
 }
 
+/// Clears `to` so an extracted entry can be renamed over it.
+///
+/// A leftover symlink is removed as a link, never followed. Missing
+/// paths are left for the rename.
+fn clear_for_promotion(to: &Path) {
+    match fs::symlink_metadata(to) {
+        Ok(meta) if meta.is_dir() => {
+            fs::remove_dir_all(to).ok();
+        }
+        Ok(_) => {
+            fs::remove_file(to).ok();
+        }
+        Err(_) => {}
+    }
+}
+
 /// Lay the package out as its recipe describes: each listed file at its own
 /// path, aliases beside it, and nothing else kept.
 ///
@@ -104,7 +120,17 @@ pub fn apply_file_layout(
     artifact: &Path,
 ) -> SoarResult<()> {
     let staging = install_dir.join(".soar-layout");
-    fs::remove_dir_all(&staging).ok();
+    // A shipped symlink at the staging path is dropped as a link, never
+    // followed.
+    match fs::symlink_metadata(&staging) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            fs::remove_file(&staging).ok();
+        }
+        Ok(meta) if meta.is_dir() => {
+            fs::remove_dir_all(&staging).ok();
+        }
+        _ => {}
+    }
     fs::create_dir_all(&staging)
         .with_context(|| format!("creating staging directory {}", staging.display()))?;
 
@@ -320,10 +346,20 @@ fn resolve_source(
     // Last resort, the file name alone: an archive that was extracted but not
     // promoted still has everything under the extraction directory.
     let name = source.rsplit('/').next().unwrap_or(source);
-    present
+    let mut hits = present
         .iter()
-        .find(|p| p.file_name().is_some_and(|n| n == name))
-        .cloned()
+        .filter(|p| p.file_name().is_some_and(|n| n == name));
+    let first = hits.next()?.clone();
+    // Same-name files make the pick a guess; keep it working, but loudly.
+    if let Some(second) = hits.next() {
+        warn!(
+            source = source,
+            first = %first.display(),
+            second = %second.display(),
+            "multiple files share the source name; using the first"
+        );
+    }
+    Some(first)
 }
 
 /// Give every ELF under `dir` the executable bit.
@@ -966,9 +1002,13 @@ impl PackageInstaller {
                 .with_context(|| format!("reading metadata of {}", src.display()))?
                 .permissions()
                 .mode();
+            // The source is the user's own file: never chmod it. A
+            // non-runnable file links fine and fails at exec time.
             if mode & 0o111 != 0o111 {
-                fs::set_permissions(src, std::fs::Permissions::from_mode(mode | 0o111))
-                    .with_context(|| format!("setting permissions on {}", src.display()))?;
+                warn!(
+                    source = %src.display(),
+                    "integrated file is not executable; make it executable yourself, soar leaves your files alone"
+                );
             }
         }
 
@@ -1160,8 +1200,9 @@ impl PackageInstaller {
                     let to = self.install_dir.join(entry.file_name());
                     // Renaming a directory rewrites its `..`, so the directory
                     // itself needs the write bit; archives shipping 0555 dirs
-                    // would otherwise fail to promote.
-                    if let Ok(meta) = fs::metadata(&from) {
+                    // would otherwise fail to promote. Lstat: a shipped link
+                    // moves as a link, never chmodded through.
+                    if let Ok(meta) = fs::symlink_metadata(&from) {
                         let mode = meta.permissions().mode();
                         if meta.is_dir() && mode & 0o200 == 0 {
                             fs::set_permissions(
@@ -1171,15 +1212,8 @@ impl PackageInstaller {
                             .ok();
                         }
                     }
-                    // A leftover from an interrupted install would make rename
-                    // fail, the same way the other promotion paths treat it.
-                    if to.exists() {
-                        if to.is_dir() {
-                            fs::remove_dir_all(&to).ok();
-                        } else {
-                            fs::remove_file(&to).ok();
-                        }
-                    }
+                    // A leftover link is dropped as a link, never followed.
+                    clear_for_promotion(&to);
                     fs::rename(&from, &to).with_context(|| {
                         format!("renaming {} to {}", from.display(), to.display())
                     })?;
@@ -1256,13 +1290,7 @@ impl PackageInstaller {
                         })?;
                         let from = entry.path();
                         let to = self.install_dir.join(entry.file_name());
-                        if to.exists() {
-                            if to.is_dir() {
-                                fs::remove_dir_all(&to).ok();
-                            } else {
-                                fs::remove_file(&to).ok();
-                            }
-                        }
+                        clear_for_promotion(&to);
                         fs::rename(&from, &to).with_context(|| {
                             format!("moving {} to {}", from.display(), to.display())
                         })?;
@@ -1327,13 +1355,7 @@ impl PackageInstaller {
                             })?;
                             let from = entry.path();
                             let to = self.install_dir.join(entry.file_name());
-                            if to.exists() {
-                                if to.is_dir() {
-                                    fs::remove_dir_all(&to).ok();
-                                } else {
-                                    fs::remove_file(&to).ok();
-                                }
-                            }
+                            clear_for_promotion(&to);
                             fs::rename(&from, &to).with_context(|| {
                                 format!("moving {} to {}", from.display(), to.display())
                             })?;
@@ -1538,9 +1560,15 @@ impl PackageInstaller {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
 
-    use super::relative_to;
+    use soar_db::models::types::PackageFile;
+    use tempfile::tempdir;
+
+    use super::{apply_file_layout, clear_for_promotion, relative_to, resolve_source};
 
     #[test]
     fn alias_beside_its_target_is_just_the_name() {
@@ -1561,5 +1589,75 @@ mod tests {
             Path::new("../libexec/fd")
         );
         assert_eq!(relative_to("fd", "bin/fd").unwrap(), Path::new("bin/fd"));
+    }
+
+    #[test]
+    fn ambiguous_basename_resolves_to_first_match() {
+        let present = vec![PathBuf::from("/pkg/a/tool"), PathBuf::from("/pkg/b/tool")];
+        let hit = resolve_source(
+            "bin/tool",
+            Path::new("/pkg"),
+            &present,
+            Path::new("/artifact"),
+        );
+        assert_eq!(hit, Some(PathBuf::from("/pkg/a/tool")));
+    }
+
+    #[test]
+    fn promotion_clears_a_planted_link_without_following_it() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let outside = root.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep"), b"keep").unwrap();
+
+        let link = root.path().join("to");
+        symlink(&outside, &link).unwrap();
+        clear_for_promotion(&link);
+
+        assert!(link.symlink_metadata().is_err(), "link itself is gone");
+        assert_eq!(fs::read(outside.join("keep")).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn promotion_still_clears_real_directories_files_and_nothing() {
+        let root = tempdir().unwrap();
+        let dir = root.path().join("dir");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("f"), b"x").unwrap();
+        clear_for_promotion(&dir);
+        assert!(!dir.exists());
+
+        let file = root.path().join("file");
+        fs::write(&file, b"x").unwrap();
+        clear_for_promotion(&file);
+        assert!(!file.exists());
+
+        clear_for_promotion(&root.path().join("missing"));
+    }
+
+    #[test]
+    fn layout_drops_a_planted_staging_link_without_following_it() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let install = root.path().join("install");
+        fs::create_dir_all(&install).unwrap();
+        fs::write(install.join("tool"), b"tool").unwrap();
+
+        let outside = root.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep"), b"keep").unwrap();
+        symlink(&outside, install.join(".soar-layout")).unwrap();
+
+        let files = vec![PackageFile {
+            source: "tool".to_string(),
+            to: "bin/tool".to_string(),
+            alias: Vec::new(),
+        }];
+        apply_file_layout(&files, &install, &install.join("tool")).unwrap();
+
+        assert!(install.join("bin").join("tool").exists());
+        assert_eq!(fs::read(outside.join("keep")).unwrap(), b"keep");
+        assert!(!install.join(".soar-layout").exists());
     }
 }

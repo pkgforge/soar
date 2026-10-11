@@ -11,6 +11,7 @@ use soar_db::repository::metadata::MetadataRepository;
 use soar_dl::{download::Download, oci::OciDownload, types::OverwriteMode};
 use soar_utils::{
     hash::{calculate_checksum, hash_string},
+    path::is_safe_component,
     version::compare_versions,
 };
 use tracing::debug;
@@ -129,6 +130,14 @@ pub async fn prepare_run(
 
     let package = packages.into_iter().next().unwrap().resolve(version);
 
+    // Metadata names interpolate into the cache directory below.
+    if !is_safe_component(&package.pkg_name) || !is_safe_component(&package.version) {
+        return Err(SoarError::Custom(format!(
+            "Refusing to run {}: package name or version is not a valid path component",
+            package.pkg_name
+        )));
+    }
+
     // Named like an install. A package that published a checksum is keyed by
     // it, so identical content is shared and different content never is;
     // without one the key is the identity the package was resolved from,
@@ -177,7 +186,8 @@ pub async fn prepare_run(
     let laid_out = package.files.as_deref().and_then(|files| {
         files.iter().find_map(|f| {
             f.to.strip_prefix("bin/")
-                .filter(|rest| !rest.contains('/'))
+                // `bin/..` holds no slash; only a safe component joins.
+                .filter(|rest| is_safe_component(rest))
                 .map(|_| (cache_dir.join(&f.to), f.source.is_empty()))
         })
     });
@@ -252,7 +262,7 @@ pub async fn prepare_run(
         apply_file_layout(files, &cache_dir, &output_path)?;
         if let Some(binary) = files.iter().find_map(|f| {
             f.to.strip_prefix("bin/")
-                .filter(|rest| !rest.contains('/'))
+                .filter(|rest| is_safe_component(rest))
                 .map(|_| cache_dir.join(&f.to))
         }) {
             if binary.exists() {

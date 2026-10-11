@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    os::{unix, unix::fs::PermissionsExt},
+    os::unix,
     path::{Path, PathBuf},
 };
 
@@ -23,7 +23,10 @@ use soar_db::{
     models::types::{PackageFile, PackageProvide},
     repository::core::{CoreRepository, SortDirection},
 };
-use soar_utils::fs::is_elf;
+use soar_utils::{
+    fs::{is_elf, make_executable_contained},
+    path::is_safe_component,
+};
 use tracing::{debug, warn};
 
 /// Check if a package should have desktop integration (desktop files, icons).
@@ -49,6 +52,43 @@ pub fn get_package_hooks(pkg_name: &str) -> (Option<PackageHooks>, Option<Sandbo
         .unwrap_or((None, None))
 }
 
+/// Whether soar may replace whatever stands at `link` in a bin directory.
+///
+/// Only a link soar owns, resolving into its own packages tree, or a
+/// genuinely dangling link. Anything else belongs to someone else and is
+/// left alone.
+///
+/// Targets are resolved before comparing: a raw target can smuggle `..`
+/// past a lexical prefix check. Anything unresolvable stays put. A target
+/// that exists but cannot be read is not dangling: `exists` hides every
+/// metadata error, so only `NotFound` permits replacement.
+fn replaceable_link(link: &Path, packages_root: &Path) -> bool {
+    match fs::read_link(link) {
+        Ok(target) => {
+            match fs::metadata(link) {
+                Ok(_) => {
+                    let absolute = if target.is_absolute() {
+                        target
+                    } else {
+                        link.parent().unwrap_or_else(|| Path::new(".")).join(target)
+                    };
+                    fs::canonicalize(&absolute)
+                        .and_then(|resolved| {
+                            fs::canonicalize(packages_root).map(|root| resolved.starts_with(root))
+                        })
+                        .unwrap_or(false)
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    debug!(path = %link.display(), target = %target.display(), "claiming a dangling link");
+                    true
+                }
+                Err(_) => false,
+            }
+        }
+        Err(_) => fs::metadata(link).is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound),
+    }
+}
+
 /// Creates the bin-directory symlinks declared by a package's `provides`.
 ///
 /// Provides whose name or target is not a safe single path component are skipped
@@ -62,6 +102,7 @@ fn create_provide_symlinks(
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
     let mut symlinks = Vec::new();
     let mut processed_paths = HashSet::new();
+    let packages_root = install_dir.parent().unwrap_or(install_dir);
     for provide in provides {
         if !provide.is_safe() {
             warn!(
@@ -77,7 +118,14 @@ fn create_provide_symlinks(
             if !processed_paths.insert(target_path.clone()) {
                 continue;
             }
-            if target_path.is_symlink() || target_path.is_file() {
+            if target_path.exists() || target_path.is_symlink() {
+                if !replaceable_link(&target_path, packages_root) {
+                    warn!(
+                        path = %target_path.display(),
+                        "leaving a file soar does not own"
+                    );
+                    continue;
+                }
                 std::fs::remove_file(&target_path)
                     .with_context(|| format!("removing provide {}", target_path.display()))?;
             }
@@ -180,6 +228,8 @@ pub async fn mangle_package_symlinks(
     files: Option<&[PackageFile]>,
 ) -> SoarResult<Vec<(PathBuf, PathBuf)>> {
     let mut symlinks = Vec::new();
+    // Bin links point into this tree, so its parent measures ownership.
+    let packages_root = install_dir.parent().unwrap_or(install_dir);
 
     // A package laid out by its file list has already said what its commands
     // are: everything in `bin/`.
@@ -213,20 +263,33 @@ pub async fn mangle_package_symlinks(
     if let Some(listed) = listed {
         for path in &listed {
             {
-                let Some(name) = path.strip_prefix("bin/").filter(|n| !n.contains('/')) else {
+                let Some(name) = path.strip_prefix("bin/") else {
                     continue;
                 };
+                // `bin/..` holds no slash but still escapes the bin
+                // directory, so a slash check is not enough.
+                if !is_safe_component(name) {
+                    warn!(entry = name, "skipping file list entry with unsafe name");
+                    continue;
+                }
                 let source_path = install_dir.join(path);
                 if !source_path.exists() {
                     continue;
                 }
                 let link_path = bin_dir.join(name);
-                set_executable(&source_path)?;
-                if link_path.is_symlink() || link_path.is_file() {
+                if link_path.exists() || link_path.is_symlink() {
+                    if !replaceable_link(&link_path, packages_root) {
+                        warn!(
+                            path = %link_path.display(),
+                            "leaving a file soar does not own"
+                        );
+                        continue;
+                    }
                     std::fs::remove_file(&link_path).with_context(|| {
                         format!("removing existing file/symlink at {}", link_path.display())
                     })?;
                 }
+                set_executable(&source_path, install_dir)?;
                 unix::fs::symlink(&source_path, &link_path)
                     .with_context(|| format!("creating symlink {}", link_path.display()))?;
                 symlinks.push((source_path, link_path));
@@ -313,6 +376,16 @@ pub async fn mangle_package_symlinks(
                             .and_then(|n| n.to_str())
                             .unwrap_or(&mapping.source)
                     });
+                    // `link_as` comes from package metadata; ungated it
+                    // escapes the bin directory.
+                    if !is_safe_component(link_name) {
+                        warn!(
+                            link_as = link_name,
+                            source = %source_path.display(),
+                            "skipping binary mapping with unsafe link name"
+                        );
+                        continue;
+                    }
                     let link_path = bin_dir.join(link_name);
                     if !claimed.insert(link_path.clone()) {
                         warn!(
@@ -323,9 +396,16 @@ pub async fn mangle_package_symlinks(
                         continue;
                     }
 
-                    set_executable(&source_path)?;
+                    set_executable(&source_path, install_dir)?;
 
-                    if link_path.is_symlink() || link_path.is_file() {
+                    if link_path.exists() || link_path.is_symlink() {
+                        if !replaceable_link(&link_path, packages_root) {
+                            warn!(
+                                path = %link_path.display(),
+                                "leaving a file soar does not own"
+                            );
+                            continue;
+                        }
                         std::fs::remove_file(&link_path).with_context(|| {
                             format!("removing existing file/symlink at {}", link_path.display())
                         })?;
@@ -359,10 +439,23 @@ pub async fn mangle_package_symlinks(
         if let Some(executable) =
             find_executable(install_dir, binaries_dir, is_syms, pkg_name, entrypoint)?
         {
-            set_executable(&executable)?;
+            set_executable(&executable, install_dir)?;
 
+            // Upstream refuses these too; this holds for direct callers.
+            if !is_safe_component(pkg_name) {
+                return Err(SoarError::Custom(format!(
+                    "Refusing to link binary: package name is not a valid path component: {pkg_name}"
+                )));
+            }
             let symlink_name = bin_dir.join(pkg_name);
-            if symlink_name.is_symlink() || symlink_name.is_file() {
+            if symlink_name.exists() || symlink_name.is_symlink() {
+                if !replaceable_link(&symlink_name, packages_root) {
+                    warn!(
+                        path = %symlink_name.display(),
+                        "leaving a file soar does not own"
+                    );
+                    return Ok(symlinks);
+                }
                 std::fs::remove_file(&symlink_name).with_context(|| {
                     format!(
                         "removing existing file/symlink at {}",
@@ -383,15 +476,20 @@ pub async fn mangle_package_symlinks(
     Ok(symlinks)
 }
 
-fn set_executable(path: &Path) -> SoarResult<()> {
-    let metadata =
-        fs::metadata(path).with_context(|| format!("reading metadata for {}", path.display()))?;
-    let mut perms = metadata.permissions();
-    let mode = perms.mode();
-    if mode & 0o111 == 0 {
-        perms.set_mode(mode | 0o111);
-        fs::set_permissions(path, perms)
-            .with_context(|| format!("setting executable permissions on {}", path.display()))?;
+/// Adds the executable bits to `path`, which must live under `dir`.
+///
+/// `path` may itself be a symlink: recipe aliases are relative links, and
+/// an integrated file is the user's own. The chmod stays bound to open
+/// descriptors: a symlinked directory on the way down is only descended
+/// through when it resolves inside `dir`, and an alias resolving outside
+/// is linked as-is with a warning. Anything else non-regular is refused.
+fn set_executable(path: &Path, dir: &Path) -> SoarResult<()> {
+    if !make_executable_contained(dir, path)? {
+        // The target keeps its mode; the caller links it as-is.
+        warn!(
+            path = %path.display(),
+            "leaving mode alone outside the package tree; make it executable yourself"
+        );
     }
     Ok(())
 }
@@ -473,6 +571,9 @@ fn collect_executables_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
     };
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
+        if path.is_symlink() {
+            continue;
+        }
         if path.is_dir() {
             collect_executables_recursive(&path, files);
         } else if path.is_file() && is_elf(&path) {
@@ -621,11 +722,14 @@ mod tests {
         path::PathBuf,
     };
 
-    use soar_db::models::types::PackageProvide;
+    use soar_config::packages::BinaryMapping;
+    use soar_db::models::types::{PackageFile, PackageProvide};
     use tempfile::{tempdir, TempDir};
 
-    use super::{create_provide_symlinks, is_installed, InstalledIndex, NameCounts};
-
+    use super::{
+        create_provide_symlinks, is_installed, mangle_package_symlinks, replaceable_link,
+        InstalledIndex, NameCounts,
+    };
     /// One installed package of `name`, recorded under `family`.
     fn installed_as(name: &str, family: Option<&str>, installed: bool) -> InstalledIndex {
         HashMap::from([(
@@ -760,10 +864,73 @@ mod tests {
         (root, install, bin)
     }
 
+    /// A live target that only lexically sits under the packages root is
+    /// someone else's link: `..` resolves outside it.
+    #[test]
+    fn a_dotdot_target_is_not_owned() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let packages = root.path().join("packages");
+        let install = packages.join("pkg-1.0");
+        let bin = root.path().join("bin");
+        fs::create_dir_all(&install).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let outside = root.path().join("outside");
+        fs::write(&outside, b"mine").unwrap();
+        let link = bin.join("tool");
+        symlink(format!("{}/../../outside", install.display()), &link).unwrap();
+        assert!(
+            link.exists(),
+            "target resolves, so the link is not dangling"
+        );
+        assert!(!replaceable_link(&link, &packages));
+        assert!(link.symlink_metadata().is_ok(), "the link stays");
+    }
+
+    /// A link whose target cannot even be statted is not dangling: a loop
+    /// reads as missing through `exists` but must stay put.
+    #[test]
+    fn an_unreadable_target_is_not_dangling() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let packages = root.path().join("packages");
+        let bin = root.path().join("bin");
+        fs::create_dir_all(&packages).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let a = bin.join("a");
+        let b = bin.join("b");
+        symlink(&b, &a).unwrap();
+        symlink(&a, &b).unwrap();
+        assert!(!a.exists(), "a loop never resolves");
+        assert!(!replaceable_link(&a, &packages));
+        assert!(a.symlink_metadata().is_ok(), "the link stays");
+    }
+
+    #[test]
+    fn a_target_inside_the_root_is_owned() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let packages = root.path().join("packages");
+        let install = packages.join("pkg-1.0");
+        let bin = root.path().join("bin");
+        fs::create_dir_all(&install).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let target = install.join("tool");
+        fs::write(&target, b"#!/bin/sh\n").unwrap();
+        let link = bin.join("tool");
+        symlink(&target, &link).unwrap();
+        assert!(replaceable_link(&link, &packages));
+    }
+
     fn is_symlink(path: &std::path::Path) -> bool {
         path.symlink_metadata()
             .map(|m| m.file_type().is_symlink())
             .unwrap_or(false)
+    }
+
+    fn permission_bits(path: &std::path::Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata().unwrap().permissions().mode() & 0o777
     }
 
     #[test]
@@ -820,5 +987,314 @@ mod tests {
 
         assert!(created.is_empty());
         assert!(victim.symlink_metadata().unwrap().file_type().is_file());
+    }
+
+    #[test]
+    fn leaves_a_foreign_file_for_provide_names() {
+        let (_root, install, bin) = setup();
+        File::create(install.join("clipcat")).unwrap();
+        let keep = bin.join("clipcat");
+        fs::write(&keep, b"mine").unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcat")];
+        let created = create_provide_symlinks(&install, &bin, &provides).unwrap();
+
+        assert!(created.is_empty());
+        assert_eq!(fs::read(&keep).unwrap(), b"mine");
+    }
+
+    #[test]
+    fn replaces_an_owned_provide_symlink() {
+        use std::os::unix::fs::symlink;
+        let (_root, install, bin) = setup();
+        let target = install.join("clipcat");
+        File::create(&target).unwrap();
+        symlink(&target, bin.join("clipcat")).unwrap();
+
+        let provides = vec![PackageProvide::from_string("clipcat")];
+        let created = create_provide_symlinks(&install, &bin, &provides).unwrap();
+
+        assert_eq!(created.len(), 1);
+        assert_eq!(fs::read_link(bin.join("clipcat")).unwrap(), target);
+    }
+
+    #[tokio::test]
+    async fn a_foreign_file_in_bin_dir_survives_mangling() {
+        let (_root, install, bin) = setup();
+        fs::write(install.join("tool"), b"#!/bin/sh\n").unwrap();
+        let keep = bin.join("tool");
+        fs::write(&keep, b"mine").unwrap();
+
+        let binaries = vec![BinaryMapping {
+            source: "tool".to_string(),
+            link_as: None,
+        }];
+        let created = mangle_package_symlinks(
+            &install,
+            &bin,
+            None,
+            "pkg",
+            "1.0",
+            None,
+            Some(&binaries),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(created.is_empty());
+        assert_eq!(fs::read(&keep).unwrap(), b"mine");
+    }
+
+    #[tokio::test]
+    async fn a_foreign_symlink_in_bin_dir_survives_mangling() {
+        use std::os::unix::fs::symlink;
+        let (_root, install, bin) = setup();
+        let other = tempdir().unwrap();
+        let foreign_target = other.path().join("tool");
+        fs::write(&foreign_target, b"foreign").unwrap();
+        fs::write(install.join("tool"), b"#!/bin/sh\n").unwrap();
+        symlink(&foreign_target, bin.join("tool")).unwrap();
+
+        let binaries = vec![BinaryMapping {
+            source: "tool".to_string(),
+            link_as: None,
+        }];
+        let created = mangle_package_symlinks(
+            &install,
+            &bin,
+            None,
+            "pkg",
+            "1.0",
+            None,
+            Some(&binaries),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(created.is_empty());
+        assert_eq!(fs::read_link(bin.join("tool")).unwrap(), foreign_target);
+    }
+
+    #[tokio::test]
+    async fn an_owned_link_is_replaced() {
+        use std::os::unix::fs::symlink;
+        let (_root, install, bin) = setup();
+        let source = install.join("tool");
+        fs::write(&source, b"#!/bin/sh\n").unwrap();
+        symlink(&source, bin.join("tool")).unwrap();
+
+        let binaries = vec![BinaryMapping {
+            source: "tool".to_string(),
+            link_as: None,
+        }];
+        let created = mangle_package_symlinks(
+            &install,
+            &bin,
+            None,
+            "pkg",
+            "1.0",
+            None,
+            Some(&binaries),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.len(), 1);
+        assert_eq!(fs::read_link(bin.join("tool")).unwrap(), source);
+    }
+
+    #[tokio::test]
+    async fn a_dangling_link_is_claimed() {
+        use std::os::unix::fs::symlink;
+        let (_root, install, bin) = setup();
+        let source = install.join("tool");
+        fs::write(&source, b"#!/bin/sh\n").unwrap();
+        symlink("/nonexistent/soar-test-target", bin.join("tool")).unwrap();
+
+        let binaries = vec![BinaryMapping {
+            source: "tool".to_string(),
+            link_as: None,
+        }];
+        let created = mangle_package_symlinks(
+            &install,
+            &bin,
+            None,
+            "pkg",
+            "1.0",
+            None,
+            Some(&binaries),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.len(), 1);
+        assert_eq!(fs::read_link(bin.join("tool")).unwrap(), source);
+    }
+
+    #[tokio::test]
+    async fn a_symlinked_source_is_never_chmodded_through() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let (_root, install, bin) = setup();
+        let other = tempdir().unwrap();
+        let victim = other.path().join("tool");
+        fs::write(&victim, b"#!/bin/sh\n").unwrap();
+        fs::set_permissions(&victim, fs::Permissions::from_mode(0o644)).unwrap();
+        let packaged_bin = install.join("bin");
+        fs::create_dir_all(&packaged_bin).unwrap();
+        symlink(&victim, packaged_bin.join("tool")).unwrap();
+
+        let files = vec![PackageFile {
+            source: String::new(),
+            to: "bin/tool".to_string(),
+            alias: Vec::new(),
+        }];
+        let created = mangle_package_symlinks(
+            &install,
+            &bin,
+            None,
+            "pkg",
+            "1.0",
+            None,
+            None,
+            None,
+            Some(&files),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.len(), 1);
+        assert_eq!(permission_bits(&victim), 0o644);
+        assert_eq!(
+            fs::read_link(bin.join("tool")).unwrap(),
+            packaged_bin.join("tool")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_alias_beside_its_target_still_links() {
+        use std::os::unix::fs::symlink;
+        let (_root, install, bin) = setup();
+        let packaged_bin = install.join("bin");
+        fs::create_dir_all(&packaged_bin).unwrap();
+        fs::write(packaged_bin.join("tool"), b"#!/bin/sh\n").unwrap();
+        symlink("tool", packaged_bin.join("alias")).unwrap();
+
+        let files = vec![PackageFile {
+            source: String::new(),
+            to: "bin/alias".to_string(),
+            alias: Vec::new(),
+        }];
+        let created = mangle_package_symlinks(
+            &install,
+            &bin,
+            None,
+            "pkg",
+            "1.0",
+            None,
+            None,
+            None,
+            Some(&files),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.len(), 1);
+        assert_eq!(
+            fs::read_link(bin.join("alias")).unwrap(),
+            packaged_bin.join("alias")
+        );
+    }
+
+    /// `bin/..` slips past a slash check; the gate must see through it.
+    #[tokio::test]
+    async fn a_dotdot_file_list_entry_never_leaves_the_bin_dir() {
+        let (root, install, bin) = setup();
+        let victim = root.path().join("evil");
+        File::create(&victim).unwrap();
+
+        let files = vec![PackageFile {
+            source: String::new(),
+            to: "bin/../evil".to_string(),
+            alias: Vec::new(),
+        }];
+        let created = mangle_package_symlinks(
+            &install,
+            &bin,
+            None,
+            "pkg",
+            "1.0",
+            None,
+            None,
+            None,
+            Some(&files),
+        )
+        .await
+        .unwrap();
+
+        assert!(created.is_empty());
+        assert!(
+            victim.symlink_metadata().unwrap().file_type().is_file(),
+            "unsafe entry must not replace the file outside bin"
+        );
+    }
+
+    /// `link_as` is free-form metadata; unchecked it escapes the bin dir.
+    #[tokio::test]
+    async fn an_unsafe_link_as_never_leaves_the_bin_dir() {
+        let (root, install, bin) = setup();
+        fs::write(install.join("tool"), b"#!/bin/sh\n").unwrap();
+        let victim = root.path().join("evil");
+        File::create(&victim).unwrap();
+
+        let binaries = vec![BinaryMapping {
+            source: "tool".to_string(),
+            link_as: Some("../evil".to_string()),
+        }];
+        let created = mangle_package_symlinks(
+            &install,
+            &bin,
+            None,
+            "pkg",
+            "1.0",
+            None,
+            Some(&binaries),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(created.is_empty());
+        assert!(
+            victim.symlink_metadata().unwrap().file_type().is_file(),
+            "unsafe link name must not replace the file outside bin"
+        );
+    }
+
+    /// The fallback link deletes first, so an unsafe name is refused here.
+    #[tokio::test]
+    async fn an_unsafe_package_name_refuses_the_fallback_link() {
+        let (_root, install, bin) = setup();
+        // ELF magic only: discovery reads the header, never executes.
+        fs::write(install.join("tool"), [0x7f, b'E', b'L', b'F']).unwrap();
+
+        let err = mangle_package_symlinks(
+            &install, &bin, None, "../evil", "1.0", None, None, None, None,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("not a valid path component"),
+            "{err}"
+        );
     }
 }

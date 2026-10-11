@@ -3,6 +3,8 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use nix::unistd::Uid;
+
 use crate::{
     error::{PathError, PathResult},
     system::get_username,
@@ -47,7 +49,7 @@ pub fn is_safe_component(name: &str) -> bool {
 /// # Errors
 ///
 /// * [`PathError::Empty`] if the path is empty
-/// * [`PathError::CurrentDir`] if the current directory cannot be determined
+/// * [`PathError::FailedToGetCurrentDir`] if the current directory cannot be determined
 /// * [`PathError::MissingEnvVar`] if the environment variables are undefined
 ///
 /// # Example
@@ -108,9 +110,10 @@ pub fn resolve_path_with(path: &str, rename: impl Fn(&str) -> String) -> PathRes
 /// println!("Home dir is {:#?}", home);
 /// ```
 pub fn home_dir() -> PathBuf {
-    env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(format!("/home/{}", get_username())))
+    env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| {
+        let user = get_username().unwrap_or_else(|| Uid::current().to_string());
+        PathBuf::from(format!("/home/{user}"))
+    })
 }
 
 /// Returns the user's config directory following XDG Base Directory Specification
@@ -458,7 +461,8 @@ mod tests {
 
         // Test with HOME unset
         env::remove_var("HOME");
-        let expected = PathBuf::from(format!("/home/{}", get_username()));
+        let user = get_username().unwrap_or_else(|| nix::unistd::Uid::current().to_string());
+        let expected = PathBuf::from(format!("/home/{user}"));
         assert_eq!(home_dir(), expected);
     }
 

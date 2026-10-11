@@ -2,7 +2,7 @@ use std::{
     ffi::OsString,
     fs,
     os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use soar_config::{
@@ -10,7 +10,10 @@ use soar_config::{
     packages::{PackageHooks, SandboxConfig},
 };
 use soar_db::{models::types::PackageProvide, repository::core::CoreRepository};
-use soar_utils::{error::FileSystemResult, fs::walk_dir};
+use soar_utils::{
+    error::FileSystemResult,
+    fs::{remove_contained_dir, walk_dir},
+};
 use tracing::{debug, trace, warn};
 
 use super::hooks::{run_hook, HookEnv};
@@ -104,9 +107,24 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
+/// Whether `installed_path` names something strictly inside `packages_path`.
+///
+/// The installed path is read back from the database: `..` is rejected,
+/// the prefix comparison is component-wise, and equality is refused so a
+/// tampered row can never name the whole tree.
+pub(crate) fn path_inside_packages(installed_path: &Path, packages_path: &Path) -> bool {
+    installed_path.is_absolute()
+        && installed_path
+            .components()
+            .all(|c| !matches!(c, Component::ParentDir))
+        && installed_path
+            .strip_prefix(packages_path)
+            .is_ok_and(|rest| rest.components().next().is_some())
+}
+
 use crate::{
     database::{connection::DieselDatabase, models::InstalledPackage},
-    error::ErrorContext,
+    error::{ErrorContext, SoarError},
     SoarResult,
 };
 
@@ -123,6 +141,11 @@ pub struct PackageRemover {
 /// Without it `remove_dir_all` cannot unlink the entries inside, so a package
 /// that installed cleanly could not be removed.
 pub fn make_tree_writable(path: &Path) {
+    // The walk below never descends through links; the top path gets the
+    // same treatment.
+    if !fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+        return;
+    }
     let Ok(entries) = fs::read_dir(path) else {
         return;
     };
@@ -289,19 +312,41 @@ impl PackageRemover {
         // Archives commonly ship directories read-only, and removing a
         // directory's entries needs the write bit on that directory. soar owns
         // this tree, so it may restore what it needs to delete it.
-        make_tree_writable(Path::new(&self.package.installed_path));
-        if let Err(err) = fs::remove_dir_all(&self.package.installed_path) {
-            // if not found, the package is already removed.
-            if err.kind() != std::io::ErrorKind::NotFound {
-                return Err(err).with_context(|| {
-                    format!("removing package directory {}", self.package.installed_path)
-                })?;
-            } else {
-                warn!(
-                    "package directory already removed: {}",
+        // The installed path is read back from the database; a row
+        // pointing outside the packages tree never reaches the delete.
+        // The deletion stays bound to open descriptors, so a link swapped
+        // in along the path fails it instead of redirecting it.
+        let packages_path = self
+            .config
+            .get_packages_path(Some(self.package.profile.clone()))?;
+        let installed_path = Path::new(&self.package.installed_path);
+        if !path_inside_packages(installed_path, &packages_path) {
+            return Err(SoarError::Custom(format!(
+                "Refusing to remove package directory outside the packages tree: {}",
+                self.package.installed_path
+            )));
+        }
+        let already_gone = !fs::symlink_metadata(&self.package.installed_path).is_ok();
+        // A missing root holds nothing to delete: warn and keep going, the
+        // way a missing package directory does below.
+        if packages_path.exists() {
+            remove_contained_dir(&packages_path, installed_path).map_err(|err| {
+                SoarError::Custom(format!(
+                    "removing package directory {}: {err}",
                     self.package.installed_path
-                );
-            }
+                ))
+            })?;
+        } else {
+            warn!(
+                "packages directory already removed: {}",
+                packages_path.display()
+            );
+        }
+        if already_gone {
+            warn!(
+                "package directory already removed: {}",
+                self.package.installed_path
+            );
         };
 
         trace!("removing package from database");
@@ -334,7 +379,7 @@ mod tests {
     use soar_db::models::types::PackageProvide;
     use tempfile::tempdir;
 
-    use super::remove_provide_symlinks;
+    use super::{path_inside_packages, remove_provide_symlinks};
 
     #[test]
     fn removes_owned_provide_symlink() {
@@ -407,5 +452,35 @@ mod tests {
             victim.exists(),
             "traversal must not touch files outside bin"
         );
+    }
+
+    #[test]
+    fn only_a_contained_path_may_be_deleted() {
+        use std::path::Path;
+        let packages = Path::new("/data/packages");
+        assert!(path_inside_packages(
+            Path::new("/data/packages/foo-1.0-abc123"),
+            packages
+        ));
+        // A sibling of the root sharing a string prefix is a different component.
+        assert!(!path_inside_packages(
+            Path::new("/data/packages-evil/x"),
+            packages
+        ));
+        // A lexical prefix with an escape folded in.
+        assert!(!path_inside_packages(
+            Path::new("/data/packages/../evil"),
+            packages
+        ));
+        // The root itself is never a valid target: wiping it would take every
+        // installed package with it.
+        assert!(!path_inside_packages(Path::new("/data/packages"), packages));
+        assert!(!path_inside_packages(
+            Path::new("/data/packages/"),
+            packages
+        ));
+        // Outside the tree entirely, and a relative path never matches.
+        assert!(!path_inside_packages(Path::new("/tmp/evil"), packages));
+        assert!(!path_inside_packages(Path::new("foo-1.0"), packages));
     }
 }

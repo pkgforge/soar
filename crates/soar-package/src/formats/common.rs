@@ -19,7 +19,7 @@ use soar_utils::{
     fs::{create_symlink, walk_dir},
     path::{icons_dir, is_safe_component},
 };
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use super::{
     appimage::integrate_appimage, get_file_type, onelf::integrate_onelf,
@@ -84,10 +84,21 @@ fn normalize_image(image: DynamicImage) -> DynamicImage {
 ///
 /// # Errors
 ///
-/// Returns [`PackageError`] if image processing or symlink creation fails.
+/// Returns [`PackageError`] if the icon name cannot be determined from
+/// `real_path`, or if image processing or symlink creation fails.
 pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
-    let icon_name = real_path.as_ref().file_stem().unwrap().to_string_lossy();
-    symlink_icon_with_mode(&real_path, &icon_name, false)
+    let real_path = real_path.as_ref();
+    let icon_name = real_path
+        .file_stem()
+        .ok_or_else(|| {
+            PackageError::Custom(format!(
+                "cannot determine icon name for path: {}",
+                real_path.display()
+            ))
+        })?
+        .to_string_lossy()
+        .into_owned();
+    symlink_icon_with_mode(real_path, &icon_name, false)
 }
 
 /// Creates a symlink for an icon in the appropriate icons directory.
@@ -95,13 +106,35 @@ pub fn symlink_icon<P: AsRef<Path>>(real_path: P) -> Result<PathBuf> {
 /// The symlink is named `{icon_name}-soar`, and the `-soar` suffix is what marks
 /// the link as soar-managed. Uses the provided `system_mode` flag to determine
 /// the icons directory.
+/// # Errors
+///
+/// Returns [`PackageError`] if `icon_name` is not a single safe path
+/// component, if `real_path` is not a regular file, or if image processing
+/// or symlink creation fails.
 pub fn symlink_icon_with_mode<P: AsRef<Path>>(
     real_path: P,
     icon_name: &str,
     system_mode: bool,
 ) -> Result<PathBuf> {
+    // The name is interpolated into a path under the icons directory, so
+    // `/` or `..` in it would land the symlink outside it.
+    if !is_safe_component(icon_name) {
+        return Err(PackageError::Custom(format!(
+            "refusing to create icon symlink with unsafe name: {icon_name}"
+        )));
+    }
     let real_path = real_path.as_ref();
     trace!(path = %real_path.display(), icon_name = icon_name, "creating icon symlink");
+    // The source comes from package content; only a regular file is
+    // integrated, so a shipped symlink is never followed out of the tree.
+    let meta = fs::symlink_metadata(real_path)
+        .with_context(|| format!("reading metadata of {}", real_path.display()))?;
+    if !meta.is_file() {
+        return Err(PackageError::Custom(format!(
+            "refusing to integrate icon that is not a regular file: {}",
+            real_path.display()
+        )));
+    }
     let ext = real_path.extension();
 
     let (w, h) = if ext == Some(OsStr::new("svg")) {
@@ -114,7 +147,22 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
         let (w, h) = normalized_image.dimensions();
 
         if (w, h) != (orig_w, orig_h) {
-            normalized_image.save(real_path)?;
+            // Rename over the original so a failure never leaves a
+            // half-written icon behind.
+            let tmp = real_path.with_extension(format!(
+                "soar-tmp.{}",
+                ext.unwrap_or_default().to_string_lossy()
+            ));
+            if let Err(err) = normalized_image.save(&tmp) {
+                fs::remove_file(&tmp).ok();
+                return Err(err.into());
+            }
+            if let Err(err) = fs::rename(&tmp, real_path)
+                .with_context(|| format!("replacing icon at {}", real_path.display()))
+            {
+                fs::remove_file(&tmp).ok();
+                return Err(err);
+            }
         }
 
         (w, h)
@@ -128,9 +176,13 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
             ext.unwrap_or_default().to_string_lossy()
         ));
 
-    if final_path.is_symlink() {
-        fs::remove_file(&final_path)
-            .with_context(|| format!("removing existing symlink at {}", final_path.display()))?;
+    // A stranger's file under a managed name is left alone; only a link is
+    // ever replaced.
+    if let Ok(meta) = fs::symlink_metadata(&final_path) {
+        if !meta.file_type().is_symlink() {
+            warn!(path = %final_path.display(), "leaving a file soar does not own");
+            return Ok(final_path);
+        }
     }
 
     create_symlink(real_path, &final_path)?;
@@ -225,7 +277,9 @@ fn exec_line(field: &str, old: &str, command: &str) -> String {
 ///
 /// # Errors
 ///
-/// Returns [`PackageError`] if file operations fail.
+/// Returns [`PackageError`] if the desktop file name cannot be determined
+/// from `real_path`, if `real_path` is not a regular file, or if file
+/// operations fail.
 pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
     real_path: P,
     package: &T,
@@ -247,9 +301,25 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
     let pkg_name = package.pkg_name();
     let real_path = real_path.as_ref();
     trace!(path = %real_path.display(), pkg_name = pkg_name, "creating desktop file symlink");
+    // A path with no file name is an error, never a panic.
+    let file_name = real_path.file_stem().ok_or_else(|| {
+        PackageError::Custom(format!(
+            "cannot determine desktop file name for path: {}",
+            real_path.display()
+        ))
+    })?;
+    // Only a regular file is rewritten, so a shipped symlink is never
+    // followed and truncated.
+    let meta = fs::symlink_metadata(real_path)
+        .with_context(|| format!("reading metadata of {}", real_path.display()))?;
+    if !meta.is_file() {
+        return Err(PackageError::Custom(format!(
+            "refusing to integrate desktop entry that is not a regular file: {}",
+            real_path.display()
+        )));
+    }
     let content = fs::read_to_string(real_path)
         .with_context(|| format!("reading content of desktop file: {}", real_path.display()))?;
-    let file_name = real_path.file_stem().unwrap();
 
     let bin_path = config.get_bin_path()?;
 
@@ -277,21 +347,44 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
         .to_string()
     };
 
-    let mut writer = BufWriter::new(
-        File::create(real_path)
-            .with_context(|| format!("creating desktop file {}", real_path.display()))?,
-    );
-    writer
-        .write_all(final_content.as_bytes())
-        .with_context(|| format!("writing desktop file to {}", real_path.display()))?;
+    // Rewrite beside the original and rename over it; the temp name keeps
+    // no `.desktop` suffix so a failed run is not picked up as an entry.
+    let tmp = real_path.with_extension("soar-tmp");
+    let rewrite = (|| -> Result<()> {
+        let mut writer = BufWriter::new(
+            File::create(&tmp)
+                .with_context(|| format!("creating temporary desktop file {}", tmp.display()))?,
+        );
+        writer
+            .write_all(final_content.as_bytes())
+            .with_context(|| format!("writing desktop file to {}", tmp.display()))?;
+        writer
+            .flush()
+            .with_context(|| format!("writing desktop file to {}", tmp.display()))?;
+        Ok(())
+    })();
+    if let Err(err) = rewrite {
+        fs::remove_file(&tmp).ok();
+        return Err(err);
+    }
+    if let Err(err) = fs::rename(&tmp, real_path)
+        .with_context(|| format!("replacing desktop file {}", real_path.display()))
+    {
+        fs::remove_file(&tmp).ok();
+        return Err(err);
+    }
 
     let final_path = config
         .get_desktop_path()?
         .join(format!("{}-soar.desktop", file_name.to_string_lossy()));
 
-    if final_path.is_symlink() {
-        fs::remove_file(&final_path)
-            .with_context(|| format!("removing existing symlink at {}", final_path.display()))?;
+    // A stranger's file under a managed name is left alone; only a link is
+    // ever replaced.
+    if let Ok(meta) = fs::symlink_metadata(&final_path) {
+        if !meta.file_type().is_symlink() {
+            warn!(path = %final_path.display(), "leaving a file soar does not own");
+            return Ok(final_path);
+        }
     }
 
     create_symlink(real_path, &final_path)?;
@@ -310,13 +403,20 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
 ///
 /// # Errors
 ///
-/// Returns [`PackageError`] if directory creation or symlink fails.
+/// Returns [`PackageError`] if `pkg_name` is not a single safe path
+/// component, or if directory creation or symlink fails.
 pub fn create_portable_link<P: AsRef<Path>>(
     portable_path: P,
     real_path: P,
     pkg_name: &str,
     extension: &str,
 ) -> Result<()> {
+    // `..` in the name would escape the portable root.
+    if !is_safe_component(pkg_name) {
+        return Err(PackageError::Custom(format!(
+            "refusing to create portable link with unsafe package name: {pkg_name}"
+        )));
+    }
     let base_dir = env::current_dir()
         .map_err(|_| PackageError::Custom("Error retrieving current directory".into()))?;
     let portable_path = portable_path.as_ref();
@@ -350,7 +450,8 @@ pub fn create_portable_link<P: AsRef<Path>>(
 ///
 /// # Errors
 ///
-/// Returns [`PackageError`] if directory creation or symlink fails.
+/// Returns [`PackageError`] if `package.pkg_name()` is not a single safe
+/// path component, or if directory creation or symlink fails.
 pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     bin_path: P,
     package: &T,
@@ -360,6 +461,14 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
     portable_share: Option<&str>,
     portable_cache: Option<&str>,
 ) -> Result<()> {
+    // The package name lands in the portable directory name, so it must be
+    // a single path component.
+    if !is_safe_component(package.pkg_name()) {
+        return Err(PackageError::Custom(format!(
+            "refusing to set up portable directories with unsafe package name: {}",
+            package.pkg_name()
+        )));
+    }
     // Packages that carry an id keep their existing directory name. Without
     // one the family has to stand in, or two packages sharing a name would
     // share a portable directory. Neither is trusted to be a single path
@@ -438,7 +547,8 @@ pub fn setup_portable_dir<P: AsRef<Path>, T: PackageExt>(
 ///
 /// # Errors
 ///
-/// Returns [`PackageError`] if integration fails.
+/// Returns [`PackageError`] if the package name is not a single safe path
+/// component, or if integration fails.
 #[allow(clippy::too_many_arguments)]
 pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
     install_dir: P,
@@ -453,6 +563,13 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
 ) -> Result<()> {
     let install_dir = install_dir.as_ref();
     let pkg_name = package.pkg_name();
+    // The name is joined onto the install dir and interpolated into
+    // portable paths below.
+    if !is_safe_component(pkg_name) {
+        return Err(PackageError::Custom(format!(
+            "refusing to integrate package with unsafe name: {pkg_name}"
+        )));
+    }
     debug!(pkg_name = pkg_name, install_dir = %install_dir.display(), "integrating package with desktop environment");
     let bin_path = bin_path
         .map(|p| p.to_path_buf())
@@ -466,6 +583,12 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         // Never treat the package binary itself as a desktop file. Its name can
         // legitimately end in `.desktop`, but its contents are the executable.
         if path == bin_path.as_path() {
+            return Ok(());
+        }
+        // Shipped links stay in place, untouched; anything not provably a
+        // regular file is skipped the same way.
+        if !fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
+            warn!(path = %path.display(), "skipping package entry that is not a regular file");
             return Ok(());
         }
         let ext = path.extension();
@@ -558,8 +681,14 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         }
         PackageFormat::FlatImage => {
             trace!("setting up FlatImage portable config");
+            let parent = bin_path.parent().ok_or_else(|| {
+                PackageError::Custom(format!(
+                    "cannot determine parent directory for path: {}",
+                    bin_path.display()
+                ))
+            })?;
             setup_portable_dir(
-                format!("{}/.{}", bin_path.parent().unwrap().display(), pkg_name),
+                format!("{}/.{}", parent.display(), pkg_name),
                 package,
                 None,
                 None,
@@ -604,7 +733,10 @@ mod tests {
     use soar_config::config::Config;
     use tempfile::TempDir;
 
-    use super::{desktop_entry_name, exec_line, managed_icon_name, symlink_desktop_with_config};
+    use super::{
+        create_portable_link, desktop_entry_name, exec_line, integrate_package, managed_icon_name,
+        setup_portable_dir, symlink_desktop_with_config, symlink_icon_with_mode,
+    };
     use crate::traits::PackageExt;
 
     struct TestPackage;
@@ -707,6 +839,247 @@ Name=New Note
         assert_eq!(managed_icon_name("", "desktop"), "desktop");
         assert_eq!(managed_icon_name("///", "desktop"), "desktop");
         assert_eq!(managed_icon_name("...", "desktop"), "desktop");
+    }
+
+    struct EvilPackage;
+
+    impl PackageExt for EvilPackage {
+        fn pkg_name(&self) -> &str {
+            "../evil"
+        }
+
+        fn pkg_id(&self) -> Option<&str> {
+            None
+        }
+
+        fn pkg_family(&self) -> Option<&str> {
+            None
+        }
+
+        fn version(&self) -> &str {
+            "1.0"
+        }
+
+        fn repo_name(&self) -> &str {
+            "local"
+        }
+    }
+
+    #[test]
+    fn an_unsafe_icon_name_is_refused_before_any_file_is_touched() {
+        // The source path does not exist: the name check runs first, so the
+        // refusal must not depend on image processing succeeding.
+        for name in ["../evil", "a/b", "", "."] {
+            let err = symlink_icon_with_mode("/nonexistent/icon.png", name, false).unwrap_err();
+            assert!(err.to_string().contains("unsafe name"), "{err}");
+        }
+    }
+
+    #[test]
+    fn a_desktop_path_with_no_file_name_is_an_error_not_a_panic() {
+        let dir = TempDir::new().unwrap();
+        let mut config = Config::default_config::<&str>(&[]);
+        config.desktop_path = Some(
+            dir.path()
+                .join("applications")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let err = symlink_desktop_with_config(dir.path().join(".."), &TestPackage, None, &config)
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot determine desktop file name"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn an_unsafe_package_name_is_refused_for_portable_links() {
+        let dir = TempDir::new().unwrap();
+        let err = create_portable_link(dir.path(), dir.path(), "../evil", "home").unwrap_err();
+        assert!(err.to_string().contains("unsafe package name"), "{err}");
+        assert!(!dir.path().join("evil.home").exists());
+    }
+
+    #[test]
+    fn portable_setup_refuses_an_unsafe_package_name() {
+        let dir = TempDir::new().unwrap();
+        let err = setup_portable_dir(
+            dir.path().join("evil"),
+            &EvilPackage,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unsafe package name"), "{err}");
+    }
+
+    #[test]
+    fn a_symlinked_desktop_entry_is_rejected_and_left_untouched() {
+        use std::os::unix::fs::symlink;
+        let dir = TempDir::new().unwrap();
+        let mut config = Config::default_config::<&str>(&[]);
+        config.desktop_path = Some(
+            dir.path()
+                .join("applications")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        fs::create_dir_all(dir.path().join("applications")).unwrap();
+
+        let victim = dir.path().join("victim.desktop");
+        fs::write(&victim, ENTRY).unwrap();
+        let link = dir.path().join("evil.desktop");
+        symlink(&victim, &link).unwrap();
+
+        let err = symlink_desktop_with_config(&link, &TestPackage, None, &config).unwrap_err();
+        assert!(err.to_string().contains("not a regular file"), "{err}");
+        assert_eq!(fs::read_to_string(&victim).unwrap(), ENTRY);
+        assert!(
+            fs::read_dir(dir.path().join("applications"))
+                .unwrap()
+                .next()
+                .is_none(),
+            "no link may be created for a rejected entry"
+        );
+    }
+
+    #[test]
+    fn a_symlinked_icon_is_rejected_before_it_is_opened() {
+        use std::os::unix::fs::symlink;
+        let dir = TempDir::new().unwrap();
+        let victim = dir.path().join("victim.dat");
+        fs::write(&victim, b"not an image").unwrap();
+        let link = dir.path().join("evil.png");
+        symlink(&victim, &link).unwrap();
+
+        let err = symlink_icon_with_mode(&link, "noteboard", false).unwrap_err();
+        assert!(err.to_string().contains("not a regular file"), "{err}");
+        assert_eq!(fs::read(&victim).unwrap(), b"not an image");
+    }
+
+    #[test]
+    fn a_read_only_desktop_entry_still_integrates() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().unwrap();
+        let mut config = Config::default_config::<&str>(&[]);
+        config.bin_path = Some(dir.path().join("bin").to_string_lossy().into_owned());
+        config.desktop_path = Some(
+            dir.path()
+                .join("applications")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        fs::create_dir_all(dir.path().join("applications")).unwrap();
+
+        // Renaming over the original needs write permission on the directory,
+        // not on the file, so a read-only entry rewrites fine.
+        let real_path = dir.path().join("desktop.desktop");
+        fs::write(&real_path, ENTRY).unwrap();
+        fs::set_permissions(&real_path, fs::Permissions::from_mode(0o444)).unwrap();
+        symlink_desktop_with_config(&real_path, &TestPackage, Some("noteboard"), &config).unwrap();
+
+        let content = fs::read_to_string(&real_path).unwrap();
+        assert!(content.contains("Icon=noteboard-soar"), "{content}");
+    }
+
+    /// Shipped symlinks are skipped where they stand.
+    #[tokio::test]
+    async fn integration_skips_shipped_symlinks_and_leaves_targets_alone() {
+        use std::os::unix::fs::symlink;
+        let dir = TempDir::new().unwrap();
+        let config = Config::default_config::<&str>(&[]);
+        // The default binary path: content the format probe reads as unknown.
+        fs::write(dir.path().join("desktop"), vec![0u8; 900]).unwrap();
+
+        let victim_icon = dir.path().join("victim.dat");
+        fs::write(&victim_icon, b"not an image").unwrap();
+        symlink(&victim_icon, dir.path().join("evil.png")).unwrap();
+        let victim_entry = dir.path().join("victim.txt");
+        fs::write(&victim_entry, ENTRY).unwrap();
+        symlink(&victim_entry, dir.path().join("evil.desktop")).unwrap();
+
+        integrate_package(
+            dir.path(),
+            &TestPackage,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(fs::read(&victim_icon).unwrap(), b"not an image");
+        assert_eq!(fs::read_to_string(&victim_entry).unwrap(), ENTRY);
+    }
+
+    #[test]
+    fn a_foreign_file_at_the_desktop_destination_survives() {
+        let dir = TempDir::new().unwrap();
+        let mut config = Config::default_config::<&str>(&[]);
+        config.bin_path = Some(dir.path().join("bin").to_string_lossy().into_owned());
+        let applications = dir.path().join("applications");
+        config.desktop_path = Some(applications.to_string_lossy().into_owned());
+        fs::create_dir_all(&applications).unwrap();
+
+        let real_path = dir.path().join("desktop.desktop");
+        fs::write(&real_path, ENTRY).unwrap();
+        let occupant = applications.join("desktop-soar.desktop");
+        fs::write(&occupant, b"mine").unwrap();
+
+        symlink_desktop_with_config(&real_path, &TestPackage, Some("noteboard"), &config).unwrap();
+        assert_eq!(fs::read(&occupant).unwrap(), b"mine");
+    }
+
+    /// Serialized: this test repoints `XDG_DATA_HOME`, so any future test
+    /// touching the icons directory needs `#[serial]` too.
+    #[test]
+    #[serial_test::serial]
+    fn a_foreign_file_at_the_icon_destination_survives() {
+        let dir = TempDir::new().unwrap();
+        let saved = std::env::var("XDG_DATA_HOME").ok();
+        std::env::set_var("XDG_DATA_HOME", dir.path().join("data"));
+
+        // 64x64 is a supported dimension, so no rewrite happens: the test
+        // pins the link step, not the normalization.
+        let source = dir.path().join("noteboard.png");
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(64, 64))
+            .save(&source)
+            .unwrap();
+        let occupant = dir
+            .path()
+            .join("data/icons/hicolor/64x64/apps/noteboard-soar.png");
+        fs::create_dir_all(occupant.parent().unwrap()).unwrap();
+        fs::write(&occupant, b"mine").unwrap();
+
+        symlink_icon_with_mode(&source, "noteboard", false).unwrap();
+        assert_eq!(fs::read(&occupant).unwrap(), b"mine");
+
+        if let Some(value) = saved {
+            std::env::set_var("XDG_DATA_HOME", value);
+        } else {
+            std::env::remove_var("XDG_DATA_HOME");
+        }
+    }
+
+    #[test]
+    fn a_portable_target_holding_a_file_is_an_error_not_a_deletion() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path().join("portable");
+        let target = dir.path().join("real");
+        fs::write(&target, b"mine").unwrap();
+
+        let err = create_portable_link(&base, &target, "pkg", "home").unwrap_err();
+        assert!(!err.to_string().is_empty(), "{err}");
+        assert_eq!(fs::read(&target).unwrap(), b"mine");
     }
 
     #[test]

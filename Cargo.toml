@@ -43,7 +43,7 @@ landlock = "0.4.7"
 libsqlite3-sys = { version = ">=0.30.1,<0.36.0", features = [ "bundled" ]}
 miette = { version = "7.6.0", features = ["fancy"] }
 minisign-verify = "0.2.5"
-nix = { version = "0.31.3", features = ["fs", "ioctl", "term", "user"] }
+nix = { version = "0.31.3", features = ["dir", "fs", "ioctl", "term", "user"] }
 nucleo-matcher = "0.3.1"
 nu-ansi-term = "0.50.3"
 onelf-format = "0.3.3"
