@@ -2,6 +2,7 @@ use std::{collections::HashSet, path::Path};
 
 use soar_config::packages::{PackagesConfig, ResolvedPackage};
 use soar_core::{
+    SoarResult,
     database::{
         connection::DieselDatabase,
         models::{InstalledPackage, Package},
@@ -10,13 +11,12 @@ use soar_core::{
         install::{InstallTarget, ZsyncSeed},
         local::LocalPackage,
         query::PackageQuery,
-        release_source::{run_version_command, ReleaseSource},
+        release_source::{ReleaseSource, run_version_command},
         update::remove_old_versions,
         update_info::{self, UpdateInfo as ArtifactUpdateInfo},
         url::UrlPackage,
     },
     utils::substitute_placeholders,
-    SoarResult,
 };
 use soar_db::repository::{
     core::{CoreRepository, SortDirection},
@@ -27,8 +27,8 @@ use soar_events::{SoarEvent, UpdateCheckStatus, UpdateCleanupStage};
 use tracing::{debug, warn};
 
 use crate::{
-    install::perform_installation, progress::next_op_id, utils::installed_from_source,
     InstallOptions, SoarContext, UpdateInfo, UpdateReport, UrlUpdateInfo,
+    install::perform_installation, progress::next_op_id, utils::installed_from_source,
 };
 
 /// Check for available updates.
@@ -180,10 +180,10 @@ fn check_repo_update(
 
     // Check if the new version is already installed
     let new_version_installed = get_existing(&package, diesel_db)?;
-    if let Some(ref installed) = new_version_installed {
-        if installed.is_installed {
-            return Ok(None);
-        }
+    if let Some(ref installed) = new_version_installed
+        && installed.is_installed
+    {
+        return Ok(None);
     }
 
     ctx.events().emit(SoarEvent::UpdateCheck {
@@ -257,104 +257,105 @@ fn check_local_update(
 
     let has_forge_source = resolved.has_forge_source();
 
-    let (version, download_url, size, update_toml_url) =
-        if let Some(ref cmd) = resolved.version_command {
-            let result = match run_version_command(cmd) {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!("Failed to run version_command for {}: {}", pkg.pkg_name, e);
-                    return Ok(None);
-                }
-            };
-
-            let v = result
-                .version
-                .strip_prefix('v')
-                .unwrap_or(&result.version)
-                .to_string();
-
-            let installed_version = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
-            if v == installed_version {
-                ctx.events().emit(SoarEvent::UpdateCheck {
-                    pkg_name: pkg.pkg_name.clone(),
-                    status: UpdateCheckStatus::UpToDate {
-                        version: pkg.version.clone(),
-                    },
-                });
+    let (version, download_url, size, update_toml_url) = if let Some(ref cmd) =
+        resolved.version_command
+    {
+        let result = match run_version_command(cmd) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("Failed to run version_command for {}: {}", pkg.pkg_name, e);
                 return Ok(None);
             }
+        };
 
-            let (url, should_update_toml_url) = match result.download_url {
-                Some(url) => (url, true),
-                None => {
-                    match &resolved.url {
-                        Some(url) => {
-                            (
-                                substitute_placeholders(url, Some(&v), resolved.arch_map.as_ref()),
-                                false,
-                            )
-                        }
-                        None => {
-                            warn!(
+        let v = result
+            .version
+            .strip_prefix('v')
+            .unwrap_or(&result.version)
+            .to_string();
+
+        let installed_version = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
+        if v == installed_version {
+            ctx.events().emit(SoarEvent::UpdateCheck {
+                pkg_name: pkg.pkg_name.clone(),
+                status: UpdateCheckStatus::UpToDate {
+                    version: pkg.version.clone(),
+                },
+            });
+            return Ok(None);
+        }
+
+        let (url, should_update_toml_url) = match result.download_url {
+            Some(url) => (url, true),
+            None => {
+                match &resolved.url {
+                    Some(url) => {
+                        (
+                            substitute_placeholders(url, Some(&v), resolved.arch_map.as_ref()),
+                            false,
+                        )
+                    }
+                    None => {
+                        warn!(
                             "version_command returned no URL and no url field configured for {}",
                             pkg.pkg_name
                         );
-                            return Ok(None);
-                        }
+                        return Ok(None);
                     }
                 }
-            };
+            }
+        };
 
-            let toml_url = if has_forge_source || !should_update_toml_url {
-                None
-            } else {
-                Some(url.clone())
-            };
-            (v, url, result.size, toml_url)
+        let toml_url = if has_forge_source || !should_update_toml_url {
+            None
         } else {
-            let release_source = match ReleaseSource::from_resolved(resolved) {
-                Ok(Some(source)) => source,
-                Ok(None) => {
-                    warn!("No release source configured for {}", pkg.pkg_name);
-                    return Ok(None);
-                }
-                Err(e) => {
-                    warn!("Cannot check for updates for {}: {}", pkg.pkg_name, e);
-                    return Ok(None);
-                }
-            };
-            let release = match release_source.resolve() {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
-                    return Ok(None);
-                }
-            };
-
-            let v = release
-                .version
-                .strip_prefix('v')
-                .unwrap_or(&release.version)
-                .to_string();
-
-            let installed_version = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
-            if v == installed_version {
-                ctx.events().emit(SoarEvent::UpdateCheck {
-                    pkg_name: pkg.pkg_name.clone(),
-                    status: UpdateCheckStatus::UpToDate {
-                        version: pkg.version.clone(),
-                    },
-                });
+            Some(url.clone())
+        };
+        (v, url, result.size, toml_url)
+    } else {
+        let release_source = match ReleaseSource::from_resolved(resolved) {
+            Ok(Some(source)) => source,
+            Ok(None) => {
+                warn!("No release source configured for {}", pkg.pkg_name);
                 return Ok(None);
             }
-
-            let url = if has_forge_source {
-                None
-            } else {
-                Some(release.download_url.clone())
-            };
-            (v, release.download_url, release.size, url)
+            Err(e) => {
+                warn!("Cannot check for updates for {}: {}", pkg.pkg_name, e);
+                return Ok(None);
+            }
         };
+        let release = match release_source.resolve() {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("Failed to check for updates for {}: {}", pkg.pkg_name, e);
+                return Ok(None);
+            }
+        };
+
+        let v = release
+            .version
+            .strip_prefix('v')
+            .unwrap_or(&release.version)
+            .to_string();
+
+        let installed_version = pkg.version.strip_prefix('v').unwrap_or(&pkg.version);
+        if v == installed_version {
+            ctx.events().emit(SoarEvent::UpdateCheck {
+                pkg_name: pkg.pkg_name.clone(),
+                status: UpdateCheckStatus::UpToDate {
+                    version: pkg.version.clone(),
+                },
+            });
+            return Ok(None);
+        }
+
+        let url = if has_forge_source {
+            None
+        } else {
+            Some(release.download_url.clone())
+        };
+        (v, release.download_url, release.size, url)
+    };
 
     let mut updated_url_pkg = UrlPackage::from_remote(
         &download_url,

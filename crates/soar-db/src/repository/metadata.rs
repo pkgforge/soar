@@ -274,10 +274,10 @@ impl MetadataRepository {
         if let Some(name) = pkg_name {
             query = query.filter(packages::pkg_name.eq(name));
         }
-        if let Some(id) = pkg_id {
-            if id != "all" {
-                query = query.filter(packages::pkg_id.eq(id));
-            }
+        if let Some(id) = pkg_id
+            && id != "all"
+        {
+            query = query.filter(packages::pkg_id.eq(id));
         }
         if let Some(ver) = version {
             query = query.filter(packages::version.eq(ver));
@@ -491,15 +491,15 @@ impl MetadataRepository {
         if let Some(name) = pkg_name {
             query = query.filter(packages::pkg_name.eq(name));
         }
-        if let Some(family) = pkg_family {
-            if family != "all" {
-                query = query.filter(packages::pkg_family.eq(family));
-            }
+        if let Some(family) = pkg_family
+            && family != "all"
+        {
+            query = query.filter(packages::pkg_family.eq(family));
         }
-        if let Some(id) = pkg_id {
-            if id != "all" {
-                query = query.filter(packages::pkg_id.eq(id));
-            }
+        if let Some(id) = pkg_id
+            && id != "all"
+        {
+            query = query.filter(packages::pkg_id.eq(id));
         }
         if let Some(ver) = version {
             query = query.filter(packages::version.eq(ver));

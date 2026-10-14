@@ -4,6 +4,7 @@ version = "0.3.1"
 description = "Event system for soar package manager"
 license.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 repository.workspace = true
 keywords.workspace = true
 readme.workspace = true

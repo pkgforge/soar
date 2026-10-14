@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use regex::Regex;
 use soar_config::config::get_config;
-use soar_core::{database::models::Package, package::query::PackageQuery, SoarResult};
+use soar_core::{SoarResult, database::models::Package, package::query::PackageQuery};
 use soar_db::repository::metadata::MetadataRepository;
 use soar_dl::{
     download::Download,
@@ -10,7 +10,7 @@ use soar_dl::{
     filter::Filter,
     forge::Forge,
     oci::OciDownload,
-    platform::{parse_gitea_target, PlatformUrl},
+    platform::{PlatformUrl, parse_gitea_target},
     releasekit::Asset,
     types::{OverwriteMode, Progress},
 };

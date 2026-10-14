@@ -2,18 +2,18 @@ use std::collections::HashSet;
 
 use soar_config::packages::{PackagesConfig, ResolvedPackage};
 use soar_core::{
+    SoarResult,
     database::{
         connection::DieselDatabase,
         models::{InstalledPackage, Package},
     },
     package::{
         install::InstallTarget,
-        release_source::{run_version_command, ReleaseSource},
+        release_source::{ReleaseSource, run_version_command},
         remove::PackageRemover,
         url::UrlPackage,
     },
     utils::substitute_placeholders,
-    SoarResult,
 };
 use soar_db::repository::{
     core::{CoreRepository, SortDirection},
@@ -23,10 +23,10 @@ use soar_events::{RemoveStage, SoarEvent};
 use tracing::{debug, warn};
 
 use crate::{
+    ApplyDiff, ApplyReport, InstallOptions, SoarContext,
     install::{newest_per_identity, perform_installation},
     progress::next_op_id,
     utils::get_package_hooks,
-    ApplyDiff, ApplyReport, InstallOptions, SoarContext,
 };
 
 /// Whether a declaration carries its own version rather than a registry's.
@@ -287,18 +287,18 @@ pub async fn execute_apply(
             .map(|i| i.pkg_name.as_str())
             .collect();
         for (pkg_name, version) in &version_updates {
-            if succeeded.contains(pkg_name.as_str()) {
-                if let Err(e) = PackagesConfig::update_package(
+            if succeeded.contains(pkg_name.as_str())
+                && let Err(e) = PackagesConfig::update_package(
                     pkg_name,
                     None,
                     Some(version),
                     Some(packages_path),
-                ) {
-                    warn!(
-                        "Failed to update version for '{}' in packages.toml: {}",
-                        pkg_name, e
-                    );
-                }
+                )
+            {
+                warn!(
+                    "Failed to update version for '{}' in packages.toml: {}",
+                    pkg_name, e
+                );
             }
         }
     }
@@ -340,18 +340,18 @@ pub async fn execute_apply(
             .map(|i| i.pkg_name.as_str())
             .collect();
         for (pkg_name, version) in &update_version_updates {
-            if succeeded.contains(pkg_name.as_str()) {
-                if let Err(e) = PackagesConfig::update_package(
+            if succeeded.contains(pkg_name.as_str())
+                && let Err(e) = PackagesConfig::update_package(
                     pkg_name,
                     None,
                     Some(version),
                     Some(packages_path),
-                ) {
-                    warn!(
-                        "Failed to update version for '{}' in packages.toml: {}",
-                        pkg_name, e
-                    );
-                }
+                )
+            {
+                warn!(
+                    "Failed to update version for '{}' in packages.toml: {}",
+                    pkg_name, e
+                );
             }
         }
     }
@@ -465,11 +465,11 @@ fn handle_local_package(
     if let Some(ref cmd) = pkg.version_command {
         if let Some(ref declared) = pkg.version {
             let normalized = declared.strip_prefix('v').unwrap_or(declared);
-            if let Some(ref existing) = installed {
-                if existing.version == normalized {
-                    diff.in_sync.push(format!("{} (local)", pkg.name));
-                    return Ok(());
-                }
+            if let Some(ref existing) = installed
+                && existing.version == normalized
+            {
+                diff.in_sync.push(format!("{} (local)", pkg.name));
+                return Ok(());
             }
         }
 
@@ -489,19 +489,19 @@ fn handle_local_package(
             .unwrap_or(&result.version)
             .to_string();
 
-        if let Some(ref existing) = installed {
-            if existing.version == version {
-                let declared = pkg
-                    .version
-                    .as_ref()
-                    .map(|s| s.strip_prefix('v').unwrap_or(s));
-                if declared != Some(version.as_str()) {
-                    diff.pending_version_updates
-                        .push((pkg.name.clone(), version.clone()));
-                }
-                diff.in_sync.push(format!("{} (local)", pkg.name));
-                return Ok(());
+        if let Some(ref existing) = installed
+            && existing.version == version
+        {
+            let declared = pkg
+                .version
+                .as_ref()
+                .map(|s| s.strip_prefix('v').unwrap_or(s));
+            if declared != Some(version.as_str()) {
+                diff.pending_version_updates
+                    .push((pkg.name.clone(), version.clone()));
             }
+            diff.in_sync.push(format!("{} (local)", pkg.name));
+            return Ok(());
         }
 
         let download_url = match result.download_url {
@@ -543,11 +543,11 @@ fn handle_local_package(
     if has_forge_source {
         if let Some(ref declared) = pkg.version {
             let normalized = declared.strip_prefix('v').unwrap_or(declared);
-            if let Some(ref existing) = installed {
-                if existing.version == normalized {
-                    diff.in_sync.push(format!("{} (local)", pkg.name));
-                    return Ok(());
-                }
+            if let Some(ref existing) = installed
+                && existing.version == normalized
+            {
+                diff.in_sync.push(format!("{} (local)", pkg.name));
+                return Ok(());
             }
         }
 
@@ -593,11 +593,11 @@ fn handle_local_package(
     if let Some(ref url) = pkg.url {
         if let Some(ref declared) = pkg.version {
             let normalized = declared.strip_prefix('v').unwrap_or(declared);
-            if let Some(ref existing) = installed {
-                if existing.version == normalized {
-                    diff.in_sync.push(format!("{} (local)", pkg.name));
-                    return Ok(());
-                }
+            if let Some(ref existing) = installed
+                && existing.version == normalized
+            {
+                diff.in_sync.push(format!("{} (local)", pkg.name));
+                return Ok(());
             }
         }
 

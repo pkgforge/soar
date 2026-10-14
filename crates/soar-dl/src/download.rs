@@ -9,11 +9,11 @@ use std::{
 use soar_utils::fs::is_elf;
 use tracing::{debug, trace, warn};
 use ureq::{
-    http::{
-        header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, ETAG},
-        Response,
-    },
     Body,
+    http::{
+        Response,
+        header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, ETAG},
+    },
 };
 
 use crate::{

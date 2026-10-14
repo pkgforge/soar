@@ -1,5 +1,5 @@
 use soar_core::SoarResult;
-use soar_operations::{run, PrepareRunResult, SoarContext};
+use soar_operations::{PrepareRunResult, SoarContext, run};
 
 use crate::utils::select_package_interactively;
 

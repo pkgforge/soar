@@ -3,8 +3,8 @@ use std::{
     io::{BufReader, Read},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU32, Ordering},
         Arc, Mutex,
+        atomic::{AtomicU32, Ordering},
     },
     time::Duration,
 };
@@ -12,6 +12,7 @@ use std::{
 use minisign_verify::{PublicKey, Signature};
 use soar_config::utils::default_install_patterns;
 use soar_core::{
+    SoarResult,
     database::{
         connection::{DieselDatabase, MetadataManager},
         models::{InstalledPackage, Package},
@@ -25,11 +26,10 @@ use soar_core::{
         update::remove_old_versions,
         url::UrlPackage,
     },
-    SoarResult,
 };
 use soar_db::repository::{
     core::{CoreRepository, SortDirection},
-    metadata::{narrow_by_pkg_id, MetadataRepository},
+    metadata::{MetadataRepository, narrow_by_pkg_id},
 };
 use soar_events::{InstallStage, SoarEvent, VerifyStage};
 use soar_package::integrate_package;
@@ -44,9 +44,9 @@ use tokio::sync::Semaphore;
 use tracing::{debug, trace, warn};
 
 use crate::{
+    FailedInfo, InstallOptions, InstallReport, InstalledInfo, ResolveResult, SoarContext,
     progress::{create_progress_bridge, next_op_id},
     utils::{has_desktop_integration, link_shared_files, mangle_package_symlinks},
-    FailedInfo, InstallOptions, InstallReport, InstalledInfo, ResolveResult, SoarContext,
 };
 
 /// Build an install target for a package the caller has already chosen.
@@ -126,16 +126,16 @@ pub async fn resolve_packages(
         let query = PackageQuery::try_from(package.as_str())?;
 
         // Handle #all: install all packages with same pkg_id
-        if let Some(ref pkg_id) = query.pkg_id {
-            if pkg_id == "all" {
-                results.push(resolve_all_variants(
-                    metadata_mgr,
-                    diesel_db,
-                    &query,
-                    options,
-                )?);
-                continue;
-            }
+        if let Some(ref pkg_id) = query.pkg_id
+            && pkg_id == "all"
+        {
+            results.push(resolve_all_variants(
+                metadata_mgr,
+                diesel_db,
+                &query,
+                options,
+            )?);
+            continue;
         }
 
         // Handle pkg_id-only queries (no name)
@@ -217,14 +217,14 @@ fn resolve_synthetic_target(
 
     let installed_pkg = installed_packages.iter().find(|ip| ip.is_installed);
 
-    if let Some(installed) = installed_pkg {
-        if !options.force {
-            return Ok(ResolveResult::AlreadyInstalled {
-                pkg_name: installed.pkg_name.clone(),
-                repo_name: installed.repo_name.clone(),
-                version: installed.version.clone(),
-            });
-        }
+    if let Some(installed) = installed_pkg
+        && !options.force
+    {
+        return Ok(ResolveResult::AlreadyInstalled {
+            pkg_name: installed.pkg_name.clone(),
+            repo_name: installed.repo_name.clone(),
+            version: installed.version.clone(),
+        });
     }
 
     let existing_install = installed_pkg
@@ -395,10 +395,11 @@ fn resolve_all_variants(
             .find(|ip| ip.pkg_name == pkg.pkg_name)
             .cloned();
 
-        if let Some(ref existing) = existing_install {
-            if existing.is_installed && !options.force {
-                continue;
-            }
+        if let Some(ref existing) = existing_install
+            && existing.is_installed
+            && !options.force
+        {
+            continue;
         }
 
         let pkg = pkg.resolve(query.version.as_deref());
@@ -500,10 +501,11 @@ fn resolve_by_pkg_id(
             .find(|ip| ip.pkg_name == pkg.pkg_name)
             .cloned();
 
-        if let Some(ref existing) = existing_install {
-            if existing.is_installed && !options.force {
-                continue;
-            }
+        if let Some(ref existing) = existing_install
+            && existing.is_installed
+            && !options.force
+        {
+            continue;
         }
 
         targets.push(InstallTarget {
@@ -572,14 +574,14 @@ fn resolve_normal(
                 .iter()
                 .find(|ip| ip.is_installed && ip.repo_name == pkg.repo_name);
 
-            if let Some(installed) = installed_pkg {
-                if !options.force {
-                    return Ok(ResolveResult::AlreadyInstalled {
-                        pkg_name: installed.pkg_name.clone(),
-                        repo_name: installed.repo_name.clone(),
-                        version: installed.version.clone(),
-                    });
-                }
+            if let Some(installed) = installed_pkg
+                && !options.force
+            {
+                return Ok(ResolveResult::AlreadyInstalled {
+                    pkg_name: installed.pkg_name.clone(),
+                    repo_name: installed.repo_name.clone(),
+                    version: installed.version.clone(),
+                });
             }
 
             let existing_install = installed_packages

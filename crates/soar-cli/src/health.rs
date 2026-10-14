@@ -1,13 +1,13 @@
 use nu_ansi_term::Color::{Blue, Green, Red, Yellow};
 use soar_core::SoarResult;
-use soar_operations::{health, SoarContext};
+use soar_operations::{SoarContext, health};
 use tabled::{
     builder::Builder,
-    settings::{peaker::PriorityMax, themes::BorderCorrection, Panel, Style, Width},
+    settings::{Panel, Style, Width, peaker::PriorityMax, themes::BorderCorrection},
 };
 use tracing::info;
 
-use crate::utils::{icon_or, term_width, Colored, Icons};
+use crate::utils::{Colored, Icons, icon_or, term_width};
 
 pub async fn display_health(ctx: &SoarContext) -> SoarResult<()> {
     let report = health::check_health(ctx)?;

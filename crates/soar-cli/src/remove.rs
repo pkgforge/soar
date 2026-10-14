@@ -1,9 +1,9 @@
 use nu_ansi_term::Color::{Blue, Cyan, Green, LightRed};
 use soar_core::SoarResult;
-use soar_operations::{remove, RemoveResolveResult, SoarContext};
+use soar_operations::{RemoveResolveResult, SoarContext, remove};
 use tracing::{debug, error, info, warn};
 
-use crate::utils::{confirm_action, select_package_interactively, Colored};
+use crate::utils::{Colored, confirm_action, select_package_interactively};
 
 pub async fn remove_packages(
     ctx: &SoarContext,

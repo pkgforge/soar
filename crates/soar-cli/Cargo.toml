@@ -5,6 +5,7 @@ description = "A modern package manager for Linux"
 default-run = "soar"
 license.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 repository.workspace = true
 keywords.workspace = true
 readme.workspace = true

@@ -1,8 +1,8 @@
 use std::fs;
 
 use soar_core::{
-    error::{ErrorContext, SoarError},
     SoarResult,
+    error::{ErrorContext, SoarError},
 };
 use soar_db::{
     connection::DbConnection, migration::DbType, repository::metadata::MetadataRepository,
@@ -38,11 +38,11 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
     }
 
     let output_path = std::path::Path::new(output_path);
-    if let Some(parent) = output_path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("creating output directory {}", parent.display()))?;
-        }
+    if let Some(parent) = output_path.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("creating output directory {}", parent.display()))?;
     }
 
     // Built beside the target and swapped in only once it holds something.

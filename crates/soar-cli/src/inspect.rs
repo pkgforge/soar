@@ -1,10 +1,10 @@
 use std::{fmt::Display, fs, path::PathBuf};
 
 use soar_core::{
+    SoarResult,
     database::{connection::DieselDatabase, models::Package},
     error::{ErrorContext, SoarError},
     package::query::PackageQuery,
-    SoarResult,
 };
 use soar_db::repository::{
     core::{CoreRepository, SortDirection},
@@ -50,10 +50,10 @@ fn get_installed_path(
         )
     })?;
 
-    if let Some(pkg) = installed_pkg {
-        if pkg.is_installed {
-            return Ok(Some(PathBuf::from(pkg.installed_path)));
-        }
+    if let Some(pkg) = installed_pkg
+        && pkg.is_installed
+    {
+        return Ok(Some(PathBuf::from(pkg.installed_path)));
     }
     Ok(None)
 }
@@ -119,10 +119,10 @@ pub async fn inspect_log(package: &str, inspect_type: InspectType) -> SoarResult
 
     if packages.is_empty() {
         error!("Package {} not found", package);
-        if let Ok(suggestions) = search::suggest_similar(&ctx, package, 3).await {
-            if !suggestions.is_empty() {
-                info!("Did you mean: {}?", suggestions.join(", "));
-            }
+        if let Ok(suggestions) = search::suggest_similar(&ctx, package, 3).await
+            && !suggestions.is_empty()
+        {
+            info!("Did you mean: {}?", suggestions.join(", "));
         }
     } else {
         let selected_pkg = if packages.len() > 1 {

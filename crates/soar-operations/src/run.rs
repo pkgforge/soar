@@ -1,11 +1,11 @@
 use std::{fs, path::Path, process::Command, sync::Arc};
 
 use soar_core::{
+    SoarResult,
     database::models::Package,
     error::{ErrorContext, SoarError},
     package::{install::apply_file_layout, query::PackageQuery},
     utils::get_extract_dir,
-    SoarResult,
 };
 use soar_db::repository::metadata::MetadataRepository;
 use soar_dl::{download::Download, oci::OciDownload, types::OverwriteMode};
@@ -17,8 +17,8 @@ use soar_utils::{
 use tracing::debug;
 
 use crate::{
-    progress::{create_progress_bridge, next_op_id},
     AmbiguousPackage, PrepareRunResult, RunResult, SoarContext,
+    progress::{create_progress_bridge, next_op_id},
 };
 
 /// Resolve a package and download it to the cache if needed.
@@ -236,7 +236,7 @@ pub async fn prepare_run(
                 return Ok(PrepareRunResult::Ready {
                     path: output_path,
                     downloaded: false,
-                })
+                });
             }
         }
     }
@@ -264,13 +264,12 @@ pub async fn prepare_run(
             f.to.strip_prefix("bin/")
                 .filter(|rest| is_safe_component(rest))
                 .map(|_| cache_dir.join(&f.to))
-        }) {
-            if binary.exists() {
-                return Ok(PrepareRunResult::Ready {
-                    path: binary,
-                    downloaded: true,
-                });
-            }
+        }) && binary.exists()
+        {
+            return Ok(PrepareRunResult::Ready {
+                path: binary,
+                downloaded: true,
+            });
         }
     }
 
@@ -318,10 +317,8 @@ fn download_to_cache(
             .overwrite(OverwriteMode::Force)
             .extract(true)
             .extract_to(&extract_dir);
-        if !no_verify {
-            if let Some(ref bsum) = package.bsum {
-                dl = dl.checksum(bsum.clone());
-            }
+        if !no_verify && let Some(ref bsum) = package.bsum {
+            dl = dl.checksum(bsum.clone());
         }
         dl = dl.progress(move |p| {
             cb(p);

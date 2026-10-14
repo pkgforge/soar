@@ -15,15 +15,17 @@ where
         .collect();
 
     for (key, value) in &vars {
-        std::env::set_var(key, value);
+        // SAFETY: test-only, and serialized with the other tests that change the
+        // environment by `ENV_LOCK`.
+        unsafe { std::env::set_var(key, value) };
     }
 
     f();
 
     for (key, old_value) in old_vars {
         match old_value {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
         }
     }
 }

@@ -33,11 +33,11 @@ pub fn setup_wrappe_portable_dir<P: AsRef<Path>>(
     })?;
     let real_path = package_path.join(format!(".{pkg_name}.wrappe"));
 
-    if let Some(portable) = portable {
-        if !portable.is_empty() {
-            let portable = PathBuf::from(portable);
-            create_portable_link(&portable, &real_path, pkg_name, "wrappe")?;
-        }
+    if let Some(portable) = portable
+        && !portable.is_empty()
+    {
+        let portable = PathBuf::from(portable);
+        create_portable_link(&portable, &real_path, pkg_name, "wrappe")?;
     }
 
     Ok(())

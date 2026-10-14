@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use soar_utils::path::is_safe_component;
 
-use crate::{database::models::Package, error::SoarError, SoarResult};
+use crate::{SoarResult, database::models::Package, error::SoarError};
 
 /// Represents a package parsed from a URL or GHCR reference.
 #[derive(Debug, Clone)]
@@ -107,12 +107,12 @@ impl UrlPackage {
             )));
         }
         for (label, value) in [("id", pkg_id), ("family", pkg_family)] {
-            if let Some(value) = value {
-                if !is_safe_component(value) {
-                    return Err(SoarError::Custom(format!(
-                        "Invalid package {label} '{value}': must be a single path component"
-                    )));
-                }
+            if let Some(value) = value
+                && !is_safe_component(value)
+            {
+                return Err(SoarError::Custom(format!(
+                    "Invalid package {label} '{value}': must be a single path component"
+                )));
             }
         }
         Ok(())

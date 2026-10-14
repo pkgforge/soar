@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use soar_core::{
+    SoarResult,
     database::models::{InstalledPackage, Package},
     error::SoarError,
-    SoarResult,
 };
 use soar_db::repository::{
     core::{CoreRepository, SortDirection},
@@ -13,8 +13,8 @@ use soar_package::{formats::common::setup_portable_dir, integrate_package};
 use tracing::debug;
 
 use crate::{
-    utils::{has_desktop_integration, mangle_package_symlinks},
     SoarContext, VariantInfo,
+    utils::{has_desktop_integration, mangle_package_symlinks},
 };
 
 /// List all installed variants (pkg_ids) for a given package name.

@@ -2,8 +2,8 @@ use std::{collections::HashMap, path::PathBuf};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use soar_core::{
-    database::models::{InstalledPackage, Package},
     SoarResult,
+    database::models::{InstalledPackage, Package},
 };
 use soar_db::{
     models::metadata::PackageListing,
@@ -13,8 +13,8 @@ use soar_utils::{fs::dir_size, version::compare_versions};
 use tracing::{debug, trace};
 
 use crate::{
-    utils::{is_installed, InstalledIndex, NameCounts, PackageKey},
     InstalledEntry, InstalledListResult, PackageListEntry, PackageListResult, SoarContext,
+    utils::{InstalledIndex, NameCounts, PackageKey, is_installed},
 };
 
 /// List all available packages, optionally filtered by repository.

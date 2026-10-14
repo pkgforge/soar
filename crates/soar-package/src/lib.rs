@@ -34,8 +34,8 @@ pub mod traits;
 
 pub use error::{ErrorContext, PackageError, Result};
 pub use formats::{
-    common::integrate_package, get_file_type, PackageFormat, APPIMAGE_MAGIC_BYTES, ELF_MAGIC_BYTES,
-    FLATIMAGE_MAGIC_BYTES, PNG_MAGIC_BYTES, RUNIMAGE_MAGIC_BYTES, SVG_MAGIC_BYTES,
-    WRAPPE_MAGIC_BYTES,
+    APPIMAGE_MAGIC_BYTES, ELF_MAGIC_BYTES, FLATIMAGE_MAGIC_BYTES, PNG_MAGIC_BYTES, PackageFormat,
+    RUNIMAGE_MAGIC_BYTES, SVG_MAGIC_BYTES, WRAPPE_MAGIC_BYTES, common::integrate_package,
+    get_file_type,
 };
 pub use traits::PackageExt;

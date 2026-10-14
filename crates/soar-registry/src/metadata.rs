@@ -17,8 +17,8 @@ use soar_dl::{error::describe_request_error, http_client::SHARED_AGENT};
 use soar_utils::path::resolve_path;
 use tracing::{debug, warn};
 use ureq::http::{
-    header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH, PRAGMA},
     StatusCode,
+    header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH, PRAGMA},
 };
 use url::Url;
 
@@ -128,10 +128,10 @@ pub async fn fetch_metadata(
         let file_info = metadata_db
             .metadata()
             .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
-        if let Ok(modified) = file_info.modified() {
-            if sync_interval >= modified.elapsed()?.as_millis() {
-                return Ok(None);
-            }
+        if let Ok(modified) = file_info.modified()
+            && sync_interval >= modified.elapsed()?.as_millis()
+        {
+            return Ok(None);
         }
     }
 
@@ -234,12 +234,16 @@ fn ensure_remote_scheme_allowed(url: &str, scheme: &str, signature_verified: boo
     match scheme {
         "https" => Ok(()),
         "http" if signature_verified => Ok(()),
-        "http" => Err(RegistryError::InsecureUrl(format!(
-            "{url}: http metadata is only allowed when signature verification is enabled with a configured pubkey"
-        ))),
-        _ => Err(RegistryError::InsecureUrl(format!(
-            "{url}: metadata must be served over https"
-        ))),
+        "http" => {
+            Err(RegistryError::InsecureUrl(format!(
+                "{url}: http metadata is only allowed when signature verification is enabled with a configured pubkey"
+            )))
+        }
+        _ => {
+            Err(RegistryError::InsecureUrl(format!(
+                "{url}: metadata must be served over https"
+            )))
+        }
     }
 }
 

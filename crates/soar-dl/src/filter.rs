@@ -109,11 +109,7 @@ impl Filter {
                 haystack.contains(&needle)
             });
 
-            if must_match {
-                any_match
-            } else {
-                !any_match
-            }
+            if must_match { any_match } else { !any_match }
         })
     }
 }

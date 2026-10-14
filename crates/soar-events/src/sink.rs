@@ -1,8 +1,8 @@
 use std::{
     io::{self, Write},
     sync::{
-        mpsc::{self, Receiver, Sender},
         Mutex,
+        mpsc::{self, Receiver, Sender},
     },
 };
 

@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 use soar_utils::path::resolve_path;
 
 use crate::{
+    SoarResult,
     database::models::Package,
     error::SoarError,
     package::url::{detect_pkg_type, parse_filename},
-    SoarResult,
 };
 
 /// URL scheme used to carry a local source path through the installer's

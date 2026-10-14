@@ -13,9 +13,9 @@ use std::{
 use nix::{
     dir::Dir,
     errno::Errno,
-    fcntl::{openat, OFlag},
-    sys::stat::{fchmod, fstat, Mode, SFlag},
-    unistd::{unlinkat, UnlinkatFlags},
+    fcntl::{OFlag, openat},
+    sys::stat::{Mode, SFlag, fchmod, fstat},
+    unistd::{UnlinkatFlags, unlinkat},
 };
 
 use crate::error::{FileSystemError, FileSystemResult, IoOperation, IoResultExt};
@@ -1263,8 +1263,8 @@ mod tests {
         use std::{
             os::unix::fs::symlink,
             sync::{
-                atomic::{AtomicBool, Ordering},
                 Arc,
+                atomic::{AtomicBool, Ordering},
             },
             thread,
         };
@@ -1539,7 +1539,7 @@ mod tests {
     /// through it.
     #[test]
     fn test_make_executable_contained_refuses_outside_symlinked_dir() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
         let tempdir = tempdir().unwrap();
         let dir = tempdir.path().join("pkg-1.0");
         fs::create_dir_all(&dir).unwrap();
@@ -1556,7 +1556,7 @@ mod tests {
     /// A `bin` link staying inside the tree keeps working: only escapes fail.
     #[test]
     fn test_make_executable_contained_follows_inside_symlinked_dir() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
         let tempdir = tempdir().unwrap();
         let dir = tempdir.path().join("pkg-1.0");
         let real = dir.join("real");
@@ -1572,7 +1572,7 @@ mod tests {
     /// An alias resolving inside chmods through its target's descriptor.
     #[test]
     fn test_make_executable_contained_chmods_inside_alias() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
         let tempdir = tempdir().unwrap();
         let dir = tempdir.path().join("pkg-1.0");
         fs::create_dir_all(&dir).unwrap();
@@ -1588,7 +1588,7 @@ mod tests {
     /// An alias resolving outside reports without touching anything.
     #[test]
     fn test_make_executable_contained_leaves_outside_alias_alone() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
         let tempdir = tempdir().unwrap();
         let dir = tempdir.path().join("pkg-1.0");
         fs::create_dir_all(&dir).unwrap();
@@ -1617,7 +1617,7 @@ mod tests {
     /// An alias to a directory fails instead of chmodding it.
     #[test]
     fn test_make_executable_contained_refuses_alias_to_dir() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
         let tempdir = tempdir().unwrap();
         let dir = tempdir.path().join("pkg-1.0");
         let sub = dir.join("sub");

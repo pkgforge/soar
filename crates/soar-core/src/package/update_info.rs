@@ -21,9 +21,9 @@ use std::path::Path;
 use soar_dl::forge::Forge;
 
 use crate::{
+    SoarResult,
     error::SoarError,
     package::release_source::{Prerelease, ReleaseSource},
-    SoarResult,
 };
 
 /// The section an AppImage records its update information in.

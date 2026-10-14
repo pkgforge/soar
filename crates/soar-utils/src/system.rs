@@ -1,6 +1,6 @@
 use std::env;
 
-use nix::unistd::{geteuid, User};
+use nix::unistd::{User, geteuid};
 
 /// Retrieves the platform string in the format `ARCH-OS`.
 ///
@@ -124,9 +124,12 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_get_username_missing_env_vars() {
-        env::remove_var("USER");
-        env::remove_var("LOGNAME");
+        // SAFETY: test-only, and serialized with the other tests that change the
+        // environment by `#[serial]`.
+        unsafe { env::remove_var("USER") };
+        unsafe { env::remove_var("LOGNAME") };
 
         assert!(get_username().is_none_or(|u| !u.is_empty()));
     }

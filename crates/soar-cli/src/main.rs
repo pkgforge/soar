@@ -11,25 +11,25 @@ use std::{
 use apply::apply_packages;
 use clap::{CommandFactory, Parser};
 use cli::Args;
-use download::{create_regex_patterns, download, DownloadContext};
+use download::{DownloadContext, create_regex_patterns, download};
 use health::{display_health, remove_broken_packages};
 use indicatif::ProgressBar;
-use inspect::{inspect_log, InspectType};
+use inspect::{InspectType, inspect_log};
 use install::install_packages;
 use json2db::json_to_db;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
 use logging::setup_logging;
-use progress::{create_download_job, handle_download_progress, spawn_event_handler, ProgressGuard};
+use progress::{ProgressGuard, create_download_job, handle_download_progress, spawn_event_handler};
 use remove::remove_packages;
 use run::run_package;
 use soar_config::config::{
-    self, enable_system_mode, generate_default_config, get_config, path_env_var,
-    set_current_profile, Config, CONFIG_PATH, PATH_ENV_SUFFIXES,
+    self, CONFIG_PATH, Config, PATH_ENV_SUFFIXES, enable_system_mode, generate_default_config,
+    get_config, path_env_var, set_current_profile,
 };
 use soar_core::{
+    SoarResult,
     error::{ErrorContext, SoarError},
     utils::{cleanup_cache, remove_broken_symlinks, setup_required_paths},
-    SoarResult,
 };
 use soar_dl::http_client::configure_http_client;
 use soar_events::EventSinkHandle;
@@ -37,9 +37,9 @@ use soar_operations::SoarContext;
 use soar_utils::path::resolve_path;
 use tracing::{debug, info, warn};
 use update::update_packages;
-use ureq::{config::IpFamily, Proxy};
+use ureq::{Proxy, config::IpFamily};
 use use_package::use_alternate_package;
-use utils::{progress_enabled, COLOR};
+use utils::{COLOR, progress_enabled};
 
 mod apply;
 mod cli;

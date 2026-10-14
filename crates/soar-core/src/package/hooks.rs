@@ -3,7 +3,7 @@ use std::{path::Path, process::Command};
 use soar_config::{config::get_config, packages::SandboxConfig};
 use tracing::{debug, warn};
 
-use crate::{error::ErrorContext, sandbox, SoarError, SoarResult};
+use crate::{SoarError, SoarResult, error::ErrorContext, sandbox};
 
 /// Environment variables passed to hook commands.
 pub struct HookEnv<'a> {

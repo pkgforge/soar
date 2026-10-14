@@ -6,8 +6,8 @@ use std::{
 
 use semver::Version;
 use soar_core::{
-    error::{ErrorContext, SoarError},
     SoarResult,
+    error::{ErrorContext, SoarError},
 };
 use soar_dl::{download::Download, forge::Forge, http_client::SHARED_AGENT, types::OverwriteMode};
 use soar_utils::bytes::format_bytes;

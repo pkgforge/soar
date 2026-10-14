@@ -1,10 +1,10 @@
 use tracing::{debug, trace};
 use ureq::{
-    http::{
-        header::{CONTENT_LENGTH, CONTENT_TYPE, LOCATION},
-        Response,
-    },
     Body,
+    http::{
+        Response,
+        header::{CONTENT_LENGTH, CONTENT_TYPE, LOCATION},
+    },
 };
 
 use crate::{error::DownloadError, http_client::SHARED_AGENT};
@@ -36,20 +36,20 @@ impl Http {
             status.canonical_reason().unwrap_or("")
         );
 
-        if let Some(content_length) = headers.get(CONTENT_LENGTH) {
-            if let Ok(len) = content_length.to_str() {
-                trace!("  Content-Length: {}", len);
-            }
+        if let Some(content_length) = headers.get(CONTENT_LENGTH)
+            && let Ok(len) = content_length.to_str()
+        {
+            trace!("  Content-Length: {}", len);
         }
-        if let Some(content_type) = headers.get(CONTENT_TYPE) {
-            if let Ok(ct) = content_type.to_str() {
-                trace!("  Content-Type: {}", ct);
-            }
+        if let Some(content_type) = headers.get(CONTENT_TYPE)
+            && let Ok(ct) = content_type.to_str()
+        {
+            trace!("  Content-Type: {}", ct);
         }
-        if let Some(location) = headers.get(LOCATION) {
-            if let Ok(loc) = location.to_str() {
-                debug!("  Location: {}", loc);
-            }
+        if let Some(location) = headers.get(LOCATION)
+            && let Ok(loc) = location.to_str()
+        {
+            debug!("  Location: {}", loc);
         }
     }
 

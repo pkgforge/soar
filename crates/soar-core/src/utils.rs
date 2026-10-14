@@ -69,10 +69,10 @@ fn remove_action(path: &Path) -> FileSystemResult<()> {
 /// Removes broken symlinks from bin, desktop, and icons directories.
 pub fn remove_broken_symlinks() -> Result<()> {
     let mut soar_files_action = |path: &Path| -> FileSystemResult<()> {
-        if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
-            if filename.ends_with("-soar") {
-                return remove_action(path);
-            }
+        if let Some(filename) = path.file_stem().and_then(|s| s.to_str())
+            && filename.ends_with("-soar")
+        {
+            return remove_action(path);
         }
         Ok(())
     };

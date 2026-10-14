@@ -10,9 +10,9 @@ use soar_config::{
     config::get_config, display::DisplaySettings, repository::get_platform_repositories,
 };
 use soar_core::{
+    SoarResult,
     error::{ErrorContext, SoarError},
     package::install::InstallTarget,
-    SoarResult,
 };
 use soar_package::PackageExt;
 use soar_utils::{bytes::format_bytes, system::platform};

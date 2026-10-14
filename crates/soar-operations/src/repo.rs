@@ -1,10 +1,10 @@
 use std::fs;
 
 use soar_config::{
-    config::{Config, CONFIG},
+    config::{CONFIG, Config},
     repository::Repository,
 };
-use soar_core::{error::ErrorContext, SoarResult};
+use soar_core::{SoarResult, error::ErrorContext};
 
 use crate::SoarContext;
 
@@ -95,38 +95,38 @@ impl SoarContext {
             let repo = config.repositories.remove(idx);
 
             // Clean up the repository's data directory
-            if let Ok(repo_path) = repo.get_path() {
-                if repo_path.exists() {
-                    // Canonicalize before deleting: `Path::parent` is lexical, so
-                    // a name like ".." would pass a parent check while still
-                    // resolving outside the repositories directory.
-                    let repos_dir = config.get_repositories_path()?;
-                    let repos_dir = repos_dir.canonicalize().with_context(|| {
-                        format!("canonicalizing repositories dir {}", repos_dir.display())
+            if let Ok(repo_path) = repo.get_path()
+                && repo_path.exists()
+            {
+                // Canonicalize before deleting: `Path::parent` is lexical, so
+                // a name like ".." would pass a parent check while still
+                // resolving outside the repositories directory.
+                let repos_dir = config.get_repositories_path()?;
+                let repos_dir = repos_dir.canonicalize().with_context(|| {
+                    format!("canonicalizing repositories dir {}", repos_dir.display())
+                })?;
+                let target = repo_path.canonicalize().with_context(|| {
+                    format!("canonicalizing repository path {}", repo_path.display())
+                })?;
+                if target == repos_dir || !target.starts_with(&repos_dir) {
+                    return Err(soar_config::error::ConfigError::InvalidRepositoryName(
+                        repo.name.clone(),
+                    )
+                    .into());
+                }
+                // Remove the configured path rather than the canonicalized
+                // target: when the repo dir is a symlink, drop the link
+                // itself instead of the directory it points at.
+                let meta = fs::symlink_metadata(&repo_path)
+                    .with_context(|| format!("reading metadata for {}", repo_path.display()))?;
+                if meta.file_type().is_symlink() {
+                    fs::remove_file(&repo_path).with_context(|| {
+                        format!("removing repository symlink at {}", repo_path.display())
                     })?;
-                    let target = repo_path.canonicalize().with_context(|| {
-                        format!("canonicalizing repository path {}", repo_path.display())
+                } else {
+                    fs::remove_dir_all(&repo_path).with_context(|| {
+                        format!("removing repository data at {}", repo_path.display())
                     })?;
-                    if target == repos_dir || !target.starts_with(&repos_dir) {
-                        return Err(soar_config::error::ConfigError::InvalidRepositoryName(
-                            repo.name.clone(),
-                        )
-                        .into());
-                    }
-                    // Remove the configured path rather than the canonicalized
-                    // target: when the repo dir is a symlink, drop the link
-                    // itself instead of the directory it points at.
-                    let meta = fs::symlink_metadata(&repo_path)
-                        .with_context(|| format!("reading metadata for {}", repo_path.display()))?;
-                    if meta.file_type().is_symlink() {
-                        fs::remove_file(&repo_path).with_context(|| {
-                            format!("removing repository symlink at {}", repo_path.display())
-                        })?;
-                    } else {
-                        fs::remove_dir_all(&repo_path).with_context(|| {
-                            format!("removing repository data at {}", repo_path.display())
-                        })?;
-                    }
                 }
             }
 

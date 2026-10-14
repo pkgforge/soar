@@ -10,13 +10,13 @@ use std::{
 };
 
 use landlock::{
-    Access as _, AccessFs, AccessNet, BitFlags, NetPort, PathBeneath, PathFd, Ruleset,
-    RulesetAttr as _, RulesetCreatedAttr as _, ABI,
+    ABI, Access as _, AccessFs, AccessNet, BitFlags, NetPort, PathBeneath, PathFd, Ruleset,
+    RulesetAttr as _, RulesetCreatedAttr as _,
 };
 use soar_utils::path::{xdg_cache_home, xdg_config_home, xdg_data_home};
 use tracing::{debug, warn};
 
-use crate::{error::SoarError, SoarResult};
+use crate::{SoarResult, error::SoarError};
 
 /// Network access configuration.
 #[derive(Clone, Debug, Default)]
