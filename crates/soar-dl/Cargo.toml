@@ -4,6 +4,7 @@ version = "0.12.2"
 description = "Downloader for soar package manager"
 license.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 repository.workspace = true
 keywords.workspace = true
 readme.workspace = true
@@ -26,7 +27,7 @@ tracing = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
 xattr = { workspace = true }
-zsync-rs = "0.1.4"
+zsync-rs = "0.2.1"
 
 [dev-dependencies]
 tempfile = { workspace = true }

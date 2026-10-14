@@ -2,9 +2,8 @@ use nu_ansi_term::Color::{Blue, Magenta, Red, Yellow};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{
     fmt::{
-        self,
+        self, FmtContext, FormatEvent, FormatFields, MakeWriter,
         format::{FmtSpan, Writer},
-        FmtContext, FormatEvent, FormatFields, MakeWriter,
     },
     registry::LookupSpan,
 };

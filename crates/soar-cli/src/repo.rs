@@ -1,6 +1,6 @@
 use soar_config::repository::Repository;
 use soar_core::SoarResult;
-use soar_operations::{repo::RepoUpdate, SoarContext};
+use soar_operations::{SoarContext, repo::RepoUpdate};
 use tracing::info;
 
 use crate::{

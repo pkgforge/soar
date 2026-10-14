@@ -1,10 +1,10 @@
 use nu_ansi_term::Color::{Blue, Cyan, Magenta, Red};
 use soar_core::SoarResult;
-use soar_operations::{switch, SoarContext};
+use soar_operations::{SoarContext, switch};
 use soar_utils::bytes::format_bytes;
 use tracing::info;
 
-use crate::utils::{get_valid_selection, Colored};
+use crate::utils::{Colored, get_valid_selection};
 
 pub async fn use_alternate_package(ctx: &SoarContext, name: &str) -> SoarResult<()> {
     let variants = switch::list_variants(ctx, name)?;

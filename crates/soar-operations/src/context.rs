@@ -6,13 +6,13 @@ use std::{
 
 use once_cell::sync::OnceCell;
 use soar_config::{
-    config::{is_system_mode, Config},
+    config::{Config, is_system_mode},
     repository::Repository,
 };
 use soar_core::{
+    SoarResult,
     database::connection::{DieselDatabase, MetadataManager},
     error::{ErrorContext, SoarError},
-    SoarResult,
 };
 use soar_db::{
     connection::DbConnection,
@@ -20,7 +20,7 @@ use soar_db::{
     repository::{core::CoreRepository, metadata::MetadataRepository},
 };
 use soar_events::{EventSinkHandle, LogLevel, SoarEvent, SyncStage};
-use soar_registry::{fetch_metadata, write_metadata_db, MetadataContent, RemotePackage};
+use soar_registry::{MetadataContent, RemotePackage, fetch_metadata, write_metadata_db};
 use soar_utils::system::is_root;
 use tokio::sync::OnceCell as AsyncOnceCell;
 use tracing::{debug, trace};

@@ -14,8 +14,8 @@ use soar_dl::{
 };
 
 use crate::{
-    error::SoarError, package::remote_update::is_valid_download_url,
-    utils::substitute_placeholders, SoarResult,
+    SoarResult, error::SoarError, package::remote_update::is_valid_download_url,
+    utils::substitute_placeholders,
 };
 
 /// Which releases a source will take.
@@ -290,15 +290,15 @@ impl ReleaseDownload {
         let segments: Vec<&str> = decoded.iter().map(String::as_str).collect();
 
         // gitlab.com/{owner}/{repo}/-/releases/{tag}/downloads/{asset}
-        if let [owner, repo, "-", "releases", tag, "downloads", asset] = segments.as_slice() {
-            if host == "gitlab.com" {
-                return Some(Self {
-                    forge: Forge::GitLab,
-                    repo: format!("{owner}/{repo}"),
-                    tag: tag.to_string(),
-                    asset: asset.to_string(),
-                });
-            }
+        if let [owner, repo, "-", "releases", tag, "downloads", asset] = segments.as_slice()
+            && host == "gitlab.com"
+        {
+            return Some(Self {
+                forge: Forge::GitLab,
+                repo: format!("{owner}/{repo}"),
+                tag: tag.to_string(),
+                asset: asset.to_string(),
+            });
         }
 
         // {prefix}/{owner}/{repo}/releases/download/{tag}/{asset}, which is
@@ -633,10 +633,12 @@ mod tests {
 
         // A host soar knows serves its projects at the root, so a prefix
         // means the URL is something else.
-        assert!(ReleaseSource::from_download_url(
-            "https://github.com/x/o/r/releases/download/v1/tool.AppImage"
-        )
-        .is_none());
+        assert!(
+            ReleaseSource::from_download_url(
+                "https://github.com/x/o/r/releases/download/v1/tool.AppImage"
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -664,9 +666,11 @@ mod tests {
     #[test]
     fn a_url_no_forge_publishes_releases_for_answers_nothing() {
         assert!(ReleaseSource::from_download_url("https://example.com/app.AppImage").is_none());
-        assert!(ReleaseSource::from_download_url(
-            "https://github.com/owner/repo/archive/refs/tags/v1.0.tar.gz"
-        )
-        .is_none());
+        assert!(
+            ReleaseSource::from_download_url(
+                "https://github.com/owner/repo/archive/refs/tags/v1.0.tar.gz"
+            )
+            .is_none()
+        );
     }
 }

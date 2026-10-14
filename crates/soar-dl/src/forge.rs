@@ -7,13 +7,13 @@ use std::{
 };
 
 use releasekit::{
+    Forge as _, Release,
     client::{HeaderMap, HttpClient, Response},
     platform::{GitHub, GitLab, Gitea},
-    Forge as _, Release,
 };
 
 use crate::{
-    error::{describe_request_error, DownloadError},
+    error::{DownloadError, describe_request_error},
     http_client::SHARED_AGENT,
 };
 

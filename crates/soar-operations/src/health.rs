@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
-use soar_core::{package::remove::PackageRemover, SoarResult};
+use soar_core::{SoarResult, package::remove::PackageRemover};
 use soar_db::repository::core::CoreRepository;
 use soar_events::{RemoveStage, SoarEvent};
 use soar_utils::{error::FileSystemResult, fs::walk_dir, path::resolve_path};
 use tracing::debug;
 
 use crate::{
-    progress::next_op_id, utils::get_package_hooks, BrokenPackage, FailedInfo, HealthReport,
-    RemoveReport, RemovedInfo, SoarContext,
+    BrokenPackage, FailedInfo, HealthReport, RemoveReport, RemovedInfo, SoarContext,
+    progress::next_op_id, utils::get_package_hooks,
 };
 
 /// Check system health: PATH configuration, broken packages, and broken symlinks.
@@ -174,10 +174,11 @@ fn get_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
 
     let desktop_path = config.get_desktop_path()?;
     let mut soar_check = |path: &std::path::Path| -> FileSystemResult<()> {
-        if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
-            if filename.ends_with("-soar") && !path.exists() {
-                broken.push(path.to_path_buf());
-            }
+        if let Some(filename) = path.file_stem().and_then(|s| s.to_str())
+            && filename.ends_with("-soar")
+            && !path.exists()
+        {
+            broken.push(path.to_path_buf());
         }
         Ok(())
     };

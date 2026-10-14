@@ -61,12 +61,13 @@ impl TryFrom<&str> for PackageQuery {
             ));
         }
 
-        if let Some(ref pkg_id) = pkg_id {
-            if pkg_id == "all" && name.is_none() {
-                return Err(SoarError::InvalidPackageQuery(
-                    "For all, package name is required.".into(),
-                ));
-            }
+        if let Some(ref pkg_id) = pkg_id
+            && pkg_id == "all"
+            && name.is_none()
+        {
+            return Err(SoarError::InvalidPackageQuery(
+                "For all, package name is required.".into(),
+            ));
         }
 
         Ok(PackageQuery {

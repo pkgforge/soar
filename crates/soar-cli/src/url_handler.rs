@@ -16,8 +16,8 @@ use std::{
 use nu_ansi_term::Color::{Blue, Yellow};
 use regex::Regex;
 use soar_core::{
-    error::{ErrorContext, SoarError},
     SoarResult,
+    error::{ErrorContext, SoarError},
 };
 use soar_operations::SoarContext;
 use soar_utils::path::xdg_data_home;
@@ -25,7 +25,7 @@ use tracing::info;
 
 use crate::{
     install::install_packages,
-    utils::{interactive_ask, json_enabled, Colored},
+    utils::{Colored, interactive_ask, json_enabled},
 };
 
 const MAX_URL_LEN: usize = 512;
@@ -338,7 +338,7 @@ fn wait_for_close() -> SoarResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        desktop_entry, parse, validate_spec, UrlRequest, DESKTOP_ENTRY, PACKAGED_EXEC, SCHEME_MIME,
+        DESKTOP_ENTRY, PACKAGED_EXEC, SCHEME_MIME, UrlRequest, desktop_entry, parse, validate_spec,
     };
 
     fn exec_line(exe: &str) -> String {

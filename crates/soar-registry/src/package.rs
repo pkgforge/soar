@@ -8,8 +8,8 @@
 use std::fmt;
 
 use serde::{
-    de::{self, Visitor},
     Deserialize, Deserializer, Serialize,
+    de::{self, Visitor},
 };
 
 /// Internal enum for deserializing boolean values that may be strings.

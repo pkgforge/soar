@@ -8,18 +8,18 @@ use std::{
 
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
 use soar_config::{config::is_system_mode, packages::PackagesConfig};
-use soar_core::{error::SoarError, SoarResult};
-use soar_operations::{apply, ApplyDiff, ApplyReport, SoarContext};
+use soar_core::{SoarResult, error::SoarError};
+use soar_operations::{ApplyDiff, ApplyReport, SoarContext, apply};
 use tabled::{
     builder::Builder,
-    settings::{themes::BorderCorrection, Panel, Style},
+    settings::{Panel, Style, themes::BorderCorrection},
 };
 use tracing::{info, warn};
 
 use crate::{
     json_output::{self, ApplyDiffJson},
     progress::create_wait_job,
-    utils::{display_settings, icon_or, json_enabled, Colored, Icons},
+    utils::{Colored, Icons, display_settings, icon_or, json_enabled},
 };
 
 /// Hands the packages marked `system = true` to a privileged pass over the same
@@ -129,16 +129,16 @@ pub async fn apply_packages(
     // the machine's own file declares is not that user's call.
     if only_system && prune {
         let machine_file = PackagesConfig::resolve_path(None);
-        if machine_file != packages_path {
-            if let Ok(machine) = PackagesConfig::load(Some(&machine_file.to_string_lossy())) {
-                let declared: HashSet<String> = machine
-                    .resolved_packages()
-                    .into_iter()
-                    .map(|pkg| pkg.name)
-                    .collect();
-                diff.to_remove
-                    .retain(|pkg| !declared.contains(&pkg.pkg_name));
-            }
+        if machine_file != packages_path
+            && let Ok(machine) = PackagesConfig::load(Some(&machine_file.to_string_lossy()))
+        {
+            let declared: HashSet<String> = machine
+                .resolved_packages()
+                .into_iter()
+                .map(|pkg| pkg.name)
+                .collect();
+            diff.to_remove
+                .retain(|pkg| !declared.contains(&pkg.pkg_name));
         }
     }
 

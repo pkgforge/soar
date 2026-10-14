@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use nucleo_matcher::{
-    pattern::{CaseMatching, Normalization, Pattern},
     Config, Matcher, Utf32String,
+    pattern::{CaseMatching, Normalization, Pattern},
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use soar_config::config::get_config;
-use soar_core::{database::models::Package, package::query::PackageQuery, SoarResult};
+use soar_core::{SoarResult, database::models::Package, package::query::PackageQuery};
 use soar_db::{
     models::metadata::FuzzyCandidate,
     repository::{
@@ -18,8 +18,8 @@ use soar_utils::version::compare_versions;
 use tracing::{debug, trace};
 
 use crate::{
-    utils::{is_installed, InstalledIndex, NameCounts, PackageKey},
     SearchEntry, SearchResult, SoarContext,
+    utils::{InstalledIndex, NameCounts, PackageKey, is_installed},
 };
 
 /// Search for packages across all repositories.

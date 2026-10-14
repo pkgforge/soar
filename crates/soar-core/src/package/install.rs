@@ -36,6 +36,7 @@ use soar_utils::{
 use tracing::{debug, trace, warn};
 
 use crate::{
+    SoarResult,
     constants::INSTALL_MARKER_FILE,
     database::{connection::DieselDatabase, models::Package},
     error::{ErrorContext, SoarError},
@@ -43,7 +44,6 @@ use crate::{
         local::local_path_from_url, remove::remove_provide_symlinks, update_info::UpdateInfo,
     },
     utils::get_extract_dir,
-    SoarResult,
 };
 
 /// Fetch the side files an artifact does not carry itself.
@@ -661,7 +661,7 @@ impl PackageInstaller {
 
     /// Run a hook command with environment variables set.
     fn run_hook(&self, hook_name: &str, command: &str) -> SoarResult<()> {
-        use super::hooks::{run_hook, HookEnv};
+        use super::hooks::{HookEnv, run_hook};
 
         let env = HookEnv {
             pkg_id: self.package.pkg_id.as_deref().unwrap_or_default(),
@@ -681,30 +681,30 @@ impl PackageInstaller {
 
     /// Run post_download hook if configured.
     pub fn run_post_download_hook(&self) -> SoarResult<()> {
-        if let Some(ref hooks) = self.hooks {
-            if let Some(ref cmd) = hooks.post_download {
-                self.run_hook("post_download", cmd)?;
-            }
+        if let Some(ref hooks) = self.hooks
+            && let Some(ref cmd) = hooks.post_download
+        {
+            self.run_hook("post_download", cmd)?;
         }
         Ok(())
     }
 
     /// Run post_extract hook if configured.
     pub fn run_post_extract_hook(&self) -> SoarResult<()> {
-        if let Some(ref hooks) = self.hooks {
-            if let Some(ref cmd) = hooks.post_extract {
-                self.run_hook("post_extract", cmd)?;
-            }
+        if let Some(ref hooks) = self.hooks
+            && let Some(ref cmd) = hooks.post_extract
+        {
+            self.run_hook("post_extract", cmd)?;
         }
         Ok(())
     }
 
     /// Run post_install hook if configured.
     pub fn run_post_install_hook(&self) -> SoarResult<()> {
-        if let Some(ref hooks) = self.hooks {
-            if let Some(ref cmd) = hooks.post_install {
-                self.run_hook("post_install", cmd)?;
-            }
+        if let Some(ref hooks) = self.hooks
+            && let Some(ref cmd) = hooks.post_install
+        {
+            self.run_hook("post_install", cmd)?;
         }
         Ok(())
     }
@@ -1100,10 +1100,10 @@ impl PackageInstaller {
                             );
                             sleep(Duration::from_secs(5));
                             retries += 1;
-                            if retries > 1 {
-                                if let Some(ref callback) = self.progress_callback {
-                                    callback(Progress::Error);
-                                }
+                            if retries > 1
+                                && let Some(ref callback) = self.progress_callback
+                            {
+                                callback(Progress::Error);
                             }
                             last_error = Some(err);
                         } else {
@@ -1522,10 +1522,10 @@ impl PackageInstaller {
                 let installed_path = PathBuf::from(&alt_pkg.installed_path);
 
                 let mut remove_action = |path: &Path| -> FileSystemResult<()> {
-                    if let Ok(real_path) = fs::read_link(path) {
-                        if real_path.parent() == Some(&installed_path) {
-                            safe_remove(path)?;
-                        }
+                    if let Ok(real_path) = fs::read_link(path)
+                        && real_path.parent() == Some(&installed_path)
+                    {
+                        safe_remove(path)?;
                     }
                     Ok(())
                 };
@@ -1537,10 +1537,10 @@ impl PackageInstaller {
                 }
 
                 let mut remove_action = |path: &Path| -> FileSystemResult<()> {
-                    if let Ok(real_path) = fs::read_link(path) {
-                        if real_path.parent() == Some(&installed_path) {
-                            safe_remove(path)?;
-                        }
+                    if let Ok(real_path) = fs::read_link(path)
+                        && real_path.parent() == Some(&installed_path)
+                    {
+                        safe_remove(path)?;
                     }
                     Ok(())
                 };

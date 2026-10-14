@@ -1,16 +1,16 @@
 use nu_ansi_term::Color::{Blue, Cyan, Green, Red};
 use soar_core::SoarResult;
-use soar_operations::{update, SoarContext, UpdateInfo, UpdateReport};
+use soar_operations::{SoarContext, UpdateInfo, UpdateReport, update};
 use tabled::{
     builder::Builder,
-    settings::{themes::BorderCorrection, Panel, Style},
+    settings::{Panel, Style, themes::BorderCorrection},
 };
 use tracing::{error, info};
 
 use crate::{
     json_output::{self, Listing, UpdateJson},
     progress::create_wait_job,
-    utils::{ask_target_action, display_settings, icon_or, json_enabled, Colored, Icons},
+    utils::{Colored, Icons, ask_target_action, display_settings, icon_or, json_enabled},
 };
 
 pub async fn update_packages(

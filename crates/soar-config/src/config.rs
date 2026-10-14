@@ -20,7 +20,7 @@ use crate::{
     display::DisplaySettings,
     error::{ConfigError, Result},
     profile::Profile,
-    repository::{get_platform_repositories, Repository, SOARPKGS_PUBKEY},
+    repository::{Repository, SOARPKGS_PUBKEY, get_platform_repositories},
     utils::default_install_patterns,
 };
 
@@ -728,20 +728,20 @@ impl Config {
 
         annotate_toml_table::<Config>(doc.as_table_mut(), true)?;
 
-        if let Some(profiles_map_table_item) = doc.get_mut("profile") {
-            if let Some(profiles_map_table) = profiles_map_table_item.as_table_mut() {
-                for (_profile_name, profile_item) in profiles_map_table.iter_mut() {
-                    if let Item::Table(profile_table) = profile_item {
-                        annotate_toml_table::<Profile>(profile_table, false)?;
-                    }
+        if let Some(profiles_map_table_item) = doc.get_mut("profile")
+            && let Some(profiles_map_table) = profiles_map_table_item.as_table_mut()
+        {
+            for (_profile_name, profile_item) in profiles_map_table.iter_mut() {
+                if let Item::Table(profile_table) = profile_item {
+                    annotate_toml_table::<Profile>(profile_table, false)?;
                 }
             }
         }
 
-        if let Some(repositories_item) = doc.get_mut("repositories") {
-            if let Some(repositories_array) = repositories_item.as_array_of_tables_mut() {
-                annotate_toml_array_of_tables::<Repository>(repositories_array)?;
-            }
+        if let Some(repositories_item) = doc.get_mut("repositories")
+            && let Some(repositories_array) = repositories_item.as_array_of_tables_mut()
+        {
+            annotate_toml_array_of_tables::<Repository>(repositories_array)?;
         }
 
         Ok(doc)

@@ -303,34 +303,48 @@ mod tests {
 
     use super::*;
 
+    fn set_env(key: &str, value: &str) {
+        // SAFETY: test-only. Every test here that touches the environment
+        // runs `#[serial]`, so none of them races this write.
+        unsafe { env::set_var(key, value) }
+    }
+
+    fn remove_env(key: &str) {
+        // SAFETY: as for `set_env`.
+        unsafe { env::remove_var(key) }
+    }
+
     #[test]
+    #[serial]
     fn test_expand_variables_simple() {
-        env::set_var("TEST_VAR", "test_value");
+        set_env("TEST_VAR", "test_value");
 
         let result = expand_variables("$TEST_VAR/path", &no_rename).unwrap();
         assert_eq!(result, "test_value/path");
 
-        env::remove_var("TEST_VAR");
+        remove_env("TEST_VAR");
     }
 
     #[test]
+    #[serial]
     fn test_expand_variables_braces() {
-        env::set_var("TEST_VAR_BRACES", "test_value");
+        set_env("TEST_VAR_BRACES", "test_value");
 
         let result = expand_variables("${TEST_VAR_BRACES}/path", &no_rename).unwrap();
         assert_eq!(result, "test_value/path");
 
-        env::remove_var("TEST_VAR_BRACES");
+        remove_env("TEST_VAR_BRACES");
     }
 
     #[test]
+    #[serial]
     fn test_expand_variables_missing_braces() {
-        env::set_var("TEST_VAR_MISSING_BRACES", "test_value");
+        set_env("TEST_VAR_MISSING_BRACES", "test_value");
 
         let result = expand_variables("${TEST_VAR_MISSING_BRACES", &no_rename);
         assert!(result.is_err());
 
-        env::remove_var("TEST_VAR_MISSING_BRACES");
+        remove_env("TEST_VAR_MISSING_BRACES");
     }
 
     #[test]
@@ -350,14 +364,14 @@ mod tests {
     #[serial]
     fn test_xdg_directories() {
         // We need to set HOME to have a predictable home directory for the test
-        env::set_var("HOME", "/tmp/home");
+        set_env("HOME", "/tmp/home");
         let home = home_dir();
         assert_eq!(home, PathBuf::from("/tmp/home"));
 
         // Test without XDG variables set
-        env::remove_var("XDG_CONFIG_HOME");
-        env::remove_var("XDG_DATA_HOME");
-        env::remove_var("XDG_CACHE_HOME");
+        remove_env("XDG_CONFIG_HOME");
+        remove_env("XDG_DATA_HOME");
+        remove_env("XDG_CACHE_HOME");
 
         let config = xdg_config_home();
         let data = xdg_data_home();
@@ -371,25 +385,25 @@ mod tests {
         assert!(cache.is_absolute());
 
         // Test with XDG variables set
-        env::set_var("XDG_CONFIG_HOME", "/tmp/config");
-        env::set_var("XDG_DATA_HOME", "/tmp/data");
-        env::set_var("XDG_CACHE_HOME", "/tmp/cache");
+        set_env("XDG_CONFIG_HOME", "/tmp/config");
+        set_env("XDG_DATA_HOME", "/tmp/data");
+        set_env("XDG_CACHE_HOME", "/tmp/cache");
 
         assert_eq!(xdg_config_home(), PathBuf::from("/tmp/config"));
         assert_eq!(xdg_data_home(), PathBuf::from("/tmp/data"));
         assert_eq!(xdg_cache_home(), PathBuf::from("/tmp/cache"));
 
-        env::remove_var("XDG_CONFIG_HOME");
-        env::remove_var("XDG_DATA_HOME");
-        env::remove_var("XDG_CACHE_HOME");
-        env::remove_var("HOME");
+        remove_env("XDG_CONFIG_HOME");
+        remove_env("XDG_DATA_HOME");
+        remove_env("XDG_CACHE_HOME");
+        remove_env("HOME");
     }
 
     #[test]
     #[serial]
     fn resolve_path_with_renames_the_variable_it_reads() {
-        env::set_var("SOAR_RENAMED_ROOT", "/srv/soar");
-        env::set_var("SOAR_ROOT", "/home/me");
+        set_env("SOAR_RENAMED_ROOT", "/srv/soar");
+        set_env("SOAR_ROOT", "/home/me");
 
         let rename = |var: &str| format!("SOAR_RENAMED_{}", &var[5..]);
 
@@ -409,14 +423,14 @@ mod tests {
         let missing = resolve_path_with("$SOAR_ROOT/db", |_| "SOAR_ABSENT".to_string());
         assert!(missing.is_err());
 
-        env::remove_var("SOAR_RENAMED_ROOT");
-        env::remove_var("SOAR_ROOT");
+        remove_env("SOAR_RENAMED_ROOT");
+        remove_env("SOAR_ROOT");
     }
 
     #[test]
     #[serial]
     fn test_resolve_path() {
-        env::set_var("HOME", "/tmp/home");
+        set_env("HOME", "/tmp/home");
 
         assert!(resolve_path("").is_err());
 
@@ -441,7 +455,7 @@ mod tests {
             resolve_path("not/at/~/start").unwrap(),
             expected_tilde_middle
         );
-        env::remove_var("HOME");
+        remove_env("HOME");
 
         // Unclosed variable
         let result = resolve_path("${VAR");
@@ -456,11 +470,11 @@ mod tests {
     #[serial]
     fn test_home_dir() {
         // Test with HOME set
-        env::set_var("HOME", "/tmp/home");
+        set_env("HOME", "/tmp/home");
         assert_eq!(home_dir(), PathBuf::from("/tmp/home"));
 
         // Test with HOME unset
-        env::remove_var("HOME");
+        remove_env("HOME");
         let user = get_username().unwrap_or_else(|| nix::unistd::Uid::current().to_string());
         let expected = PathBuf::from(format!("/home/{user}"));
         assert_eq!(home_dir(), expected);
@@ -469,7 +483,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_expand_variables_edge_cases() {
-        env::set_var("HOME", "/tmp/home");
+        set_env("HOME", "/tmp/home");
 
         // Dollar at the end
         assert_eq!(expand_variables("path/$", &no_rename).unwrap(), "path/$");
@@ -481,14 +495,14 @@ mod tests {
         );
 
         // Multiple variables
-        env::set_var("VAR1", "val1");
-        env::set_var("VAR2", "val2");
+        set_env("VAR1", "val1");
+        set_env("VAR2", "val2");
         assert_eq!(
             expand_variables("$VAR1/${VAR2}", &no_rename).unwrap(),
             "val1/val2"
         );
-        env::remove_var("VAR1");
-        env::remove_var("VAR2");
+        remove_env("VAR1");
+        remove_env("VAR2");
 
         // Tilde expansion
         let home_str = home_dir().to_string_lossy().to_string();
@@ -498,7 +512,7 @@ mod tests {
         );
         assert_eq!(expand_variables("~", &no_rename).unwrap(), home_str);
         assert_eq!(expand_variables("a/~/b", &no_rename).unwrap(), "a/~/b");
-        env::remove_var("HOME");
+        remove_env("HOME");
     }
 
     #[test]
@@ -522,10 +536,10 @@ mod tests {
     #[test]
     #[serial]
     fn test_expand_env_var_special_vars() {
-        env::set_var("HOME", "/tmp/home");
-        env::remove_var("XDG_CONFIG_HOME");
-        env::remove_var("XDG_DATA_HOME");
-        env::remove_var("XDG_CACHE_HOME");
+        set_env("HOME", "/tmp/home");
+        remove_env("XDG_CONFIG_HOME");
+        remove_env("XDG_DATA_HOME");
+        remove_env("XDG_CACHE_HOME");
 
         let mut result = String::new();
         expand_env_var("HOME", &mut result, "$HOME", &no_rename).unwrap();
@@ -549,14 +563,14 @@ mod tests {
         expand_env_var("XDG_CACHE_HOME", &mut result, "$XDG_CACHE_HOME", &no_rename).unwrap();
         assert_eq!(result, "/tmp/home/.cache");
 
-        env::remove_var("HOME");
+        remove_env("HOME");
     }
 
     #[test]
     #[serial]
     fn test_desktop_dir() {
         // User mode
-        env::set_var("XDG_DATA_HOME", "/tmp/data");
+        set_env("XDG_DATA_HOME", "/tmp/data");
         let desktop = desktop_dir(false);
         assert_eq!(desktop, PathBuf::from("/tmp/data/applications"));
 
@@ -569,7 +583,7 @@ mod tests {
     #[serial]
     fn test_icons_dir() {
         // User mode
-        env::set_var("XDG_DATA_HOME", "/tmp/data");
+        set_env("XDG_DATA_HOME", "/tmp/data");
         let icons = icons_dir(false);
         assert_eq!(icons, PathBuf::from("/tmp/data/icons/hicolor"));
 

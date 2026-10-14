@@ -16,7 +16,7 @@ use soar_utils::{
 };
 use tracing::{debug, trace, warn};
 
-use super::hooks::{run_hook, HookEnv};
+use super::hooks::{HookEnv, run_hook};
 
 /// Remove every symlink under `dir` that points into `installed_path`.
 ///
@@ -31,12 +31,12 @@ fn remove_links_into(dir: &Path, installed_path: &Path, removed: &mut Vec<PathBu
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_symlink() {
-            if let Ok(target) = fs::read_link(&path) {
-                if target.starts_with(installed_path) {
-                    trace!("removing link: {}", path.display());
-                    if fs::remove_file(&path).is_ok() {
-                        removed.push(path);
-                    }
+            if let Ok(target) = fs::read_link(&path)
+                && target.starts_with(installed_path)
+            {
+                trace!("removing link: {}", path.display());
+                if fs::remove_file(&path).is_ok() {
+                    removed.push(path);
                 }
             }
         } else if path.is_dir() {
@@ -123,9 +123,9 @@ pub(crate) fn path_inside_packages(installed_path: &Path, packages_path: &Path) 
 }
 
 use crate::{
+    SoarResult,
     database::{connection::DieselDatabase, models::InstalledPackage},
     error::{ErrorContext, SoarError},
-    SoarResult,
 };
 
 pub struct PackageRemover {
@@ -207,10 +207,10 @@ impl PackageRemover {
     /// Run pre_remove hook if configured.
     /// This should be called before any file deletions during package removal.
     pub fn run_pre_remove_hook(&self) -> SoarResult<()> {
-        if let Some(ref hooks) = self.hooks {
-            if let Some(ref cmd) = hooks.pre_remove {
-                self.run_hook("pre_remove", cmd)?;
-            }
+        if let Some(ref hooks) = self.hooks
+            && let Some(ref cmd) = hooks.pre_remove
+        {
+            self.run_hook("pre_remove", cmd)?;
         }
         Ok(())
     }
@@ -257,13 +257,12 @@ impl PackageRemover {
             }
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
-                if path.extension() == Some(&OsString::from("desktop")) {
-                    if let Ok(real_path) = fs::read_link(path) {
-                        if real_path.parent() == Some(&installed_path) {
-                            trace!("removing desktop file: {}", path.display());
-                            let _ = fs::remove_file(path);
-                        }
-                    }
+                if path.extension() == Some(&OsString::from("desktop"))
+                    && let Ok(real_path) = fs::read_link(path)
+                    && real_path.parent() == Some(&installed_path)
+                {
+                    trace!("removing desktop file: {}", path.display());
+                    let _ = fs::remove_file(path);
                 }
                 Ok(())
             };
@@ -275,11 +274,11 @@ impl PackageRemover {
             }
 
             let mut remove_action = |path: &Path| -> FileSystemResult<()> {
-                if let Ok(real_path) = fs::read_link(path) {
-                    if real_path.parent() == Some(&installed_path) {
-                        trace!("removing icon symlink: {}", path.display());
-                        let _ = fs::remove_file(path);
-                    }
+                if let Ok(real_path) = fs::read_link(path)
+                    && real_path.parent() == Some(&installed_path)
+                {
+                    trace!("removing icon symlink: {}", path.display());
+                    let _ = fs::remove_file(path);
                 }
                 Ok(())
             };
@@ -306,8 +305,7 @@ impl PackageRemover {
             .unwrap_or_else(|| "unknown".to_string());
         trace!(
             "removing package directory: {} ({})",
-            self.package.installed_path,
-            size_str
+            self.package.installed_path, size_str
         );
         // Archives commonly ship directories read-only, and removing a
         // directory's entries needs the write bit on that directory. soar owns

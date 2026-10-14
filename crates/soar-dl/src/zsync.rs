@@ -9,7 +9,7 @@
 use std::{fs::File, path::Path};
 
 use tracing::debug;
-use zsync_rs::{checksum::calc_sha1_stream, ControlFile, HttpClient, ZsyncAssembly};
+use zsync_rs::{ControlFile, HttpClient, ZsyncAssembly, checksum::calc_sha1_stream};
 
 use crate::{error::DownloadError, types::Progress};
 
@@ -410,15 +410,14 @@ mod tests {
             if reader.read_line(&mut line)? == 0 || line.trim().is_empty() {
                 break;
             }
-            if let Some(value) = line.to_ascii_lowercase().strip_prefix("range:") {
-                if let Some((start, end)) =
+            if let Some(value) = line.to_ascii_lowercase().strip_prefix("range:")
+                && let Some((start, end)) =
                     value.trim().trim_start_matches("bytes=").split_once('-')
-                {
-                    range = Some((
-                        start.trim().parse::<u64>().unwrap_or(0),
-                        end.trim().parse::<u64>().ok(),
-                    ));
-                }
+            {
+                range = Some((
+                    start.trim().parse::<u64>().unwrap_or(0),
+                    end.trim().parse::<u64>().ok(),
+                ));
             }
         }
 
@@ -450,8 +449,10 @@ mod tests {
                 let mut body = Vec::new();
                 file.read_to_end(&mut body)?;
                 stream.write_all(
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nAccept-Ranges: bytes\r\n\r\n")
-                        .as_bytes(),
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nAccept-Ranges: bytes\r\n\r\n"
+                    )
+                    .as_bytes(),
                 )?;
                 stream.write_all(&body)?;
             }

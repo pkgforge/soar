@@ -14,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 readme = "README.md"
 repository = "https://github.com/pkgforge/soar"
 license = "MIT"
@@ -24,25 +24,25 @@ rust-version = "1.93.1"
 
 [workspace.dependencies]
 blake3 = { version = "1.8.7", features = ["mmap"] }
-clap = { version = "4.6.6", features = ["cargo", "derive"] }
-clap_complete = "4.6.9"
+clap = { version = "4.6.7", features = ["cargo", "derive"] }
+clap_complete = "4.6.11"
 chrono = "0.4"
 compak = "0.2.0"
-diesel = { version = "2.3.12", features = [
+diesel = { version = "2.3.14", features = [
   "64-column-tables",
   "returning_clauses_for_sqlite_3_35",
   "serde_json",
   "sqlite"
 ] }
 diesel_migrations = { version = "2.3.2", features = ["sqlite"] }
-documented = "0.9.2"
-fast-glob = "1.1.1"
+documented = "0.10.0"
+fast-glob = "1.1.2"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 indicatif = "0.18"
 landlock = "0.4.7"
-libsqlite3-sys = { version = ">=0.30.1,<0.36.0", features = [ "bundled" ]}
+libsqlite3-sys = { version = "0.38.2", features = [ "bundled" ]}
 miette = { version = "7.6.0", features = ["fancy"] }
-minisign-verify = "0.2.5"
+minisign-verify = "0.3.0"
 nix = { version = "0.31.3", features = ["dir", "fs", "ioctl", "term", "user"] }
 nucleo-matcher = "0.3.1"
 nu-ansi-term = "0.50.3"
@@ -58,9 +58,9 @@ regex = { version = "1.13.1", default-features = false, features = [
 ] }
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = { version = "1.0.151", features = ["indexmap"] }
-serial_test = "3.5.0"
-sha2 = "0.11.0"
+serde_json = { version = "1.0.154", features = ["indexmap"] }
+serial_test = "4.0.1"
+sha2 = "0.11.1"
 soar-config = { version = "0.13.0", path = "crates/soar-config" }
 soar-core = { version = "0.17.4", path = "crates/soar-core" }
 soar-db = { version = "0.7.2", path = "crates/soar-db" }
@@ -71,20 +71,20 @@ soar-package = { version = "0.6.0", path = "crates/soar-package" }
 soar-registry = { version = "0.6.4", path = "crates/soar-registry" }
 soar-utils = { version = "0.5.2", path = "crates/soar-utils" }
 squishy = { version = "0.5.1", features = ["appimage", "dwarfs"] }
-tabled = { version = "0.21", default-features = false, features = ["ansi"] }
+tabled = { version = "0.22", default-features = false, features = ["ansi"] }
 terminal_size = "0.4"
 tempfile = "3.27.0"
-thiserror = "2.0.20"
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-toml = "1.1.4"
-toml_edit = "0.25.13"
+thiserror = "2.0.21"
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread", "sync", "time"] }
+toml = "1.1.8"
+toml_edit = "0.25.17"
 tracing = { version = "0.1.44", default-features = false }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "json", "nu-ansi-term"] }
-ureq = { version = "3.4.0", features = ["json"] }
+ureq = { version = "3.4.2", features = ["json"] }
 url = "2.5.8"
 xattr = "1.6.1"
-xxhash-rust = { version = "0.8.18", features = ["xxh32"] }
-zstd = "0.13.3"
+xxhash-rust = { version = "0.8.19", features = ["xxh32"] }
+zstd = "0.14.2"
 
 [profile.release]
 opt-level = "z"

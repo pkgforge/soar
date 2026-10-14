@@ -1,17 +1,17 @@
 use soar_core::{
+    SoarResult,
     database::models::InstalledPackage,
     error::SoarError,
     package::{local::LocalPackage, query::PackageQuery, remove::PackageRemover, url::UrlPackage},
-    SoarResult,
 };
 use soar_db::repository::core::{CoreRepository, SortDirection};
 use soar_events::{RemoveStage, SoarEvent};
 use tracing::{debug, trace};
 
 use crate::{
+    FailedInfo, RemoveReport, RemoveResolveResult, RemovedInfo, SoarContext,
     progress::next_op_id,
     utils::{get_package_hooks, installed_from_source},
-    FailedInfo, RemoveReport, RemoveResolveResult, RemovedInfo, SoarContext,
 };
 
 /// Resolve package queries into packages to remove.
@@ -48,7 +48,7 @@ pub fn resolve_removals(
         let query = PackageQuery::try_from(package.as_str())?;
 
         // --all flag: remove all installed variants matching the name
-        if let (true, None, Some(ref name)) = (all, query.pkg_id.as_deref(), &query.name) {
+        if let (true, None, Some(name)) = (all, query.pkg_id.as_deref(), &query.name) {
             let installed: Vec<InstalledPackage> = diesel_db
                 .with_conn(|conn| {
                     CoreRepository::list_filtered(

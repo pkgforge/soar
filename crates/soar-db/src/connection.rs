@@ -8,10 +8,10 @@
 
 use std::{collections::HashMap, path::Path};
 
-use diesel::{sql_query, Connection, ConnectionError, RunQueryDsl, SqliteConnection};
+use diesel::{Connection, ConnectionError, RunQueryDsl, SqliteConnection, sql_query};
 use tracing::{debug, trace};
 
-use crate::migration::{apply_migrations, migrate_metadata_json_to_jsonb, DbType};
+use crate::migration::{DbType, apply_migrations, migrate_metadata_json_to_jsonb};
 
 /// How long to wait for another process to let go of the database.
 ///

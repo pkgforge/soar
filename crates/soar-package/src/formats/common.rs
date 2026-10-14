@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use image::{imageops::FilterType, DynamicImage, GenericImageView};
+use image::{DynamicImage, GenericImageView, imageops::FilterType};
 use regex::Regex;
 use soar_config::config::get_config;
 use soar_utils::{
@@ -22,8 +22,8 @@ use soar_utils::{
 use tracing::{debug, trace, warn};
 
 use super::{
-    appimage::integrate_appimage, get_file_type, onelf::integrate_onelf,
-    wrappe::setup_wrappe_portable_dir, PackageFormat,
+    PackageFormat, appimage::integrate_appimage, get_file_type, onelf::integrate_onelf,
+    wrappe::setup_wrappe_portable_dir,
 };
 use crate::{
     error::{ErrorContext, PackageError, Result},
@@ -178,11 +178,11 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
 
     // A stranger's file under a managed name is left alone; only a link is
     // ever replaced.
-    if let Ok(meta) = fs::symlink_metadata(&final_path) {
-        if !meta.file_type().is_symlink() {
-            warn!(path = %final_path.display(), "leaving a file soar does not own");
-            return Ok(final_path);
-        }
+    if let Ok(meta) = fs::symlink_metadata(&final_path)
+        && !meta.file_type().is_symlink()
+    {
+        warn!(path = %final_path.display(), "leaving a file soar does not own");
+        return Ok(final_path);
     }
 
     create_symlink(real_path, &final_path)?;
@@ -380,11 +380,11 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
 
     // A stranger's file under a managed name is left alone; only a link is
     // ever replaced.
-    if let Ok(meta) = fs::symlink_metadata(&final_path) {
-        if !meta.file_type().is_symlink() {
-            warn!(path = %final_path.display(), "leaving a file soar does not own");
-            return Ok(final_path);
-        }
+    if let Ok(meta) = fs::symlink_metadata(&final_path)
+        && !meta.file_type().is_symlink()
+    {
+        warn!(path = %final_path.display(), "leaving a file soar does not own");
+        return Ok(final_path);
     }
 
     create_symlink(real_path, &final_path)?;
@@ -1046,7 +1046,9 @@ Name=New Note
     fn a_foreign_file_at_the_icon_destination_survives() {
         let dir = TempDir::new().unwrap();
         let saved = std::env::var("XDG_DATA_HOME").ok();
-        std::env::set_var("XDG_DATA_HOME", dir.path().join("data"));
+        // SAFETY: test-only, and serialized with the other tests that change the
+        // environment by `#[serial]`.
+        unsafe { std::env::set_var("XDG_DATA_HOME", dir.path().join("data")) };
 
         // 64x64 is a supported dimension, so no rewrite happens: the test
         // pins the link step, not the normalization.
@@ -1064,9 +1066,9 @@ Name=New Note
         assert_eq!(fs::read(&occupant).unwrap(), b"mine");
 
         if let Some(value) = saved {
-            std::env::set_var("XDG_DATA_HOME", value);
+            unsafe { std::env::set_var("XDG_DATA_HOME", value) };
         } else {
-            std::env::remove_var("XDG_DATA_HOME");
+            unsafe { std::env::remove_var("XDG_DATA_HOME") };
         }
     }
 

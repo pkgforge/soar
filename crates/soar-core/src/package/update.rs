@@ -7,9 +7,9 @@ use tracing::warn;
 
 use super::remove::path_inside_packages;
 use crate::{
+    SoarResult,
     database::{connection::DieselDatabase, models::Package},
     error::SoarError,
-    SoarResult,
 };
 
 /// What `partition_old_versions` decides: `(clear, keep)`.
@@ -128,7 +128,7 @@ mod tests {
     fn roots(
         root1: &std::path::Path,
         root2: &std::path::Path,
-    ) -> impl Fn(&str) -> SoarResult<std::path::PathBuf> {
+    ) -> impl Fn(&str) -> SoarResult<std::path::PathBuf> + use<> {
         let root1 = root1.to_path_buf();
         let root2 = root2.to_path_buf();
         move |profile| {

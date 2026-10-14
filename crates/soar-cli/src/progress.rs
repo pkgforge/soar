@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{mpsc::Receiver, Arc, LazyLock},
+    sync::{Arc, LazyLock, mpsc::Receiver},
     time::Duration,
 };
 

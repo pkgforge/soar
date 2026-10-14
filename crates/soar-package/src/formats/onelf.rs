@@ -11,7 +11,7 @@ use std::{
     path::Path,
 };
 
-use onelf_format::{Entry, EntryKind, Footer, Manifest, FOOTER_SIZE};
+use onelf_format::{Entry, EntryKind, FOOTER_SIZE, Footer, Manifest};
 
 use super::common::{
     desktop_entry_name, managed_icon_name, symlink_desktop_with_config, symlink_icon_with_mode,
@@ -209,15 +209,13 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
     // whose own name is often a generic word the icon theme already claims, so
     // the desktop file has to be extracted and read first.
     let mut desktop_path = None;
-    if !has_desktop {
-        if let Some(idx) = resolve_desktop(&manifest, &ep_name) {
-            let desktop_data =
-                decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
-            let dest = install_dir.join(format!("{pkg_name}.desktop"));
-            fs::write(&dest, &desktop_data)
-                .with_context(|| format!("writing desktop file to {}", dest.display()))?;
-            desktop_path = Some(dest);
-        }
+    if !has_desktop && let Some(idx) = resolve_desktop(&manifest, &ep_name) {
+        let desktop_data =
+            decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
+        let dest = install_dir.join(format!("{pkg_name}.desktop"));
+        fs::write(&dest, &desktop_data)
+            .with_context(|| format!("writing desktop file to {}", dest.display()))?;
+        desktop_path = Some(dest);
     }
 
     let desktop_icon_name = desktop_path
@@ -230,21 +228,19 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
         );
 
     let mut icon_name = pkg_icon_name.map(str::to_string);
-    if !has_icon {
-        if let Some(idx) = resolve_icon(&manifest, &ep_name) {
-            let ext = if manifest.entry_path(idx).ends_with(".svg") {
-                "svg"
-            } else {
-                "png"
-            };
-            let icon_data =
-                decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
-            let dest = install_dir.join(format!("{pkg_name}.{ext}"));
-            fs::write(&dest, &icon_data)
-                .with_context(|| format!("writing icon to {}", dest.display()))?;
-            symlink_icon_with_mode(&dest, &desktop_icon_name, config.is_system())?;
-            icon_name = Some(desktop_icon_name);
-        }
+    if !has_icon && let Some(idx) = resolve_icon(&manifest, &ep_name) {
+        let ext = if manifest.entry_path(idx).ends_with(".svg") {
+            "svg"
+        } else {
+            "png"
+        };
+        let icon_data =
+            decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
+        let dest = install_dir.join(format!("{pkg_name}.{ext}"));
+        fs::write(&dest, &icon_data)
+            .with_context(|| format!("writing icon to {}", dest.display()))?;
+        symlink_icon_with_mode(&dest, &desktop_icon_name, config.is_system())?;
+        icon_name = Some(desktop_icon_name);
     }
 
     if let Some(dest) = desktop_path {

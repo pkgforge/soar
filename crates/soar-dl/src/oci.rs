@@ -4,13 +4,13 @@ use std::{
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc, Mutex, PoisonError,
+        atomic::{AtomicU64, Ordering},
     },
     thread,
 };
 
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use soar_utils::fs::is_elf;
@@ -18,7 +18,7 @@ use tracing::{debug, trace, warn};
 use ureq::http::header::{ACCEPT, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
 
 use crate::{
-    download::{check_partial_response, Download},
+    download::{Download, check_partial_response},
     error::DownloadError,
     filter::Filter,
     http_client::SHARED_AGENT,

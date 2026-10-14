@@ -194,30 +194,29 @@ impl FileLock {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Mutex, thread, time::Duration};
+    use std::{thread, time::Duration};
+
+    use serial_test::serial;
 
     use super::*;
 
-    /// Process-wide env: every test resolving a lock path holds this.
-    static ENV_SERIAL: Mutex<()> = Mutex::new(());
-
     #[test]
+    #[serial]
     fn test_lock_path_generation() {
-        let _env = ENV_SERIAL.lock().unwrap();
         let path = FileLock::lock_path("test-pkg").unwrap();
         assert!(path.to_string_lossy().ends_with("test-pkg.lock"));
     }
 
     #[test]
+    #[serial]
     fn test_lock_sanitization() {
-        let _env = ENV_SERIAL.lock().unwrap();
         let path = FileLock::lock_path("test/pkg").unwrap();
         assert!(path.to_string_lossy().contains("test_pkg"));
     }
 
     #[test]
+    #[serial]
     fn test_exclusive_lock() {
-        let _env = ENV_SERIAL.lock().unwrap();
         let lock1 = FileLock::acquire("test-exclusive").unwrap();
 
         let lock2 = FileLock::try_acquire("test-exclusive").unwrap();
@@ -233,8 +232,8 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_concurrent_locks_different_packages() {
-        let _env = ENV_SERIAL.lock().unwrap();
         let lock1 = FileLock::acquire("pkg-a").unwrap();
         let lock2 = FileLock::acquire("pkg-b").unwrap();
 
@@ -242,8 +241,8 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lock_blocks_until_released() {
-        let _env = ENV_SERIAL.lock().unwrap();
         let lock1 = FileLock::acquire("test-block").unwrap();
         let path = lock1.path().to_path_buf();
 
@@ -307,12 +306,14 @@ mod tests {
 
     /// Serialized: this test repoints `XDG_RUNTIME_DIR` process-wide.
     #[test]
+    #[serial]
     fn test_planted_lock_file_is_not_followed() {
         use tempfile::tempdir;
-        let _env = ENV_SERIAL.lock().unwrap();
         let runtime = tempdir().unwrap();
         let saved = std::env::var("XDG_RUNTIME_DIR").ok();
-        std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
+        // SAFETY: test-only, and serialized with the other tests that change the
+        // environment by `#[serial]`.
+        unsafe { std::env::set_var("XDG_RUNTIME_DIR", runtime.path()) };
 
         let victim = runtime.path().join("victim");
         fs::write(&victim, b"victim").unwrap();
@@ -325,9 +326,9 @@ mod tests {
         assert_eq!(fs::read(&victim).unwrap(), b"victim");
 
         if let Some(value) = saved {
-            std::env::set_var("XDG_RUNTIME_DIR", value);
+            unsafe { std::env::set_var("XDG_RUNTIME_DIR", value) };
         } else {
-            std::env::remove_var("XDG_RUNTIME_DIR");
+            unsafe { std::env::remove_var("XDG_RUNTIME_DIR") };
         }
     }
 }

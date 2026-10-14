@@ -10,6 +10,7 @@ use soar_config::{
     packages::{BinaryMapping, PackageHooks, PackagesConfig, SandboxConfig},
 };
 use soar_core::{
+    SoarResult,
     database::{
         connection::DieselDatabase,
         models::{InstalledPackage, Package},
@@ -17,7 +18,6 @@ use soar_core::{
     error::{ErrorContext, SoarError},
     package::{local::LocalPackage, url::UrlPackage},
     utils::{shared_link_targets, substitute_placeholders},
-    SoarResult,
 };
 use soar_db::{
     models::types::{PackageFile, PackageProvide},
@@ -169,10 +169,10 @@ pub fn link_shared_files(
                 continue;
             };
             let link = destination.join(rest);
-            if let Some(parent) = link.parent() {
-                if fs::create_dir_all(parent).is_err() {
-                    continue;
-                }
+            if let Some(parent) = link.parent()
+                && fs::create_dir_all(parent).is_err()
+            {
+                continue;
             }
             match fs::read_link(&link) {
                 // ours, from this package or an older version of it
@@ -298,131 +298,130 @@ pub async fn mangle_package_symlinks(
         return Ok(symlinks);
     }
 
-    if let Some(bins) = binaries {
-        if !bins.is_empty() {
-            // Walked once: the tree does not change while the mappings are
-            // resolved against it.
-            let present = walk_files(install_dir);
-            let rel_of = |path: &PathBuf| {
-                path.strip_prefix(install_dir)
-                    .unwrap_or(path)
-                    .to_string_lossy()
-                    .to_string()
-            };
-            let matching = |pat: &str| -> Vec<PathBuf> {
-                present
-                    .iter()
-                    .filter(|p| fast_glob::glob_match(pat, rel_of(p)))
-                    .cloned()
-                    .collect()
-            };
-            // One name cannot stand for two files, so the first mapping to
-            // claim it keeps it.
-            let mut claimed: HashSet<PathBuf> = HashSet::new();
-            for mapping in bins {
-                let source_pattern =
-                    substitute_placeholders(&mapping.source, Some(version), arch_map);
-                // Try the most specific reading of the pattern first. Falling
-                // straight back to the file name would pick an arbitrary one
-                // when an archive ships the same binary for several
-                // architectures, each under its own directory.
+    if let Some(bins) = binaries
+        && !bins.is_empty()
+    {
+        // Walked once: the tree does not change while the mappings are
+        // resolved against it.
+        let present = walk_files(install_dir);
+        let rel_of = |path: &PathBuf| {
+            path.strip_prefix(install_dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string()
+        };
+        let matching = |pat: &str| -> Vec<PathBuf> {
+            present
+                .iter()
+                .filter(|p| fast_glob::glob_match(pat, rel_of(p)))
+                .cloned()
+                .collect()
+        };
+        // One name cannot stand for two files, so the first mapping to
+        // claim it keeps it.
+        let mut claimed: HashSet<PathBuf> = HashSet::new();
+        for mapping in bins {
+            let source_pattern = substitute_placeholders(&mapping.source, Some(version), arch_map);
+            // Try the most specific reading of the pattern first. Falling
+            // straight back to the file name would pick an arbitrary one
+            // when an archive ships the same binary for several
+            // architectures, each under its own directory.
 
-                let mut source_paths = matching(&source_pattern);
-                // An archive with a single top-level directory has it promoted
-                // away, so the recorded path still carries a component the
-                // installed tree no longer has.
-                if source_paths.is_empty() {
-                    if let Some((_, rest)) = source_pattern.split_once('/') {
-                        source_paths = matching(rest);
-                    }
-                }
-                // Last resort: the artifact was rearranged and only the name
-                // survives. Several files can answer to it, so `link_as` is
-                // dropped below and each keeps its own name.
-                if source_paths.is_empty() {
-                    source_paths = present
-                        .iter()
-                        .filter(|p| {
-                            p.file_name()
-                                .map(|n| {
-                                    fast_glob::glob_match(
-                                        &source_pattern,
-                                        n.to_string_lossy().to_string(),
-                                    )
-                                })
-                                .unwrap_or(false)
-                        })
-                        .cloned()
-                        .collect();
-                }
-
-                if source_paths.is_empty() {
-                    return Err(SoarError::Custom(format!(
-                        "Binary source '{}' not found in package",
-                        source_pattern
-                    )));
-                }
-
-                let single_match = source_paths.len() == 1;
-                for source_path in source_paths {
-                    let link_name = if single_match {
-                        mapping.link_as.as_deref()
-                    } else {
-                        None
-                    }
-                    .unwrap_or_else(|| {
-                        source_path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(&mapping.source)
-                    });
-                    // `link_as` comes from package metadata; ungated it
-                    // escapes the bin directory.
-                    if !is_safe_component(link_name) {
-                        warn!(
-                            link_as = link_name,
-                            source = %source_path.display(),
-                            "skipping binary mapping with unsafe link name"
-                        );
-                        continue;
-                    }
-                    let link_path = bin_dir.join(link_name);
-                    if !claimed.insert(link_path.clone()) {
-                        warn!(
-                            link = %link_path.display(),
-                            source = %source_path.display(),
-                            "skipping a second source for the same command"
-                        );
-                        continue;
-                    }
-
-                    set_executable(&source_path, install_dir)?;
-
-                    if link_path.exists() || link_path.is_symlink() {
-                        if !replaceable_link(&link_path, packages_root) {
-                            warn!(
-                                path = %link_path.display(),
-                                "leaving a file soar does not own"
-                            );
-                            continue;
-                        }
-                        std::fs::remove_file(&link_path).with_context(|| {
-                            format!("removing existing file/symlink at {}", link_path.display())
-                        })?;
-                    }
-
-                    unix::fs::symlink(&source_path, &link_path).with_context(|| {
-                        format!(
-                            "creating symlink {} -> {}",
-                            source_path.display(),
-                            link_path.display()
-                        )
-                    })?;
-                    symlinks.push((source_path, link_path));
-                }
+            let mut source_paths = matching(&source_pattern);
+            // An archive with a single top-level directory has it promoted
+            // away, so the recorded path still carries a component the
+            // installed tree no longer has.
+            if source_paths.is_empty()
+                && let Some((_, rest)) = source_pattern.split_once('/')
+            {
+                source_paths = matching(rest);
             }
-            return Ok(symlinks);
+            // Last resort: the artifact was rearranged and only the name
+            // survives. Several files can answer to it, so `link_as` is
+            // dropped below and each keeps its own name.
+            if source_paths.is_empty() {
+                source_paths = present
+                    .iter()
+                    .filter(|p| {
+                        p.file_name()
+                            .map(|n| {
+                                fast_glob::glob_match(
+                                    &source_pattern,
+                                    n.to_string_lossy().to_string(),
+                                )
+                            })
+                            .unwrap_or(false)
+                    })
+                    .cloned()
+                    .collect();
+            }
+
+            if source_paths.is_empty() {
+                return Err(SoarError::Custom(format!(
+                    "Binary source '{}' not found in package",
+                    source_pattern
+                )));
+            }
+
+            let single_match = source_paths.len() == 1;
+            for source_path in source_paths {
+                let link_name = if single_match {
+                    mapping.link_as.as_deref()
+                } else {
+                    None
+                }
+                .unwrap_or_else(|| {
+                    source_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&mapping.source)
+                });
+                // `link_as` comes from package metadata; ungated it
+                // escapes the bin directory.
+                if !is_safe_component(link_name) {
+                    warn!(
+                        link_as = link_name,
+                        source = %source_path.display(),
+                        "skipping binary mapping with unsafe link name"
+                    );
+                    continue;
+                }
+                let link_path = bin_dir.join(link_name);
+                if !claimed.insert(link_path.clone()) {
+                    warn!(
+                        link = %link_path.display(),
+                        source = %source_path.display(),
+                        "skipping a second source for the same command"
+                    );
+                    continue;
+                }
+
+                set_executable(&source_path, install_dir)?;
+
+                if link_path.exists() || link_path.is_symlink() {
+                    if !replaceable_link(&link_path, packages_root) {
+                        warn!(
+                            path = %link_path.display(),
+                            "leaving a file soar does not own"
+                        );
+                        continue;
+                    }
+                    std::fs::remove_file(&link_path).with_context(|| {
+                        format!("removing existing file/symlink at {}", link_path.display())
+                    })?;
+                }
+
+                unix::fs::symlink(&source_path, &link_path).with_context(|| {
+                    format!(
+                        "creating symlink {} -> {}",
+                        source_path.display(),
+                        link_path.display()
+                    )
+                })?;
+                symlinks.push((source_path, link_path));
+            }
         }
+        return Ok(symlinks);
     }
 
     let provides = provides.unwrap_or_default();
@@ -724,11 +723,11 @@ mod tests {
 
     use soar_config::packages::BinaryMapping;
     use soar_db::models::types::{PackageFile, PackageProvide};
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     use super::{
-        create_provide_symlinks, is_installed, mangle_package_symlinks, replaceable_link,
-        InstalledIndex, NameCounts,
+        InstalledIndex, NameCounts, create_provide_symlinks, is_installed, mangle_package_symlinks,
+        replaceable_link,
     };
     /// One installed package of `name`, recorded under `family`.
     fn installed_as(name: &str, family: Option<&str>, installed: bool) -> InstalledIndex {
@@ -1141,7 +1140,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_symlinked_source_is_never_chmodded_through() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
         let (_root, install, bin) = setup();
         let other = tempdir().unwrap();
         let victim = other.path().join("tool");

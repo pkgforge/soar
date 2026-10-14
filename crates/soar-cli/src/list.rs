@@ -2,19 +2,19 @@ use std::collections::HashSet;
 
 use nu_ansi_term::Color::{Blue, Cyan, Green, LightRed, Magenta, Red, Yellow};
 use soar_core::SoarResult;
-use soar_operations::{list, search, SoarContext};
+use soar_operations::{SoarContext, list, search};
 use soar_utils::bytes::format_bytes;
 use tabled::{
     builder::Builder,
-    settings::{peaker::PriorityMax, themes::BorderCorrection, Panel, Style, Width},
+    settings::{Panel, Style, Width, peaker::PriorityMax, themes::BorderCorrection},
 };
 use tracing::{debug, info};
 
 use crate::{
     json_output::{self, InstalledJson, Listing, PackageDetailJson, PackageJson},
     utils::{
-        display_settings, icon_or, json_enabled, pretty_package_size, term_width, vec_string,
-        Colored, Icons,
+        Colored, Icons, display_settings, icon_or, json_enabled, pretty_package_size, term_width,
+        vec_string,
     },
 };
 

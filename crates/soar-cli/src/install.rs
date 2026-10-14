@@ -1,17 +1,17 @@
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
-use soar_core::{package::install::InstallTarget, SoarResult};
-use soar_operations::{install, search, InstallOptions, InstallReport, ResolveResult, SoarContext};
+use soar_core::{SoarResult, package::install::InstallTarget};
+use soar_operations::{InstallOptions, InstallReport, ResolveResult, SoarContext, install, search};
 use tabled::{
     builder::Builder,
-    settings::{themes::BorderCorrection, Panel, Style},
+    settings::{Panel, Style, themes::BorderCorrection},
 };
 use tracing::{debug, error, info, warn};
 
 use crate::{
     progress::create_wait_job,
     utils::{
-        ask_target_action, display_settings, icon_or, select_package_interactively,
-        select_package_interactively_with_installed, Colored, Icons,
+        Colored, Icons, ask_target_action, display_settings, icon_or, select_package_interactively,
+        select_package_interactively_with_installed,
     },
 };
 
@@ -92,10 +92,10 @@ pub async fn install_packages(
             }
             ResolveResult::NotFound(name) => {
                 error!("Package {} not found", name);
-                if let Ok(suggestions) = search::suggest_similar(ctx, &name, 3).await {
-                    if !suggestions.is_empty() {
-                        info!("Did you mean: {}?", suggestions.join(", "));
-                    }
+                if let Ok(suggestions) = search::suggest_similar(ctx, &name, 3).await
+                    && !suggestions.is_empty()
+                {
+                    info!("Did you mean: {}?", suggestions.join(", "));
                 }
             }
             ResolveResult::AlreadyInstalled {
@@ -210,10 +210,10 @@ async fn install_with_show(
                     }
                     ResolveResult::NotFound(name) => {
                         error!("Package {} not found", name);
-                        if let Ok(suggestions) = search::suggest_similar(ctx, &name, 3).await {
-                            if !suggestions.is_empty() {
-                                info!("Did you mean: {}?", suggestions.join(", "));
-                            }
+                        if let Ok(suggestions) = search::suggest_similar(ctx, &name, 3).await
+                            && !suggestions.is_empty()
+                        {
+                            info!("Did you mean: {}?", suggestions.join(", "));
                         }
                     }
                     ResolveResult::AlreadyInstalled {
@@ -292,10 +292,10 @@ async fn install_with_show(
         if repo_pkgs.is_empty() {
             let name = query.name.as_ref().unwrap();
             error!("Package {} not found", name);
-            if let Ok(suggestions) = search::suggest_similar(ctx, name, 3).await {
-                if !suggestions.is_empty() {
-                    info!("Did you mean: {}?", suggestions.join(", "));
-                }
+            if let Ok(suggestions) = search::suggest_similar(ctx, name, 3).await
+                && !suggestions.is_empty()
+            {
+                info!("Did you mean: {}?", suggestions.join(", "));
             }
             continue;
         }
@@ -351,19 +351,19 @@ async fn install_with_show(
             .find(|ip| ip.is_installed)
             .map(Into::into);
 
-        if let Some(ref existing) = existing_install {
-            if existing.is_installed {
-                warn!(
-                    "{}:{} ({}) is already installed - {}",
-                    existing.pkg_name,
-                    existing.repo_name,
-                    existing.version,
-                    if force { "reinstalling" } else { "skipping" }
-                );
-                if !force {
-                    info!("Hint: Use --force to reinstall, or --show to see other variants");
-                    continue;
-                }
+        if let Some(ref existing) = existing_install
+            && existing.is_installed
+        {
+            warn!(
+                "{}:{} ({}) is already installed - {}",
+                existing.pkg_name,
+                existing.repo_name,
+                existing.version,
+                if force { "reinstalling" } else { "skipping" }
+            );
+            if !force {
+                info!("Hint: Use --force to reinstall, or --show to see other variants");
+                continue;
             }
         }
 

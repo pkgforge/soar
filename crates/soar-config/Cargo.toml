@@ -3,6 +3,7 @@ name = "soar-config"
 version = "0.13.0"
 description = "Configuration management for soar package manager"
 edition.workspace = true
+rust-version.workspace = true
 readme.workspace = true
 repository.workspace = true
 license.workspace = true

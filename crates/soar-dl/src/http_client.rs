@@ -4,23 +4,101 @@ use std::{
 };
 
 use ureq::{
+    Agent, Proxy, RequestBuilder, Timeout,
     config::IpFamily,
     http::{self, HeaderMap, Uri},
     typestate::{WithBody, WithoutBody},
-    Agent, Proxy, RequestBuilder,
+    unversioned::{
+        resolver::DefaultResolver,
+        transport::{
+            Buffers, ConnectionDetails, Connector, DefaultConnector, NextTimeout, Transport,
+        },
+    },
 };
 
 /// Bounds TCP connect and TLS handshake, so an unroutable address fails over to the next one
 /// instead of stalling forever.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Bounds how long a request waits for the next byte of a response body, so a server that
-/// stops sending fails the read instead of hanging. ureq restarts this clock on every read,
-/// so it does not cap how long a large transfer may take.
+/// Bounds how long a request waits for the next bytes from the server, so one that stops
+/// sending fails the read instead of hanging. The clock restarts whenever data arrives, so
+/// it does not cap how long a large transfer may take.
 ///
-/// Only the body is bounded. ureq checks the `recv_response` deadline again on every body
-/// read, counted from when the headers arrived, so setting it would cap the whole transfer.
+/// ureq's own receive timeouts each cap a whole phase, the body included, so the bound is
+/// applied by [`StallConnector`] instead.
 const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Wraps each connection ureq makes in a [`StallTransport`].
+///
+/// This uses ureq's `unversioned` transport API, which may change in a ureq minor release.
+#[derive(Debug)]
+struct StallConnector(Duration);
+
+impl Connector<Box<dyn Transport>> for StallConnector {
+    type Out = StallTransport;
+
+    fn connect(
+        &self,
+        _details: &ConnectionDetails,
+        chained: Option<Box<dyn Transport>>,
+    ) -> Result<Option<Self::Out>, ureq::Error> {
+        Ok(chained.map(|inner| {
+            StallTransport {
+                inner,
+                stall: self.0,
+            }
+        }))
+    }
+}
+
+/// A connection whose every wait for input gives up after `stall` without data.
+#[derive(Debug)]
+struct StallTransport {
+    inner: Box<dyn Transport>,
+    stall: Duration,
+}
+
+impl Transport for StallTransport {
+    fn buffers(&mut self) -> &mut dyn Buffers {
+        self.inner.buffers()
+    }
+
+    fn transmit_output(&mut self, amount: usize, timeout: NextTimeout) -> Result<(), ureq::Error> {
+        self.inner.transmit_output(amount, timeout)
+    }
+
+    fn maybe_await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+        let timeout = self.cap(timeout);
+        self.inner.maybe_await_input(timeout)
+    }
+
+    fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+        let timeout = self.cap(timeout);
+        self.inner.await_input(timeout)
+    }
+
+    fn is_open(&mut self) -> bool {
+        self.inner.is_open()
+    }
+
+    fn is_tls(&self) -> bool {
+        self.inner.is_tls()
+    }
+}
+
+impl StallTransport {
+    fn cap(&self, timeout: NextTimeout) -> NextTimeout {
+        let stall = self.stall.into();
+        if stall < timeout.after {
+            NextTimeout {
+                after: stall,
+                reason: Timeout::RecvBody,
+            }
+        } else {
+            timeout
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
@@ -65,8 +143,8 @@ impl ClientConfig {
     /// Builds an HTTP `Agent` configured from this `ClientConfig`.
     ///
     /// The returned `Agent` will incorporate the configured proxy, global timeout,
-    /// IP family, and user agent header (if present). A response body that goes quiet
-    /// for two minutes fails, whatever the global timeout.
+    /// IP family, and user agent header (if present). A server that sends nothing for
+    /// two minutes fails the request, whatever the global timeout.
     ///
     /// When no proxy is set, the `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
     /// environment variables are honored.
@@ -89,7 +167,6 @@ impl ClientConfig {
         let mut config = ureq::Agent::config_builder()
             .timeout_global(self.timeout)
             .timeout_connect(Some(CONNECT_TIMEOUT))
-            .timeout_recv_body(Some(stall))
             .ip_family(self.ip_family);
 
         if self.proxy.is_some() {
@@ -100,7 +177,11 @@ impl ClientConfig {
             config = config.user_agent(user_agent);
         }
 
-        config.build().into()
+        Agent::with_parts(
+            config.build(),
+            DefaultConnector::default().chain(StallConnector(stall)),
+            DefaultResolver::default(),
+        )
     }
 }
 
@@ -342,7 +423,7 @@ mod tests {
         let agent = ClientConfig::default().build();
         let timeouts = agent.config().timeouts();
         assert_eq!(timeouts.recv_response, None);
-        assert_eq!(timeouts.recv_body, Some(STALL_TIMEOUT));
+        assert_eq!(timeouts.recv_body, None);
         assert_eq!(timeouts.global, None);
     }
 
@@ -375,6 +456,55 @@ mod tests {
         let started = Instant::now();
         let result = agent.get(&url).call().unwrap().body_mut().read_to_vec();
         assert!(result.is_err(), "a stalled body must fail the read");
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[derive(Debug)]
+    struct FakeTls;
+
+    impl Transport for FakeTls {
+        fn buffers(&mut self) -> &mut dyn Buffers {
+            unimplemented!()
+        }
+
+        fn transmit_output(&mut self, _: usize, _: NextTimeout) -> Result<(), ureq::Error> {
+            unimplemented!()
+        }
+
+        fn await_input(&mut self, _: NextTimeout) -> Result<bool, ureq::Error> {
+            unimplemented!()
+        }
+
+        fn is_open(&mut self) -> bool {
+            true
+        }
+
+        fn is_tls(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn test_stall_transport_keeps_tls() {
+        let transport = StallTransport {
+            inner: Box::new(FakeTls),
+            stall: STALL_TIMEOUT,
+        };
+        assert!(transport.is_tls(), "https requests would be refused");
+    }
+
+    #[test]
+    fn test_silent_server_fails_within_bound() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let (_stream, _) = listener.accept().unwrap();
+            thread::sleep(Duration::from_secs(5));
+        });
+        let agent = ClientConfig::default().build_with_stall(Duration::from_millis(300));
+
+        let started = Instant::now();
+        assert!(agent.get(format!("http://{addr}/")).call().is_err());
         assert!(started.elapsed() < Duration::from_secs(3));
     }
 

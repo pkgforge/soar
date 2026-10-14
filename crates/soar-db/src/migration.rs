@@ -5,10 +5,10 @@
 use std::error::Error;
 
 use diesel::{
-    sql_query, sql_types::Integer, Connection, QueryResult, QueryableByName, RunQueryDsl,
-    SqliteConnection,
+    Connection, QueryResult, QueryableByName, RunQueryDsl, SqliteConnection, sql_query,
+    sql_types::Integer,
 };
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use tracing::trace;
 
 pub const CORE_MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/core");

@@ -37,14 +37,14 @@ fn respond(mut stream: TcpStream, routes: &HashMap<String, Vec<u8>>) {
         if reader.read_line(&mut line).is_err() || line.trim().is_empty() {
             break;
         }
-        if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("range") {
-                range_start = value
-                    .trim()
-                    .strip_prefix("bytes=")
-                    .and_then(|r| r.strip_suffix('-'))
-                    .and_then(|r| r.parse::<usize>().ok());
-            }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("range")
+        {
+            range_start = value
+                .trim()
+                .strip_prefix("bytes=")
+                .and_then(|r| r.strip_suffix('-'))
+                .and_then(|r| r.parse::<usize>().ok());
         }
     }
 

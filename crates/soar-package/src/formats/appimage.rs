@@ -6,10 +6,10 @@ use soar_utils::fs::read_file_signature;
 use squishy::appimage::{AppImage, AppImageEntryKind};
 
 use super::{
+    PNG_MAGIC_BYTES,
     common::{
         desktop_entry_name, managed_icon_name, symlink_desktop_with_config, symlink_icon_with_mode,
     },
-    PNG_MAGIC_BYTES,
 };
 use crate::{
     error::{ErrorContext, Result},
@@ -74,48 +74,47 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
         );
 
     let mut icon_name = pkg_icon_name.map(str::to_string);
-    if !has_icon {
-        if let Some(entry) = appimage.find_icon() {
-            if entry.kind == AppImageEntryKind::File {
-                let dest = format!("{}/{}.DirIcon", install_dir.display(), pkg_name);
-                let _ = appimage.write_entry(&entry, &dest);
+    if !has_icon
+        && let Some(entry) = appimage.find_icon()
+        && entry.kind == AppImageEntryKind::File
+    {
+        let dest = format!("{}/{}.DirIcon", install_dir.display(), pkg_name);
+        let _ = appimage.write_entry(&entry, &dest);
 
-                let magic_bytes = read_file_signature(&dest, 8)?;
-                let ext = if magic_bytes == PNG_MAGIC_BYTES {
-                    "png"
-                } else {
-                    "svg"
-                };
-                let final_path = format!("{}/{}.{ext}", install_dir.display(), pkg_name);
-                fs::rename(&dest, &final_path)
-                    .with_context(|| format!("renaming from {dest} to {final_path}"))?;
+        let magic_bytes = read_file_signature(&dest, 8)?;
+        let ext = if magic_bytes == PNG_MAGIC_BYTES {
+            "png"
+        } else {
+            "svg"
+        };
+        let final_path = format!("{}/{}.{ext}", install_dir.display(), pkg_name);
+        fs::rename(&dest, &final_path)
+            .with_context(|| format!("renaming from {dest} to {final_path}"))?;
 
-                symlink_icon_with_mode(final_path, &desktop_icon_name, config.is_system())?;
-                icon_name = Some(desktop_icon_name);
-            }
-        }
+        symlink_icon_with_mode(final_path, &desktop_icon_name, config.is_system())?;
+        icon_name = Some(desktop_icon_name);
     }
 
     if let Some(dest) = desktop_path {
         symlink_desktop_with_config(dest, package, icon_name.as_deref(), config)?;
     }
 
-    if let Some(entry) = appimage.find_appstream() {
-        if entry.kind == AppImageEntryKind::File {
-            let file_name = if entry
-                .path
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .contains("appdata")
-            {
-                "appdata"
-            } else {
-                "metainfo"
-            };
-            let dest = format!("{}/{}.{file_name}.xml", install_dir.display(), pkg_name);
-            let _ = appimage.write_entry(&entry, &dest);
-        }
+    if let Some(entry) = appimage.find_appstream()
+        && entry.kind == AppImageEntryKind::File
+    {
+        let file_name = if entry
+            .path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .contains("appdata")
+        {
+            "appdata"
+        } else {
+            "metainfo"
+        };
+        let dest = format!("{}/{}.{file_name}.xml", install_dir.display(), pkg_name);
+        let _ = appimage.write_entry(&entry, &dest);
     }
     Ok(())
 }
