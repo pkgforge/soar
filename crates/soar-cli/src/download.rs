@@ -311,15 +311,7 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
                 info!("Download completed successfully");
                 break;
             }
-            Err(err)
-                if matches!(
-                    err,
-                    DownloadError::HttpError {
-                        status: 429,
-                        ..
-                    } | DownloadError::Network { .. }
-                ) && retries < max_retries =>
-            {
+            Err(err) if err.is_transient() && retries < max_retries => {
                 retries += 1;
                 info!("Retrying... ({}/{})", retries, max_retries);
                 ctx.progress_callback.clone()(Progress::Recovered);
@@ -366,7 +358,11 @@ fn handle_forge_release(
             .or_else(|| releases.first())
     };
 
-    let release = release.ok_or(DownloadError::InvalidResponse)?;
+    let release = release.ok_or_else(|| {
+        DownloadError::ReleaseNotFound {
+            tag: tag.map(String::from),
+        }
+    })?;
 
     info!("Found release: {}", release.tag());
     let filter = ctx.create_filter();

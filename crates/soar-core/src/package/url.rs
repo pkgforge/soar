@@ -430,11 +430,12 @@ pub fn parse_filename(filename: &str) -> (String, String) {
     static VERSION_RE: OnceLock<Regex> = OnceLock::new();
     let re = VERSION_RE.get_or_init(|| {
         // Match: Name[-_.]v?Version (where version is purely numeric like 1.2.3)
-        // The name can contain letters, digits, underscores but must not end with underscore before version
+        // The name is words joined by `-` or `_`. A later word starts with a
+        // letter and is not `v` and a digit, which would be the version.
         Regex::new(
             r"(?ix)
             ^
-            (?P<name>[a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z][a-zA-Z0-9]*)*)  # Name (letters/digits, underscores between words)
+            (?P<name>[a-z][a-z0-9]*(?:[-_](?:[a-uw-z][a-z0-9]*|v(?:[a-z][a-z0-9]*)?))*)  # Name
             [-_.]                              # Separator before version
             (?:v)?                             # Optional 'v' prefix
             (?P<version>\d+(?:\.\d+)*)         # Version: only digits and dots (1.2.3)
@@ -628,6 +629,25 @@ mod tests {
         let (name, ver) = parse_filename("simple.AppImage");
         assert_eq!(name, "simple");
         assert_eq!(ver, "unknown");
+    }
+
+    #[test]
+    fn a_hyphenated_name_keeps_its_version() {
+        let (name, ver) = parse_filename("my-app-1.0-x86_64.tar.gz");
+        assert_eq!(name, "my-app");
+        assert_eq!(ver, "1.0");
+
+        let (name, ver) = parse_filename("my-cool-app-v2.3.1.AppImage");
+        assert_eq!(name, "my-cool-app");
+        assert_eq!(ver, "2.3.1");
+
+        let (name, ver) = parse_filename("tool_v1.2.AppImage");
+        assert_eq!(name, "tool");
+        assert_eq!(ver, "1.2");
+
+        let (name, ver) = parse_filename("vim-vscode-0.9.AppImage");
+        assert_eq!(name, "vim-vscode");
+        assert_eq!(ver, "0.9");
     }
 
     #[test]

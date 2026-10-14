@@ -57,6 +57,17 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::invalid_response))]
     InvalidResponse,
 
+    #[error("Invalid JSON from {url}: {reason}")]
+    #[diagnostic(code(soar_dl::invalid_json))]
+    InvalidJson { url: String, reason: String },
+
+    #[error("No release found{}", .tag.as_deref().map(|t| format!(" for tag {t}")).unwrap_or_default())]
+    #[diagnostic(
+        code(soar_dl::release_not_found),
+        help("Check the project name, or omit the tag to take the latest release")
+    )]
+    ReleaseNotFound { tag: Option<String> },
+
     #[error("File name could not be determined")]
     #[diagnostic(
         code(soar_dl::no_filename),
@@ -64,13 +75,25 @@ pub enum DownloadError {
     )]
     NoFilename,
 
+    #[error("A checksum cannot be verified on output streamed to stdout")]
+    #[diagnostic(
+        code(soar_dl::checksum_on_stdout),
+        help("Download to a file to have it verified")
+    )]
+    ChecksumOnStdout,
+
     #[error("Resume metadata mismatch")]
     #[diagnostic(code(soar_dl::resume_mismatch))]
     ResumeMismatch,
 
+    /// Several downloads failed. `transient` holds when every one of them
+    /// failed in a way a retry may get past.
     #[error("{}", .errors.join("; "))]
     #[diagnostic(code(soar_dl::multiple_errors))]
-    Multiple { errors: Vec<String> },
+    Multiple {
+        errors: Vec<String>,
+        transient: bool,
+    },
 
     #[error("{0}")]
     #[diagnostic(
@@ -90,11 +113,63 @@ pub enum DownloadError {
 pub type Result<T> = miette::Result<T>;
 
 impl DownloadError {
-    /// A request to `url` that failed before any response came back.
-    pub fn network(url: &str, err: ureq::Error) -> Self {
-        Self::Network {
+    /// A request to `url` that failed, as either the status the server refused
+    /// it with or the network error that kept any response from coming back.
+    pub fn request(url: &str, err: ureq::Error) -> Self {
+        match err {
+            ureq::Error::StatusCode(status) => {
+                Self::HttpError {
+                    status,
+                    url: url.to_string(),
+                }
+            }
+            err => {
+                Self::Network {
+                    url: url.to_string(),
+                    err: Box::new(err),
+                }
+            }
+        }
+    }
+
+    /// A response body from `url` that did not parse as the JSON expected.
+    pub fn json(url: &str, err: impl std::fmt::Display) -> Self {
+        Self::InvalidJson {
             url: url.to_string(),
-            err: Box::new(err),
+            reason: err.to_string(),
+        }
+    }
+
+    /// Whether trying the same request again later may succeed: the network
+    /// failed, before or during the transfer, the server asked to be given
+    /// time, or it failed on its side.
+    ///
+    /// A body read that fails surfaces as `Io`. ureq hands its own errors
+    /// there wrapped in an `io::Error`, the stall timeout among them, so a
+    /// wrapped ureq error counts as a network failure.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::Network {
+                ..
+            } => true,
+            Self::HttpError {
+                status, ..
+            } => *status == 429 || *status >= 500,
+            Self::Io(err) => {
+                err.get_ref().is_some_and(|inner| inner.is::<ureq::Error>())
+                    || matches!(
+                        err.kind(),
+                        std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionAborted
+                            | std::io::ErrorKind::UnexpectedEof
+                            | std::io::ErrorKind::BrokenPipe
+                    )
+            }
+            Self::Multiple {
+                transient, ..
+            } => *transient,
+            _ => false,
         }
     }
 }
@@ -142,7 +217,6 @@ impl From<releasekit::Error> for DownloadError {
                     url,
                 }
             }
-            releasekit::Error::Json(_) => Self::InvalidResponse,
             other => Self::ForgeRequest(other.to_string()),
         }
     }
@@ -215,6 +289,7 @@ mod tests {
     fn test_download_error_multiple() {
         let err = DownloadError::Multiple {
             errors: vec!["Error 1".to_string(), "Error 2".to_string()],
+            transient: false,
         };
         let msg = format!("{}", err);
         assert_eq!(msg, "Error 1; Error 2");
@@ -236,12 +311,66 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_request_is_an_http_error() {
+        let err = DownloadError::request("https://ghcr.io/v2/x", ureq::Error::StatusCode(404));
+        assert!(matches!(
+            err,
+            DownloadError::HttpError {
+                status: 404,
+                ..
+            }
+        ));
+        assert!(!err.is_transient());
+
+        let err = DownloadError::request("https://ghcr.io/v2/x", ureq::Error::ConnectionFailed);
+        assert!(matches!(err, DownloadError::Network { .. }));
+        assert!(err.is_transient());
+    }
+
+    #[test]
+    fn transient_statuses_are_retried() {
+        for (status, transient) in [
+            (429, true),
+            (500, true),
+            (503, true),
+            (403, false),
+            (416, false),
+        ] {
+            let err = DownloadError::HttpError {
+                status,
+                url: String::new(),
+            };
+            assert_eq!(err.is_transient(), transient, "status {status}");
+        }
+    }
+
+    #[test]
+    fn a_failed_body_read_is_transient() {
+        let stalled = DownloadError::Io(ureq::Error::ConnectionFailed.into_io());
+        assert!(stalled.is_transient());
+
+        let reset = std::io::Error::from(std::io::ErrorKind::ConnectionReset);
+        assert!(DownloadError::Io(reset).is_transient());
+
+        let disk = std::io::Error::from(std::io::ErrorKind::StorageFull);
+        assert!(!DownloadError::Io(disk).is_transient());
+    }
+
+    #[test]
+    fn invalid_json_carries_its_cause() {
+        let cause = serde_json::from_str::<serde_json::Value>("{\"layers\": [").unwrap_err();
+        let msg = DownloadError::json("https://ghcr.io/v2/m", &cause).to_string();
+        assert!(msg.contains("https://ghcr.io/v2/m"), "{msg}");
+        assert!(msg.contains("EOF"), "{msg}");
+    }
+
+    #[test]
     fn a_failed_lookup_names_the_host() {
         let err = ureq::Error::Io(std::io::Error::other(
             "failed to lookup address information: Try again",
         ));
         assert_eq!(
-            DownloadError::network("https://api.github.com/repos/o/r/releases", err).to_string(),
+            DownloadError::request("https://api.github.com/repos/o/r/releases", err).to_string(),
             "could not resolve api.github.com (Try again); check your DNS settings"
         );
         assert_eq!(

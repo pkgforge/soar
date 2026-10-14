@@ -910,9 +910,10 @@ impl PackageInstaller {
     /// one, and discard it on a mismatch.
     ///
     /// The direct-download path hands this to the downloader. The paths that
-    /// assemble the file themselves have to ask for it, and a zsync transfer
-    /// especially so: what it verifies against comes from the artifact's own
-    /// host, whereas a pinned checksum comes from the repository.
+    /// assemble the file themselves have to ask for it, and OCI and zsync
+    /// transfers especially so: what they verify against comes from the
+    /// artifact's own host, whereas a pinned checksum comes from the
+    /// repository.
     fn verify_pinned_checksum(&self, path: &Path, source: &str) -> SoarResult<()> {
         let Some(ref bsum) = self.package.bsum else {
             return Ok(());
@@ -1081,6 +1082,7 @@ impl PackageInstaller {
                         .unwrap_or_else(|| {
                             DownloadError::Multiple {
                                 errors: vec!["Download failed after 5 retries".into()],
+                                transient: false,
                             }
                         })
                         .into());
@@ -1091,13 +1093,7 @@ impl PackageInstaller {
                         break;
                     }
                     Err(err) => {
-                        if matches!(
-                            err,
-                            DownloadError::HttpError {
-                                status: 429,
-                                ..
-                            } | DownloadError::Network { .. }
-                        ) {
+                        if err.is_transient() {
                             warn!(
                                 retry = retries,
                                 "download failed, retrying after delay: {err}"
@@ -1115,6 +1111,14 @@ impl PackageInstaller {
                         }
                     }
                 }
+            }
+
+            // A layer is checked against its digest, but the digest comes from
+            // the registry. The binary is held to the repository's checksum
+            // before any hook or build step runs against it.
+            let binary = self.install_dir.join(&self.package.pkg_name);
+            if binary.is_file() {
+                self.verify_pinned_checksum(&binary, url)?;
             }
 
             // Run post_download hook for OCI packages
