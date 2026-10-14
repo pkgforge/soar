@@ -13,6 +13,7 @@ categories.workspace = true
 compak = { workspace = true }
 fast-glob = { workspace = true }
 miette = { workspace = true }
+nix = { workspace = true }
 percent-encoding = { workspace = true }
 regex = { workspace = true }
 releasekit = { workspace = true }

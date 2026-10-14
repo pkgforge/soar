@@ -17,7 +17,7 @@ impl Http {
         let result = SHARED_AGENT
             .head(url)
             .call()
-            .map_err(|err| DownloadError::network(url, err));
+            .map_err(|err| DownloadError::request(url, err));
         if let Ok(ref resp) = result {
             trace!(status = resp.status().as_u16(), "HEAD response received");
             Self::log_response_headers(resp, "HEAD");
@@ -99,7 +99,7 @@ impl Http {
             }
         }
 
-        let result = req.call().map_err(|err| DownloadError::network(url, err));
+        let result = req.call().map_err(|err| DownloadError::request(url, err));
         if let Ok(ref resp) = result {
             Self::log_response_headers(resp, "GET");
         }
@@ -112,7 +112,8 @@ impl Http {
     ///
     /// # Returns
     ///
-    /// `T` parsed from the response body on success, `DownloadError` on failure.
+    /// `T` parsed from the response body on success. A refused request is an
+    /// `HttpError`, and a body that does not parse is `InvalidJson` naming why.
     ///
     /// # Examples
     ///
@@ -127,10 +128,10 @@ impl Http {
         let result = SHARED_AGENT
             .get(url)
             .call()
-            .map_err(|err| DownloadError::network(url, err))?
+            .map_err(|err| DownloadError::request(url, err))?
             .body_mut()
             .read_json()
-            .map_err(|_| DownloadError::InvalidResponse);
+            .map_err(|err| DownloadError::json(url, err));
         if result.is_ok() {
             trace!(url = url, "JSON parsed successfully");
         }

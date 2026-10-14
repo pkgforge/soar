@@ -1,6 +1,6 @@
 use std::{
-    fs::{self, File, OpenOptions, Permissions},
-    io::{Read as _, Seek as _, SeekFrom, Write as _},
+    fs::{self, File, Permissions},
+    io::{Read as _, Write as _},
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     sync::Arc,
@@ -20,8 +20,8 @@ use crate::{
     error::DownloadError,
     http::Http,
     types::{OverwriteMode, Progress, ResumeInfo},
-    utils::{filename_from_header, filename_from_url, resolve_output_path},
-    xattr::{read_resume, remove_resume, write_resume},
+    utils::{filename_from_header, filename_from_url, open_output, resolve_output_path},
+    xattr::{read_usable_resume, remove_resume, write_resume},
 };
 
 #[derive(Clone)]
@@ -238,6 +238,9 @@ impl Download {
 
         if self.output.as_deref() == Some("-") {
             trace!("output is stdout");
+            if self.expected_checksum.is_some() {
+                return Err(DownloadError::ChecksumOnStdout);
+            }
             return self.download_to_stdout();
         }
 
@@ -250,9 +253,11 @@ impl Download {
             }
         };
 
+        let mut head_size = None;
         let (header_filename, url_filename) = if needs_head {
             trace!("performing HEAD request for filename");
             let resp = Http::head(&self.url)?;
+            head_size = content_length(&resp);
             (
                 resp.headers()
                     .get(CONTENT_DISPOSITION)
@@ -267,7 +272,7 @@ impl Download {
             resolve_output_path(self.output.as_deref(), url_filename, header_filename)?;
         debug!(path = %output_path.display(), "resolved output path");
 
-        let mut resume_info = read_resume(&output_path);
+        let mut resume_info = read_usable_resume(&output_path);
         if resume_info.is_some() {
             trace!("found resume information from previous download");
         }
@@ -278,13 +283,12 @@ impl Download {
                     // Only skip if there's no resume info (complete download)
                     // If resume info exists, it's a partial download that should continue
                     if resume_info.is_none() {
-                        if self.verify_checksum(&output_path).is_ok() {
+                        if self.is_complete(&output_path, head_size) {
                             debug!(path = %output_path.display(), "file exists, skipping download");
                             return Ok(output_path);
                         }
-                        warn!(path = %output_path.display(), "cached file failed checksum, re-downloading");
+                        warn!(path = %output_path.display(), "existing file is not a complete download, re-downloading");
                         fs::remove_file(&output_path)?;
-                        resume_info = None;
                     } else {
                         debug!(path = %output_path.display(), "file exists but is partial, resuming download");
                     }
@@ -312,7 +316,7 @@ impl Download {
             std::fs::create_dir_all(parent)?;
         }
 
-        self.download_to_file(&output_path, resume_info)?;
+        let file = self.download_to_file(&output_path, resume_info)?;
 
         if let Err(e) = self.verify_checksum(&output_path) {
             fs::remove_file(&output_path).ok();
@@ -321,10 +325,12 @@ impl Download {
 
         if is_elf(&output_path) {
             trace!(path = %output_path.display(), "detected ELF binary, setting executable permissions");
-            std::fs::set_permissions(&output_path, Permissions::from_mode(0o755))?;
+            file.set_permissions(Permissions::from_mode(0o755))?;
         }
 
-        remove_resume(&output_path)?;
+        if let Err(err) = remove_resume(&output_path) {
+            warn!(path = %output_path.display(), %err, "failed to clear resume state");
+        }
 
         // Extraction is driven by what the file actually is, not by what the
         // caller guessed it would be. compak detects by magic number, so an
@@ -332,6 +338,11 @@ impl Download {
         // extraction was requested.
         if self.extract {
             match compak::detect_from_file(&output_path) {
+                Err(
+                    err @ compak::error::ArchiveError::Io {
+                        ..
+                    },
+                ) => return Err(err.into()),
                 Ok(format) => {
                     let extract_dir = self.extract_to.unwrap_or_else(|| {
                         output_path
@@ -357,6 +368,19 @@ impl Download {
 
         debug!(path = %output_path.display(), "download completed successfully");
         Ok(output_path)
+    }
+
+    /// Whether the file already at `path` is this download, finished: it
+    /// matches the expected checksum, or, without one, the size the server
+    /// reports. Existence alone proves nothing, since an interrupted download
+    /// on a filesystem without xattrs leaves no resume state behind.
+    fn is_complete(&self, path: &Path, head_size: Option<u64>) -> bool {
+        if self.expected_checksum.is_some() {
+            return self.verify_checksum(path).is_ok();
+        }
+        let remote_size =
+            head_size.or_else(|| Http::head(&self.url).ok().as_ref().and_then(content_length));
+        remote_size.is_some_and(|size| fs::metadata(path).is_ok_and(|meta| meta.len() == size))
     }
 
     fn verify_checksum(&self, path: &Path) -> Result<(), DownloadError> {
@@ -403,8 +427,8 @@ impl Download {
 
     /// Download the HTTP response body into the given file path, using resume metadata when available and emitting progress events.
     ///
-    /// When `resume_info` is provided the method attempts to resume the download from the recorded byte offset and validates server support
-    /// for ranged requests; if the server does not return a partial-content (206) response, the download restarts from the beginning.
+    /// When `resume_info` is provided the method asks for the bytes past the recorded offset. The download restarts from the
+    /// beginning when the server answers with anything but a partial response starting at that offset, or rejects the range.
     /// Progress callbacks (if configured on `self`) are invoked with `Progress::Starting`, `Progress::Chunk`, and `Progress::Complete`.
     ///
     /// # Parameters
@@ -414,12 +438,12 @@ impl Download {
     ///
     /// # Returns
     ///
-    /// `Ok(())` on successful completion of the download and file write, or `Err(DownloadError)` on IO, HTTP, or resume-state persistence failures.
+    /// The written file on successful completion, or `Err(DownloadError)` on IO, HTTP, or resume-state persistence failures.
     fn download_to_file(
         &self,
         path: &Path,
         resume_info: Option<ResumeInfo>,
-    ) -> Result<(), DownloadError> {
+    ) -> Result<File, DownloadError> {
         let (resume_from, etag) = resume_info
             .as_ref()
             .map(|r| (Some(r.downloaded), r.etag.as_deref()))
@@ -433,20 +457,34 @@ impl Download {
             cb(Progress::Preparing);
         }
 
-        let resp = Http::fetch(&self.url, resume_from, etag, self.ghcr_blob)?;
+        let resp = match Http::fetch(&self.url, resume_from, etag, self.ghcr_blob) {
+            Err(DownloadError::HttpError {
+                status: 416, ..
+            }) if resume_from.is_some() => {
+                warn!("server rejected the resume range, restarting download");
+                return self.download_to_file(path, None);
+            }
+            resp => resp?,
+        };
 
         let status = resp.status();
         trace!(status = status.as_u16(), "received HTTP response");
 
-        if resume_from.is_some() && status != 206 {
-            warn!(
-                "server doesn't support resume (status {}), restarting download",
-                status
-            );
-            return self.download_to_file(path, None);
+        if let Some(info) = &resume_info {
+            if status != 206 {
+                warn!(
+                    "server doesn't support resume (status {}), restarting download",
+                    status
+                );
+                return self.download_to_file(path, None);
+            }
+            if let Err(err) = check_partial_response(&resp, info) {
+                warn!(%err, "partial response does not continue the file, restarting download");
+                return self.download_to_file(path, None);
+            }
         }
 
-        let total = Self::parse_content_length(&resp);
+        let total = content_length(&resp).unwrap_or(0);
         let new_etag = resp
             .headers()
             .get(ETAG)
@@ -454,33 +492,29 @@ impl Download {
             .map(String::from);
         trace!(total = total, etag = ?new_etag, "parsed response headers");
 
-        let is_resuming = resume_from.is_some();
+        let mut file = match open_output(path, resume_from) {
+            Err(DownloadError::ResumeMismatch) => {
+                warn!(path = %path.display(), "file shrank below its resume offset, restarting download");
+                return self.download_to_file(path, None);
+            }
+            file => file?,
+        };
+
         if let Some(ref cb) = self.on_progress {
-            if is_resuming {
-                cb(Progress::Resuming {
-                    current: resume_from.unwrap(),
-                    total,
-                });
-            } else {
-                cb(Progress::Starting {
-                    total,
-                });
+            match resume_from {
+                Some(current) => {
+                    cb(Progress::Resuming {
+                        current,
+                        total,
+                    })
+                }
+                None => {
+                    cb(Progress::Starting {
+                        total,
+                    })
+                }
             }
         }
-
-        let mut file = if is_resuming {
-            let resume_pos = resume_from.unwrap();
-            trace!(path = %path.display(), resume_pos = resume_pos, "opening file for resume");
-            // Truncate file to resume position to avoid duplicated bytes
-            // (file may have more bytes than last checkpoint due to writes between checkpoints)
-            let mut file = OpenOptions::new().write(true).open(path)?;
-            file.set_len(resume_pos)?;
-            file.seek(SeekFrom::End(0))?;
-            file
-        } else {
-            trace!(path = %path.display(), "creating new file");
-            File::create(path)?
-        };
 
         let mut reader = resp.into_body().into_reader();
         let mut buffer = [0u8; 8192];
@@ -530,30 +564,52 @@ impl Download {
             });
         }
 
-        Ok(())
+        Ok(file)
     }
+}
 
-    /// Determine the total size of the response body from HTTP headers.
-    ///
-    /// Checks the `Content-Range` header first (parsing the value after the final '/'),
-    /// and falls back to the `Content-Length` header. If neither header yields a valid
-    /// size, returns 0.
-    ///
-    /// # Returns
-    ///
-    /// `u64` total size in bytes if present in the response headers, `0` otherwise.
-    fn parse_content_length(resp: &Response<Body>) -> u64 {
-        resp.headers()
-            .get(CONTENT_RANGE)
-            .and_then(|h| h.to_str().ok())
-            .and_then(|range| range.rsplit_once('/').and_then(|(_, tot)| tot.parse().ok()))
-            .or_else(|| {
-                resp.headers()
-                    .get(CONTENT_LENGTH)
-                    .and_then(|h| h.to_str().ok())
-                    .and_then(|len| len.parse::<u64>().ok())
-            })
-            .unwrap_or(0)
+/// The total size of the resource a response carries, from the total of its
+/// `Content-Range` or else its `Content-Length`, where either says.
+pub(crate) fn content_length(resp: &Response<Body>) -> Option<u64> {
+    resp.headers()
+        .get(CONTENT_RANGE)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|range| range.rsplit_once('/').and_then(|(_, tot)| tot.parse().ok()))
+        .or_else(|| {
+            resp.headers()
+                .get(CONTENT_LENGTH)
+                .and_then(|h| h.to_str().ok())
+                .and_then(|len| len.parse::<u64>().ok())
+        })
+}
+
+/// Checks that a partial response picks up where `info` left off: it starts at
+/// the recorded offset and, where both are known, describes a resource of the
+/// recorded size.
+pub(crate) fn check_partial_response(
+    resp: &Response<Body>,
+    info: &ResumeInfo,
+) -> Result<(), DownloadError> {
+    let range = resp
+        .headers()
+        .get(CONTENT_RANGE)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|range| range.trim().strip_prefix("bytes "))
+        .ok_or(DownloadError::ResumeMismatch)?;
+    let (span, total) = range.split_once('/').ok_or(DownloadError::ResumeMismatch)?;
+    let start = span
+        .split_once('-')
+        .and_then(|(start, _)| start.parse::<u64>().ok());
+    let total = total.parse::<u64>().ok();
+
+    let same_size = match total {
+        Some(total) => info.total == 0 || info.total == total,
+        None => true,
+    };
+    if start == Some(info.downloaded) && same_size {
+        Ok(())
+    } else {
+        Err(DownloadError::ResumeMismatch)
     }
 }
 
@@ -598,6 +654,130 @@ mod tests {
 
         let dl = Download::new("https://example.com/x").checksum(expected.to_uppercase());
         assert!(dl.verify_checksum(f.path()).is_ok());
+    }
+
+    fn body() -> Vec<u8> {
+        (0..20_000u32).map(|i| (i % 251) as u8).collect()
+    }
+
+    #[test]
+    fn skip_without_checksum_redownloads_a_partial_file() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+        std::fs::write(&out, &body()[..5_000]).unwrap();
+
+        Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .overwrite(OverwriteMode::Skip)
+            .execute()
+            .unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), body());
+    }
+
+    #[test]
+    fn skip_without_checksum_keeps_a_file_of_the_served_size() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+        let local = vec![7u8; body().len()];
+        std::fs::write(&out, &local).unwrap();
+
+        Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .overwrite(OverwriteMode::Skip)
+            .execute()
+            .unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), local);
+    }
+
+    #[test]
+    fn resume_past_the_end_of_a_short_file_starts_over() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+        std::fs::write(&out, &body()[..100]).unwrap();
+        let stale = ResumeInfo {
+            downloaded: 10_000,
+            total: body().len() as u64,
+            etag: None,
+            last_modified: None,
+        };
+        if write_resume(&out, &stale).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+
+        Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .overwrite(OverwriteMode::Skip)
+            .execute()
+            .unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), body());
+    }
+
+    #[test]
+    fn resume_continues_from_the_recorded_offset() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+        std::fs::write(&out, &body()[..12_000]).unwrap();
+        let info = ResumeInfo {
+            downloaded: 8_000,
+            total: body().len() as u64,
+            etag: None,
+            last_modified: None,
+        };
+        if write_resume(&out, &info).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+
+        let resumed = Arc::new(std::sync::Mutex::new(None));
+        let seen = resumed.clone();
+        Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .overwrite(OverwriteMode::Skip)
+            .progress(move |p| {
+                if let Progress::Resuming {
+                    current, ..
+                } = p
+                {
+                    *seen.lock().unwrap() = Some(current);
+                }
+            })
+            .execute()
+            .unwrap();
+        assert_eq!(*resumed.lock().unwrap(), Some(8_000));
+        assert_eq!(std::fs::read(&out).unwrap(), body());
+    }
+
+    #[test]
+    fn a_symlink_planted_at_the_output_is_not_followed() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let out = dir.path().join("file");
+        std::os::unix::fs::symlink(&target, &out).unwrap();
+
+        let result = Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .overwrite(OverwriteMode::Skip)
+            .execute();
+        assert!(result.is_err());
+        assert!(
+            !target.exists(),
+            "the download was written through the link"
+        );
+    }
+
+    #[test]
+    fn a_checksum_is_refused_on_stdout() {
+        let result = Download::new("http://127.0.0.1:9/file")
+            .output("-")
+            .checksum("abc")
+            .execute();
+        assert!(matches!(result, Err(DownloadError::ChecksumOnStdout)));
     }
 
     #[test]

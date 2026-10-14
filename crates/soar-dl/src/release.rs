@@ -112,7 +112,11 @@ impl ReleaseDownload {
                 .or_else(|| releases.first())
         };
 
-        let release = release.ok_or(DownloadError::InvalidResponse)?;
+        let release = release.ok_or_else(|| {
+            DownloadError::ReleaseNotFound {
+                tag: self.tag.clone(),
+            }
+        })?;
 
         let assets: Vec<_> = release
             .assets()

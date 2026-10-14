@@ -9,6 +9,8 @@ pub mod http_client;
 pub mod oci;
 pub mod platform;
 pub mod release;
+#[cfg(test)]
+mod test_server;
 pub mod types;
 pub mod utils;
 pub mod xattr;

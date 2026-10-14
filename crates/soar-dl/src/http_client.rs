@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, LazyLock, RwLock},
+    sync::{Arc, LazyLock, PoisonError, RwLock},
     time::Duration,
 };
 
@@ -13,6 +13,11 @@ use ureq::{
 /// Bounds TCP connect and TLS handshake, so an unroutable address fails over to the next one
 /// instead of stalling forever.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Bounds how long a request waits for the next byte of a response, so a server that stops
+/// sending fails the read instead of hanging. ureq restarts this clock on every read, so it
+/// does not cap how long a large transfer may take.
+const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
@@ -57,7 +62,8 @@ impl ClientConfig {
     /// Builds an HTTP `Agent` configured from this `ClientConfig`.
     ///
     /// The returned `Agent` will incorporate the configured proxy, global timeout,
-    /// IP family, and user agent header (if present).
+    /// IP family, and user agent header (if present). A response that goes quiet for
+    /// two minutes fails, whatever the global timeout.
     ///
     /// When no proxy is set, the `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
     /// environment variables are honored.
@@ -73,9 +79,15 @@ impl ClientConfig {
     /// let _req = agent.get("http://example.com");
     /// ```
     pub fn build(&self) -> Agent {
+        self.build_with_stall(STALL_TIMEOUT)
+    }
+
+    fn build_with_stall(&self, stall: Duration) -> Agent {
         let mut config = ureq::Agent::config_builder()
             .timeout_global(self.timeout)
             .timeout_connect(Some(CONNECT_TIMEOUT))
+            .timeout_recv_response(Some(stall))
+            .timeout_recv_body(Some(stall))
             .ip_family(self.ip_family);
 
         if self.proxy.is_some() {
@@ -127,7 +139,9 @@ impl SharedAgent {
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<http::Error>,
     {
-        let state = SHARED_CLIENT_STATE.read().unwrap();
+        let state = SHARED_CLIENT_STATE
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         let req = state.agent.head(uri);
         apply_headers(req, &state.config.headers)
     }
@@ -150,7 +164,9 @@ impl SharedAgent {
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<http::Error>,
     {
-        let state = SHARED_CLIENT_STATE.read().unwrap();
+        let state = SHARED_CLIENT_STATE
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         let req = state.agent.get(uri);
         apply_headers(req, &state.config.headers)
     }
@@ -171,7 +187,9 @@ impl SharedAgent {
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<http::Error>,
     {
-        let state = SHARED_CLIENT_STATE.read().unwrap();
+        let state = SHARED_CLIENT_STATE
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         let req = state.agent.post(uri);
         apply_headers(req, &state.config.headers)
     }
@@ -190,7 +208,9 @@ impl SharedAgent {
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<http::Error>,
     {
-        let state = SHARED_CLIENT_STATE.read().unwrap();
+        let state = SHARED_CLIENT_STATE
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         let req = state.agent.put(uri);
         apply_headers(req, &state.config.headers)
     }
@@ -214,7 +234,9 @@ impl SharedAgent {
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<http::Error>,
     {
-        let state = SHARED_CLIENT_STATE.read().unwrap();
+        let state = SHARED_CLIENT_STATE
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         let req = state.agent.delete(uri);
         apply_headers(req, &state.config.headers)
     }
@@ -255,7 +277,9 @@ pub fn configure_http_client<F>(updater: F)
 where
     F: FnOnce(&mut ClientConfig),
 {
-    let mut state = SHARED_CLIENT_STATE.write().unwrap();
+    let mut state = SHARED_CLIENT_STATE
+        .write()
+        .unwrap_or_else(PoisonError::into_inner);
     let mut new_config = state.config.clone();
     updater(&mut new_config);
     let new_agent = new_config.build();
@@ -265,6 +289,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+        time::Instant,
+    };
+
     use super::*;
 
     #[test]
@@ -302,6 +333,56 @@ mod tests {
     fn test_client_config_sets_connect_timeout() {
         let agent = ClientConfig::default().build();
         assert_eq!(agent.config().timeouts().connect, Some(CONNECT_TIMEOUT));
+    }
+
+    #[test]
+    fn test_client_config_bounds_stalled_reads() {
+        let agent = ClientConfig::default().build();
+        let timeouts = agent.config().timeouts();
+        assert_eq!(timeouts.recv_response, Some(STALL_TIMEOUT));
+        assert_eq!(timeouts.recv_body, Some(STALL_TIMEOUT));
+        assert_eq!(timeouts.global, None);
+    }
+
+    /// Serves one response whose body is `chunks`, sleeping `gap` before each.
+    fn serve_slowly(chunks: usize, gap: Duration) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", chunks + 1);
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(b"x");
+            for _ in 0..chunks {
+                thread::sleep(gap);
+                if stream.write_all(b"x").is_err() {
+                    return;
+                }
+            }
+        });
+        format!("http://{addr}/")
+    }
+
+    #[test]
+    fn test_stalled_body_fails_within_bound() {
+        let agent = ClientConfig::default().build_with_stall(Duration::from_millis(300));
+        let url = serve_slowly(1, Duration::from_secs(5));
+
+        let started = Instant::now();
+        let result = agent.get(&url).call().unwrap().body_mut().read_to_vec();
+        assert!(result.is_err(), "a stalled body must fail the read");
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_slow_body_outlasts_stall_bound() {
+        let agent = ClientConfig::default().build_with_stall(Duration::from_millis(300));
+        let url = serve_slowly(6, Duration::from_millis(100));
+
+        let body = agent.get(&url).call().unwrap().body_mut().read_to_vec();
+        assert_eq!(body.unwrap().len(), 7);
     }
 
     #[test]

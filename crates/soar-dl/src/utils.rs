@@ -1,5 +1,11 @@
-use std::path::PathBuf;
+use std::{
+    fs::{File, OpenOptions},
+    io::{Seek as _, SeekFrom},
+    os::unix::fs::OpenOptionsExt as _,
+    path::{Path, PathBuf},
+};
 
+use nix::libc;
 use percent_encoding::percent_decode_str;
 use ureq::http::HeaderValue;
 use url::Url;
@@ -41,8 +47,9 @@ pub fn filename_from_url(url: &str) -> Option<String> {
 
 /// Extracts a filename from a `Content-Disposition` header value.
 ///
-/// Parses the header string for a `filename=` parameter and returns its value
-/// with surrounding double quotes removed.
+/// An RFC 5987 `filename*` parameter is preferred over a plain `filename`, and
+/// parameter names match in any case. Only the final path component is kept,
+/// and a name that is empty or only dots yields `None`.
 ///
 /// # Examples
 ///
@@ -52,20 +59,67 @@ pub fn filename_from_url(url: &str) -> Option<String> {
 ///
 /// let header = HeaderValue::from_static("attachment; filename=\"example.txt\"");
 /// assert_eq!(utils::filename_from_header(&header), Some("example.txt".to_string()));
+///
+/// let header = HeaderValue::from_static("attachment; FILENAME*=UTF-8''na%C3%AFve.txt");
+/// assert_eq!(utils::filename_from_header(&header), Some("na\u{ef}ve.txt".to_string()));
 /// ```
 pub fn filename_from_header(value: &HeaderValue) -> Option<String> {
-    value
-        .to_str()
-        .ok()?
-        .split(';')
-        .find_map(|p| p.trim().strip_prefix("filename="))
-        .map(|s| s.trim_matches('"').to_string())
-        .map(|s| {
-            s.split(['/', '\\'])
-                .next_back()
-                .map(String::from)
-                .unwrap_or(s)
-        })
+    let mut plain = None;
+    let mut extended = None;
+    for param in value.to_str().ok()?.split(';') {
+        let Some((key, value)) = param.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim().trim_matches('"');
+        if key.eq_ignore_ascii_case("filename*") {
+            extended = value.splitn(3, '\'').nth(2).and_then(|encoded| {
+                percent_decode_str(encoded)
+                    .decode_utf8()
+                    .ok()
+                    .map(|name| name.into_owned())
+            });
+        } else if key.eq_ignore_ascii_case("filename") {
+            plain = Some(value.to_string());
+        }
+    }
+
+    let name = extended.or(plain)?;
+    let name = name.rsplit(['/', '\\']).next().unwrap_or_default();
+    (!name.trim_matches('.').is_empty()).then(|| name.to_string())
+}
+
+/// Opens a download's output at `path` for writing, refusing to follow a
+/// symlink planted there or to write into anything but a regular file.
+///
+/// With `resume_pos`, the existing file is cut back to that offset, dropping
+/// whatever was written past the last checkpoint. A file shorter than the
+/// offset no longer matches its resume state and yields
+/// [`DownloadError::ResumeMismatch`]. Without it the file is created or
+/// truncated.
+pub(crate) fn open_output(path: &Path, resume_pos: Option<u64>) -> Result<File, DownloadError> {
+    let mut options = OpenOptions::new();
+    options.write(true).custom_flags(libc::O_NOFOLLOW);
+    if resume_pos.is_none() {
+        options.create(true).truncate(true);
+    }
+
+    let mut file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(
+            std::io::Error::other(format!("{} is not a regular file", path.display())).into(),
+        );
+    }
+
+    if let Some(pos) = resume_pos {
+        if metadata.len() < pos {
+            return Err(DownloadError::ResumeMismatch);
+        }
+        file.set_len(pos)?;
+        file.seek(SeekFrom::End(0))?;
+    }
+    Ok(file)
 }
 
 /// Compute the final file system path for a download based on an explicit output and inferred filenames.
@@ -236,9 +290,65 @@ mod tests {
     }
 
     #[test]
-    fn test_filename_from_header_empty_filename() {
-        let header = HeaderValue::from_static("attachment; filename=\"\"");
-        assert_eq!(filename_from_header(&header), Some("".to_string()));
+    fn test_filename_from_header_rejects_names_that_are_not_files() {
+        for header in [
+            "attachment; filename=\"\"",
+            "attachment; filename=\"..\"",
+            "attachment; filename=\"a/..\"",
+            "attachment; filename=\".\"",
+        ] {
+            let header = HeaderValue::from_str(header).unwrap();
+            assert_eq!(filename_from_header(&header), None, "{header:?}");
+        }
+    }
+
+    #[test]
+    fn test_filename_from_header_prefers_extended_name() {
+        let header = HeaderValue::from_static(
+            "attachment; filename=\"fallback.txt\"; filename*=UTF-8''real%20name.txt",
+        );
+        assert_eq!(
+            filename_from_header(&header),
+            Some("real name.txt".to_string())
+        );
+
+        let header = HeaderValue::from_static("attachment; FileName=\"Mixed.txt\"");
+        assert_eq!(filename_from_header(&header), Some("Mixed.txt".to_string()));
+
+        let header = HeaderValue::from_static("attachment; filename*=UTF-8''..%2F..%2Fevil");
+        assert_eq!(filename_from_header(&header), Some("evil".to_string()));
+    }
+
+    #[test]
+    fn test_open_output_refuses_a_planted_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let output = dir.path().join("output");
+        std::os::unix::fs::symlink(&target, &output).unwrap();
+
+        assert!(open_output(&output, None).is_err());
+        assert!(!target.exists(), "the symlink was followed");
+
+        std::fs::write(&target, b"keep").unwrap();
+        assert!(open_output(&output, None).is_err());
+        assert!(open_output(&output, Some(0)).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn test_open_output_rejects_resume_past_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output");
+        std::fs::write(&output, b"abcdef").unwrap();
+
+        assert!(matches!(
+            open_output(&output, Some(100)),
+            Err(DownloadError::ResumeMismatch)
+        ));
+        assert_eq!(std::fs::read(&output).unwrap(), b"abcdef");
+
+        open_output(&output, Some(3)).unwrap();
+        assert_eq!(std::fs::read(&output).unwrap(), b"abc");
     }
 
     #[test]

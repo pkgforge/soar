@@ -3,7 +3,7 @@
 use std::{
     collections::HashMap,
     fmt,
-    sync::{LazyLock, RwLock},
+    sync::{LazyLock, PoisonError, RwLock},
 };
 
 use releasekit::{
@@ -36,7 +36,9 @@ static INSTANCE_TOKEN_VARS: LazyLock<RwLock<HashMap<String, String>>> =
 /// rather than asked for could otherwise collect the credential meant for
 /// somewhere else.
 pub fn set_instance_token_vars(vars: HashMap<String, String>) {
-    let mut tokens = INSTANCE_TOKEN_VARS.write().unwrap();
+    let mut tokens = INSTANCE_TOKEN_VARS
+        .write()
+        .unwrap_or_else(PoisonError::into_inner);
     *tokens = vars
         .into_iter()
         .map(|(host, var)| (host.trim().to_ascii_lowercase(), var))
@@ -53,7 +55,11 @@ fn instance_token_var(instance: &str) -> Option<String> {
         .map_or(authority, |(authority, _)| authority)
         .to_ascii_lowercase();
 
-    INSTANCE_TOKEN_VARS.read().unwrap().get(&authority).cloned()
+    INSTANCE_TOKEN_VARS
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&authority)
+        .cloned()
 }
 
 /// A git forge soar can fetch releases from.

@@ -1,29 +1,67 @@
 use std::{
-    fs::{File, OpenOptions, Permissions},
-    io::{Read as _, Seek as _, SeekFrom, Write as _},
+    fs::{File, Permissions},
+    io::{Read as _, Write as _},
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, PoisonError,
     },
     thread,
 };
 
+use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use soar_utils::fs::is_elf;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 use ureq::http::header::{ACCEPT, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
 
 use crate::{
-    download::Download,
+    download::{check_partial_response, Download},
     error::DownloadError,
     filter::Filter,
     http_client::SHARED_AGENT,
     types::{OverwriteMode, Progress, ResumeInfo},
-    xattr::{read_resume, remove_resume, write_resume},
+    utils::open_output,
+    xattr::{read_usable_resume, remove_resume, write_resume},
 };
+
+const DEFAULT_REGISTRY: &str = "ghcr.io";
+
+/// Bytes a registry path segment cannot carry as they are. A tag or digest
+/// read from a manifest or a reference is escaped so that it stays one
+/// segment of the URL it is placed in.
+const PATH_SEGMENT: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'/')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'\\')
+    .add(b'^')
+    .add(b'`')
+    .add(b'{')
+    .add(b'|')
+    .add(b'}');
+
+/// The registry API URL for `kind` (`manifests` or `blobs`) of `reference` in
+/// `package`, each segment of the package name and the reference escaped.
+fn registry_url(api: &str, package: &str, kind: &str, reference: &str) -> String {
+    let package = package
+        .split('/')
+        .map(|segment| utf8_percent_encode(segment, PATH_SEGMENT).to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+    format!(
+        "{}/{package}/{kind}/{}",
+        api.trim_end_matches('/'),
+        utf8_percent_encode(reference, PATH_SEGMENT)
+    )
+}
 
 #[derive(Debug, Clone)]
 pub struct OciReference {
@@ -33,11 +71,14 @@ pub struct OciReference {
 }
 
 impl From<&str> for OciReference {
-    /// Parses an OCI/GHCR reference string into an `OciReference`.
+    /// Parses an OCI reference string into an `OciReference`.
     ///
-    /// Accepts strings with optional `ghcr.io/` prefix and extracts the package and tag or digest:
+    /// The first path component names the registry when it looks like a host,
+    /// that is, it contains a `.` or a `:` or is `localhost`, as in
+    /// `ghcr.io/org/repo` or `localhost:5000/repo`. Otherwise the registry is
+    /// `ghcr.io` and the whole string is the package. After it:
     /// - `package@sha256:<digest>` → digest used as `tag`
-    /// - `package:<tag>` → tag used as `tag`
+    /// - `package:<tag>` → tag used as `tag`, split at the last `:` after the last `/`
     /// - otherwise the full path is treated as `package` and `tag` is set to `"latest"`.
     ///
     /// # Examples
@@ -55,36 +96,35 @@ impl From<&str> for OciReference {
     /// assert_eq!(r2.package, "org/repo");
     /// assert_eq!(r2.tag, "1.2.3");
     ///
-    /// let r3 = OciReference::from("org/repo");
-    /// assert_eq!(r3.registry, "ghcr.io");
-    /// assert_eq!(r3.package, "org/repo");
+    /// let r3 = OciReference::from("localhost:5000/repo");
+    /// assert_eq!(r3.registry, "localhost:5000");
+    /// assert_eq!(r3.package, "repo");
     /// assert_eq!(r3.tag, "latest");
     /// ```
     fn from(value: &str) -> Self {
-        let paths = value.trim_start_matches("ghcr.io/");
+        let (registry, path) = match value.split_once('/') {
+            Some((host, path))
+                if host.contains(['.', ':']) || host.eq_ignore_ascii_case("localhost") =>
+            {
+                (host, path)
+            }
+            _ => (DEFAULT_REGISTRY, value),
+        };
 
-        // <package>@sha256:<digest>
-        if let Some((package, digest)) = paths.split_once('@') {
-            return Self {
-                registry: "ghcr.io".to_string(),
-                package: package.to_string(),
-                tag: digest.to_string(),
-            };
-        }
-
-        // <package>:<tag>
-        if let Some((package, tag)) = paths.split_once(':') {
-            return Self {
-                registry: "ghcr.io".to_string(),
-                package: package.to_string(),
-                tag: tag.to_string(),
-            };
-        }
+        let (package, tag) = if let Some((package, digest)) = path.split_once('@') {
+            (package, digest)
+        } else {
+            let name_start = path.rfind('/').map_or(0, |i| i + 1);
+            match path[name_start..].rfind(':') {
+                Some(i) => (&path[..name_start + i], &path[name_start + i + 1..]),
+                None => (path, "latest"),
+            }
+        };
 
         Self {
-            registry: "ghcr.io".to_string(),
-            package: paths.to_string(),
-            tag: "latest".to_string(),
+            registry: registry.to_string(),
+            package: package.to_string(),
+            tag: tag.to_string(),
         }
     }
 }
@@ -162,6 +202,14 @@ fn safe_layer_path(output_dir: &Path, title: &str) -> Result<PathBuf, DownloadEr
     Ok(output_dir.join(name))
 }
 
+/// Whether a layer is already in place at `path`: a regular file of the
+/// layer's size whose digest matches. A file that fails the digest is removed
+/// so the layer is fetched again.
+fn is_cached_layer(path: &Path, layer: &OciLayer) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file() && meta.len() == layer.size)
+        && verify_layer_digest(path, &layer.digest).is_ok()
+}
+
 /// Verifies the file at `path` against an OCI content-addressable digest
 /// (e.g. `sha256:<hex>`). On mismatch the file is removed and an error returned.
 fn verify_layer_digest(path: &Path, digest: &str) -> Result<(), DownloadError> {
@@ -211,7 +259,7 @@ impl OciDownload {
     /// Creates a new `OciDownload` for the given OCI reference using sensible defaults.
     ///
     /// Defaults:
-    /// - `api` = "https://ghcr.io/v2"
+    /// - `api` = the reference's registry, e.g. "https://ghcr.io/v2"
     /// - `filter` = `Filter::default()`
     /// - no output path (downloads to current working directory unless `output` is set)
     /// - `overwrite` = `OverwriteMode::Prompt`
@@ -229,9 +277,10 @@ impl OciDownload {
     /// // let result = dl.output("out").execute();
     /// ```
     pub fn new(reference: impl Into<OciReference>) -> Self {
+        let reference = reference.into();
         Self {
-            reference: reference.into(),
-            api: "https://ghcr.io/v2".into(),
+            api: format!("https://{}/v2", reference.registry),
+            reference,
             filter: Filter::default(),
             output: None,
             overwrite: OverwriteMode::Prompt,
@@ -489,8 +538,8 @@ impl OciDownload {
     /// Downloads the provided OCI layers one after another into `output_dir` and returns the paths of the saved files.
     ///
     /// Each layer is written using its `title()` as the filename. If `self.extract` is enabled, each downloaded archive
-    /// is extracted into `self.extract_to` (if set) or into `output_dir`. The method updates an internal downloaded byte
-    /// counter while performing transfers.
+    /// is extracted into `self.extract_to` (if set) or into `output_dir`. Progress counts bytes across the whole batch,
+    /// so `Progress::Chunk` rises from one layer into the next and ends at the batch total.
     ///
     /// # Errors
     ///
@@ -510,31 +559,34 @@ impl OciDownload {
         output_dir: &Path,
     ) -> Result<Vec<PathBuf>, DownloadError> {
         let mut paths = Vec::new();
-        let mut downloaded = 0u64;
+        let downloaded = AtomicU64::new(0);
         let total_size: u64 = layers.iter().map(|l| l.size).sum();
 
         for layer in layers {
             let filename = layer.title().unwrap();
             let path = safe_layer_path(output_dir, filename)?;
 
-            if path.is_file() {
-                if let Ok(metadata) = path.metadata() {
-                    if metadata.len() == layer.size {
-                        verify_layer_digest(&path, &layer.digest)?;
-                        downloaded += layer.size;
-                        if let Some(ref cb) = self.on_progress {
-                            cb(Progress::Chunk {
-                                current: downloaded,
-                                total: total_size,
-                            });
-                        }
-                        paths.push(path);
-                        continue;
-                    }
+            if is_cached_layer(&path, layer) {
+                let current = downloaded.fetch_add(layer.size, Ordering::Relaxed) + layer.size;
+                if let Some(ref cb) = self.on_progress {
+                    cb(Progress::Chunk {
+                        current,
+                        total: total_size,
+                    });
                 }
+                paths.push(path);
+                continue;
             }
 
-            self.download_layer(layer, &path, &mut downloaded, total_size)?;
+            download_layer_impl(
+                &self.api,
+                &self.reference,
+                layer,
+                &path,
+                self.on_progress.as_ref(),
+                &downloaded,
+                total_size,
+            )?;
 
             if self.extract {
                 let extract_dir = self
@@ -620,40 +672,29 @@ impl OciDownload {
                         let path = match safe_layer_path(&output_dir, filename) {
                             Ok(p) => p,
                             Err(e) => {
-                                errors.lock().unwrap().push(format!("{filename}: {e}"));
+                                lock(&errors).push(format!("{filename}: {e}"));
                                 continue;
                             }
                         };
 
-                        if path.is_file() {
-                            if let Ok(metadata) = path.metadata() {
-                                if metadata.len() == layer.size {
-                                    if let Err(e) = verify_layer_digest(&path, &layer.digest) {
-                                        errors.lock().unwrap().push(format!("{filename}: {e}"));
-                                        continue;
-                                    }
-                                    let current = downloaded
-                                        .fetch_add(layer.size, Ordering::Relaxed)
-                                        + layer.size;
-                                    if let Some(ref cb) = on_progress {
-                                        cb(Progress::Chunk {
-                                            current,
-                                            total: total_size,
-                                        });
-                                    }
-                                    paths.lock().unwrap().push(path);
-                                    continue;
-                                }
+                        if is_cached_layer(&path, &layer) {
+                            let current =
+                                downloaded.fetch_add(layer.size, Ordering::Relaxed) + layer.size;
+                            if let Some(ref cb) = on_progress {
+                                cb(Progress::Chunk {
+                                    current,
+                                    total: total_size,
+                                });
                             }
+                            lock(&paths).push(path);
+                            continue;
                         }
 
-                        let mut local_downloaded = 0u64;
                         let result = download_layer_impl(
                             &api,
                             &reference,
                             &layer,
                             &path,
-                            &mut local_downloaded,
                             on_progress.as_ref(),
                             &downloaded,
                             total_size,
@@ -665,14 +706,14 @@ impl OciDownload {
                                     let extract_dir =
                                         extract_to.clone().unwrap_or_else(|| output_dir.clone());
                                     if let Err(e) = compak::extract_archive(&path, &extract_dir) {
-                                        errors.lock().unwrap().push(format!("{filename}: {e}"));
+                                        lock(&errors).push(format!("{filename}: {e}"));
                                         continue;
                                     }
                                 }
-                                paths.lock().unwrap().push(path);
+                                lock(&paths).push(path);
                             }
                             Err(e) => {
-                                errors.lock().unwrap().push(format!("{filename}: {e}"));
+                                lock(&errors).push(format!("{filename}: {e}"));
                             }
                         }
                     }
@@ -682,21 +723,18 @@ impl OciDownload {
 
         for handle in handles {
             if let Err(err) = handle.join() {
-                errors
-                    .lock()
-                    .unwrap()
-                    .push(format!("Worker thread panicked: {err:?}"));
+                lock(&errors).push(format!("Worker thread panicked: {err:?}"));
             }
         }
 
-        let errors = errors.lock().unwrap();
+        let errors = lock(&errors);
         if !errors.is_empty() {
             return Err(DownloadError::Multiple {
                 errors: errors.clone(),
             });
         }
 
-        let paths = paths.lock().unwrap().clone();
+        let paths = lock(&paths).clone();
         Ok(paths)
     }
 
@@ -704,7 +742,7 @@ impl OciDownload {
     ///
     /// The request is made against the download instance's `api` base and the reference's `package`/`tag`. On
     /// non-success HTTP status codes this returns `DownloadError::HttpError`; if the response body cannot be
-    /// parsed as a manifest JSON this returns `DownloadError::InvalidResponse`.
+    /// parsed as a manifest JSON this returns `DownloadError::InvalidJson` naming why.
     ///
     /// # Examples
     ///
@@ -715,11 +753,11 @@ impl OciDownload {
     /// let manifest = dl.fetch_manifest().unwrap();
     /// ```
     pub fn fetch_manifest(&self) -> Result<OciManifest, DownloadError> {
-        let url = format!(
-            "{}/{}/manifests/{}",
-            self.api.trim_end_matches('/'),
-            self.reference.package,
-            self.reference.tag
+        let url = registry_url(
+            &self.api,
+            &self.reference.package,
+            "manifests",
+            &self.reference.tag,
         );
         debug!(url = url, "fetching OCI manifest");
 
@@ -734,7 +772,7 @@ impl OciDownload {
             )
             .header(AUTHORIZATION, "Bearer QQ==")
             .call()
-            .map_err(|err| DownloadError::network(&url, err))?;
+            .map_err(|err| DownloadError::request(&url, err))?;
 
         trace!(
             status = resp.status().as_u16(),
@@ -752,7 +790,7 @@ impl OciDownload {
         let manifest: OciManifest = resp
             .body_mut()
             .read_json()
-            .map_err(|_| DownloadError::InvalidResponse)?;
+            .map_err(|err| DownloadError::json(&url, err))?;
 
         trace!(
             layers = manifest.layers.len(),
@@ -786,17 +824,23 @@ impl OciDownload {
             .map(|(_, name)| name)
             .unwrap_or(&self.reference.tag);
 
-        let output = self.output.as_deref().unwrap_or(filename);
+        let output = match self.output.as_deref() {
+            Some(dir) if dir.ends_with('/') || Path::new(dir).is_dir() => {
+                Path::new(dir).join(filename)
+            }
+            Some(path) => PathBuf::from(path),
+            None => PathBuf::from(filename),
+        };
 
-        let url = format!(
-            "{}/{}/blobs/{}",
-            self.api.trim_end_matches('/'),
-            self.reference.package,
-            self.reference.tag
+        let url = registry_url(
+            &self.api,
+            &self.reference.package,
+            "blobs",
+            &self.reference.tag,
         );
 
         let dl = Download::new(url)
-            .output(output)
+            .output(output.to_string_lossy())
             .overwrite(self.overwrite)
             .ghcr_blob();
 
@@ -814,15 +858,15 @@ impl OciDownload {
         Ok(vec![path])
     }
 
-    /// Downloads a single OCI layer blob to the given file path, updating the provided
-    /// cumulative `downloaded` byte counter and emitting progress events if configured.
+    /// Downloads a single OCI layer blob to the given file path, advancing the
+    /// cumulative `downloaded` byte counter by this layer's bytes and emitting
+    /// progress events against it if configured.
     ///
     /// # Parameters
     ///
     /// - `layer`: The manifest layer to download.
     /// - `path`: Destination filesystem path for the downloaded blob.
-    /// - `downloaded`: Mutable cumulative byte counter; this function increments it by the
-    ///   number of bytes written for this layer.
+    /// - `downloaded`: Cumulative byte counter for the batch the layer belongs to.
     ///
     /// # Returns
     ///
@@ -853,46 +897,47 @@ impl OciDownload {
         downloaded: &mut u64,
         total_size: u64,
     ) -> Result<(), DownloadError> {
-        download_layer_impl(
+        let counter = AtomicU64::new(*downloaded);
+        let result = download_layer_impl(
             &self.api,
             &self.reference,
             layer,
             path,
-            downloaded,
             self.on_progress.as_ref(),
-            &Arc::new(AtomicU64::new(0)),
+            &counter,
             total_size,
-        )
+        );
+        *downloaded = counter.into_inner();
+        result
     }
+}
+
+/// Locks `mutex`, carrying on with its contents if a worker panicked while
+/// holding it, so one failed layer is reported rather than losing the rest.
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Downloads a single OCI layer blob to the given file path with resume support, progress reporting, and post-download handling.
 ///
 /// This function:
-/// - Resumes partially downloaded blobs when resume metadata exists (uses Range and If-Range headers).
-/// - Appends to the existing file when a partial response (206) is returned, otherwise creates a new file.
+/// - Resumes partially downloaded blobs when usable resume metadata exists (uses Range and If-Range headers).
+/// - Appends to the existing file when a partial response continuing it is returned, otherwise starts over.
 /// - Periodically persists resume metadata while downloading (every 1 MiB).
-/// - Emits `Progress::Chunk` updates via the optional `on_progress` callback using the shared downloaded counter.
+/// - Advances `downloaded`, the counter shared by every layer of the batch, and reports it in `Progress::Chunk`.
 /// - Marks the file executable (0o755) if it appears to be an ELF binary and removes any resume metadata on success.
 ///
 /// Returns `Ok(())` on success or a `DownloadError` on failure.
-#[allow(clippy::too_many_arguments)]
 fn download_layer_impl(
     api: &str,
     reference: &OciReference,
     layer: &OciLayer,
     path: &Path,
-    local_downloaded: &mut u64,
     on_progress: Option<&Arc<dyn Fn(Progress) + Send + Sync>>,
-    shared_downloaded: &Arc<AtomicU64>,
+    downloaded: &AtomicU64,
     total_size: u64,
 ) -> Result<(), DownloadError> {
-    let url = format!(
-        "{}/{}/blobs/{}",
-        api.trim_end_matches('/'),
-        reference.package,
-        layer.digest
-    );
+    let url = registry_url(api, &reference.package, "blobs", &layer.digest);
 
     trace!(
         digest = layer.digest,
@@ -901,59 +946,68 @@ fn download_layer_impl(
         "downloading layer"
     );
 
-    let resume_info = read_resume(path);
-    let (resume_from, etag) = resume_info
-        .as_ref()
-        .map(|r| (Some(r.downloaded), r.etag.as_deref()))
-        .unwrap_or((None, None));
-
-    let mut req = SHARED_AGENT.get(&url).header(AUTHORIZATION, "Bearer QQ==");
-
-    if let Some(pos) = resume_from {
-        trace!(resume_from = pos, "attempting to resume download");
-        req = req.header(RANGE, &format!("bytes={}-", pos));
-        if let Some(tag) = etag {
-            req = req.header(IF_RANGE, tag);
+    let mut resume_info = read_usable_resume(path);
+    let resp = loop {
+        let mut req = SHARED_AGENT.get(&url).header(AUTHORIZATION, "Bearer QQ==");
+        if let Some(info) = &resume_info {
+            trace!(
+                resume_from = info.downloaded,
+                "attempting to resume download"
+            );
+            req = req.header(RANGE, &format!("bytes={}-", info.downloaded));
+            if let Some(tag) = &info.etag {
+                req = req.header(IF_RANGE, tag);
+            }
         }
-    }
 
-    let resp = req
-        .call()
-        .map_err(|err| DownloadError::network(&url, err))?;
+        let resp = match req.call() {
+            Err(ureq::Error::StatusCode(416)) if resume_info.is_some() => {
+                warn!(
+                    digest = layer.digest,
+                    "registry rejected the resume range, restarting"
+                );
+                resume_info = None;
+                continue;
+            }
+            resp => resp.map_err(|err| DownloadError::request(&url, err))?,
+        };
 
-    if !resp.status().is_success() {
-        debug!(
-            status = resp.status().as_u16(),
-            digest = layer.digest,
-            "layer download failed"
-        );
-        return Err(DownloadError::HttpError {
-            status: resp.status().as_u16(),
-            url,
-        });
-    }
+        if !resp.status().is_success() {
+            debug!(
+                status = resp.status().as_u16(),
+                digest = layer.digest,
+                "layer download failed"
+            );
+            return Err(DownloadError::HttpError {
+                status: resp.status().as_u16(),
+                url,
+            });
+        }
 
-    let is_resuming = resume_from.is_some() && resp.status() == 206;
-    if is_resuming {
-        trace!(resumed_from = resume_from.unwrap(), "resuming download");
-    }
-    let mut file = if is_resuming {
-        let resume_pos = resume_from.unwrap();
+        match &resume_info {
+            Some(info) if resp.status() != 206 || check_partial_response(&resp, info).is_err() => {
+                debug!(
+                    digest = layer.digest,
+                    "response does not continue the file, restarting"
+                );
+                resume_info = None;
+            }
+            _ => break resp,
+        }
+    };
+
+    let resume_from = resume_info.as_ref().map(|info| info.downloaded);
+    let mut file = open_output(path, resume_from)?;
+
+    if let Some(resume_offset) = resume_from {
+        let current = downloaded.fetch_add(resume_offset, Ordering::Relaxed) + resume_offset;
         if let Some(cb) = on_progress {
             cb(Progress::Resuming {
-                current: resume_pos,
+                current,
                 total: total_size,
             });
         }
-        // Truncate file to resume position to avoid duplicated bytes
-        // (file may have more bytes than last checkpoint due to writes between checkpoints)
-        let mut file = OpenOptions::new().write(true).open(path)?;
-        file.set_len(resume_pos)?;
-        file.seek(SeekFrom::End(0))?;
-        file
-    } else {
-        File::create(path)?
-    };
+    }
 
     let new_etag = resp
         .headers()
@@ -962,14 +1016,8 @@ fn download_layer_impl(
         .map(String::from);
     let mut reader = resp.into_body().into_reader();
     let mut buffer = [0u8; 8192];
-    let resume_offset = resume_from.unwrap_or(0);
-    *local_downloaded = resume_offset;
-    let mut last_checkpoint = *local_downloaded / (1024 * 1024);
-
-    // Add resume offset to shared counter so progress shows correct cumulative total
-    if is_resuming {
-        shared_downloaded.fetch_add(resume_offset, Ordering::Relaxed);
-    }
+    let mut layer_downloaded = resume_from.unwrap_or(0);
+    let mut last_checkpoint = layer_downloaded / (1024 * 1024);
 
     loop {
         let n = reader.read(&mut buffer)?;
@@ -978,17 +1026,17 @@ fn download_layer_impl(
         }
 
         file.write_all(&buffer[..n])?;
-        *local_downloaded += n as u64;
+        layer_downloaded += n as u64;
 
-        let current_total = { shared_downloaded.fetch_add(n as u64, Ordering::Relaxed) + n as u64 };
+        let current = downloaded.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
 
-        let checkpoint = *local_downloaded / (1024 * 1024);
+        let checkpoint = layer_downloaded / (1024 * 1024);
         if checkpoint > last_checkpoint {
             last_checkpoint = checkpoint;
             if let Err(err) = write_resume(
                 path,
                 &ResumeInfo {
-                    downloaded: *local_downloaded,
+                    downloaded: layer_downloaded,
                     total: layer.size,
                     etag: new_etag.clone(),
                     last_modified: None,
@@ -1000,7 +1048,7 @@ fn download_layer_impl(
 
         if let Some(cb) = on_progress {
             cb(Progress::Chunk {
-                current: current_total,
+                current,
                 total: total_size,
             });
         }
@@ -1010,13 +1058,15 @@ fn download_layer_impl(
 
     if is_elf(path) {
         trace!(path = %path.display(), "setting executable permissions on ELF binary");
-        std::fs::set_permissions(path, Permissions::from_mode(0o755))?;
+        file.set_permissions(Permissions::from_mode(0o755))?;
     }
 
-    remove_resume(path)?;
+    if let Err(err) = remove_resume(path) {
+        warn!(path = %path.display(), %err, "failed to clear resume state");
+    }
     trace!(
         path = %path.display(),
-        bytes = *local_downloaded,
+        bytes = layer_downloaded,
         "layer download complete"
     );
     Ok(())
@@ -1055,6 +1105,442 @@ mod tests {
             other => panic!("expected DigestMismatch, got {other:?}"),
         }
         assert!(!path.exists(), "file should be removed on digest mismatch");
+    }
+
+    fn sha256_hex(bytes: &[u8]) -> String {
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    fn layer(title: &str, bytes: &[u8]) -> OciLayer {
+        OciLayer {
+            media_type: "application/octet-stream".into(),
+            digest: format!("sha256:{}", sha256_hex(bytes)),
+            size: bytes.len() as u64,
+            annotations: [("org.opencontainers.image.title".into(), title.into())].into(),
+        }
+    }
+
+    /// Serves `layers` as blobs of `org/repo` and returns a downloader for it
+    /// that records every `Progress::Chunk` position.
+    fn serve_layers(layers: &[(&OciLayer, &[u8])]) -> (OciDownload, Arc<Mutex<Vec<u64>>>) {
+        let routes = layers
+            .iter()
+            .map(|(layer, bytes)| {
+                (
+                    format!("/v2/org/repo/blobs/{}", layer.digest),
+                    bytes.to_vec(),
+                )
+            })
+            .collect();
+        let base = crate::test_server::serve(routes);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let record = seen.clone();
+        let dl = OciDownload::new("org/repo:tag")
+            .api(format!("{base}/v2"))
+            .progress(move |p| {
+                if let Progress::Chunk {
+                    current, ..
+                } = p
+                {
+                    record.lock().unwrap().push(current);
+                }
+            });
+        (dl, seen)
+    }
+
+    #[test]
+    fn sequential_progress_rises_across_layers() {
+        let first = vec![1u8; 20_000];
+        let second = vec![2u8; 30_000];
+        let (l1, l2) = (layer("one", &first), layer("two", &second));
+        let (dl, seen) = serve_layers(&[(&l1, &first), (&l2, &second)]);
+        let dir = tempfile::tempdir().unwrap();
+
+        dl.download_layers_sequential(&[&l1, &l2], dir.path())
+            .unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert!(seen.windows(2).all(|w| w[0] <= w[1]), "{seen:?}");
+        assert_eq!(seen.last(), Some(&50_000));
+        assert_eq!(std::fs::read(dir.path().join("two")).unwrap(), second);
+    }
+
+    #[test]
+    fn a_cached_layer_counts_toward_progress() {
+        let first = vec![1u8; 20_000];
+        let second = vec![2u8; 30_000];
+        let (l1, l2) = (layer("one", &first), layer("two", &second));
+        let (dl, seen) = serve_layers(&[(&l1, &first), (&l2, &second)]);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("one"), &first).unwrap();
+
+        dl.download_layers_sequential(&[&l1, &l2], dir.path())
+            .unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.first(), Some(&20_000));
+        assert!(seen.windows(2).all(|w| w[0] <= w[1]), "{seen:?}");
+        assert_eq!(seen.last(), Some(&50_000));
+    }
+
+    #[test]
+    fn a_tampered_cached_layer_is_fetched_again() {
+        let first = vec![1u8; 20_000];
+        let l1 = layer("one", &first);
+        let (dl, _) = serve_layers(&[(&l1, &first)]);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("one"), vec![9u8; 20_000]).unwrap();
+
+        dl.download_layers_sequential(&[&l1], dir.path()).unwrap();
+        assert_eq!(std::fs::read(dir.path().join("one")).unwrap(), first);
+    }
+
+    #[test]
+    fn a_symlink_planted_at_a_layer_path_is_not_followed() {
+        let first = vec![1u8; 20_000];
+        let l1 = layer("one", &first);
+        let (dl, _) = serve_layers(&[(&l1, &first)]);
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::os::unix::fs::symlink(&target, dir.path().join("one")).unwrap();
+
+        assert!(dl.download_layers_sequential(&[&l1], dir.path()).is_err());
+        assert!(!target.exists(), "the layer was written through the link");
+    }
+
+    fn manifest(layers: &[&OciLayer]) -> Vec<u8> {
+        let layers: Vec<_> = layers
+            .iter()
+            .map(|l| {
+                serde_json::json!({
+                    "mediaType": l.media_type,
+                    "digest": l.digest,
+                    "size": l.size,
+                    "annotations": l.annotations,
+                })
+            })
+            .collect();
+        serde_json::to_vec(&serde_json::json!({
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": "sha256:00", "size": 2},
+            "layers": layers,
+        }))
+        .unwrap()
+    }
+
+    /// Serves an image of `org/repo:tag` holding `layers`, with its manifest.
+    fn serve_image(layers: &[(&OciLayer, &[u8])]) -> String {
+        let mut routes: Vec<(String, Vec<u8>)> = layers
+            .iter()
+            .map(|(layer, bytes)| {
+                (
+                    format!("/v2/org/repo/blobs/{}", layer.digest),
+                    bytes.to_vec(),
+                )
+            })
+            .collect();
+        let only: Vec<_> = layers.iter().map(|(l, _)| *l).collect();
+        routes.push(("/v2/org/repo/manifests/tag".into(), manifest(&only)));
+        crate::test_server::serve(routes)
+    }
+
+    fn image_layers() -> Vec<(OciLayer, Vec<u8>)> {
+        [
+            ("tool", 1u8, 40_000),
+            ("tool.png", 2, 9_000),
+            ("tool.log", 3, 12_000),
+            ("extra", 4, 30_000),
+        ]
+        .into_iter()
+        .map(|(title, byte, len)| {
+            let bytes = vec![byte; len];
+            (layer(title, &bytes), bytes)
+        })
+        .collect()
+    }
+
+    fn run_image(parallel: usize, filter: Option<&str>) {
+        let layers = image_layers();
+        let served: Vec<_> = layers.iter().map(|(l, b)| (l, b.as_slice())).collect();
+        let base = serve_image(&served);
+        let dir = tempfile::tempdir().unwrap();
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let record = seen.clone();
+        let mut dl = OciDownload::new("org/repo:tag")
+            .api(format!("{base}/v2"))
+            .output(dir.path().to_string_lossy())
+            .parallel(parallel)
+            .progress(move |p| record.lock().unwrap().push(p));
+        if let Some(glob) = filter {
+            dl = dl.filter(Filter {
+                globs: vec![glob.to_string()],
+                ..Default::default()
+            });
+        }
+
+        let mut paths = dl.execute().unwrap();
+        paths.sort();
+
+        let wanted: Vec<_> = layers
+            .iter()
+            .filter(|(l, _)| filter.is_none_or(|g| fast_glob::glob_match(g, l.title().unwrap())))
+            .collect();
+        let mut expected: Vec<_> = wanted
+            .iter()
+            .map(|(l, _)| dir.path().join(l.title().unwrap()))
+            .collect();
+        expected.sort();
+        assert_eq!(paths, expected);
+        for (l, bytes) in &wanted {
+            assert_eq!(
+                &std::fs::read(dir.path().join(l.title().unwrap())).unwrap(),
+                bytes
+            );
+        }
+        for (l, _) in layers
+            .iter()
+            .filter(|(l, _)| !wanted.iter().any(|(w, _)| w.digest == l.digest))
+        {
+            assert!(!dir.path().join(l.title().unwrap()).exists());
+        }
+
+        let total: u64 = wanted.iter().map(|(l, _)| l.size).sum();
+        let seen = seen.lock().unwrap();
+        let chunks: Vec<u64> = seen
+            .iter()
+            .filter_map(|p| {
+                match p {
+                    Progress::Chunk {
+                        current, ..
+                    } => Some(*current),
+                    _ => None,
+                }
+            })
+            .collect();
+        assert_eq!(chunks.iter().max(), Some(&total));
+        assert!(matches!(seen.last(), Some(Progress::Complete { total: t }) if *t == total));
+    }
+
+    #[test]
+    fn an_image_downloads_sequentially() {
+        run_image(1, None);
+    }
+
+    #[test]
+    fn an_image_downloads_in_parallel() {
+        run_image(3, None);
+    }
+
+    #[test]
+    fn a_filter_picks_layers_in_parallel() {
+        run_image(4, Some("tool*"));
+    }
+
+    #[test]
+    fn a_filter_matching_nothing_is_layer_not_found() {
+        let layers = image_layers();
+        let served: Vec<_> = layers.iter().map(|(l, b)| (l, b.as_slice())).collect();
+        let base = serve_image(&served);
+        let dir = tempfile::tempdir().unwrap();
+        let err = OciDownload::new("org/repo:tag")
+            .api(format!("{base}/v2"))
+            .output(dir.path().to_string_lossy())
+            .filter(Filter {
+                globs: vec!["nothing*".into()],
+                ..Default::default()
+            })
+            .execute()
+            .unwrap_err();
+        assert!(matches!(err, DownloadError::LayerNotFound), "{err:?}");
+    }
+
+    #[test]
+    fn a_parallel_failure_reports_the_layer_and_keeps_the_rest() {
+        let layers = image_layers();
+        let (bad, _) = &layers[1];
+        let served: Vec<_> = layers
+            .iter()
+            .filter(|(l, _)| l.digest != bad.digest)
+            .map(|(l, b)| (l, b.as_slice()))
+            .collect();
+        let mut routes: Vec<(String, Vec<u8>)> = served
+            .iter()
+            .map(|(l, b)| (format!("/v2/org/repo/blobs/{}", l.digest), b.to_vec()))
+            .collect();
+        let all: Vec<_> = layers.iter().map(|(l, _)| l).collect();
+        routes.push(("/v2/org/repo/manifests/tag".into(), manifest(&all)));
+        let base = crate::test_server::serve(routes);
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = OciDownload::new("org/repo:tag")
+            .api(format!("{base}/v2"))
+            .output(dir.path().to_string_lossy())
+            .parallel(4)
+            .execute()
+            .unwrap_err();
+        match err {
+            DownloadError::Multiple {
+                errors,
+            } => {
+                assert_eq!(errors.len(), 1, "{errors:?}");
+                assert!(errors[0].starts_with("tool.png:"), "{errors:?}");
+            }
+            other => panic!("expected Multiple, got {other:?}"),
+        }
+        assert!(dir.path().join("tool").exists());
+    }
+
+    #[test]
+    fn a_layer_resumes_from_its_checkpoint() {
+        let bytes: Vec<u8> = (0..50_000u32).map(|i| (i % 253) as u8).collect();
+        let l1 = layer("one", &bytes);
+        let (dl, _) = serve_layers(&[(&l1, &bytes)]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one");
+        std::fs::write(&path, &bytes[..30_000]).unwrap();
+        let info = ResumeInfo {
+            downloaded: 20_000,
+            total: bytes.len() as u64,
+            etag: None,
+            last_modified: None,
+        };
+        if write_resume(&path, &info).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+
+        let resumed = Arc::new(Mutex::new(None));
+        let seen = resumed.clone();
+        let dl = dl.progress(move |p| {
+            if let Progress::Resuming {
+                current, ..
+            } = p
+            {
+                *seen.lock().unwrap() = Some(current);
+            }
+        });
+        let mut downloaded = 0;
+        dl.download_layer(&l1, &path, &mut downloaded, l1.size)
+            .unwrap();
+
+        assert_eq!(*resumed.lock().unwrap(), Some(20_000));
+        assert_eq!(downloaded, 50_000);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(crate::xattr::read_resume(&path).is_none());
+    }
+
+    #[test]
+    fn a_blob_lands_in_an_output_directory_under_the_package_name() {
+        let bytes = vec![5u8; 25_000];
+        let digest = format!("sha256:{}", sha256_hex(&bytes));
+        let base = crate::test_server::serve(vec![(
+            format!("/v2/org/repo/blobs/{digest}"),
+            bytes.clone(),
+        )]);
+        let dir = tempfile::tempdir().unwrap();
+
+        let paths = OciDownload::new(format!("org/repo@{digest}").as_str())
+            .api(format!("{base}/v2"))
+            .output(dir.path().to_string_lossy())
+            .overwrite(OverwriteMode::Force)
+            .execute()
+            .unwrap();
+        assert_eq!(paths, vec![dir.path().join("repo")]);
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), bytes);
+    }
+
+    #[test]
+    fn a_blob_that_fails_its_digest_is_removed() {
+        let bytes = vec![5u8; 25_000];
+        let digest = format!("sha256:{}", sha256_hex(b"something else"));
+        let base = crate::test_server::serve(vec![(format!("/v2/org/repo/blobs/{digest}"), bytes)]);
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = OciDownload::new(format!("org/repo@{digest}").as_str())
+            .api(format!("{base}/v2"))
+            .output(dir.path().to_string_lossy())
+            .overwrite(OverwriteMode::Force)
+            .execute()
+            .unwrap_err();
+        assert!(
+            matches!(err, DownloadError::DigestMismatch { .. }),
+            "{err:?}"
+        );
+        assert!(!dir.path().join("repo").exists());
+    }
+
+    #[test]
+    fn a_missing_manifest_is_an_http_error() {
+        let base = crate::test_server::serve(vec![]);
+        let err = OciDownload::new("org/repo:tag")
+            .api(format!("{base}/v2"))
+            .fetch_manifest()
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                DownloadError::HttpError {
+                    status: 404,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_truncated_manifest_names_the_parse_error() {
+        let base = crate::test_server::serve(vec![(
+            "/v2/org/repo/manifests/tag".into(),
+            br#"{"mediaType": "x", "layers": ["#.to_vec(),
+        )]);
+        let err = OciDownload::new("org/repo:tag")
+            .api(format!("{base}/v2"))
+            .fetch_manifest()
+            .unwrap_err();
+        match err {
+            DownloadError::InvalidJson {
+                reason, ..
+            } => assert!(reason.contains("EOF"), "{reason}"),
+            other => panic!("expected InvalidJson, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn registry_url_keeps_segments_whole() {
+        assert_eq!(
+            registry_url("https://ghcr.io/v2/", "org/repo", "manifests", "1.0"),
+            "https://ghcr.io/v2/org/repo/manifests/1.0"
+        );
+        assert_eq!(
+            registry_url(
+                "https://ghcr.io/v2",
+                "org/re po",
+                "blobs",
+                "sha256:ab/../x?y#z"
+            ),
+            "https://ghcr.io/v2/org/re%20po/blobs/sha256:ab%2F..%2Fx%3Fy%23z"
+        );
+    }
+
+    #[test]
+    fn test_oci_reference_with_registry_port() {
+        let reference = OciReference::from("localhost:5000/repo");
+        assert_eq!(reference.registry, "localhost:5000");
+        assert_eq!(reference.package, "repo");
+        assert_eq!(reference.tag, "latest");
+
+        let reference = OciReference::from("localhost:5000/org/repo:v1");
+        assert_eq!(reference.registry, "localhost:5000");
+        assert_eq!(reference.package, "org/repo");
+        assert_eq!(reference.tag, "v1");
+
+        let dl = OciDownload::new("registry.example.com/org/repo:v1");
+        assert_eq!(dl.api, "https://registry.example.com/v2");
     }
 
     #[test]
