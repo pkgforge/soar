@@ -14,9 +14,12 @@ use ureq::{
 /// instead of stalling forever.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Bounds how long a request waits for the next byte of a response, so a server that stops
-/// sending fails the read instead of hanging. ureq restarts this clock on every read, so it
-/// does not cap how long a large transfer may take.
+/// Bounds how long a request waits for the next byte of a response body, so a server that
+/// stops sending fails the read instead of hanging. ureq restarts this clock on every read,
+/// so it does not cap how long a large transfer may take.
+///
+/// Only the body is bounded. ureq checks the `recv_response` deadline again on every body
+/// read, counted from when the headers arrived, so setting it would cap the whole transfer.
 const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Debug)]
@@ -62,8 +65,8 @@ impl ClientConfig {
     /// Builds an HTTP `Agent` configured from this `ClientConfig`.
     ///
     /// The returned `Agent` will incorporate the configured proxy, global timeout,
-    /// IP family, and user agent header (if present). A response that goes quiet for
-    /// two minutes fails, whatever the global timeout.
+    /// IP family, and user agent header (if present). A response body that goes quiet
+    /// for two minutes fails, whatever the global timeout.
     ///
     /// When no proxy is set, the `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
     /// environment variables are honored.
@@ -86,7 +89,6 @@ impl ClientConfig {
         let mut config = ureq::Agent::config_builder()
             .timeout_global(self.timeout)
             .timeout_connect(Some(CONNECT_TIMEOUT))
-            .timeout_recv_response(Some(stall))
             .timeout_recv_body(Some(stall))
             .ip_family(self.ip_family);
 
@@ -339,7 +341,7 @@ mod tests {
     fn test_client_config_bounds_stalled_reads() {
         let agent = ClientConfig::default().build();
         let timeouts = agent.config().timeouts();
-        assert_eq!(timeouts.recv_response, Some(STALL_TIMEOUT));
+        assert_eq!(timeouts.recv_response, None);
         assert_eq!(timeouts.recv_body, Some(STALL_TIMEOUT));
         assert_eq!(timeouts.global, None);
     }
@@ -378,11 +380,11 @@ mod tests {
 
     #[test]
     fn test_slow_body_outlasts_stall_bound() {
-        let agent = ClientConfig::default().build_with_stall(Duration::from_millis(300));
-        let url = serve_slowly(6, Duration::from_millis(100));
+        let agent = ClientConfig::default().build_with_stall(Duration::from_secs(1));
+        let url = serve_slowly(10, Duration::from_millis(150));
 
         let body = agent.get(&url).call().unwrap().body_mut().read_to_vec();
-        assert_eq!(body.unwrap().len(), 7);
+        assert_eq!(body.unwrap().len(), 11);
     }
 
     #[test]

@@ -86,9 +86,14 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::resume_mismatch))]
     ResumeMismatch,
 
+    /// Several downloads failed. `transient` holds when every one of them
+    /// failed in a way a retry may get past.
     #[error("{}", .errors.join("; "))]
     #[diagnostic(code(soar_dl::multiple_errors))]
-    Multiple { errors: Vec<String> },
+    Multiple {
+        errors: Vec<String>,
+        transient: bool,
+    },
 
     #[error("{0}")]
     #[diagnostic(
@@ -136,7 +141,12 @@ impl DownloadError {
     }
 
     /// Whether trying the same request again later may succeed: the network
-    /// failed, the server asked to be given time, or it failed on its side.
+    /// failed, before or during the transfer, the server asked to be given
+    /// time, or it failed on its side.
+    ///
+    /// A body read that fails surfaces as `Io`. ureq hands its own errors
+    /// there wrapped in an `io::Error`, the stall timeout among them, so a
+    /// wrapped ureq error counts as a network failure.
     pub fn is_transient(&self) -> bool {
         match self {
             Self::Network {
@@ -145,6 +155,20 @@ impl DownloadError {
             Self::HttpError {
                 status, ..
             } => *status == 429 || *status >= 500,
+            Self::Io(err) => {
+                err.get_ref().is_some_and(|inner| inner.is::<ureq::Error>())
+                    || matches!(
+                        err.kind(),
+                        std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionAborted
+                            | std::io::ErrorKind::UnexpectedEof
+                            | std::io::ErrorKind::BrokenPipe
+                    )
+            }
+            Self::Multiple {
+                transient, ..
+            } => *transient,
             _ => false,
         }
     }
@@ -265,6 +289,7 @@ mod tests {
     fn test_download_error_multiple() {
         let err = DownloadError::Multiple {
             errors: vec!["Error 1".to_string(), "Error 2".to_string()],
+            transient: false,
         };
         let msg = format!("{}", err);
         assert_eq!(msg, "Error 1; Error 2");
@@ -317,6 +342,18 @@ mod tests {
             };
             assert_eq!(err.is_transient(), transient, "status {status}");
         }
+    }
+
+    #[test]
+    fn a_failed_body_read_is_transient() {
+        let stalled = DownloadError::Io(ureq::Error::ConnectionFailed.into_io());
+        assert!(stalled.is_transient());
+
+        let reset = std::io::Error::from(std::io::ErrorKind::ConnectionReset);
+        assert!(DownloadError::Io(reset).is_transient());
+
+        let disk = std::io::Error::from(std::io::ErrorKind::StorageFull);
+        assert!(!DownloadError::Io(disk).is_transient());
     }
 
     #[test]

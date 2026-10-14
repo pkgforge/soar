@@ -672,7 +672,7 @@ impl OciDownload {
                         let path = match safe_layer_path(&output_dir, filename) {
                             Ok(p) => p,
                             Err(e) => {
-                                lock(&errors).push(format!("{filename}: {e}"));
+                                lock(&errors).push((format!("{filename}: {e}"), false));
                                 continue;
                             }
                         };
@@ -706,14 +706,14 @@ impl OciDownload {
                                     let extract_dir =
                                         extract_to.clone().unwrap_or_else(|| output_dir.clone());
                                     if let Err(e) = compak::extract_archive(&path, &extract_dir) {
-                                        lock(&errors).push(format!("{filename}: {e}"));
+                                        lock(&errors).push((format!("{filename}: {e}"), false));
                                         continue;
                                     }
                                 }
                                 lock(&paths).push(path);
                             }
                             Err(e) => {
-                                lock(&errors).push(format!("{filename}: {e}"));
+                                lock(&errors).push((format!("{filename}: {e}"), e.is_transient()));
                             }
                         }
                     }
@@ -723,14 +723,15 @@ impl OciDownload {
 
         for handle in handles {
             if let Err(err) = handle.join() {
-                lock(&errors).push(format!("Worker thread panicked: {err:?}"));
+                lock(&errors).push((format!("Worker thread panicked: {err:?}"), false));
             }
         }
 
         let errors = lock(&errors);
         if !errors.is_empty() {
             return Err(DownloadError::Multiple {
-                errors: errors.clone(),
+                errors: errors.iter().map(|(message, _)| message.clone()).collect(),
+                transient: errors.iter().all(|(_, transient)| *transient),
             });
         }
 
@@ -1385,13 +1386,64 @@ mod tests {
         match err {
             DownloadError::Multiple {
                 errors,
+                transient,
             } => {
                 assert_eq!(errors.len(), 1, "{errors:?}");
                 assert!(errors[0].starts_with("tool.png:"), "{errors:?}");
+                assert!(!transient, "a 404 is not worth retrying");
             }
             other => panic!("expected Multiple, got {other:?}"),
         }
         assert!(dir.path().join("tool").exists());
+    }
+
+    #[test]
+    fn a_parallel_batch_that_failed_on_the_server_is_retried() {
+        let layers = image_layers();
+        let all: Vec<_> = layers.iter().map(|(l, _)| l).collect();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = manifest(&all);
+        thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            for mut stream in listener.incoming().flatten() {
+                let mut line = String::new();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                reader.read_line(&mut line).unwrap();
+                while reader.read_line(&mut String::new()).unwrap_or(0) > 2 {}
+                let reply = if line.contains("/manifests/") {
+                    let mut reply = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .into_bytes();
+                    reply.extend_from_slice(&body);
+                    reply
+                } else {
+                    b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                };
+                let _ = stream.write_all(&reply);
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = OciDownload::new("org/repo:tag")
+            .api(format!("http://{addr}/v2"))
+            .output(dir.path().to_string_lossy())
+            .parallel(4)
+            .execute()
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                DownloadError::Multiple {
+                    transient: true,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert!(err.is_transient());
     }
 
     #[test]

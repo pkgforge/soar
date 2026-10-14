@@ -1082,6 +1082,7 @@ impl PackageInstaller {
                         .unwrap_or_else(|| {
                             DownloadError::Multiple {
                                 errors: vec!["Download failed after 5 retries".into()],
+                                transient: false,
                             }
                         })
                         .into());
