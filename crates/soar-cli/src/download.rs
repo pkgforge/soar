@@ -2,7 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use regex::Regex;
 use soar_config::config::get_config;
-use soar_core::{SoarResult, database::models::Package, package::query::PackageQuery};
+use soar_core::{
+    SoarResult, database::models::Package, error::SoarError, package::query::PackageQuery,
+};
 use soar_db::repository::metadata::MetadataRepository;
 use soar_dl::{
     download::Download,
@@ -18,7 +20,7 @@ use soar_utils::bytes::format_bytes;
 use tokio::time::sleep;
 use tracing::{error, info};
 
-use crate::utils::{interactive_ask, select_package_interactively};
+use crate::utils::{interactive_ask, select_one};
 
 pub struct DownloadContext {
     pub regexes: Vec<Regex>,
@@ -57,6 +59,10 @@ impl DownloadContext {
     }
 }
 
+/// Downloads every link and project given, carrying on past one that fails.
+///
+/// Each failure is reported as it happens, and any failure makes the whole
+/// command fail at the end, so a script sees that not everything arrived.
 pub async fn download(
     ctx: DownloadContext,
     links: Vec<String>,
@@ -66,146 +72,122 @@ pub async fn download(
     gitea: Vec<String>,
     ghcr: Vec<String>,
 ) -> SoarResult<()> {
-    handle_direct_downloads(&ctx, links, ctx.output.clone()).await?;
+    let mut total = 0;
+    let mut failed = 0;
+    let mut record = |result: SoarResult<()>| {
+        total += 1;
+        if let Err(err) = result {
+            error!("{}", err);
+            failed += 1;
+        }
+    };
+
+    for link in &links {
+        record(download_link(&ctx, link).await);
+    }
 
     for (forge, projects) in [
         (Forge::GitHub, github),
         (Forge::GitLab, gitlab),
         (Forge::Codeberg, codeberg),
     ] {
-        if !projects.is_empty() {
-            handle_forge_downloads(&ctx, forge, projects).await?;
+        for project in &projects {
+            info!("Fetching releases from {}: {}", forge, project);
+            let (project, tag) = split_tag(project);
+            record(handle_forge_release(&ctx, &forge, project, tag));
         }
     }
 
-    if !gitea.is_empty() {
-        handle_gitea_downloads(&ctx, gitea).await?;
+    for target in &gitea {
+        record(download_gitea(&ctx, target));
     }
 
-    if !ghcr.is_empty() {
-        handle_oci_downloads(&ctx, ghcr).await?;
+    for reference in &ghcr {
+        record(handle_oci_download(&ctx, reference).await);
     }
 
+    if failed > 0 {
+        return Err(SoarError::Custom(format!(
+            "{failed} of {total} downloads failed"
+        )));
+    }
     Ok(())
 }
 
-pub async fn handle_direct_downloads(
-    ctx: &DownloadContext,
-    links: Vec<String>,
-    output: Option<String>,
-) -> SoarResult<()> {
-    for link in &links {
-        match PlatformUrl::parse(link) {
-            Some(PlatformUrl::Direct {
-                url,
-            }) => {
-                info!("Downloading using direct link: {}", url);
+/// Downloads one link: a URL, a release or OCI reference, or a package name.
+async fn download_link(ctx: &DownloadContext, link: &str) -> SoarResult<()> {
+    match PlatformUrl::parse(link) {
+        Some(PlatformUrl::Direct {
+            url,
+        }) => {
+            info!("Downloading using direct link: {}", url);
 
-                let mut dl = Download::new(url)
-                    .overwrite(ctx.get_overwrite_mode())
-                    .extract(ctx.extract);
+            let mut dl = Download::new(url)
+                .overwrite(ctx.get_overwrite_mode())
+                .extract(ctx.extract);
 
-                if let Some(ref out) = output {
-                    dl = dl.output(out);
-                }
-
-                if let Some(extract_dir) = ctx.extract_dir.clone() {
-                    dl = dl.extract_to(extract_dir);
-                }
-
-                let cb = ctx.progress_callback.clone();
-                dl = dl.progress(move |p| {
-                    cb(p);
-                });
-
-                if let Err(err) = dl.execute() {
-                    error!("{}", err);
-                }
+            if let Some(ref out) = ctx.output {
+                dl = dl.output(out);
             }
-            Some(PlatformUrl::Github {
-                project,
-                tag,
-            }) => {
-                info!("Detected GitHub URL, processing as GitHub release");
-                if let Err(err) =
-                    handle_forge_release(ctx, &Forge::GitHub, &project, tag.as_deref())
-                {
-                    error!("{}", err);
-                }
+
+            if let Some(extract_dir) = ctx.extract_dir.clone() {
+                dl = dl.extract_to(extract_dir);
             }
-            Some(PlatformUrl::Gitlab {
-                project,
-                tag,
-            }) => {
-                info!("Detected GitLab URL, processing as GitLab release");
-                if let Err(err) =
-                    handle_forge_release(ctx, &Forge::GitLab, &project, tag.as_deref())
-                {
-                    error!("{}", err);
-                }
-            }
-            Some(PlatformUrl::Codeberg {
-                project,
-                tag,
-            }) => {
-                info!("Detected Codeberg URL, processing as Codeberg release");
-                if let Err(err) =
-                    handle_forge_release(ctx, &Forge::Codeberg, &project, tag.as_deref())
-                {
-                    error!("{}", err);
-                }
-            }
-            Some(PlatformUrl::Gitea {
+
+            let cb = ctx.progress_callback.clone();
+            dl = dl.progress(move |p| {
+                cb(p);
+            });
+
+            dl.execute()?;
+            Ok(())
+        }
+        Some(PlatformUrl::Github {
+            project,
+            tag,
+        }) => {
+            info!("Detected GitHub URL, processing as GitHub release");
+            handle_forge_release(ctx, &Forge::GitHub, &project, tag.as_deref())
+        }
+        Some(PlatformUrl::Gitlab {
+            project,
+            tag,
+        }) => {
+            info!("Detected GitLab URL, processing as GitLab release");
+            handle_forge_release(ctx, &Forge::GitLab, &project, tag.as_deref())
+        }
+        Some(PlatformUrl::Codeberg {
+            project,
+            tag,
+        }) => {
+            info!("Detected Codeberg URL, processing as Codeberg release");
+            handle_forge_release(ctx, &Forge::Codeberg, &project, tag.as_deref())
+        }
+        Some(PlatformUrl::Gitea {
+            instance,
+            project,
+            tag,
+        }) => {
+            info!("Detected Gitea URL, processing as Gitea release");
+            let forge = Forge::Gitea {
                 instance,
-                project,
-                tag,
-            }) => {
-                info!("Detected Gitea URL, processing as Gitea release");
-                let forge = Forge::Gitea {
-                    instance,
-                };
-                if let Err(err) = handle_forge_release(ctx, &forge, &project, tag.as_deref()) {
-                    error!("{}", err);
-                }
-            }
-            Some(PlatformUrl::Oci {
-                reference,
-            }) => {
-                if let Err(err) = handle_oci_download(ctx, &reference).await {
-                    error!("{}", err);
-                };
-            }
-            None => {
-                // if it's not a url, try to parse it as package
-                let (ctx_inner, _) = crate::create_context();
-                let metadata_mgr = ctx_inner.metadata_manager().await?;
-                let query = PackageQuery::try_from(link.as_str())?;
+            };
+            handle_forge_release(ctx, &forge, &project, tag.as_deref())
+        }
+        Some(PlatformUrl::Oci {
+            reference,
+        }) => handle_oci_download(ctx, &reference).await,
+        None => {
+            // if it's not a url, try to parse it as package
+            let (ctx_inner, _) = crate::create_context();
+            let metadata_mgr = ctx_inner.metadata_manager().await?;
+            let query = PackageQuery::try_from(link)?;
 
-                // Query packages across all repos
-                let packages: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
-                    metadata_mgr
-                        .query_repo(repo_name, |conn| {
-                            MetadataRepository::find_filtered(
-                                conn,
-                                query.name.as_deref(),
-                                query.pkg_id.as_deref(),
-                                query.family.as_deref(),
-                                None,
-                                None,
-                                None,
-                            )
-                        })?
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|p| {
-                            let mut pkg: Package = p.into();
-                            pkg.repo_name = repo_name.clone();
-                            pkg
-                        })
-                        .collect()
-                } else {
-                    metadata_mgr.query_all_flat(|repo_name, conn| {
-                        let pkgs = MetadataRepository::find_filtered(
+            // Query packages across all repos
+            let packages: Vec<Package> = if let Some(ref repo_name) = query.repo_name {
+                metadata_mgr
+                    .query_repo(repo_name, |conn| {
+                        MetadataRepository::find_filtered(
                             conn,
                             query.name.as_deref(),
                             query.pkg_id.as_deref(),
@@ -213,76 +195,94 @@ pub async fn handle_direct_downloads(
                             None,
                             None,
                             None,
-                        )?;
-                        Ok(pkgs
-                            .into_iter()
-                            .map(|p| {
-                                let mut pkg: Package = p.into();
-                                pkg.repo_name = repo_name.to_string();
-                                pkg
-                            })
-                            .collect())
+                        )
                     })?
-                };
-
-                let packages: Vec<Package> = if let Some(ref version) = query.version {
-                    packages
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|p| {
+                        let mut pkg: Package = p.into();
+                        pkg.repo_name = repo_name.clone();
+                        pkg
+                    })
+                    .collect()
+            } else {
+                metadata_mgr.query_all_flat(|repo_name, conn| {
+                    let pkgs = MetadataRepository::find_filtered(
+                        conn,
+                        query.name.as_deref(),
+                        query.pkg_id.as_deref(),
+                        query.family.as_deref(),
+                        None,
+                        None,
+                        None,
+                    )?;
+                    Ok(pkgs
                         .into_iter()
-                        .filter(|p| p.has_version(version))
-                        .collect()
-                } else {
-                    packages
-                };
+                        .map(|p| {
+                            let mut pkg: Package = p.into();
+                            pkg.repo_name = repo_name.to_string();
+                            pkg
+                        })
+                        .collect())
+                })?
+            };
 
-                if packages.is_empty() {
-                    error!("Invalid download resource '{}'", link);
-                    break;
-                }
+            let packages: Vec<Package> = if let Some(ref version) = query.version {
+                packages
+                    .into_iter()
+                    .filter(|p| p.has_version(version))
+                    .collect()
+            } else {
+                packages
+            };
 
-                let package = if packages.len() == 1 || ctx.yes {
-                    packages.first().unwrap().clone()
-                } else {
-                    select_package_interactively(packages, link)?.unwrap()
-                };
-
-                let package = package.resolve(query.version.as_deref());
-
-                info!("Downloading package: {}", package.pkg_name);
-                if let Some(ref url) = package.ghcr_blob {
-                    let mut dl = OciDownload::new(url.as_str()).overwrite(ctx.get_overwrite_mode());
-
-                    if let Some(ref out) = output {
-                        dl = dl.output(out);
-                    }
-
-                    let cb = ctx.progress_callback.clone();
-                    dl = dl.progress(move |p| {
-                        cb(p);
-                    });
-
-                    if let Err(err) = dl.execute() {
-                        error!("{}", err);
-                    }
-                } else {
-                    let mut dl =
-                        Download::new(&package.download_url).overwrite(ctx.get_overwrite_mode());
-
-                    if let Some(ref out) = output {
-                        dl = dl.output(out);
-                    }
-
-                    let cb = ctx.progress_callback.clone();
-                    dl = dl.progress(move |p| {
-                        cb(p);
-                    });
-
-                    dl.execute()?;
-                }
+            if packages.is_empty() {
+                return Err(SoarError::Custom(format!(
+                    "Invalid download resource '{link}'"
+                )));
             }
-        };
-    }
 
-    Ok(())
+            let mut packages = packages;
+            let package = if packages.len() == 1 || ctx.yes {
+                packages.swap_remove(0)
+            } else {
+                select_one(packages, link)?
+            };
+
+            let package = package.resolve(query.version.as_deref());
+
+            info!("Downloading package: {}", package.pkg_name);
+            if let Some(ref url) = package.ghcr_blob {
+                let mut dl = OciDownload::new(url.as_str()).overwrite(ctx.get_overwrite_mode());
+
+                if let Some(ref out) = ctx.output {
+                    dl = dl.output(out);
+                }
+
+                let cb = ctx.progress_callback.clone();
+                dl = dl.progress(move |p| {
+                    cb(p);
+                });
+
+                dl.execute()?;
+            } else {
+                let mut dl =
+                    Download::new(&package.download_url).overwrite(ctx.get_overwrite_mode());
+
+                if let Some(ref out) = ctx.output {
+                    dl = dl.output(out);
+                }
+
+                let cb = ctx.progress_callback.clone();
+                dl = dl.progress(move |p| {
+                    cb(p);
+                });
+
+                dl.execute()?;
+            }
+            Ok(())
+        }
+    }
 }
 
 async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResult<()> {
@@ -319,22 +319,11 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
             }
             Err(err) => {
                 ctx.progress_callback.clone()(Progress::Error);
-                error!("Download failed: {}", err);
                 return Err(err.into());
             }
         }
     }
 
-    Ok(())
-}
-
-pub async fn handle_oci_downloads(
-    ctx: &DownloadContext,
-    references: Vec<String>,
-) -> SoarResult<()> {
-    for reference in &references {
-        handle_oci_download(ctx, reference).await?;
-    }
     Ok(())
 }
 
@@ -427,46 +416,20 @@ pub fn create_regex_patterns(regex_patterns: Option<Vec<String>>) -> SoarResult<
     }
 }
 
-/// Downloads from each `owner/repo` on `forge`, a tag named after `@` where
-/// one is given.
-pub async fn handle_forge_downloads(
-    ctx: &DownloadContext,
-    forge: Forge,
-    projects: Vec<String>,
-) -> SoarResult<()> {
-    for project in &projects {
-        info!("Fetching releases from {}: {}", forge, project);
-
-        let (project, tag) = split_tag(project);
-
-        if let Err(err) = handle_forge_release(ctx, &forge, project, tag) {
-            error!("{}", err);
-        }
-    }
-    Ok(())
-}
-
-/// Downloads from each Gitea or Forgejo repository URL.
+/// Downloads from a Gitea or Forgejo repository URL.
 ///
-/// The instance is not one soar knows by name, so each target carries its own:
+/// The instance is not one soar knows by name, so the target carries its own:
 /// `https://git.example.com/owner/repo@v1.0`.
-pub async fn handle_gitea_downloads(ctx: &DownloadContext, targets: Vec<String>) -> SoarResult<()> {
-    for target in &targets {
-        let Some((instance, project, tag)) = parse_gitea_target(target, false) else {
-            error!("Invalid Gitea repository URL '{}'", target);
-            continue;
-        };
+fn download_gitea(ctx: &DownloadContext, target: &str) -> SoarResult<()> {
+    let (instance, project, tag) = parse_gitea_target(target, false)
+        .ok_or_else(|| SoarError::Custom(format!("Invalid Gitea repository URL '{target}'")))?;
 
-        info!("Fetching releases from {}: {}", instance, project);
+    info!("Fetching releases from {}: {}", instance, project);
 
-        let forge = Forge::Gitea {
-            instance,
-        };
-        if let Err(err) = handle_forge_release(ctx, &forge, &project, tag.as_deref()) {
-            error!("{}", err);
-        }
-    }
-    Ok(())
+    let forge = Forge::Gitea {
+        instance,
+    };
+    handle_forge_release(ctx, &forge, &project, tag.as_deref())
 }
 
 /// A project reference split from the tag written after its `@`.

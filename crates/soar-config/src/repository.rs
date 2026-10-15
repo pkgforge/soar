@@ -2,9 +2,31 @@ use std::path::PathBuf;
 
 use documented::{Documented, DocumentedFields};
 use serde::{Deserialize, Serialize};
-use soar_utils::time::parse_duration;
+use soar_utils::{path::is_safe_component, time::parse_duration};
 
-use crate::{config::get_config, error::Result};
+use crate::{
+    config::get_config,
+    error::{ConfigError, Result},
+};
+
+const DEFAULT_SYNC_INTERVAL: u128 = 3 * 3_600_000;
+
+/// The milliseconds a `sync_interval` value stands for, or `None` when it is
+/// not one.
+pub fn parse_sync_interval(value: &str) -> Option<u128> {
+    match value {
+        "always" => Some(0),
+        "never" => Some(u128::MAX),
+        "auto" => Some(DEFAULT_SYNC_INTERVAL),
+        value => parse_duration(value),
+    }
+}
+
+/// Whether a repository must carry a pubkey: verification was asked for, by
+/// the repository or else globally, and not turned off for it.
+pub fn requires_pubkey(global: Option<bool>, repo: Option<bool>) -> bool {
+    global != Some(false) && repo.unwrap_or(global == Some(true))
+}
 
 /// Defines a remote repository that provides packages.
 #[derive(Clone, Deserialize, Serialize, Documented, DocumentedFields)]
@@ -37,6 +59,9 @@ pub struct Repository {
 
 impl Repository {
     pub fn get_path(&self) -> Result<PathBuf> {
+        if !is_safe_component(&self.name) {
+            return Err(ConfigError::InvalidRepositoryName(self.name.clone()));
+        }
         Ok(get_config().get_repositories_path()?.join(&self.name))
     }
 
@@ -44,30 +69,34 @@ impl Repository {
         self.enabled.unwrap_or(true)
     }
 
+    /// Whether this repository's metadata is checked against its pubkey.
+    ///
+    /// A global `false` turns checking off everywhere. Otherwise the
+    /// repository's own setting wins over the global one, and a repository
+    /// without a pubkey has nothing to check against.
     pub fn signature_verification(&self) -> bool {
-        let config = get_config();
-
-        match config.signature_verification {
-            Some(false) => false,
+        match (
+            get_config().signature_verification,
+            self.signature_verification,
+        ) {
+            (Some(false), _) => false,
             _ if self.pubkey.is_none() => false,
-            Some(true) => true,
-            _ => self.signature_verification.unwrap_or(true),
+            (_, Some(repo)) => repo,
+            _ => true,
         }
     }
 
+    /// The interval between syncs, in milliseconds. Values are checked when
+    /// the configuration loads, so one that fails to parse here falls back to
+    /// the default.
     pub fn sync_interval(&self) -> u128 {
-        match get_config()
+        get_config()
             .sync_interval
             .clone()
             .or(self.sync_interval.clone())
             .as_deref()
-            .unwrap_or("3h")
-        {
-            "always" => 0,
-            "never" => u128::MAX,
-            "auto" => 3 * 3_600_000,
-            value => parse_duration(value).unwrap_or(3 * 3_600_000),
-        }
+            .and_then(parse_sync_interval)
+            .unwrap_or(DEFAULT_SYNC_INTERVAL)
     }
 }
 
@@ -100,6 +129,34 @@ pub fn get_platform_repositories() -> Vec<DefaultRepositoryInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_repository_opt_out_needs_no_pubkey() {
+        assert!(!requires_pubkey(Some(true), Some(false)));
+        assert!(requires_pubkey(Some(true), None));
+        assert!(requires_pubkey(None, Some(true)));
+        assert!(!requires_pubkey(None, None));
+        assert!(!requires_pubkey(Some(false), Some(true)));
+    }
+
+    #[test]
+    fn get_path_rejects_an_unsafe_name() {
+        for name in ["..", "a/b", ""] {
+            let repo = Repository {
+                name: name.to_string(),
+                url: "https://example.com".to_string(),
+                desktop_integration: None,
+                pubkey: None,
+                enabled: Some(true),
+                signature_verification: None,
+                sync_interval: None,
+            };
+            assert!(
+                matches!(repo.get_path(), Err(ConfigError::InvalidRepositoryName(_))),
+                "{name:?}"
+            );
+        }
+    }
 
     #[test]
     fn test_repository_is_enabled() {

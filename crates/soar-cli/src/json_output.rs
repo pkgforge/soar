@@ -7,7 +7,9 @@
 use serde::Serialize;
 use soar_config::repository::Repository;
 use soar_core::{
+    SoarResult,
     database::models::{InstalledPackage, Package},
+    error::SoarError,
     package::install::InstallTarget,
 };
 use soar_operations::{ApplyDiff, InstalledEntry, PackageListEntry, SearchEntry, UpdateInfo};
@@ -280,8 +282,9 @@ impl<T: Serialize> Listing<T> {
 }
 
 /// Write a result to stdout as a single JSON document.
-pub fn emit<T: Serialize>(value: &T) {
-    if let Ok(json) = serde_json::to_string(value) {
-        println!("{json}");
-    }
+pub fn emit<T: Serialize>(value: &T) -> SoarResult<()> {
+    let json = serde_json::to_string(value)
+        .map_err(|err| SoarError::Custom(format!("serializing JSON output: {err}")))?;
+    println!("{json}");
+    Ok(())
 }

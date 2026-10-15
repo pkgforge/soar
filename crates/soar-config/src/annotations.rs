@@ -17,7 +17,6 @@ use crate::error::{ConfigError, Result};
 /// * `docs` - The documentation string to convert to TOML comments.
 pub fn append_docs_as_toml_comments(decor: &mut Decor, docs: &str) {
     let old_prefix = decor.prefix().and_then(RawString::as_str);
-    let last_line = old_prefix.and_then(|prefix| prefix.lines().last());
 
     let comments = docs
         .lines()
@@ -30,12 +29,10 @@ pub fn append_docs_as_toml_comments(decor: &mut Decor, docs: &str) {
         })
         .collect();
 
-    let new_prefix = match (old_prefix, last_line) {
-        (None | Some(""), None) => comments,
-        (None, Some(_)) => unreachable!(),
-        (Some(_), None) => unreachable!(),
-        (Some(prefix), Some("")) => format!("{prefix}{comments}"),
-        (Some(prefix), Some(_)) => format!("{prefix}#\n{comments}"),
+    let new_prefix = match old_prefix.filter(|prefix| !prefix.is_empty()) {
+        None => comments,
+        Some(prefix) if prefix.lines().last() == Some("") => format!("{prefix}{comments}"),
+        Some(prefix) => format!("{prefix}#\n{comments}"),
     };
     decor.set_prefix(new_prefix);
 }
@@ -73,11 +70,9 @@ where
                         append_docs_as_toml_comments(sub_table.decor_mut(), docs)
                     }
                     Item::ArrayOfTables(array) => {
-                        let first_table = array
-                            .iter_mut()
-                            .next()
-                            .expect("Array of table should not be empty");
-                        append_docs_as_toml_comments(first_table.decor_mut(), docs);
+                        if let Some(first_table) = array.iter_mut().next() {
+                            append_docs_as_toml_comments(first_table.decor_mut(), docs);
+                        }
                     }
                 }
             }

@@ -104,6 +104,32 @@ pub enum ConfigError {
     )]
     MissingPubkey(String),
 
+    #[error("Invalid sync_interval '{0}'")]
+    #[diagnostic(
+        code(soar_config::invalid_sync_interval),
+        help(
+            "Use \"always\", \"never\", \"auto\", or a duration such as \"30m\", \"3h\" or \"1d\""
+        )
+    )]
+    InvalidSyncInterval(String),
+
+    #[error("{0} must be at least 1")]
+    #[diagnostic(code(soar_config::zero_limit))]
+    ZeroLimit(&'static str),
+
+    #[error("Invalid forge_tokens entry '{host}' = '{var}': {reason}")]
+    #[diagnostic(
+        code(soar_config::invalid_forge_token),
+        help(
+            "Map a host such as \"git.example.com\" or \"git.example.com:3000\" to the name of an environment variable"
+        )
+    )]
+    InvalidForgeToken {
+        host: String,
+        var: String,
+        reason: &'static str,
+    },
+
     #[error(transparent)]
     #[diagnostic(code(soar_config::io))]
     IoError(#[from] std::io::Error),

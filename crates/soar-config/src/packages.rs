@@ -14,6 +14,7 @@ use tracing::info;
 use crate::{
     annotations::annotate_toml_table,
     error::{ConfigError, Result},
+    utils::write_atomic,
 };
 
 /// Path to the packages configuration file
@@ -598,9 +599,12 @@ impl PackagesConfig {
         new_version: Option<&str>,
         config_path: Option<&str>,
     ) -> Result<()> {
-        if new_url.is_none() && new_version.is_none() {
-            return Ok(());
-        }
+        let updated = match (new_url, new_version) {
+            (Some(_), Some(v)) => format!("URL and version ({})", v),
+            (Some(_), None) => "URL".to_string(),
+            (None, Some(v)) => format!("version to {}", v),
+            (None, None) => return Ok(()),
+        };
 
         let config_path = match config_path {
             Some(p) => PathBuf::from(p),
@@ -626,6 +630,12 @@ impl PackagesConfig {
         })?;
 
         if matches!(package, toml_edit::Item::Value(toml_edit::Value::String(_))) {
+            info!(
+                "Left '{}' as written in {}: its entry is a plain version string, so the {} was not recorded",
+                package_name,
+                config_path.display(),
+                updated
+            );
             return Ok(());
         }
 
@@ -654,14 +664,8 @@ impl PackagesConfig {
             }
         }
 
-        fs::write(&config_path, doc.to_string())?;
+        write_atomic(&config_path, &doc.to_string())?;
 
-        let updated = match (new_url, new_version) {
-            (Some(_), Some(v)) => format!("URL and version ({})", v),
-            (Some(_), None) => "URL".to_string(),
-            (None, Some(v)) => format!("version to {}", v),
-            (None, None) => unreachable!(),
-        };
         info!(
             "Updated {} for '{}' in {}",
             updated,
@@ -688,7 +692,7 @@ pub fn generate_default_packages_config() -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    fs::write(&config_path, annotated_doc.to_string())?;
+    write_atomic(&config_path, &annotated_doc.to_string())?;
     info!(
         "Default packages configuration generated at: {}",
         config_path.display()

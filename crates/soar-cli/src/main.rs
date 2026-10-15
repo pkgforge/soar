@@ -2,8 +2,9 @@ use std::{
     env,
     ffi::OsString,
     fs,
-    io::Read,
+    io::{IsTerminal as _, Read},
     os::unix::fs::PermissionsExt as _,
+    path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
 };
@@ -14,7 +15,6 @@ use cli::Args;
 use download::{DownloadContext, create_regex_patterns, download};
 use health::{display_health, remove_broken_packages};
 use indicatif::ProgressBar;
-use inspect::{InspectType, inspect_log};
 use install::install_packages;
 use json2db::json_to_db;
 use list::{list_installed_packages, list_packages, query_package, search_packages};
@@ -37,7 +37,11 @@ use soar_operations::SoarContext;
 use soar_utils::path::resolve_path;
 use tracing::{debug, info, warn};
 use update::update_packages;
-use ureq::{Proxy, config::IpFamily};
+use ureq::{
+    Proxy,
+    config::IpFamily,
+    http::{HeaderMap, HeaderName, HeaderValue},
+};
 use use_package::use_alternate_package;
 use utils::{COLOR, progress_enabled};
 
@@ -45,7 +49,6 @@ mod apply;
 mod cli;
 mod download;
 mod health;
-mod inspect;
 mod install;
 mod json2db;
 mod json_output;
@@ -165,16 +168,32 @@ fn requires_root(command: &cli::Commands) -> bool {
     )
 }
 
-/// Whether an executable by this name exists on `PATH`.
+/// Directories a privilege escalation tool is taken from.
+///
+/// They are writable only by root. A tool found through `PATH` could be any
+/// program the user's environment points at, which would then show the
+/// password prompt.
+const ESCALATION_DIRS: &[&str] = &[
+    "/run/wrappers/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+];
+
+/// The absolute path of `doas` or else `sudo`, from [`ESCALATION_DIRS`].
 ///
 /// Probing by running the escalation tool would prompt for a password just to
 /// learn whether it is installed, which is what the caller is trying to avoid.
-fn find_on_path(name: &str) -> bool {
-    env::var_os("PATH").is_some_and(|path| {
-        env::split_paths(&path).any(|dir| {
-            fs::metadata(dir.join(name))
-                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-        })
+fn find_escalation_tool() -> Option<PathBuf> {
+    ["doas", "sudo"].iter().find_map(|name| {
+        ESCALATION_DIRS
+            .iter()
+            .map(|dir| Path::new(dir).join(name))
+            .find(|path| {
+                fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            })
     })
 }
 
@@ -196,19 +215,16 @@ fn handle_system_mode(command: &cli::Commands) -> SoarResult<()> {
         .map_err(|e| SoarError::Custom(format!("Failed to get current executable path: {e}")))?;
     let args: Vec<String> = env::args().skip(1).collect();
 
-    let escalation_cmd = if find_on_path("doas") {
-        "doas"
-    } else if find_on_path("sudo") {
-        "sudo"
-    } else {
-        return Err(SoarError::Custom(
-            "System mode requires root privileges. Neither 'doas' nor 'sudo' found.".into(),
-        ));
-    };
+    let escalation_cmd = find_escalation_tool().ok_or_else(|| {
+        SoarError::Custom(format!(
+            "System mode requires root privileges. Neither 'doas' nor 'sudo' found in {}.",
+            ESCALATION_DIRS.join(", ")
+        ))
+    })?;
 
     debug!(
         "System mode requires root privileges. Re-executing with {}...",
-        escalation_cmd
+        escalation_cmd.display()
     );
 
     // sudo and doas both reset the environment, so the system overrides are
@@ -226,7 +242,7 @@ fn handle_system_mode(command: &cli::Commands) -> SoarResult<()> {
         })
         .collect();
 
-    let mut command = Command::new(escalation_cmd);
+    let mut command = Command::new(&escalation_cmd);
     if !forwarded.is_empty() {
         command.arg("env").args(&forwarded);
     }
@@ -235,32 +251,111 @@ fn handle_system_mode(command: &cli::Commands) -> SoarResult<()> {
         .arg(&current_exe)
         .args(&args)
         .status()
-        .with_context(|| format!("executing {} {:?} {:?}", escalation_cmd, current_exe, args))?;
+        .with_context(|| {
+            format!(
+                "executing {} {:?} {:?}",
+                escalation_cmd.display(),
+                current_exe,
+                args
+            )
+        })?;
 
     std::process::exit(status.code().unwrap_or(1));
 }
 
-async fn handle_cli() -> SoarResult<()> {
-    let mut args = env::args().collect::<Vec<_>>();
+/// Replaces a `-` among `values` with the words `read` supplies.
+///
+/// This runs on lists clap has already parsed, so whatever stdin holds can
+/// only ever be names in that list: a word read there never becomes a flag.
+fn splice_stdin(
+    values: &mut Vec<String>,
+    read: impl FnOnce() -> SoarResult<String>,
+) -> SoarResult<()> {
+    let Some(pos) = values.iter().position(|value| value == "-") else {
+        return Ok(());
+    };
+    let input = read()?;
+    values.retain(|value| value != "-");
+    values.splice(pos..pos, input.split_whitespace().map(String::from));
+    Ok(())
+}
 
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "-" {
-            let mut stdin = std::io::stdin();
-            let mut buffer = String::new();
-            if stdin.read_to_string(&mut buffer).is_ok() {
-                let stdin_args = buffer.split_whitespace().collect::<Vec<&str>>();
-                args.remove(i);
-                args.splice(i..i, stdin_args.into_iter().map(String::from));
-            } else {
-                i += 1;
-            }
-        } else {
-            i += 1;
-        }
+fn read_stdin_words() -> SoarResult<String> {
+    let mut stdin = std::io::stdin();
+    if stdin.is_terminal() {
+        return Err(SoarError::Custom(
+            "`-` reads names from stdin, but stdin is a terminal".into(),
+        ));
     }
+    let mut buffer = String::new();
+    stdin
+        .read_to_string(&mut buffer)
+        .with_context(|| "reading names from stdin".to_string())?;
+    Ok(buffer)
+}
 
-    let args = Args::parse_from(args);
+/// Expands `-` in the package and link lists of `command` from stdin.
+fn expand_stdin(command: &mut cli::Commands) -> SoarResult<()> {
+    match command {
+        cli::Commands::Install {
+            packages, ..
+        }
+        | cli::Commands::Remove {
+            packages, ..
+        }
+        | cli::Commands::Update {
+            packages: Some(packages),
+            ..
+        } => splice_stdin(packages, read_stdin_words),
+        cli::Commands::Download {
+            links, ..
+        } => splice_stdin(links, read_stdin_words),
+        _ => Ok(()),
+    }
+}
+
+/// Parses `--header` values, each `Name: value`.
+fn parse_headers(headers: &[String]) -> SoarResult<HeaderMap> {
+    headers
+        .iter()
+        .map(|header| {
+            let invalid =
+                |reason: &str| SoarError::Custom(format!("invalid --header {header:?}: {reason}"));
+            let (name, value) = header
+                .split_once(':')
+                .ok_or_else(|| invalid("expected `Name: value`"))?;
+            let name = HeaderName::from_bytes(name.trim().as_bytes())
+                .map_err(|err| invalid(&err.to_string()))?;
+            let value =
+                HeaderValue::from_str(value.trim()).map_err(|err| invalid(&err.to_string()))?;
+            Ok((name, value))
+        })
+        .collect()
+}
+
+/// Opens `path` in `editor`, which, like `$EDITOR`, may carry arguments of its
+/// own such as `code --wait`. It is run through the shell, with the path
+/// passed as an argument rather than spliced into the command line.
+fn open_in_editor(editor: &str, path: &Path) -> SoarResult<()> {
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{editor} \"$1\""))
+        .arg("sh")
+        .arg(path)
+        .status()
+        .with_context(|| format!("executing command {} {}", editor, path.display()))?;
+    if !status.success() {
+        return Err(SoarError::Custom(format!(
+            "{editor} exited with {status} while editing {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+async fn handle_cli() -> SoarResult<()> {
+    let mut args = Args::parse();
+    expand_stdin(&mut args.command)?;
 
     setup_logging(&args);
 
@@ -299,9 +394,16 @@ async fn handle_cli() -> SoarResult<()> {
         }
     }
 
-    let proxy = args.proxy.clone();
+    let proxy = args
+        .proxy
+        .as_deref()
+        .map(|proxy| {
+            Proxy::new(proxy)
+                .map_err(|err| SoarError::Custom(format!("invalid --proxy {proxy:?}: {err}")))
+        })
+        .transpose()?;
+    let headers = args.header.as_deref().map(parse_headers).transpose()?;
     let user_agent = args.user_agent.clone();
-    let header = args.header.clone();
     let ip_family = match (args.ipv4, args.ipv6) {
         (true, _) => Some(IpFamily::Ipv4Only),
         (_, true) => Some(IpFamily::Ipv6Only),
@@ -309,8 +411,8 @@ async fn handle_cli() -> SoarResult<()> {
     };
 
     configure_http_client(|config| {
-        if let Some(proxy) = proxy.as_deref() {
-            config.proxy = Some(Proxy::new(proxy).unwrap());
+        if proxy.is_some() {
+            config.proxy = proxy;
         }
 
         if let Some(ip_family) = ip_family {
@@ -321,15 +423,8 @@ async fn handle_cli() -> SoarResult<()> {
             config.user_agent = Some(user_agent);
         }
 
-        if let Some(headers) = header {
-            let headers = headers
-                .into_iter()
-                .filter_map(|header| {
-                    let (key, value) = header.split_once(':')?;
-                    Some((key.parse().unwrap(), value.parse().unwrap()))
-                })
-                .collect();
-            config.headers = Some(headers);
+        if headers.is_some() {
+            config.headers = headers;
         }
     });
 
@@ -444,12 +539,6 @@ async fn handle_cli() -> SoarResult<()> {
                 } => {
                     list_packages(&ctx, repo_name).await?;
                 }
-                cli::Commands::Log {
-                    package,
-                } => inspect_log(&package, InspectType::BuildLog).await?,
-                cli::Commands::Inspect {
-                    package,
-                } => inspect_log(&package, InspectType::BuildScript).await?,
                 cli::Commands::Run {
                     yes,
                     no_verify,
@@ -556,7 +645,7 @@ async fn handle_cli() -> SoarResult<()> {
                     };
 
                     if utils::json_enabled() {
-                        json_output::emit(&paths);
+                        json_output::emit(&paths)?;
                     } else {
                         let name = |suffix| path_env_var(suffix, config.is_system());
                         info!("{}={}", name("CONFIG"), paths.config);
@@ -599,16 +688,7 @@ async fn handle_cli() -> SoarResult<()> {
                             let editor = editor
                                 .or_else(|| env::var("EDITOR").ok())
                                 .unwrap_or_else(|| "vi".to_string());
-                            Command::new(&editor)
-                                .arg(&*config_path)
-                                .status()
-                                .with_context(|| {
-                                    format!(
-                                        "executing command {} {}",
-                                        editor,
-                                        config_path.display()
-                                    )
-                                })?;
+                            open_in_editor(&editor, &config_path)?;
                         }
                         None => {
                             let content = match fs::read_to_string(&*config_path) {
@@ -705,5 +785,78 @@ async fn main() {
         // Anything driving soar reads the exit code to know whether the work
         // happened, so a failure has to say so.
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words(input: &'static str) -> impl FnOnce() -> SoarResult<String> {
+        move || Ok(input.to_string())
+    }
+
+    #[test]
+    fn stdin_words_become_list_entries() {
+        let mut values = vec!["a".to_string(), "-".to_string(), "z".to_string()];
+        splice_stdin(&mut values, words("b --system\n c")).unwrap();
+        assert_eq!(values, ["a", "b", "--system", "c", "z"]);
+    }
+
+    #[test]
+    fn stdin_is_read_only_for_a_dash() {
+        let mut values = vec!["a".to_string()];
+        splice_stdin(&mut values, || panic!("stdin read without a `-`")).unwrap();
+        assert_eq!(values, ["a"]);
+    }
+
+    #[test]
+    fn a_dash_is_not_expanded_outside_the_lists() {
+        let mut args = Args::parse_from(["soar", "download", "https://example.com/f", "-o", "-"]);
+        expand_stdin(&mut args.command).unwrap();
+        match args.command {
+            cli::Commands::Download {
+                links,
+                output,
+                ..
+            } => {
+                assert_eq!(links, ["https://example.com/f"]);
+                assert_eq!(output.as_deref(), Some("-"));
+            }
+            _ => panic!("expected download"),
+        }
+    }
+
+    #[test]
+    fn headers_must_be_name_colon_value() {
+        let headers = parse_headers(&["X-Token: abc".to_string()]).unwrap();
+        assert_eq!(headers.get("x-token").unwrap(), "abc");
+
+        for bad in ["no-colon", "bad name: v", "X-Ok: bad\nvalue"] {
+            assert!(parse_headers(&[bad.to_string()]).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn an_editor_may_carry_arguments() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config with space.toml");
+        fs::write(&path, "a").unwrap();
+
+        open_in_editor("sed -i s/a/b/", &path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "b");
+
+        assert!(open_in_editor("false", &path).is_err());
+    }
+
+    #[test]
+    fn the_escalation_tool_comes_from_a_root_owned_directory() {
+        if let Some(tool) = find_escalation_tool() {
+            assert!(
+                ESCALATION_DIRS
+                    .iter()
+                    .any(|dir| tool.parent() == Some(Path::new(dir)))
+            );
+        }
     }
 }
