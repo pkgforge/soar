@@ -5,7 +5,7 @@
 
 use std::{
     fs::{self, File},
-    io::{self, BufRead, BufReader, BufWriter, Write},
+    io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
@@ -80,7 +80,6 @@ pub enum MetadataContent {
 /// - The repository URL is invalid
 /// - Network request fails
 /// - Server returns an error response
-/// - Response is missing required ETag header
 /// - Metadata content cannot be processed
 /// - Public key fetch fails (if configured)
 ///
@@ -128,8 +127,12 @@ pub async fn fetch_metadata(
         let file_info = metadata_db
             .metadata()
             .with_context(|| format!("reading file metadata from {}", metadata_db.display()))?;
+        // A modification time in the future reads as stale rather than as
+        // an error, so a skewed clock cannot stop the repository syncing.
         if let Ok(modified) = file_info.modified()
-            && sync_interval >= modified.elapsed()?.as_millis()
+            && modified
+                .elapsed()
+                .is_ok_and(|age| sync_interval >= age.as_millis())
         {
             return Ok(None);
         }
@@ -145,7 +148,7 @@ pub async fn fetch_metadata(
     // path) or a remote http(s) endpoint. Local sources are read from disk;
     // remote sources are fetched over HTTP.
     if let Some(path) = local_metadata_path(&repo.url) {
-        return fetch_local_metadata(repo, &path, &metadata_db, &etag, force);
+        return fetch_local_metadata(repo, &path?, &metadata_db, &etag, force);
     }
 
     let parsed_url =
@@ -184,12 +187,14 @@ pub async fn fetch_metadata(
         return Err(RegistryError::FailedToFetchRemote(msg));
     }
 
+    // Without an ETag the next sync cannot ask whether anything changed, so
+    // it fetches again once the sync interval has passed.
     let etag = resp
         .headers()
         .get(ETAG)
         .and_then(|h| h.to_str().ok())
         .map(String::from)
-        .ok_or(RegistryError::MissingEtag)?;
+        .unwrap_or_default();
 
     debug!(repo_name = repo.name, url = repo.url, "fetching metadata");
 
@@ -197,7 +202,8 @@ pub async fn fetch_metadata(
         .into_body()
         .into_with_config()
         .limit(MAX_METADATA_SIZE)
-        .read_to_vec()?;
+        .read_to_vec()
+        .map_err(|err| RegistryError::FailedToFetchRemote(format!("{}: {err}", repo.url)))?;
 
     verify_metadata_signature(repo, &content, || {
         fetch_signature_text(&format!("{}.sig", repo.url))
@@ -210,19 +216,23 @@ pub async fn fetch_metadata(
 
 /// Resolves a repository URL to a local filesystem path when it is a local
 /// source (a `file://` URL or a filesystem path), or `None` for http(s) URLs.
-fn local_metadata_path(url: &str) -> Option<PathBuf> {
+///
+/// A local source that cannot be resolved, such as one naming an unset
+/// variable, is an error rather than `None`, which would treat it as remote.
+fn local_metadata_path(url: &str) -> Option<Result<PathBuf>> {
     let trimmed = url.trim();
-    if let Some(rest) = trimmed.strip_prefix("file://") {
-        return resolve_path(rest).ok();
-    }
-    if trimmed.starts_with('/')
+    let path = if let Some(rest) = trimmed.strip_prefix("file://") {
+        rest
+    } else if trimmed.starts_with('/')
         || trimmed.starts_with('~')
         || trimmed.starts_with('.')
         || trimmed.starts_with('$')
     {
-        return resolve_path(trimmed).ok();
-    }
-    None
+        trimmed
+    } else {
+        return None;
+    };
+    Some(resolve_path(path).map_err(|e| RegistryError::InvalidUrl(format!("{url}: {e}"))))
 }
 
 /// Validates the scheme of a remote metadata URL.
@@ -406,44 +416,40 @@ pub fn process_metadata_content(
     }
 
     if content[..4] == ZST_MAGIC_BYTES {
-        let tmp_path = format!("{}.part", metadata_db_path.display());
-        let mut tmp_file = File::create(&tmp_path)
-            .with_context(|| format!("creating temporary file {tmp_path}"))?;
+        // Decompressed into a file with no name, so nothing can be planted
+        // in its place and it is gone however this returns.
+        let dir = metadata_db_path.parent().unwrap_or(Path::new("."));
+        let mut tmp_file = tempfile::tempfile_in(dir)
+            .with_context(|| format!("creating a temporary file in {}", dir.display()))?;
 
         let decoder = zstd::Decoder::new(content.as_slice())
             .map_err(|e| RegistryError::Custom(format!("creating zstd decoder: {e}")))?;
         let mut limited = io::Read::take(decoder, MAX_METADATA_SIZE + 1);
         let written = io::copy(&mut limited, &mut tmp_file)
-            .with_context(|| format!("decoding zstd from {tmp_path}"))?;
+            .with_context(|| "decoding zstd metadata".to_string())?;
         if written > MAX_METADATA_SIZE {
-            drop(tmp_file);
-            let _ = fs::remove_file(&tmp_path);
             return Err(RegistryError::MetadataTooLarge {
                 limit: MAX_METADATA_SIZE,
             });
         }
 
-        let magic_bytes = soar_utils::fs::read_file_signature(&tmp_path, 4).map_err(|e| {
-            RegistryError::IoError {
-                action: format!("reading signature from {tmp_path}"),
-                source: io::Error::other(e.to_string()),
-            }
-        })?;
+        tmp_file
+            .seek(SeekFrom::Start(0))
+            .with_context(|| "rewinding decoded metadata".to_string())?;
+        let mut reader = BufReader::new(tmp_file);
+        let is_sqlite = reader
+            .fill_buf()
+            .with_context(|| "reading decoded metadata".to_string())?
+            .starts_with(&SQLITE_MAGIC_BYTES);
 
-        if magic_bytes == SQLITE_MAGIC_BYTES {
-            let db_content = fs::read(&tmp_path)
-                .with_context(|| format!("reading temporary file {tmp_path}"))?;
-            fs::remove_file(&tmp_path)
-                .with_context(|| format!("removing temporary file {tmp_path}"))?;
+        if is_sqlite {
+            let mut db_content = Vec::with_capacity(written as usize);
+            reader
+                .read_to_end(&mut db_content)
+                .with_context(|| "reading decoded metadata".to_string())?;
             Ok(MetadataContent::SqliteDb(db_content))
         } else {
-            let tmp_file = File::open(&tmp_path)
-                .with_context(|| format!("opening temporary file {tmp_path}"))?;
-            let reader = BufReader::new(tmp_file);
-            let metadata = parse_index_reader(reader)?;
-            fs::remove_file(&tmp_path)
-                .with_context(|| format!("removing temporary file {tmp_path}"))?;
-            Ok(MetadataContent::Json(metadata))
+            Ok(MetadataContent::Json(parse_index_reader(reader)?))
         }
     } else if content[..4] == SQLITE_MAGIC_BYTES {
         Ok(MetadataContent::SqliteDb(content))
@@ -491,8 +497,12 @@ fn is_versioned(bytes: &[u8]) -> bool {
         .is_some_and(|b| *b == b'{')
 }
 
+/// The UTF-8 byte order mark some editors write at the start of a file.
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
 /// Parse an index in either shape, refusing one newer than this build.
 pub fn parse_index(bytes: &[u8]) -> Result<Vec<RemotePackage>> {
+    let bytes = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
     if is_versioned(bytes) {
         serde_json::from_slice::<VersionedIndex>(bytes)?.into_packages()
     } else {
@@ -502,12 +512,16 @@ pub fn parse_index(bytes: &[u8]) -> Result<Vec<RemotePackage>> {
 
 /// Parse an index that is still on disk, without holding it twice in memory.
 fn parse_index_reader(mut reader: impl BufRead) -> Result<Vec<RemotePackage>> {
-    let versioned = is_versioned(reader.fill_buf().map_err(|e| {
+    let read_error = |e| {
         RegistryError::IoError {
             action: "reading metadata".to_string(),
             source: e,
         }
-    })?);
+    };
+    if reader.fill_buf().map_err(read_error)?.starts_with(UTF8_BOM) {
+        reader.consume(UTF8_BOM.len());
+    }
+    let versioned = is_versioned(reader.fill_buf().map_err(read_error)?);
     if versioned {
         serde_json::from_reader::<_, VersionedIndex>(reader)?.into_packages()
     } else {
@@ -546,6 +560,11 @@ pub fn write_metadata_db<P: AsRef<Path>>(content: &[u8], path: P) -> Result<()> 
     writer
         .write_all(content)
         .with_context(|| format!("writing to metadata file {}", path.display()))?;
+    writer
+        .into_inner()
+        .map_err(io::IntoInnerError::into_error)
+        .and_then(|file| file.sync_all())
+        .with_context(|| format!("writing to metadata file {}", path.display()))?;
     Ok(())
 }
 
@@ -562,12 +581,95 @@ mod tests {
     #[test]
     fn file_scheme_and_paths_are_local() {
         assert_eq!(
-            local_metadata_path("file:///tmp/metadata.sdb.zstd"),
-            Some(PathBuf::from("/tmp/metadata.sdb.zstd"))
+            local_metadata_path("file:///tmp/metadata.sdb.zstd")
+                .unwrap()
+                .unwrap(),
+            PathBuf::from("/tmp/metadata.sdb.zstd")
         );
         assert_eq!(
-            local_metadata_path("/srv/repo/metadata.sdb.zstd"),
-            Some(PathBuf::from("/srv/repo/metadata.sdb.zstd"))
+            local_metadata_path("/srv/repo/metadata.sdb.zstd")
+                .unwrap()
+                .unwrap(),
+            PathBuf::from("/srv/repo/metadata.sdb.zstd")
+        );
+    }
+
+    #[test]
+    fn an_unresolvable_local_path_is_an_error() {
+        let path = local_metadata_path("$SOAR_TEST_UNSET_VARIABLE/metadata.json");
+        assert!(matches!(path, Some(Err(RegistryError::InvalidUrl(_)))));
+    }
+
+    const PACKAGE: &str = r#"{"pkg_id":"a.org","pkg_name":"a","version":"1",
+        "download_url":"https://example.com/a","description":"x"}"#;
+
+    fn names(packages: Vec<RemotePackage>) -> Vec<String> {
+        packages.into_iter().map(|p| p.pkg_name).collect()
+    }
+
+    #[test]
+    fn both_index_shapes_parse() {
+        let bare = format!("[{PACKAGE}]");
+        let versioned = format!(r#"{{"format":1,"packages":[{PACKAGE}]}}"#);
+        assert_eq!(names(parse_index(bare.as_bytes()).unwrap()), ["a"]);
+        assert_eq!(names(parse_index(versioned.as_bytes()).unwrap()), ["a"]);
+    }
+
+    #[test]
+    fn a_newer_format_is_refused() {
+        let index = format!(r#"{{"format":2,"packages":[{PACKAGE}]}}"#);
+        assert!(matches!(
+            parse_index(index.as_bytes()),
+            Err(RegistryError::UnsupportedFormat {
+                found: 2,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_skipped() {
+        for index in [
+            format!("\u{feff}[{PACKAGE}]"),
+            format!("\u{feff}{{\"format\":1,\"packages\":[{PACKAGE}]}}"),
+        ] {
+            assert_eq!(names(parse_index(index.as_bytes()).unwrap()), ["a"]);
+            let reader = BufReader::new(index.as_bytes());
+            assert_eq!(names(parse_index_reader(reader).unwrap()), ["a"]);
+        }
+    }
+
+    #[test]
+    fn compressed_metadata_is_decoded_without_leaving_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("metadata.db");
+
+        let json = format!("\u{feff}[{PACKAGE}]");
+        let compressed = zstd::encode_all(json.as_bytes(), 0).unwrap();
+        let MetadataContent::Json(packages) =
+            process_metadata_content(compressed, &db_path).unwrap()
+        else {
+            panic!("expected JSON metadata");
+        };
+        assert_eq!(names(packages), ["a"]);
+
+        let mut sqlite = SQLITE_MAGIC_BYTES.to_vec();
+        sqlite.extend_from_slice(b"rest of the database");
+        let compressed = zstd::encode_all(sqlite.as_slice(), 0).unwrap();
+        let MetadataContent::SqliteDb(bytes) =
+            process_metadata_content(compressed, &db_path).unwrap()
+        else {
+            panic!("expected a SQLite database");
+        };
+        assert_eq!(bytes, sqlite);
+
+        let broken = zstd::encode_all(&b"[{\"pkg_name\":"[..], 0).unwrap();
+        assert!(process_metadata_content(broken, &db_path).is_err());
+
+        assert_eq!(
+            fs::read_dir(dir.path()).unwrap().count(),
+            0,
+            "file left behind"
         );
     }
 

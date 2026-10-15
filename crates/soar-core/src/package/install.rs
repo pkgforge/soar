@@ -1152,6 +1152,15 @@ impl PackageInstaller {
                 self.verify_pinned_checksum(output_path, &seed.url)?;
                 output_path.to_path_buf()
             } else if let Some(local_src) = local_path_from_url(url) {
+                // Only soar builds packages under the reserved `local` name.
+                // A repository naming a file on this machine would otherwise
+                // have it copied into place.
+                if self.package.repo_name != "local" {
+                    return Err(SoarError::Custom(format!(
+                        "Refusing to install {} from {}: a repository package cannot use a local file URL",
+                        self.package.pkg_name, self.package.repo_name
+                    )));
+                }
                 if self.integrate {
                     trace!(source = %local_src.display(), "integrating local file in place");
                     self.link_local_source(local_src, output_path)?
