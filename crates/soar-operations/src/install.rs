@@ -979,6 +979,23 @@ async fn install_single_package(
         }
     }
 
+    // A URL, release, or update feed install pins no checksum, so nothing
+    // checks what it serves beyond the connection it arrives over.
+    if skip_integrity_gate && pkg.ghcr_pkg.is_none() && pkg.bsum.is_none() {
+        let url = pkg.download_url.to_ascii_lowercase();
+        if url.starts_with("http://") {
+            warn!(
+                "{} is downloaded over plain http with no checksum; nothing verifies what arrives",
+                pkg.pkg_name
+            );
+        } else if url.starts_with("https://") {
+            warn!(
+                "{} has no checksum to verify; only https vouches for what is downloaded",
+                pkg.pkg_name
+            );
+        }
+    }
+
     // Keyed on the whole identity rather than the artifact's hash. Two
     // repositories shipping byte-identical builds are still two installs, and
     // sharing a directory means removing one deletes the other's files.
