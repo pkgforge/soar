@@ -1,4 +1,24 @@
 
+## [0.7.3](https://github.com/pkgforge/soar/compare/soar-db-v0.7.2...soar-db-v0.7.3) - 2026-10-15
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(db)* Harden migrations, search, sizes, and read-only URIs ([#222](https://github.com/pkgforge/soar/pull/222)) - ([d7e0d7d](https://github.com/pkgforge/soar/commit/d7e0d7d78c362587fd7d9461c7391792485ed374))
+- *(fs)* Contain symlinks, traversal, and link ownership ([#215](https://github.com/pkgforge/soar/pull/215)) - ([879974c](https://github.com/pkgforge/soar/commit/879974c679cbf17301a05016872f3c70713249dc))
+- *(sandbox)* Enforce prebuilt ruleset and fail closed ([#214](https://github.com/pkgforge/soar/pull/214)) - ([dfe7a08](https://github.com/pkgforge/soar/commit/dfe7a08a35a1114425795f0e5008190e03b1c7e4))
+
+### 🚜 Refactor
+
+- Deprecate build_log and build_script fields ([#221](https://github.com/pkgforge/soar/pull/221)) - ([6770ba3](https://github.com/pkgforge/soar/commit/6770ba3624687237169d1d8d1e20b0e8a6a299a1))
+
+### ⚙️ Miscellaneous Tasks
+
+- Move to edition 2024 and upgrade dependencies ([#217](https://github.com/pkgforge/soar/pull/217)) - ([8942cb3](https://github.com/pkgforge/soar/commit/8942cb309629c28b3e0d455c3f7c8698a364f067))
+
 ## [0.7.2](https://github.com/pkgforge/soar/compare/soar-db-v0.7.1...soar-db-v0.7.2) - 2026-09-05
 
 ### ⚙️ Miscellaneous Tasks

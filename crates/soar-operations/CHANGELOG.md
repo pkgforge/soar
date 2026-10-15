@@ -1,4 +1,21 @@
 
+## [0.7.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.6.0...soar-operations-v0.7.0) - 2026-10-15
+
+### ⛰️  Features
+
+- *(install)* Integrate local files in place with --integrate - ([8f14c0b](https://github.com/pkgforge/soar/commit/8f14c0b09526a53ee8fde549809adc986922ec85))
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(fs)* Contain symlinks, traversal, and link ownership ([#215](https://github.com/pkgforge/soar/pull/215)) - ([879974c](https://github.com/pkgforge/soar/commit/879974c679cbf17301a05016872f3c70713249dc))
+- *(registry)* Replace metadata atomically and harden sync ([#223](https://github.com/pkgforge/soar/pull/223)) - ([aca7793](https://github.com/pkgforge/soar/commit/aca7793556a823237adb41f7a74566b1c1941d57))
+- *(sandbox)* Enforce prebuilt ruleset and fail closed ([#214](https://github.com/pkgforge/soar/pull/214)) - ([dfe7a08](https://github.com/pkgforge/soar/commit/dfe7a08a35a1114425795f0e5008190e03b1c7e4))
+
+### ⚙️ Miscellaneous Tasks
+
+- Move to edition 2024 and upgrade dependencies ([#217](https://github.com/pkgforge/soar/pull/217)) - ([8942cb3](https://github.com/pkgforge/soar/commit/8942cb309629c28b3e0d455c3f7c8698a364f067))
+
 ## [0.6.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.5.1...soar-operations-v0.6.0) - 2026-09-05
 
 ### 🐛 Bug Fixes
