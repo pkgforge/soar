@@ -8,7 +8,10 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
-use crate::{cli::Args, utils::Colored};
+use crate::{
+    cli::{Args, Commands},
+    utils::Colored,
+};
 
 /// Collects an event's message and the fields recorded alongside it.
 ///
@@ -83,8 +86,8 @@ where
 
 /// Chooses which stream log records go to.
 ///
-/// Info goes to stdout and the rest to stderr, unless soar is emitting an
-/// event stream, in which case stdout carries only that.
+/// Info goes to stdout and the rest to stderr, unless stdout carries an event
+/// stream or downloaded data, in which case it carries only that.
 struct WriterBuilder {
     logs_to_stderr: bool,
 }
@@ -158,6 +161,14 @@ impl<'a> MakeWriter<'a> for WriterBuilder {
     }
 }
 
+/// Whether the command streams its own data to stdout, as `download -o -` does.
+fn writes_data_to_stdout(args: &Args) -> bool {
+    matches!(
+        &args.command,
+        Commands::Download { output: Some(output), .. } if output == "-"
+    )
+}
+
 pub fn setup_logging(args: &Args) {
     let filter_level = if args.quiet {
         Level::ERROR
@@ -177,7 +188,7 @@ pub fn setup_logging(args: &Args) {
         .with_file(false)
         .with_line_number(false)
         .with_span_events(FmtSpan::NONE)
-        .with_writer(WriterBuilder::new(args.json))
+        .with_writer(WriterBuilder::new(args.json || writes_data_to_stdout(args)))
         .compact()
         .without_time();
 
@@ -188,4 +199,24 @@ pub fn setup_logging(args: &Args) {
     };
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser as _;
+
+    use super::*;
+
+    #[test]
+    fn only_download_to_stdout_moves_logs_off_stdout() {
+        let parse = |argv: &[&str]| Args::try_parse_from(argv).unwrap();
+        assert!(writes_data_to_stdout(&parse(&[
+            "soar", "dl", "x", "-o", "-"
+        ])));
+        assert!(!writes_data_to_stdout(&parse(&[
+            "soar", "dl", "x", "-o", "f"
+        ])));
+        assert!(!writes_data_to_stdout(&parse(&["soar", "dl", "x"])));
+        assert!(!writes_data_to_stdout(&parse(&["soar", "install", "-"])));
+    }
 }
