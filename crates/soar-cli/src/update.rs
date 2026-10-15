@@ -40,7 +40,9 @@ pub async fn update_packages(
 
     if ask {
         let install_targets: Vec<_> = updates.iter().map(|u| u.target.clone()).collect();
-        ask_target_action(&install_targets, "update")?;
+        if !ask_target_action(&install_targets, "update")? {
+            return Ok(());
+        }
     }
 
     let report = update::perform_update(ctx, updates, keep, no_verify).await?;
@@ -53,7 +55,7 @@ pub async fn update_packages(
 fn report_pending(updates: &[UpdateInfo]) -> SoarResult<()> {
     if json_enabled() {
         let items: Vec<UpdateJson> = updates.iter().map(Into::into).collect();
-        json_output::emit(&Listing::new(items, updates.len()));
+        json_output::emit(&Listing::new(items, updates.len()))?;
         return Ok(());
     }
 

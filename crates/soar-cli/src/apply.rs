@@ -143,7 +143,7 @@ pub async fn apply_packages(
     }
 
     if answers_with_diff {
-        json_output::emit(&ApplyDiffJson::new(&diff));
+        json_output::emit(&ApplyDiffJson::new(&diff))?;
         if !deferred_system.is_empty() {
             return apply_system(deferred_system.len());
         }

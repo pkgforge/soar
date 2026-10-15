@@ -45,3 +45,6 @@ toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ureq = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

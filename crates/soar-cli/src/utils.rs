@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    io::Write,
+    io::{BufRead, Write},
     sync::{LazyLock, RwLock},
 };
 
@@ -76,6 +76,10 @@ pub fn json_enabled() -> bool {
     *JSON.read().unwrap()
 }
 
+/// Prints `ques` and reads one line of answer from stdin, trimmed.
+///
+/// A closed stdin is an error rather than an empty answer, so a prompt that
+/// repeats until it gets a valid answer stops instead of spinning.
 pub fn interactive_ask(ques: &str) -> SoarResult<String> {
     print!("{ques}");
 
@@ -83,12 +87,27 @@ pub fn interactive_ask(ques: &str) -> SoarResult<String> {
         .flush()
         .with_context(|| "flushing stdout stream".to_string())?;
 
+    read_answer(&mut std::io::stdin().lock())
+}
+
+fn read_answer(input: &mut impl BufRead) -> SoarResult<String> {
     let mut response = String::new();
-    std::io::stdin()
+    let read = input
         .read_line(&mut response)
         .with_context(|| "reading input from stdin".to_string())?;
+    if read == 0 {
+        return Err(SoarError::Custom(
+            "stdin closed before an answer was given".into(),
+        ));
+    }
 
     Ok(response.trim().to_owned())
+}
+
+/// Whether `answer` is an explicit yes. Anything else, an empty answer
+/// included, is a no.
+pub fn is_yes(answer: &str) -> bool {
+    answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes")
 }
 
 pub struct Colored<T: Display>(pub Color, pub T);
@@ -122,7 +141,7 @@ pub fn get_valid_selection(max: usize) -> SoarResult<usize> {
 
 pub fn confirm_action(message: &str) -> SoarResult<bool> {
     let response = interactive_ask(&format!("{} [y/N]: ", message))?;
-    Ok(matches!(response.to_lowercase().as_str(), "y" | "yes"))
+    Ok(is_yes(&response))
 }
 
 pub fn select_package_interactively<T: PackageExt>(
@@ -173,6 +192,12 @@ pub fn select_package_interactively_with_installed<T: PackageExt>(
     Ok(pkgs.into_iter().nth(selection))
 }
 
+/// Asks the user to pick one of `pkgs`, failing when there is nothing to pick.
+pub fn select_one<T: PackageExt>(pkgs: Vec<T>, package_name: &str) -> SoarResult<T> {
+    select_package_interactively(pkgs, package_name)?
+        .ok_or_else(|| SoarError::Custom(format!("no package selected for {package_name}")))
+}
+
 pub fn pretty_package_size(ghcr_size: Option<u64>, size: Option<u64>) -> String {
     ghcr_size
         .map(|size| format!("{}", Colored(Magenta, format_bytes(size, 2))))
@@ -180,7 +205,11 @@ pub fn pretty_package_size(ghcr_size: Option<u64>, size: Option<u64>) -> String 
         .unwrap_or_default()
 }
 
-pub fn ask_target_action(targets: &[InstallTarget], action: &str) -> SoarResult<()> {
+/// Lists `targets` and asks whether to go ahead with `action` on them.
+///
+/// An empty answer or a yes proceeds. A declined prompt returns `false` so
+/// the caller can stop cleanly, and a closed stdin is an error.
+pub fn ask_target_action(targets: &[InstallTarget], action: &str) -> SoarResult<bool> {
     info!(
         "\n{}\n",
         Colored(
@@ -221,18 +250,16 @@ pub fn ask_target_action(targets: &[InstallTarget], action: &str) -> SoarResult<
     let response = interactive_ask(&format!(
         "Would you like to {} these packages? [{}/{}] ",
         action,
-        Colored(Green, "Yes"),
-        Colored(Red, "No")
-    ))?
-    .to_lowercase();
-    let response = response.trim();
+        Colored(Green, "Y"),
+        Colored(Red, "n")
+    ))?;
 
-    if !response.is_empty() && response != "y" {
+    if !response.is_empty() && !is_yes(&response) {
         info!("Quitting");
-        std::process::exit(0);
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(true)
 }
 
 pub fn parse_default_repos_arg(arg: &str) -> SoarResult<String> {
@@ -252,5 +279,27 @@ pub fn parse_default_repos_arg(arg: &str) -> SoarResult<String> {
             platform(),
             supported_repos.join(", ")
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_explicit_yes_proceeds() {
+        for yes in ["y", "Y", "yes", "YES", "Yes"] {
+            assert!(is_yes(yes), "{yes}");
+        }
+        for no in ["", "n", "no", "yep", "y es", "1"] {
+            assert!(!is_yes(no), "{no:?}");
+        }
+    }
+
+    #[test]
+    fn a_closed_stdin_is_not_an_answer() {
+        assert!(read_answer(&mut "".as_bytes()).is_err());
+        assert_eq!(read_answer(&mut "\n".as_bytes()).unwrap(), "");
+        assert_eq!(read_answer(&mut "  Yes \n".as_bytes()).unwrap(), "Yes");
     }
 }

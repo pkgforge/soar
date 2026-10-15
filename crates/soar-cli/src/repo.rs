@@ -65,7 +65,7 @@ pub fn handle_repo_action(ctx: &SoarContext, action: RepoAction) -> SoarResult<(
             if json_enabled() {
                 let items: Vec<RepositoryJson> =
                     config.repositories.iter().map(Into::into).collect();
-                json_output::emit(&Listing::new(items, config.repositories.len()));
+                json_output::emit(&Listing::new(items, config.repositories.len()))?;
                 return Ok(());
             }
 

@@ -122,8 +122,8 @@ pub async fn install_packages(
 
     debug!(targets = install_targets.len(), "resolved install targets");
 
-    if ask {
-        ask_target_action(&install_targets, "install")?;
+    if ask && !ask_target_action(&install_targets, "install")? {
+        return Ok(());
     }
 
     let report = install::perform_installation(ctx, install_targets, &options).await?;
@@ -383,8 +383,8 @@ async fn install_with_show(
         return Ok(());
     }
 
-    if ask {
-        ask_target_action(&install_targets, "install")?;
+    if ask && !ask_target_action(&install_targets, "install")? {
+        return Ok(());
     }
 
     let report = install::perform_installation(ctx, install_targets, options).await?;

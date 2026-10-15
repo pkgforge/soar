@@ -25,7 +25,7 @@ use tracing::info;
 
 use crate::{
     install::install_packages,
-    utils::{Colored, interactive_ask, json_enabled},
+    utils::{Colored, interactive_ask, is_yes, json_enabled},
 };
 
 const MAX_URL_LEN: usize = 512;
@@ -290,7 +290,7 @@ pub async fn handle(ctx: &SoarContext, url: Option<String>, register_only: bool)
     println!("Continue only if you trust where the link came from.");
 
     let answer = interactive_ask(&format!("\nInstall {spec}? [y/N]: "))?;
-    if !answer.eq_ignore_ascii_case("y") && !answer.eq_ignore_ascii_case("yes") {
+    if !is_yes(&answer) {
         info!("Aborted");
         return wait_for_close();
     }
@@ -331,7 +331,8 @@ pub async fn handle(ctx: &SoarContext, url: Option<String>, register_only: bool)
 }
 
 fn wait_for_close() -> SoarResult<()> {
-    interactive_ask("\nPress Enter to close: ")?;
+    // Nothing is decided here, so a closed stdin is as good as Enter.
+    interactive_ask("\nPress Enter to close: ").ok();
     Ok(())
 }
 

@@ -1,7 +1,6 @@
 use std::{
     env::{self, consts::ARCH},
     fs,
-    io::{self, Write},
 };
 
 use semver::Version;
@@ -9,13 +8,17 @@ use soar_core::{
     SoarResult,
     error::{ErrorContext, SoarError},
 };
-use soar_dl::{download::Download, forge::Forge, http_client::SHARED_AGENT, types::OverwriteMode};
+use soar_dl::{
+    download::Download, error::describe_request_error, forge::Forge, http_client::SHARED_AGENT,
+    types::OverwriteMode,
+};
 use soar_utils::bytes::format_bytes;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::{
     cli::SelfAction,
     progress::{create_download_job, handle_download_progress},
+    utils::confirm_action,
 };
 
 pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
@@ -95,27 +98,9 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                     println!("No release notes available for this update.");
                 }
 
-                if !yes {
-                    print!("Update to {}? [y/N] ", new_version);
-                    io::stdout().flush().map_err(|e| {
-                        SoarError::IoError {
-                            action: "flushing stdout".to_string(),
-                            source: e,
-                        }
-                    })?;
-
-                    let mut input = String::new();
-                    io::stdin().read_line(&mut input).map_err(|e| {
-                        SoarError::IoError {
-                            action: "reading user input".to_string(),
-                            source: e,
-                        }
-                    })?;
-
-                    if !input.trim().to_lowercase().starts_with('y') {
-                        info!("Update cancelled.");
-                        return Ok(());
-                    }
+                if !yes && !confirm_action(&format!("Update to {new_version}?"))? {
+                    info!("Update cancelled.");
+                    return Ok(());
                 }
 
                 if target_nightly != is_nightly {
@@ -158,37 +143,33 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                     path
                 };
 
+                // The running binary is only ever replaced by bytes that match
+                // the checksum published beside them.
+                let checksum_name = format!("{}.b3sum", asset.name());
                 let checksum_asset = assets
                     .iter()
-                    .find(|a| a.name() == format!("{}.b3sum", asset.name()));
-                let expected_checksum = match checksum_asset {
-                    Some(a) => {
-                        Some(fetch_expected_checksum(a.url()).ok_or_else(|| {
-                            SoarError::Custom(format!(
-                                "Failed to fetch published checksum {}; aborting update",
-                                a.name()
-                            ))
-                        })?)
-                    }
-                    None => {
-                        warn!(
-                            "No checksum published for {}; updating without integrity verification",
+                    .find(|a| a.name() == checksum_name)
+                    .ok_or_else(|| {
+                        SoarError::Custom(format!(
+                            "No checksum published for {}; refusing to update unverified",
                             asset.name()
-                        );
-                        None
-                    }
-                };
+                        ))
+                    })?;
+                let expected_checksum = fetch_expected_checksum(checksum_asset.url())
+                    .map_err(|err| {
+                        SoarError::Custom(format!(
+                            "Failed to fetch published checksum {checksum_name}: {err}; aborting update"
+                        ))
+                    })?;
 
-                let mut dl = Download::new(asset.url())
+                let dl = Download::new(asset.url())
                     .output(staging.to_string_lossy())
                     .overwrite(OverwriteMode::Force)
+                    .checksum(expected_checksum)
                     .progress({
                         let pb = pb.clone();
                         move |p| handle_download_progress(p, &pb)
                     });
-                if let Some(ref checksum) = expected_checksum {
-                    dl = dl.checksum(checksum.clone());
-                }
 
                 debug!("Downloading update from: {}", asset.url());
                 match dl.execute() {
@@ -224,15 +205,39 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
 }
 
 /// Fetches a published `.b3sum` asset and extracts the BLAKE3 hex digest.
-///
-/// The file follows the `b3sum` convention of `<hex>  <filename>`, so only the
-/// leading token is taken. Returns `None` when the asset cannot be fetched or is
-/// empty, leaving the update to proceed without checksum verification.
-fn fetch_expected_checksum(url: &str) -> Option<String> {
-    let resp = SHARED_AGENT.get(url).call().ok()?;
-    if !resp.status().is_success() {
-        return None;
+fn fetch_expected_checksum(url: &str) -> Result<String, String> {
+    let body = SHARED_AGENT
+        .get(url)
+        .call()
+        .map_err(|err| describe_request_error(&err, url))?
+        .into_body()
+        .read_to_string()
+        .map_err(|err| err.to_string())?;
+    parse_b3sum(&body).ok_or_else(|| "it holds no BLAKE3 digest".to_string())
+}
+
+/// The digest in a `b3sum` file, which follows the `<hex>  <filename>`
+/// convention.
+fn parse_b3sum(body: &str) -> Option<String> {
+    body.split_whitespace()
+        .next()
+        .filter(|digest| digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_b3sum_file_yields_its_digest() {
+        let digest = "a".repeat(64);
+        assert_eq!(
+            parse_b3sum(&format!("{digest}  soar-x86_64-linux\n")),
+            Some(digest)
+        );
+        assert_eq!(parse_b3sum(""), None);
+        assert_eq!(parse_b3sum("<html>not found</html>"), None);
+        assert_eq!(parse_b3sum(&"z".repeat(64)), None);
     }
-    let body = resp.into_body().read_to_string().ok()?;
-    body.split_whitespace().next().map(str::to_string)
 }

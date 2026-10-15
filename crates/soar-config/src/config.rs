@@ -20,8 +20,11 @@ use crate::{
     display::DisplaySettings,
     error::{ConfigError, Result},
     profile::Profile,
-    repository::{Repository, SOARPKGS_PUBKEY, get_platform_repositories},
-    utils::default_install_patterns,
+    repository::{
+        Repository, SOARPKGS_PUBKEY, get_platform_repositories, parse_sync_interval,
+        requires_pubkey,
+    },
+    utils::{default_install_patterns, write_atomic},
 };
 
 /// Application's configuration
@@ -530,6 +533,21 @@ impl Config {
         self.search_limit.get_or_insert(20);
         self.cross_repo_updates.get_or_insert(false);
 
+        if self.parallel_limit == Some(0) {
+            return Err(ConfigError::ZeroLimit("parallel_limit"));
+        }
+        if self.ghcr_concurrency == Some(0) {
+            return Err(ConfigError::ZeroLimit("ghcr_concurrency"));
+        }
+        if self.search_limit == Some(0) {
+            return Err(ConfigError::ZeroLimit("search_limit"));
+        }
+
+        validate_sync_interval(self.sync_interval.as_deref())?;
+        for (host, var) in self.forge_tokens.iter().flatten() {
+            validate_forge_token(host, var)?;
+        }
+
         let mut seen_repos = HashSet::new();
 
         for repo in &mut self.repositories {
@@ -551,11 +569,12 @@ impl Config {
                 repo.pubkey = Some(SOARPKGS_PUBKEY.to_string())
             }
 
-            let explicitly_enabled = self.signature_verification == Some(true)
-                || repo.signature_verification == Some(true);
-            if explicitly_enabled && repo.pubkey.is_none() {
+            if requires_pubkey(self.signature_verification, repo.signature_verification)
+                && repo.pubkey.is_none()
+            {
                 return Err(ConfigError::MissingPubkey(repo.name.clone()));
             }
+            validate_sync_interval(repo.sync_interval.as_deref())?;
         }
 
         Ok(())
@@ -715,7 +734,7 @@ impl Config {
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&config_path, annotated_doc.to_string())?;
+        write_atomic(&config_path, &annotated_doc.to_string())?;
         info!("Configuration saved to {}", config_path.display());
         Ok(())
     }
@@ -748,6 +767,41 @@ impl Config {
     }
 }
 
+fn validate_sync_interval(value: Option<&str>) -> Result<()> {
+    match value {
+        Some(value) if parse_sync_interval(value).is_none() => {
+            Err(ConfigError::InvalidSyncInterval(value.to_string()))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Checks a `forge_tokens` entry: a host, with a port where the instance uses
+/// one, mapped to the name of an environment variable.
+fn validate_forge_token(host: &str, var: &str) -> Result<()> {
+    let invalid = |reason| {
+        Err(ConfigError::InvalidForgeToken {
+            host: host.to_string(),
+            var: var.to_string(),
+            reason,
+        })
+    };
+
+    let host = host.trim();
+    if host.is_empty() || host.contains("://") {
+        return invalid("the key must be a host, not a URL");
+    }
+    if host.contains(|c: char| c == '/' || c == '@' || c.is_whitespace()) {
+        return invalid("the key must be a bare host, optionally with a port");
+    }
+    let valid_var = var.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !valid_var {
+        return invalid("the value must name an environment variable");
+    }
+    Ok(())
+}
+
 pub fn generate_default_config<T: AsRef<str>>(repos: &[T]) -> Result<()> {
     let config_path = CONFIG_PATH.read().unwrap().to_path_buf();
 
@@ -762,7 +816,7 @@ pub fn generate_default_config<T: AsRef<str>>(repos: &[T]) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    fs::write(&config_path, annotated_doc.to_string())?;
+    write_atomic(&config_path, &annotated_doc.to_string())?;
     info!(
         "Default configuration file generated with documentation at: {}",
         config_path.display()
@@ -854,6 +908,93 @@ mod tests {
 
         let result = config.resolve();
         assert!(matches!(result, Err(ConfigError::ReservedRepositoryName)));
+    }
+
+    #[test]
+    fn test_config_resolve_repo_opt_out_beats_global_verification() {
+        let mut config = Config::default_config::<&str>(&[]);
+        config.signature_verification = Some(true);
+        let mut repo = repo_named("opted-out");
+        repo.signature_verification = Some(false);
+        config.repositories.push(repo);
+        assert!(config.resolve().is_ok());
+
+        let mut config = Config::default_config::<&str>(&[]);
+        config.signature_verification = Some(true);
+        config.repositories.push(repo_named("unsaid"));
+        assert!(matches!(
+            config.resolve(),
+            Err(ConfigError::MissingPubkey(_))
+        ));
+    }
+
+    #[test]
+    fn test_config_resolve_rejects_bad_sync_interval() {
+        let mut config = Config::default_config::<&str>(&[]);
+        config.sync_interval = Some("soon".into());
+        assert!(matches!(
+            config.resolve(),
+            Err(ConfigError::InvalidSyncInterval(_))
+        ));
+
+        let mut config = Config::default_config::<&str>(&[]);
+        let mut repo = repo_named("r");
+        repo.sync_interval = Some("3 hours".into());
+        config.repositories.push(repo);
+        assert!(matches!(
+            config.resolve(),
+            Err(ConfigError::InvalidSyncInterval(_))
+        ));
+
+        for good in ["always", "never", "auto", "30m", "1d"] {
+            let mut config = Config::default_config::<&str>(&[]);
+            config.sync_interval = Some(good.into());
+            assert!(config.resolve().is_ok(), "{good}");
+        }
+    }
+
+    #[test]
+    fn test_config_resolve_rejects_zero_limits() {
+        for field in ["parallel_limit", "ghcr_concurrency", "search_limit"] {
+            let mut config = Config::default_config::<&str>(&[]);
+            match field {
+                "parallel_limit" => config.parallel_limit = Some(0),
+                "ghcr_concurrency" => config.ghcr_concurrency = Some(0),
+                _ => config.search_limit = Some(0),
+            }
+            assert!(
+                matches!(config.resolve(), Err(ConfigError::ZeroLimit(f)) if f == field),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_config_resolve_checks_forge_tokens() {
+        for (host, var) in [
+            ("https://git.example.com", "TOKEN"),
+            ("git.example.com/org", "TOKEN"),
+            ("", "TOKEN"),
+            ("git.example.com", "NOT-A-VAR"),
+            ("git.example.com", "1TOKEN"),
+        ] {
+            let mut config = Config::default_config::<&str>(&[]);
+            config.forge_tokens = Some([(host.to_string(), var.to_string())].into());
+            assert!(
+                matches!(config.resolve(), Err(ConfigError::InvalidForgeToken { .. })),
+                "{host:?} = {var:?}"
+            );
+        }
+
+        let mut config = Config::default_config::<&str>(&[]);
+        config.forge_tokens = Some(
+            [
+                ("git.example.com".to_string(), "GIT_TOKEN".to_string()),
+                ("git.example.com:3000".to_string(), "_T2".to_string()),
+            ]
+            .into(),
+        );
+        assert!(config.resolve().is_ok());
     }
 
     #[test]

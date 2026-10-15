@@ -85,8 +85,8 @@ pub fn create_download_job(prefix: &str) -> ProgressBar {
 
 /// Create a spinner job for a stage that blocks on a remote, showing elapsed time.
 ///
-/// Unlike [`create_spinner_job`] this ignores the `spinners` display setting: it is the
-/// only feedback such a stage has, and without it the run looks stuck.
+/// This ignores the `spinners` display setting: it is the only feedback such a stage
+/// has, and without it the run looks stuck.
 pub fn create_wait_job(message: &str) -> ProgressBar {
     // Left out of MULTI entirely: adding a bar to it overrides the hidden draw
     // target, so a hidden bar added to it still draws.
@@ -95,19 +95,6 @@ pub fn create_wait_job(message: &str) -> ProgressBar {
     }
     let pb = MULTI.add(ProgressBar::new_spinner());
     pb.set_style(waiting_style());
-    pb.set_message(message.to_string());
-    pb.enable_steady_tick(Duration::from_millis(100));
-    pb
-}
-
-/// Create a spinner job.
-pub fn create_spinner_job(message: &str) -> ProgressBar {
-    let pb = if progress_enabled() && display_settings().spinners() {
-        MULTI.add(ProgressBar::new_spinner())
-    } else {
-        MULTI.add(ProgressBar::hidden())
-    };
-    pb.set_style(spinner_style());
     pb.set_message(message.to_string());
     pb.enable_steady_tick(Duration::from_millis(100));
     pb

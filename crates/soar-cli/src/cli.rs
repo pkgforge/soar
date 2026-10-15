@@ -349,24 +349,6 @@ pub enum Commands {
         repo_name: Option<String>,
     },
 
-    /// Inspect package build log
-    #[command(arg_required_else_help = true)]
-    #[clap(name = "log")]
-    Log {
-        /// Package to view log for
-        #[arg(required = true)]
-        package: String,
-    },
-
-    /// Inspect package build script
-    #[command(arg_required_else_help = true)]
-    #[clap(name = "inspect")]
-    Inspect {
-        /// Package to view build script for
-        #[arg(required = true)]
-        package: String,
-    },
-
     /// Run packages without installing to PATH
     #[command(arg_required_else_help = true)]
     #[clap(name = "run", visible_alias = "exec", visible_alias = "execute")]
