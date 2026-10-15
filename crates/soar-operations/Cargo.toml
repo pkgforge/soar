@@ -24,8 +24,6 @@ soar-events = { workspace = true }
 soar-package = { workspace = true }
 soar-registry = { workspace = true }
 soar-utils = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }

@@ -1,5 +1,7 @@
 use std::{
     fs::{self, File},
+    io::Write as _,
+    os::unix::fs::PermissionsExt as _,
     path::Path,
     sync::Arc,
 };
@@ -20,7 +22,7 @@ use soar_db::{
     repository::{core::CoreRepository, metadata::MetadataRepository},
 };
 use soar_events::{EventSinkHandle, LogLevel, SoarEvent, SyncStage};
-use soar_registry::{MetadataContent, RemotePackage, fetch_metadata, write_metadata_db};
+use soar_registry::{MetadataContent, fetch_metadata};
 use soar_utils::system::is_root;
 use tokio::sync::OnceCell as AsyncOnceCell;
 use tracing::{debug, trace};
@@ -49,30 +51,66 @@ fn ensure_core_db_file(path: &Path) -> SoarResult<()> {
     Ok(())
 }
 
-fn handle_json_metadata<P: AsRef<Path>>(
-    metadata: &[RemotePackage],
-    metadata_db: P,
+/// Builds fetched metadata beside the live database and swaps it in only once
+/// it is complete and migrated, so a failed sync leaves the old one in use.
+fn replace_metadata_db(
+    content: MetadataContent,
+    metadata_db: &Path,
     repo_name: &str,
 ) -> SoarResult<()> {
-    let metadata_db = metadata_db.as_ref();
-    if metadata_db.exists() {
-        fs::remove_file(metadata_db)
-            .with_context(|| format!("removing metadata file {}", metadata_db.display()))?;
+    let dir = metadata_db
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    // Created as `File::create` would, under the umask, rather than with
+    // tempfile's private default: in system mode other users read this file.
+    let mut staged = tempfile::Builder::new()
+        .prefix("metadata.db.")
+        .suffix(".tmp")
+        .permissions(fs::Permissions::from_mode(0o666))
+        .tempfile_in(dir)
+        .with_context(|| format!("creating a temporary database in {}", dir.display()))?;
+
+    match content {
+        MetadataContent::SqliteDb(bytes) => {
+            staged
+                .write_all(&bytes)
+                .and_then(|()| staged.as_file().sync_all())
+                .with_context(|| format!("writing {}", staged.path().display()))?;
+            // A published database was built by whatever soar the repository
+            // runs, so it can predate the columns these queries name.
+            // Opening it through the migration runner brings it up to them.
+            DbConnection::open(staged.path(), DbType::Metadata)
+                .map_err(|e| SoarError::Custom(format!("migrating repository metadata: {}", e)))?;
+        }
+        MetadataContent::Json(packages) => {
+            let mut conn = DbConnection::open(staged.path(), DbType::Metadata)
+                .map_err(|e| SoarError::Custom(format!("opening metadata database: {}", e)))?;
+            MetadataRepository::import_packages(conn.conn(), &packages, repo_name)
+                .map_err(|e| SoarError::Custom(format!("importing packages: {}", e)))?;
+        }
     }
 
-    let mut conn = DbConnection::open(metadata_db, DbType::Metadata)
-        .map_err(|e| SoarError::Custom(format!("opening metadata database: {}", e)))?;
+    // A write-ahead log left by an earlier process belongs to the old file
+    // and would be replayed onto the new one. A process still reading the old
+    // file keeps the handles it already has.
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = metadata_db.as_os_str().to_os_string();
+        sidecar.push(suffix);
+        fs::remove_file(sidecar).ok();
+    }
+    if let Ok(existing) = fs::metadata(metadata_db) {
+        fs::set_permissions(staged.path(), existing.permissions())
+            .with_context(|| format!("setting permissions on {}", staged.path().display()))?;
+    }
+    staged
+        .persist(metadata_db)
+        .map_err(|e| e.error)
+        .with_context(|| format!("replacing {}", metadata_db.display()))?;
+    File::open(dir)
+        .and_then(|dir| dir.sync_all())
+        .with_context(|| format!("syncing {}", dir.display()))?;
 
-    MetadataRepository::import_packages(conn.conn(), metadata, repo_name)
-        .map_err(|e| SoarError::Custom(format!("importing packages: {}", e)))?;
-
-    Ok(())
-}
-
-/// Bring a published metadata database up to the schema soar reads.
-fn migrate_metadata(path: &Path) -> SoarResult<()> {
-    DbConnection::open(path, DbType::Metadata)
-        .map_err(|e| SoarError::Custom(format!("migrating repository metadata: {}", e)))?;
     Ok(())
 }
 
@@ -189,53 +227,12 @@ impl SoarContext {
 
             match result {
                 Ok(Some((etag, content))) => {
-                    let repo_path = repo.get_path()?;
-                    let metadata_db_path = repo_path.join("metadata.db");
-
-                    self.inner.events.emit(SoarEvent::SyncProgress {
-                        repo_name: repo_name.clone(),
-                        stage: SyncStage::Decompressing,
-                    });
-
-                    self.inner.events.emit(SoarEvent::SyncProgress {
-                        repo_name: repo_name.clone(),
-                        stage: SyncStage::WritingDatabase,
-                    });
-
-                    match content {
-                        MetadataContent::SqliteDb(db_bytes) => {
-                            write_metadata_db(&db_bytes, &metadata_db_path)
-                                .map_err(|e| SoarError::Custom(e.to_string()))?;
-                            // A published database was built by whatever soar
-                            // the repository runs, so it can predate the
-                            // columns these queries name. Opening it through
-                            // the migration runner brings it up to them. The
-                            // rebuild runs outside a transaction, so a failure
-                            // leaves a half-migrated file: it is discarded
-                            // rather than queried.
-                            if let Err(e) = migrate_metadata(&metadata_db_path) {
-                                fs::remove_file(&metadata_db_path).ok();
-                                return Err(e);
-                            }
-                        }
-                        MetadataContent::Json(packages) => {
-                            handle_json_metadata(&packages, &metadata_db_path, &repo.name)?;
-                        }
+                    if let Err(err) = self.store_metadata(repo, &repo_name, &etag, content).await {
+                        self.inner.events.emit(SoarEvent::Log {
+                            level: LogLevel::Error,
+                            message: format!("Failed to sync repository {}: {err}", repo.name),
+                        });
                     }
-
-                    self.inner.events.emit(SoarEvent::SyncProgress {
-                        repo_name: repo_name.clone(),
-                        stage: SyncStage::Validating,
-                    });
-
-                    self.validate_packages(repo, &etag).await?;
-
-                    self.inner.events.emit(SoarEvent::SyncProgress {
-                        repo_name: repo_name.clone(),
-                        stage: SyncStage::Complete {
-                            package_count: None,
-                        },
-                    });
                 }
                 Ok(None) => {
                     if force {
@@ -254,6 +251,45 @@ impl SoarContext {
             };
         }
 
+        Ok(())
+    }
+
+    /// Replaces a repository's metadata with what was fetched and checks the
+    /// installed packages against it.
+    async fn store_metadata(
+        &self,
+        repo: &Repository,
+        repo_name: &str,
+        etag: &str,
+        content: MetadataContent,
+    ) -> SoarResult<()> {
+        let metadata_db_path = repo.get_path()?.join("metadata.db");
+
+        self.inner.events.emit(SoarEvent::SyncProgress {
+            repo_name: repo_name.to_string(),
+            stage: SyncStage::Decompressing,
+        });
+
+        self.inner.events.emit(SoarEvent::SyncProgress {
+            repo_name: repo_name.to_string(),
+            stage: SyncStage::WritingDatabase,
+        });
+
+        replace_metadata_db(content, &metadata_db_path, &repo.name)?;
+
+        self.inner.events.emit(SoarEvent::SyncProgress {
+            repo_name: repo_name.to_string(),
+            stage: SyncStage::Validating,
+        });
+
+        self.validate_packages(repo, etag).await?;
+
+        self.inner.events.emit(SoarEvent::SyncProgress {
+            repo_name: repo_name.to_string(),
+            stage: SyncStage::Complete {
+                package_count: None,
+            },
+        });
         Ok(())
     }
 
@@ -383,5 +419,35 @@ impl SoarContext {
         MetadataRepository::get_repo_etag(conn.conn())
             .ok()
             .flatten()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mode(path: &Path) -> u32 {
+        fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn replaced_metadata_keeps_the_old_mode_and_starts_like_a_created_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let created = dir.path().join("created");
+        File::create(&created).unwrap();
+        let db = dir.path().join("metadata.db");
+
+        replace_metadata_db(MetadataContent::Json(Vec::new()), &db, "repo").unwrap();
+        assert_eq!(mode(&db), mode(&created));
+
+        fs::set_permissions(&db, fs::Permissions::from_mode(0o640)).unwrap();
+        replace_metadata_db(MetadataContent::Json(Vec::new()), &db, "repo").unwrap();
+        assert_eq!(mode(&db), 0o640);
+
+        let left: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left.len(), 2, "temporary files left behind: {left:?}");
     }
 }

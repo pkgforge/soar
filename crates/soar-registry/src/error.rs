@@ -74,6 +74,7 @@ pub enum RegistryError {
         code(soar_registry::missing_etag),
         help("The server did not return an ETag header")
     )]
+    #[deprecated(note = "a response without an ETag is accepted and refetched next sync")]
     MissingEtag,
 
     #[error("Insecure repository URL: {0}")]
@@ -151,9 +152,6 @@ mod tests {
     fn test_error_display() {
         let err = RegistryError::MetadataTooShort;
         assert_eq!(err.to_string(), "Metadata content is too short");
-
-        let err = RegistryError::MissingEtag;
-        assert_eq!(err.to_string(), "ETag not found in metadata response");
 
         let err = RegistryError::InvalidUrl("bad-url".to_string());
         assert_eq!(err.to_string(), "Invalid URL: bad-url");

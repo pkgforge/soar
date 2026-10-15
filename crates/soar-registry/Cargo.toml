@@ -18,6 +18,7 @@ serde_json = { workspace = true }
 soar-config = { workspace = true }
 soar-dl = { workspace = true }
 soar-utils = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 ureq = { workspace = true }

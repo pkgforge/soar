@@ -2442,6 +2442,7 @@ dependencies = [
  "soar-config",
  "soar-dl",
  "soar-utils",
+ "tempfile",
  "thiserror",
  "tracing",
  "ureq",
