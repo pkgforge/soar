@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, os::unix::fs::PermissionsExt as _, path::Path};
 
 use soar_core::{
     SoarResult,
@@ -37,7 +37,7 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
         return Ok(());
     }
 
-    let output_path = std::path::Path::new(output_path);
+    let output_path = Path::new(output_path);
     if let Some(parent) = output_path.parent()
         && !parent.exists()
     {
@@ -47,19 +47,22 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
 
     // Built beside the target and swapped in only once it holds something.
     // Writing in place would destroy a working database whenever an import
-    // turned out to be entirely rejected.
-    // Named for this process, so a second import running at the same time
-    // cannot delete the database this one is still building.
-    let mut tmp_name = output_path.file_name().unwrap_or_default().to_os_string();
-    tmp_name.push(format!(".{}.tmp", std::process::id()));
-    let tmp_path = output_path.with_file_name(tmp_name);
-    for stale in [
-        &tmp_path,
-        &tmp_path.with_extension("tmp-wal"),
-        &tmp_path.with_extension("tmp-shm"),
-    ] {
-        fs::remove_file(stale).ok();
-    }
+    // turned out to be entirely rejected. The name is random and created
+    // exclusively, so a concurrent import or a planted file cannot collide
+    // with it, and it is removed on drop if the import fails.
+    let dir = output_path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut prefix = output_path.file_name().unwrap_or_default().to_os_string();
+    prefix.push(".");
+    let tmp_path = tempfile::Builder::new()
+        .prefix(&prefix)
+        .suffix(".tmp")
+        .permissions(fs::Permissions::from_mode(0o644))
+        .tempfile_in(dir)
+        .with_context(|| format!("creating a temporary database in {}", dir.display()))?
+        .into_temp_path();
 
     let mut conn = DbConnection::open(&tmp_path, DbType::Metadata)
         .map_err(|e| SoarError::Custom(format!("opening database: {}", e)))?;
@@ -73,7 +76,6 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
         Ok(n) if n > 0 => n,
         other => {
             drop(conn);
-            fs::remove_file(&tmp_path).ok();
             return match other {
                 Err(e) => Err(e),
                 Ok(_) => {
@@ -93,12 +95,15 @@ pub fn json_to_db(input_path: &str, output_path: &str, repo_name: Option<&str>) 
     }
 
     drop(conn);
-    fs::rename(&tmp_path, output_path).with_context(|| {
-        format!(
-            "replacing {} with the imported database",
-            output_path.display()
-        )
-    })?;
+    tmp_path
+        .persist(output_path)
+        .map_err(|e| e.error)
+        .with_context(|| {
+            format!(
+                "replacing {} with the imported database",
+                output_path.display()
+            )
+        })?;
 
     info!(
         count = imported,
