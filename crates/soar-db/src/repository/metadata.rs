@@ -99,6 +99,19 @@ fn supersedes_unordered(
 }
 
 /// Repository for package metadata operations.
+/// Escapes `%`, `_` and the escape character itself, so a search term is
+/// matched literally inside a `LIKE ... ESCAPE '\'` pattern.
+fn escape_like(term: &str) -> String {
+    let mut escaped = String::with_capacity(term.len());
+    for c in term.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
 pub struct MetadataRepository;
 
 impl MetadataRepository {
@@ -294,14 +307,15 @@ impl MetadataRepository {
         limit: Option<i64>,
     ) -> QueryResult<Vec<Package>> {
         debug!(pattern = pattern, limit = ?limit, "searching packages");
-        let like_pattern = format!("%{}%", pattern.to_lowercase());
+        let like_pattern = format!("%{}%", escape_like(&pattern.to_lowercase()));
 
         let mut query = packages::table
             .filter(
                 sql::<diesel::sql_types::Bool>("LOWER(pkg_name) LIKE ")
                     .bind::<Text, _>(&like_pattern)
-                    .sql(" OR LOWER(pkg_id) LIKE ")
-                    .bind::<Text, _>(&like_pattern),
+                    .sql(" ESCAPE '\\' OR LOWER(pkg_id) LIKE ")
+                    .bind::<Text, _>(&like_pattern)
+                    .sql(" ESCAPE '\\'"),
             )
             .order(packages::pkg_name.asc())
             .into_boxed();
@@ -327,13 +341,14 @@ impl MetadataRepository {
         pattern: &str,
         limit: Option<i64>,
     ) -> QueryResult<Vec<Package>> {
-        let like_pattern = format!("%{}%", pattern);
+        let like_pattern = format!("%{}%", escape_like(pattern));
 
         let mut query = packages::table
             .filter(
                 packages::pkg_name
                     .like(&like_pattern)
-                    .or(packages::pkg_id.like(&like_pattern)),
+                    .escape('\\')
+                    .or(packages::pkg_id.like(&like_pattern).escape('\\')),
             )
             .order(packages::pkg_name.asc())
             .into_boxed();
@@ -387,14 +402,15 @@ impl MetadataRepository {
 
     /// Counts packages matching a search pattern using Diesel DSL.
     pub fn count_search(conn: &mut SqliteConnection, pattern: &str) -> QueryResult<i64> {
-        let like_pattern = format!("%{}%", pattern.to_lowercase());
+        let like_pattern = format!("%{}%", escape_like(&pattern.to_lowercase()));
 
         packages::table
             .filter(
                 sql::<diesel::sql_types::Bool>("LOWER(pkg_name) LIKE ")
                     .bind::<Text, _>(&like_pattern)
-                    .sql(" OR LOWER(pkg_id) LIKE ")
-                    .bind::<Text, _>(&like_pattern),
+                    .sql(" ESCAPE '\\' OR LOWER(pkg_id) LIKE ")
+                    .bind::<Text, _>(&like_pattern)
+                    .sql(" ESCAPE '\\'"),
             )
             .count()
             .get_result(conn)
@@ -671,9 +687,12 @@ impl MetadataRepository {
             version: &package.version,
             licenses: Some(json!(package.licenses)),
             download_url: &package.download_url,
-            size: package.size_raw.or(package.size).map(|s| s as i64),
+            size: package
+                .size_raw
+                .or(package.size)
+                .and_then(|s| i64::try_from(s).ok()),
             ghcr_pkg: package.ghcr_pkg.as_deref(),
-            ghcr_size: package.ghcr_size_raw.map(|s| s as i64),
+            ghcr_size: package.ghcr_size_raw.and_then(|s| i64::try_from(s).ok()),
             ghcr_blob: package.ghcr_blob.as_deref(),
             ghcr_url: package.ghcr_url.as_deref(),
             bsum: package.bsum.as_deref(),
@@ -787,5 +806,88 @@ mod tests {
     fn nothing_is_claimed_where_a_checksum_is_missing() {
         assert!(!supersedes_unordered(OFFERED, None, HELD, Some("bsum-old")));
         assert!(!supersedes_unordered(OFFERED, Some("bsum-new"), HELD, None));
+    }
+}
+
+#[cfg(test)]
+mod import_tests {
+    use diesel::{QueryDsl as _, RunQueryDsl as _};
+    use soar_registry::RemotePackage;
+
+    use super::MetadataRepository;
+    use crate::{connection::DbConnection, migration::DbType, schema::metadata::packages};
+
+    fn db_with(entries: &str) -> DbConnection {
+        let packages: Vec<RemotePackage> = serde_json::from_str(entries).unwrap();
+        let mut db = DbConnection::open(":memory:", DbType::Metadata).unwrap();
+        MetadataRepository::import_packages(db.conn(), &packages, "repo").unwrap();
+        db
+    }
+
+    fn entry(name: &str, extra: &str) -> String {
+        format!(
+            r#"{{"pkg_id":"{name}.org","pkg_name":"{name}","version":"1",
+               "download_url":"https://example.com/{name}","description":"x"{extra}}}"#
+        )
+    }
+
+    #[test]
+    fn the_largest_storable_size_is_kept() {
+        let max = i64::MAX;
+        let mut db = db_with(&format!(
+            "[{}]",
+            entry("big", &format!(r#","size_raw":{max}"#))
+        ));
+        let size: Option<i64> = packages::table
+            .select(packages::size)
+            .first(db.conn())
+            .unwrap();
+        assert_eq!(size, Some(i64::MAX));
+    }
+
+    #[test]
+    fn like_escaping_covers_the_escape_character() {
+        assert_eq!(super::escape_like(r"a\b%c_d"), r"a\\b\%c\_d");
+    }
+
+    #[test]
+    fn a_size_beyond_i64_is_stored_as_unknown() {
+        let max = u64::MAX;
+        let mut db = db_with(&format!(
+            "[{}]",
+            entry(
+                "big",
+                &format!(r#","size_raw":{max},"ghcr_size_raw":{max}"#)
+            )
+        ));
+        let (size, ghcr_size): (Option<i64>, Option<i64>) = packages::table
+            .select((packages::size, packages::ghcr_size))
+            .first(db.conn())
+            .unwrap();
+        assert_eq!((size, ghcr_size), (None, None));
+    }
+
+    #[test]
+    fn search_wildcards_are_matched_literally() {
+        let mut db = db_with(&format!("[{},{}]", entry("a_c", ""), entry("abc", "")));
+        let names = |found: Vec<crate::models::metadata::Package>| {
+            found.into_iter().map(|p| p.pkg_name).collect::<Vec<_>>()
+        };
+
+        let conn = db.conn();
+        assert_eq!(
+            names(MetadataRepository::search(conn, "a_c", None).unwrap()),
+            ["a_c"]
+        );
+        assert_eq!(
+            names(MetadataRepository::search_case_sensitive(conn, "a_c", None).unwrap()),
+            ["a_c"]
+        );
+        assert_eq!(MetadataRepository::count_search(conn, "a_c").unwrap(), 1);
+        assert!(
+            MetadataRepository::search(conn, "%", None)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

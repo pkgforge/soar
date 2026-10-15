@@ -40,6 +40,21 @@ fn prepare(conn: &mut SqliteConnection) -> Result<(), ConnectionError> {
     Ok(())
 }
 
+/// Percent-encodes the characters that end or escape the path part of a
+/// SQLite URI, so a path holding them still names the right file.
+fn uri_path(path: &str) -> String {
+    let mut encoded = String::with_capacity(path.len());
+    for c in path.chars() {
+        match c {
+            '%' => encoded.push_str("%25"),
+            '?' => encoded.push_str("%3f"),
+            '#' => encoded.push_str("%23"),
+            c => encoded.push(c),
+        }
+    }
+    encoded
+}
+
 impl DbConnection {
     /// Opens a database connection and runs migrations.
     ///
@@ -80,7 +95,7 @@ impl DbConnection {
     pub fn open_readonly<P: AsRef<Path>>(path: P) -> Result<Self, ConnectionError> {
         let path_str = format!(
             "file:{}?mode=ro&immutable=1",
-            path.as_ref().to_string_lossy()
+            uri_path(&path.as_ref().to_string_lossy())
         );
         debug!(path = %path_str, "opening database in read-only mode");
 
@@ -258,5 +273,104 @@ impl DatabaseManager {
     pub fn remove_metadata_db(&mut self, repo_name: &str) -> Option<DbConnection> {
         debug!(repo_name = repo_name, "removing metadata database");
         self.metadata.remove(repo_name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use diesel::{QueryResult, QueryableByName, sql_types::Integer};
+    use diesel_migrations::MigrationHarness;
+
+    use super::*;
+    use crate::migration::CORE_MIGRATIONS;
+
+    #[derive(QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = Integer)]
+        n: i32,
+    }
+
+    fn portable_rows(conn: &mut SqliteConnection) -> i32 {
+        sql_query("SELECT count(*) AS n FROM portable_package")
+            .get_result::<Count>(conn)
+            .unwrap()
+            .n
+    }
+
+    fn add_package(conn: &mut SqliteConnection, id: i32, old_schema: bool) {
+        // The old schema requires a `pkg_id`.
+        let (columns, values) = if old_schema {
+            (", pkg_id", ", 'x'")
+        } else {
+            ("", "")
+        };
+        sql_query(format!(
+            "INSERT INTO packages (id, repo_name, pkg_name, version, size, installed_path, \
+             installed_date, profile{columns}) VALUES ({id}, 'r', 'p', '1', 0, '/p', 'd', \
+             'default'{values})"
+        ))
+        .execute(conn)
+        .unwrap();
+    }
+
+    fn add_portable(conn: &mut SqliteConnection, package_id: i32) -> QueryResult<usize> {
+        sql_query(format!(
+            "INSERT INTO portable_package (package_id, portable_home) VALUES ({package_id}, '/h')"
+        ))
+        .execute(conn)
+    }
+
+    #[test]
+    fn core_foreign_keys_are_enforced() {
+        let mut db = DbConnection::open(":memory:", DbType::Core).unwrap();
+        let conn = db.conn();
+        add_package(conn, 1, false);
+        add_portable(conn, 1).unwrap();
+
+        assert!(add_portable(conn, 99).is_err(), "row for a missing package");
+
+        sql_query("DELETE FROM packages WHERE id = 1")
+            .execute(conn)
+            .unwrap();
+        assert_eq!(portable_rows(conn), 0, "portable row outlived its package");
+    }
+
+    #[test]
+    fn upgrading_keeps_portable_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("soar.db");
+        {
+            // The schema as it stood before `packages` was rebuilt.
+            let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+            for _ in 0..3 {
+                conn.run_next_migration(CORE_MIGRATIONS).unwrap();
+            }
+            add_package(&mut conn, 1, true);
+            add_portable(&mut conn, 1).unwrap();
+        }
+
+        let mut db = DbConnection::open(&path, DbType::Core).unwrap();
+        assert_eq!(
+            portable_rows(db.conn()),
+            1,
+            "upgrading lost the package's portable settings"
+        );
+    }
+
+    #[test]
+    fn readonly_opens_a_path_with_uri_characters() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("a?b#c%d");
+        std::fs::create_dir(&sub).unwrap();
+        let path = sub.join("soar.db");
+        drop(DbConnection::open(&path, DbType::Core).unwrap());
+
+        let mut db = DbConnection::open_readonly(&path).unwrap();
+        let tables = sql_query(
+            "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'packages'",
+        )
+        .get_result::<Count>(db.conn())
+        .unwrap();
+        assert_eq!(tables.n, 1);
     }
 }

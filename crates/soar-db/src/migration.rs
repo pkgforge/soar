@@ -27,35 +27,49 @@ fn get_migrations(db_type: &DbType) -> EmbeddedMigrations {
     }
 }
 
+/// The date prefix of the migrations that create the schema soar had before it
+/// used Diesel. A database from then already holds those tables.
+const PRE_DIESEL_BASELINE: &str = "20251019";
+
 pub fn apply_migrations(
     conn: &mut SqliteConnection,
     db_type: &DbType,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     loop {
         match conn.run_pending_migrations(get_migrations(db_type)) {
-            Ok(_) => break,
+            Ok(_) => return Ok(()),
             Err(e) if e.to_string().contains("already exists") => {
-                mark_first_pending(conn, db_type)?;
+                if !mark_baseline_applied(conn, db_type)? {
+                    return Err(e);
+                }
             }
             Err(e) => return Err(e),
         }
     }
-
-    Ok(())
 }
 
-fn mark_first_pending(
+/// Records the first pending migration as applied if it is one of the
+/// baseline migrations, whose tables a pre-Diesel database already has.
+///
+/// Any later migration that fails is reported instead, since recording it
+/// would skip a schema change that never happened.
+fn mark_baseline_applied(
     conn: &mut SqliteConnection,
     db_type: &DbType,
-) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+) -> Result<bool, Box<dyn Error + Send + Sync + 'static>> {
     let pending = conn.pending_migrations(get_migrations(db_type))?;
-    if let Some(first) = pending.first() {
-        sql_query("INSERT INTO __diesel_schema_migrations (version) VALUES (?1)")
-            .bind::<diesel::sql_types::Text, _>(first.name().version())
-            .execute(conn)?;
+    let Some(first) = pending.first() else {
+        return Ok(false);
+    };
+    let version = first.name().version().to_string();
+    if !version.starts_with(PRE_DIESEL_BASELINE) {
+        return Ok(false);
     }
+    sql_query("INSERT INTO __diesel_schema_migrations (version) VALUES (?1)")
+        .bind::<diesel::sql_types::Text, _>(version)
+        .execute(conn)?;
 
-    Ok(())
+    Ok(true)
 }
 
 /// The JSON columns of a published metadata database.
@@ -161,6 +175,8 @@ pub fn migrate_metadata_json_to_jsonb(
 
 #[cfg(test)]
 mod tests {
+    use diesel::connection::SimpleConnection as _;
+
     use super::*;
 
     #[derive(QueryableByName)]
@@ -289,5 +305,44 @@ mod tests {
         assert_eq!(migrate_metadata_json_to_jsonb(&mut conn).unwrap(), 1);
         assert_eq!(count(&mut conn, "json_valid(licenses, 8)"), 1);
         assert_eq!(user_version(&mut conn), 20260817);
+    }
+
+    fn pending(conn: &mut SqliteConnection) -> usize {
+        conn.pending_migrations(CORE_MIGRATIONS).unwrap().len()
+    }
+
+    #[test]
+    fn a_database_from_before_diesel_is_adopted() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        for sql in [
+            include_str!("../migrations/core/2025-10-19-024753-0000_create_packages/up.sql"),
+            include_str!(
+                "../migrations/core/2025-10-19-081644-0000_create_portable_packages/up.sql"
+            ),
+        ] {
+            conn.batch_execute(sql).unwrap();
+        }
+
+        apply_migrations(&mut conn, &DbType::Core).unwrap();
+        assert_eq!(pending(&mut conn), 0);
+    }
+
+    #[test]
+    fn a_later_migration_finding_its_table_is_not_skipped() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        for _ in 0..3 {
+            conn.run_next_migration(CORE_MIGRATIONS).unwrap();
+        }
+        conn.batch_execute("CREATE TABLE packages_new (id INTEGER);")
+            .unwrap();
+        let before = pending(&mut conn);
+
+        let err = apply_migrations(&mut conn, &DbType::Core).unwrap_err();
+        assert!(err.to_string().contains("already exists"), "{err}");
+        assert_eq!(
+            pending(&mut conn),
+            before,
+            "a failed migration was recorded"
+        );
     }
 }
