@@ -55,7 +55,9 @@ pub struct Package {
     pub build_id: Option<String>,
     pub build_date: Option<String>,
     pub build_action: Option<String>,
+    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
     pub build_script: Option<String>,
+    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
     pub build_log: Option<String>,
     pub provides: Option<Vec<PackageProvide>>,
     pub snapshots: Option<Vec<String>>,
@@ -259,6 +261,7 @@ impl From<soar_db::repository::core::InstalledPackage> for InstalledPackage {
 
 /// Conversion from soar-db metadata Package to soar-core Package.
 impl From<soar_db::models::metadata::Package> for Package {
+    #[allow(deprecated)]
     fn from(pkg: soar_db::models::metadata::Package) -> Self {
         Self {
             id: pkg.id as u64,
