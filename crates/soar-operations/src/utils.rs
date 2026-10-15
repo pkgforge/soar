@@ -112,6 +112,15 @@ fn create_provide_symlinks(
             continue;
         }
         let real_path = install_dir.join(provide.name.clone());
+        // Linking a name the package does not hold would leave a dead
+        // command, and replace another package's working one with it.
+        if real_path.symlink_metadata().is_err() {
+            warn!(
+                provide = provide.name,
+                "skipping provide that is not in the package"
+            );
+            continue;
+        }
 
         for name in provide.bin_symlink_names() {
             let target_path = bin_dir.join(name);
@@ -943,6 +952,22 @@ mod tests {
         let link = bin.join("clipcat");
         assert_eq!(created, vec![(install.join("clipcat"), link.clone())]);
         assert_eq!(fs::read_link(&link).unwrap(), install.join("clipcat"));
+    }
+
+    #[test]
+    fn a_missing_provide_leaves_an_existing_command_alone() {
+        let (root, install, bin) = setup();
+        let other = root.path().join("other");
+        fs::create_dir_all(&other).unwrap();
+        File::create(other.join("helper")).unwrap();
+        let link = bin.join("helper");
+        std::os::unix::fs::symlink(other.join("helper"), &link).unwrap();
+
+        let provides = vec![PackageProvide::from_string("helper")];
+        let created = create_provide_symlinks(&install, &bin, &provides).unwrap();
+
+        assert!(created.is_empty());
+        assert_eq!(fs::read_link(&link).unwrap(), other.join("helper"));
     }
 
     #[test]

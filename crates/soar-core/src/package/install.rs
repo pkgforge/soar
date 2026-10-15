@@ -75,8 +75,18 @@ async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()>
             Ok(_) => {
                 // A side file is usually a licence, but it can be a binary an
                 // upstream ships separately, and that has to be runnable to be
-                // worth linking.
+                // worth linking. Only one checked against a published hash is
+                // trusted to run; an unchecked one is not kept at all, since
+                // linking would make it runnable again.
                 if is_elf(&dest) {
+                    if e.blake3.is_none() {
+                        fs::remove_file(&dest).ok();
+                        warn!(
+                            url = e.url,
+                            "side file is a program with no published hash; not installed"
+                        );
+                        continue;
+                    }
                     fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755)).ok();
                 }
                 debug!(file = %dest.display(), "installed side file")
