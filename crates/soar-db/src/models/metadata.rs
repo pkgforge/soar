@@ -35,7 +35,9 @@ pub struct Package {
     pub build_id: Option<String>,
     pub build_date: Option<String>,
     pub build_action: Option<String>,
+    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
     pub build_script: Option<String>,
+    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
     pub build_log: Option<String>,
     pub provides: Option<Vec<PackageProvide>>,
     pub snapshots: Option<Vec<String>>,
@@ -90,6 +92,7 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         Option<Value>,
     );
 
+    #[allow(deprecated)]
     fn build(row: Self::Row) -> diesel::deserialize::Result<Self> {
         Ok(Self {
             id: row.0,
@@ -219,7 +222,9 @@ pub struct NewPackage<'a> {
     pub build_id: Option<&'a str>,
     pub build_date: Option<&'a str>,
     pub build_action: Option<&'a str>,
+    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
     pub build_script: Option<&'a str>,
+    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
     pub build_log: Option<&'a str>,
     pub provides: Option<Value>,
     pub snapshots: Option<Value>,

@@ -61,8 +61,6 @@ The query command displays the following information.
 | **Type** | Package type (appimage, flatimage, archive, etc.) |
 | **Build CI** | Build action and build ID |
 | **Build Date** | When the package was built |
-| **Build Log** | Link to build log output |
-| **Build Script** | Link to build script used |
 | **GHCR Blob** | GitHub Container Registry blob URL (if available) |
 | **Download URL** | Direct download URL (shown if GHCR Blob not available) |
 | **GHCR Package** | Full GHCR package URL |

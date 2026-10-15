@@ -199,9 +199,11 @@ pub struct RemotePackage {
     pub build_action: Option<String>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
+    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
     pub build_script: Option<String>,
 
     #[serde(default, deserialize_with = "empty_is_none")]
+    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
     pub build_log: Option<String>,
 
     #[serde(alias = "category")]

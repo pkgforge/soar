@@ -33,12 +33,10 @@ impl Icons {
     pub const INSTALLED: &str = "✓";
     pub const LICENSE: &str = "📜";
     pub const LINK: &str = "🔗";
-    pub const LOG: &str = "📄";
     pub const MAINTAINER: &str = "👤";
     pub const NOTE: &str = "📌";
     pub const NOT_INSTALLED: &str = "○";
     pub const PACKAGE: &str = "📦";
-    pub const SCRIPT: &str = "📃";
     pub const SIZE: &str = "💾";
     pub const TYPE: &str = "📁";
     pub const VERSION: &str = "🏁";

@@ -232,20 +232,6 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
             builder.push_record([format!("{} Build Date", Icons::CALENDAR), date.clone()]);
         }
 
-        if let Some(ref log) = package.build_log {
-            builder.push_record([
-                format!("{} Build Log", Icons::LOG),
-                Colored(Blue, log).to_string(),
-            ]);
-        }
-
-        if let Some(ref script) = package.build_script {
-            builder.push_record([
-                format!("{} Build Script", Icons::SCRIPT),
-                Colored(Blue, script).to_string(),
-            ]);
-        }
-
         if let Some(ref blob) = package.ghcr_blob {
             builder.push_record([
                 format!("{} GHCR Blob", Icons::LINK),
@@ -290,8 +276,6 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
             build_id = package.build_id,
             build_date = package.build_date,
             build_action = package.build_action,
-            build_log = package.build_log,
-            build_script = package.build_script,
             ghcr_blob = package.ghcr_blob,
             ghcr_pkg = package.ghcr_pkg,
             "\n{table}"
