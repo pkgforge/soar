@@ -846,6 +846,30 @@ mod import_tests {
     }
 
     #[test]
+    fn maintainers_link_regardless_of_package_ids() {
+        let mut db = db_with(&format!(
+            "[{}]",
+            entry(
+                "solo",
+                r#","maintainers":["Alice (alice@example.com)","Bob (bob@example.com)"]"#
+            )
+        ));
+        let id: i32 = packages::table
+            .select(packages::id)
+            .first(db.conn())
+            .unwrap();
+        let mut names: Vec<_> = MetadataRepository::get_maintainers(db.conn(), id)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
+        names.sort();
+        assert_eq!(names, ["Alice", "Bob"]);
+
+        MetadataRepository::delete_all(db.conn()).unwrap();
+    }
+
+    #[test]
     fn like_escaping_covers_the_escape_character() {
         assert_eq!(super::escape_like(r"a\b%c_d"), r"a\\b\%c\_d");
     }
