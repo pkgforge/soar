@@ -605,7 +605,23 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     });
                 }
 
-                _ => {}
+                // Named rather than caught by `_`, so a new event does not
+                // compile until it is given a place here.
+                SoarEvent::Installing {
+                    ..
+                }
+                | SoarEvent::UpdateCheck {
+                    ..
+                }
+                | SoarEvent::Hook {
+                    ..
+                }
+                | SoarEvent::Running {
+                    ..
+                }
+                | SoarEvent::ApplyComplete {
+                    ..
+                } => {}
             }
         }
 

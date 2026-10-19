@@ -453,10 +453,6 @@ impl Download {
             debug!(offset = offset, "attempting to resume download");
         }
 
-        if let Some(ref cb) = self.on_progress {
-            cb(Progress::Preparing);
-        }
-
         let resp = match Http::fetch(&self.url, resume_from, etag, self.ghcr_blob) {
             Err(DownloadError::HttpError {
                 status: 416, ..
@@ -792,5 +788,27 @@ mod tests {
             }
             other => panic!("expected ChecksumMismatch, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn preparing_is_reported_once() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = seen.clone();
+
+        Download::new(format!("{base}/file"))
+            .output(dir.path().join("file").to_string_lossy())
+            .progress(move |p| record.lock().unwrap().push(p))
+            .execute()
+            .unwrap();
+
+        let seen = seen.lock().unwrap();
+        let preparing = seen
+            .iter()
+            .filter(|p| matches!(p, Progress::Preparing))
+            .count();
+        assert_eq!(preparing, 1);
+        assert!(matches!(seen[0], Progress::Preparing));
     }
 }

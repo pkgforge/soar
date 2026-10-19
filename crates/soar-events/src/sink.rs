@@ -19,6 +19,8 @@ pub trait EventSink: Send + Sync {
 ///
 /// Sends events through a standard mpsc channel. The receiver end
 /// can be polled by any consumer (GUI, test harness, etc.).
+///
+/// The channel is unbounded, so emitting never waits on the consumer.
 pub struct ChannelSink {
     sender: Sender<SoarEvent>,
 }
@@ -80,6 +82,9 @@ impl EventSink for CollectorSink {
 ///
 /// A line is a complete event, so a reader needs no closing bracket and a
 /// stream cut short still parses up to the last full line.
+///
+/// No event is dropped: a reader that falls behind holds back the operation
+/// emitting, until the reader catches up.
 pub struct JsonLinesSink<W: Write + Send + Sync> {
     writer: Mutex<W>,
 }
