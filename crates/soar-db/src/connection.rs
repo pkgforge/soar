@@ -282,7 +282,7 @@ mod tests {
     use diesel_migrations::MigrationHarness;
 
     use super::*;
-    use crate::migration::CORE_MIGRATIONS;
+    use crate::migration::{CORE_MIGRATIONS, METADATA_MIGRATIONS};
 
     #[derive(QueryableByName)]
     struct Count {
@@ -355,6 +355,40 @@ mod tests {
             1,
             "upgrading lost the package's portable settings"
         );
+    }
+
+    #[test]
+    fn upgrading_metadata_keeps_maintainer_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("repo.db");
+        {
+            let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+            for _ in 0..5 {
+                conn.run_next_migration(METADATA_MIGRATIONS).unwrap();
+            }
+            for statement in [
+                "INSERT INTO packages (id, pkg_name, version, download_url) \
+                 VALUES (1, 'p', '1', 'https://x')",
+                "INSERT INTO maintainers (id, contact, name) VALUES (1, 'a@x', 'A')",
+                "INSERT INTO package_maintainers (maintainer_id, package_id) VALUES (1, 1)",
+            ] {
+                sql_query(statement).execute(&mut conn).unwrap();
+            }
+        }
+
+        let mut db = DbConnection::open(&path, DbType::Metadata).unwrap();
+        let conn = db.conn();
+        let links = sql_query("SELECT count(*) AS n FROM package_maintainers")
+            .get_result::<Count>(conn)
+            .unwrap();
+        assert_eq!(links.n, 1, "upgrading lost a maintainer link");
+        let to_maintainers = sql_query(
+            "SELECT count(*) AS n FROM pragma_foreign_key_list('package_maintainers') \
+             WHERE \"from\" = 'maintainer_id' AND \"table\" = 'maintainers'",
+        )
+        .get_result::<Count>(conn)
+        .unwrap();
+        assert_eq!(to_maintainers.n, 1);
     }
 
     #[test]
