@@ -54,15 +54,18 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     // The extracted icon is named after the app rather than after the AppImage,
     // whose own name is often a generic word the icon theme already claims, so
     // the desktop file has to be extracted and read first.
-    let desktop_path = (!has_desktop)
+    let desktop_path = match (!has_desktop)
         .then(|| appimage.find_desktop())
         .flatten()
         .filter(|entry| entry.kind == AppImageEntryKind::File)
-        .map(|entry| {
+    {
+        Some(entry) => {
             let dest = format!("{}/{}.desktop", install_dir.display(), pkg_name);
-            let _ = appimage.write_entry(&entry, &dest);
-            dest
-        });
+            appimage.write_entry(&entry, &dest)?;
+            Some(dest)
+        }
+        None => None,
+    };
 
     let desktop_icon_name = desktop_path
         .as_ref()
@@ -79,7 +82,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
         && entry.kind == AppImageEntryKind::File
     {
         let dest = format!("{}/{}.DirIcon", install_dir.display(), pkg_name);
-        let _ = appimage.write_entry(&entry, &dest);
+        appimage.write_entry(&entry, &dest)?;
 
         let magic_bytes = read_file_signature(&dest, 8)?;
         let ext = if magic_bytes == PNG_MAGIC_BYTES {
@@ -105,16 +108,14 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
         let file_name = if entry
             .path
             .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .contains("appdata")
+            .is_some_and(|name| name.to_string_lossy().contains("appdata"))
         {
             "appdata"
         } else {
             "metainfo"
         };
         let dest = format!("{}/{}.{file_name}.xml", install_dir.display(), pkg_name);
-        let _ = appimage.write_entry(&entry, &dest);
+        appimage.write_entry(&entry, &dest)?;
     }
     Ok(())
 }

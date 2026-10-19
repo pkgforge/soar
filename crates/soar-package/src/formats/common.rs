@@ -10,6 +10,7 @@ use std::{
     fs::{self, File},
     io::{BufReader, BufWriter, Write},
     path::{Path, PathBuf},
+    sync::LazyLock,
 };
 
 use image::{DynamicImage, GenericImageView, imageops::FilterType};
@@ -29,6 +30,10 @@ use crate::{
     error::{ErrorContext, PackageError, Result},
     traits::PackageExt,
 };
+
+/// The desktop entry keys whose values soar rewrites to point at its own links.
+static DESKTOP_FIELDS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").expect("valid pattern"));
 
 /// Supported icon dimensions for desktop integration.
 const SUPPORTED_DIMENSIONS: &[(u32, u32)] = &[
@@ -324,27 +329,26 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
     let bin_path = config.get_bin_path()?;
 
     let final_content = {
-        let re = Regex::new(r"(?m)^(Icon|Exec|TryExec)=(.*)").unwrap();
-
-        re.replace_all(&content, |caps: &regex::Captures| {
-            match &caps[1] {
-                "Icon" => {
-                    match icon_name {
-                        Some(icon_name) => format!("Icon={icon_name}-soar"),
-                        None => caps[0].to_string(),
+        DESKTOP_FIELDS
+            .replace_all(&content, |caps: &regex::Captures| {
+                match &caps[1] {
+                    "Icon" => {
+                        match icon_name {
+                            Some(icon_name) => format!("Icon={icon_name}-soar"),
+                            None => caps[0].to_string(),
+                        }
                     }
+                    "Exec" | "TryExec" => {
+                        exec_line(
+                            &caps[1],
+                            &caps[2],
+                            &format!("{}/{}", bin_path.display(), pkg_name),
+                        )
+                    }
+                    _ => unreachable!(),
                 }
-                "Exec" | "TryExec" => {
-                    exec_line(
-                        &caps[1],
-                        &caps[2],
-                        &format!("{}/{}", bin_path.display(), pkg_name),
-                    )
-                }
-                _ => unreachable!(),
-            }
-        })
-        .to_string()
+            })
+            .to_string()
     };
 
     // Rewrite beside the original and rename over it; the temp name keeps
@@ -657,7 +661,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         PackageFormat::AppImage | PackageFormat::RunImage => {
             if matches!(file_type, PackageFormat::AppImage) {
                 trace!("integrating AppImage resources");
-                let _ = integrate_appimage(
+                if let Err(err) = integrate_appimage(
                     install_dir,
                     &bin_path,
                     package,
@@ -666,7 +670,10 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                     has_desktop,
                     config,
                 )
-                .await;
+                .await
+                {
+                    warn!(error = %err, "could not set up desktop integration for {pkg_name}");
+                }
             }
             trace!("setting up portable directories");
             setup_portable_dir(
@@ -699,7 +706,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         }
         PackageFormat::Onelf => {
             trace!("integrating onelf resources");
-            let _ = integrate_onelf(
+            if let Err(err) = integrate_onelf(
                 install_dir,
                 &bin_path,
                 package,
@@ -708,7 +715,10 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
                 has_desktop,
                 config,
             )
-            .await;
+            .await
+            {
+                warn!(error = %err, "could not set up desktop integration for {pkg_name}");
+            }
         }
         PackageFormat::Wrappe => {
             trace!("setting up Wrappe portable directory");
