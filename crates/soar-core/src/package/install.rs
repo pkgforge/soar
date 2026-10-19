@@ -3,7 +3,7 @@ use std::{
     env, fs,
     io::{Read, Write},
     os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
     thread::sleep,
     time::Duration,
@@ -316,7 +316,7 @@ fn is_safe_relative(path: &str) -> bool {
         && !Path::new(path).is_absolute()
         && Path::new(path)
             .components()
-            .all(|c| matches!(c, std::path::Component::Normal(_)))
+            .all(|c| matches!(c, Component::Normal(_)))
 }
 
 /// Every regular file under `dir`, skipping the staging directory.
@@ -428,16 +428,17 @@ fn is_elf(path: &Path) -> bool {
 }
 
 /// Early validation of relative paths before download.
-/// Rejects paths containing `..` or absolute paths.
+/// Rejects absolute paths and paths with a `..` component.
 fn validate_relative_path(relative_path: &str, path_type: &str) -> SoarResult<()> {
-    if Path::new(relative_path).is_absolute() {
+    let path = Path::new(relative_path);
+    if path.is_absolute() {
         return Err(SoarError::Custom(format!(
             "{} '{}' must be a relative path, not absolute",
             path_type, relative_path
         )));
     }
 
-    if relative_path.contains("..") {
+    if path.components().any(|c| c == Component::ParentDir) {
         return Err(SoarError::Custom(format!(
             "{} '{}' contains path traversal components",
             path_type, relative_path
@@ -1613,7 +1614,7 @@ mod tests {
 
     use super::{
         Package, apply_file_layout, calculate_checksum, clear_for_promotion, install_extras,
-        relative_to, resolve_source,
+        relative_to, resolve_source, validate_relative_path,
     };
 
     /// Runs `install_extras`, which never waits on anything, to completion.
@@ -1677,6 +1678,19 @@ mod tests {
             relative_to("bin/fdfind", "bin/fd").unwrap(),
             Path::new("fd")
         );
+    }
+
+    #[test]
+    fn extract_paths_reject_only_parent_components() {
+        for ok in ["foo..bar", "a/..b", "..a/b", "./bin", "a/b"] {
+            assert!(validate_relative_path(ok, "extract_root").is_ok(), "{ok}");
+        }
+        for bad in ["..", "../x", "a/../b", "a/..", "/abs"] {
+            assert!(
+                validate_relative_path(bad, "extract_root").is_err(),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

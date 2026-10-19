@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 use soar_core::{SoarResult, package::remove::PackageRemover};
 use soar_db::repository::core::CoreRepository;
@@ -128,13 +131,24 @@ pub fn remove_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
     let broken = get_broken_symlinks(ctx)?;
 
     let mut removed = Vec::new();
-    for path in &broken {
-        if std::fs::remove_file(path).is_ok() {
-            removed.push(path.clone());
+    for path in broken {
+        // The link may have been repaired since the scan.
+        if is_dangling(&path) && std::fs::remove_file(&path).is_ok() {
+            removed.push(path);
         }
     }
 
     Ok(removed)
+}
+
+/// Whether `path` is a symlink whose target does not exist.
+///
+/// Any other failure to read the target, such as a permission error, leaves
+/// the link alone, since its target may well be there.
+fn is_dangling(path: &Path) -> bool {
+    path.is_symlink()
+        && std::fs::metadata(path)
+            .is_err_and(|e| matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory))
 }
 
 fn get_broken_packages(ctx: &SoarContext) -> SoarResult<Vec<BrokenPackage>> {
@@ -161,22 +175,19 @@ fn get_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
     // something is wrong when nothing is.
     let bin_path = config.get_bin_path()?;
     if bin_path.is_dir() {
-        walk_dir(
-            &bin_path,
-            &mut |path: &std::path::Path| -> FileSystemResult<()> {
-                if !path.exists() {
-                    broken.push(path.to_path_buf());
-                }
-                Ok(())
-            },
-        )?;
+        walk_dir(&bin_path, &mut |path: &Path| -> FileSystemResult<()> {
+            if is_dangling(path) {
+                broken.push(path.to_path_buf());
+            }
+            Ok(())
+        })?;
     }
 
     let desktop_path = config.get_desktop_path()?;
-    let mut soar_check = |path: &std::path::Path| -> FileSystemResult<()> {
+    let mut soar_check = |path: &Path| -> FileSystemResult<()> {
         if let Some(filename) = path.file_stem().and_then(|s| s.to_str())
             && filename.ends_with("-soar")
-            && !path.exists()
+            && is_dangling(path)
         {
             broken.push(path.to_path_buf());
         }
@@ -192,4 +203,39 @@ fn get_broken_symlinks(ctx: &SoarContext) -> SoarResult<Vec<PathBuf>> {
     }
 
     Ok(broken)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        os::unix::fs::{PermissionsExt, symlink},
+    };
+
+    use super::*;
+
+    #[test]
+    fn only_links_to_missing_targets_are_dangling() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = |name: &str| dir.path().join(name);
+        fs::write(p("file"), "").unwrap();
+        symlink(p("file"), p("good")).unwrap();
+        symlink(p("gone"), p("missing")).unwrap();
+        symlink(p("file/below"), p("through-file")).unwrap();
+
+        assert!(!is_dangling(&p("file")));
+        assert!(!is_dangling(&p("good")));
+        assert!(is_dangling(&p("missing")));
+        assert!(is_dangling(&p("through-file")));
+
+        fs::create_dir(p("locked")).unwrap();
+        fs::write(p("locked/target"), "").unwrap();
+        symlink(p("locked/target"), p("unreadable")).unwrap();
+        fs::set_permissions(p("locked"), fs::Permissions::from_mode(0o000)).unwrap();
+        // Root reads through any permission, so the case cannot arise there.
+        if fs::metadata(p("unreadable")).is_err() {
+            assert!(!is_dangling(&p("unreadable")));
+        }
+        fs::set_permissions(p("locked"), fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }

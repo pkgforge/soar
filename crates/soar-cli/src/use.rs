@@ -50,12 +50,13 @@ pub async fn use_alternate_package(ctx: &SoarContext, name: &str) -> SoarResult<
         );
     }
 
-    if variants.len() == 1 {
-        return Ok(());
-    }
-
-    let selection = get_valid_selection(variants.len())?;
-    switch::switch_variant(ctx, name, selection).await?;
+    // A sole variant can still be unlinked, and switching to it links it again.
+    let selection = match variants.as_slice() {
+        [only] if only.is_active => return Ok(()),
+        [_] => 0,
+        _ => get_valid_selection(variants.len())?,
+    };
+    switch::switch_variant(ctx, variants[selection].package.id).await?;
 
     info!("Switched to {}", variants[selection].package.pkg_name);
 

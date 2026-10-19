@@ -7,10 +7,6 @@ use std::{
 };
 
 use soar_config::config::get_config;
-use soar_utils::{
-    error::FileSystemResult,
-    fs::{safe_remove, walk_dir},
-};
 use tracing::info;
 
 use crate::error::{ErrorContext, SoarError};
@@ -54,33 +50,6 @@ pub fn cleanup_cache() -> Result<()> {
     } else {
         info!("Cache directory is clean.");
     }
-
-    Ok(())
-}
-
-fn remove_action(path: &Path) -> FileSystemResult<()> {
-    if path.is_symlink() && !path.exists() {
-        safe_remove(path)?;
-        info!("Removed broken symlink: {}", path.display());
-    }
-    Ok(())
-}
-
-/// Removes broken symlinks from bin, desktop, and icons directories.
-pub fn remove_broken_symlinks() -> Result<()> {
-    let mut soar_files_action = |path: &Path| -> FileSystemResult<()> {
-        if let Some(filename) = path.file_stem().and_then(|s| s.to_str())
-            && filename.ends_with("-soar")
-        {
-            return remove_action(path);
-        }
-        Ok(())
-    };
-
-    let config = get_config();
-    walk_dir(&config.get_bin_path()?, &mut remove_action)?;
-    walk_dir(&config.get_desktop_path()?, &mut soar_files_action)?;
-    walk_dir(config.get_icons_path(), &mut soar_files_action)?;
 
     Ok(())
 }
