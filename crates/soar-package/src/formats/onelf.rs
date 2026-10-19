@@ -25,12 +25,35 @@ fn invalid<S: Into<String>>(msg: S) -> PackageError {
     PackageError::Custom(msg.into())
 }
 
-/// Reads and verifies the footer and manifest from an onelf binary.
-fn read_footer_and_manifest(file: &mut File) -> Result<(Footer, Manifest)> {
-    let file_size = file
+/// Largest decompressed manifest accepted. A real one takes a few kilobytes
+/// per thousand files.
+const MAX_MANIFEST_SIZE: u64 = 64 * 1024 * 1024;
+
+/// Largest resource extracted for desktop integration. Desktop files and
+/// icons are kilobytes.
+const MAX_RESOURCE_SIZE: u64 = 16 * 1024 * 1024;
+
+/// Checks that `len` bytes at `offset` lie inside a file of `file_size`
+/// bytes, so a size read from the file cannot drive an allocation the file
+/// itself could not fill.
+fn span(offset: u64, len: u64, file_size: u64, what: &str) -> Result<usize> {
+    offset
+        .checked_add(len)
+        .filter(|end| *end <= file_size)
+        .and_then(|_| usize::try_from(len).ok())
+        .ok_or_else(|| invalid(format!("onelf {what} lies outside the file")))
+}
+
+fn file_size(file: &File) -> Result<u64> {
+    Ok(file
         .metadata()
         .with_context(|| "reading onelf file metadata".to_string())?
-        .len();
+        .len())
+}
+
+/// Reads and verifies the footer and manifest from an onelf binary.
+fn read_footer_and_manifest(file: &mut File) -> Result<(Footer, Manifest)> {
+    let file_size = file_size(file)?;
     if file_size < FOOTER_SIZE as u64 {
         return Err(invalid("file too small for onelf footer"));
     }
@@ -43,9 +66,18 @@ fn read_footer_and_manifest(file: &mut File) -> Result<(Footer, Manifest)> {
     let footer = Footer::from_bytes(&footer_buf)
         .map_err(|e| invalid(format!("invalid onelf footer: {e}")))?;
 
+    let compressed_len = span(
+        footer.manifest_offset,
+        footer.manifest_compressed,
+        file_size,
+        "manifest",
+    )?;
+    if footer.manifest_original > MAX_MANIFEST_SIZE {
+        return Err(invalid("onelf manifest is too large"));
+    }
     file.seek(SeekFrom::Start(footer.manifest_offset))
         .with_context(|| "seeking to onelf manifest".to_string())?;
-    let mut manifest_compressed = vec![0u8; footer.manifest_compressed as usize];
+    let mut manifest_compressed = vec![0u8; compressed_len];
     file.read_exact(&mut manifest_compressed)
         .with_context(|| "reading onelf manifest".to_string())?;
 
@@ -68,9 +100,15 @@ fn read_dict(file: &mut File, footer: &Footer) -> Result<Option<Vec<u8>>> {
     if footer.dict_size == 0 {
         return Ok(None);
     }
+    let len = span(
+        footer.dict_offset,
+        footer.dict_size.into(),
+        file_size(file)?,
+        "dictionary",
+    )?;
     file.seek(SeekFrom::Start(footer.dict_offset))
         .with_context(|| "seeking to onelf dictionary".to_string())?;
-    let mut buf = vec![0u8; footer.dict_size as usize];
+    let mut buf = vec![0u8; len];
     file.read_exact(&mut buf)
         .with_context(|| "reading onelf dictionary".to_string())?;
     Ok(Some(buf))
@@ -78,21 +116,40 @@ fn read_dict(file: &mut File, footer: &Footer) -> Result<Option<Vec<u8>>> {
 
 /// Decompresses a single file entry from the payload section.
 ///
-/// Every block is capped at its recorded `original_size`, so a malformed or
-/// hostile block cannot expand without bound.
+/// The entry's total size is checked against [`MAX_RESOURCE_SIZE`] and every
+/// block against the file before anything is allocated, so a malformed or
+/// hostile entry cannot claim more memory than it is worth.
 fn decompress_entry(
     file: &mut File,
     footer: &Footer,
     entry: &Entry,
     dict: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
-    let mut result = Vec::new();
+    let file_size = file_size(file)?;
+    let total = entry
+        .blocks
+        .iter()
+        .map(|block| {
+            if footer.is_stored() {
+                block.compressed_size
+            } else {
+                block.original_size
+            }
+        })
+        .try_fold(0u64, u64::checked_add)
+        .filter(|total| *total <= MAX_RESOURCE_SIZE)
+        .ok_or_else(|| invalid("onelf resource is too large"))?;
+
+    let mut result = Vec::with_capacity(total as usize);
     for block in &entry.blocks {
-        file.seek(SeekFrom::Start(
-            footer.payload_offset + block.payload_offset,
-        ))
-        .with_context(|| "seeking to onelf payload block".to_string())?;
-        let mut compressed = vec![0u8; block.compressed_size as usize];
+        let offset = footer
+            .payload_offset
+            .checked_add(block.payload_offset)
+            .ok_or_else(|| invalid("onelf payload block lies outside the file"))?;
+        let compressed_len = span(offset, block.compressed_size, file_size, "payload block")?;
+        file.seek(SeekFrom::Start(offset))
+            .with_context(|| "seeking to onelf payload block".to_string())?;
+        let mut compressed = vec![0u8; compressed_len];
         file.read_exact(&mut compressed)
             .with_context(|| "reading onelf payload block".to_string())?;
 
@@ -248,4 +305,125 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write as _;
+
+    use onelf_format::{Block, Flags};
+
+    use super::*;
+
+    const BODY: usize = 64;
+
+    fn footer() -> Footer {
+        Footer {
+            format_version: 1,
+            flags: Flags::from_bits_retain(0),
+            manifest_offset: 0,
+            manifest_compressed: 8,
+            manifest_original: 8,
+            payload_offset: 0,
+            payload_size: 0,
+            dict_offset: 0,
+            dict_size: 0,
+            manifest_checksum: [0; 4],
+        }
+    }
+
+    /// A file of `BODY` zero bytes followed by `footer`.
+    fn onelf_file(footer: &Footer) -> File {
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&[0; BODY]).unwrap();
+        footer.write_to(&mut file).unwrap();
+        file
+    }
+
+    fn entry(blocks: Vec<Block>) -> Entry {
+        Entry {
+            kind: EntryKind::File,
+            parent: u32::MAX,
+            name: 0,
+            mode: 0o644,
+            mtime_secs: 0,
+            mtime_nsec: 0,
+            content_hash: [0; 32],
+            blocks,
+            symlink_target: 0,
+        }
+    }
+
+    fn block(payload_offset: u64, compressed_size: u64, original_size: u64) -> Block {
+        Block {
+            payload_offset,
+            compressed_size,
+            original_size,
+            content_hash: [0; 32],
+        }
+    }
+
+    fn message(err: PackageError) -> String {
+        err.to_string()
+    }
+
+    #[test]
+    fn a_manifest_reaching_past_the_file_is_refused() {
+        for (offset, compressed) in [(0, u64::MAX), (u64::MAX, 1), (BODY as u64, 1 << 40)] {
+            let footer = Footer {
+                manifest_offset: offset,
+                manifest_compressed: compressed,
+                ..footer()
+            };
+            let err = read_footer_and_manifest(&mut onelf_file(&footer)).unwrap_err();
+            assert!(
+                message(err).contains("outside the file"),
+                "{offset} {compressed}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_oversized_manifest_is_refused() {
+        let footer = Footer {
+            manifest_original: 1 << 40,
+            ..footer()
+        };
+        let err = read_footer_and_manifest(&mut onelf_file(&footer)).unwrap_err();
+        assert!(message(err).contains("too large"));
+    }
+
+    #[test]
+    fn a_dictionary_reaching_past_the_file_is_refused() {
+        let footer = Footer {
+            dict_offset: BODY as u64,
+            dict_size: u32::MAX,
+            ..footer()
+        };
+        let err = read_dict(&mut onelf_file(&footer), &footer).unwrap_err();
+        assert!(message(err).contains("outside the file"));
+    }
+
+    #[test]
+    fn a_block_reaching_past_the_file_is_refused() {
+        let footer = footer();
+        let mut file = onelf_file(&footer);
+        for blocks in [vec![block(0, 1 << 40, 16)], vec![block(u64::MAX, 1, 16)]] {
+            let err = decompress_entry(&mut file, &footer, &entry(blocks), None).unwrap_err();
+            assert!(message(err).contains("outside the file"));
+        }
+    }
+
+    #[test]
+    fn an_oversized_resource_is_refused_before_reading() {
+        let footer = footer();
+        let mut file = onelf_file(&footer);
+        for blocks in [
+            vec![block(0, 8, 1 << 40)],
+            vec![block(0, 8, u64::MAX), block(0, 8, u64::MAX)],
+        ] {
+            let err = decompress_entry(&mut file, &footer, &entry(blocks), None).unwrap_err();
+            assert!(message(err).contains("too large"));
+        }
+    }
 }
