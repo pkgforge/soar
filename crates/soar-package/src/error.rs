@@ -29,9 +29,13 @@ pub enum PackageError {
     #[diagnostic(code(soar_package::appimage))]
     AppImageError(#[from] squishy::error::SquishyError),
 
-    #[error("Configuration error: {0}")]
-    #[diagnostic(code(soar_package::config))]
-    ConfigError(String),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Config(#[from] soar_config::error::ConfigError),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    FileSystem(#[from] soar_utils::error::FileSystemError),
 
     #[error("{0}")]
     #[diagnostic(code(soar_package::custom))]
@@ -63,14 +67,39 @@ impl<T> ErrorContext<T> for std::io::Result<T> {
     }
 }
 
-impl From<soar_config::error::ConfigError> for PackageError {
-    fn from(err: soar_config::error::ConfigError) -> Self {
-        PackageError::ConfigError(err.to_string())
-    }
-}
+#[cfg(test)]
+mod tests {
+    use std::error::Error as _;
 
-impl From<soar_utils::error::FileSystemError> for PackageError {
-    fn from(err: soar_utils::error::FileSystemError) -> Self {
-        PackageError::Custom(err.to_string())
+    use super::*;
+
+    #[test]
+    fn a_filesystem_error_keeps_its_cause_and_help() {
+        let err = PackageError::from(soar_utils::error::FileSystemError::ReadFile {
+            path: "/x/y".into(),
+            source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        });
+
+        assert_eq!(err.to_string(), "Failed to read file '/x/y'");
+        assert_eq!(
+            err.source().map(ToString::to_string).as_deref(),
+            Some("permission denied")
+        );
+        assert!(err.help().is_some());
+        assert_eq!(
+            err.code().map(|code| code.to_string()).as_deref(),
+            Some("soar_utils::fs::read_file")
+        );
+    }
+
+    #[test]
+    fn a_config_error_keeps_its_own_diagnostic() {
+        let err = PackageError::from(soar_config::error::ConfigError::Custom("bad".into()));
+
+        assert_eq!(err.to_string(), "bad");
+        assert_eq!(
+            err.code().map(|code| code.to_string()).as_deref(),
+            Some("soar_config::custom")
+        );
     }
 }

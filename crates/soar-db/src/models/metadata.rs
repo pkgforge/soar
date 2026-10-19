@@ -35,10 +35,6 @@ pub struct Package {
     pub build_id: Option<String>,
     pub build_date: Option<String>,
     pub build_action: Option<String>,
-    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
-    pub build_script: Option<String>,
-    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
-    pub build_log: Option<String>,
     pub provides: Option<Vec<PackageProvide>>,
     pub snapshots: Option<Vec<String>>,
     pub replaces: Option<Vec<String>>,
@@ -80,8 +76,6 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         Option<String>,
         Option<String>,
         Option<String>,
-        Option<String>,
-        Option<String>,
         Option<Value>,
         Option<Value>,
         Option<Value>,
@@ -92,7 +86,6 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
         Option<Value>,
     );
 
-    #[allow(deprecated)]
     fn build(row: Self::Row) -> diesel::deserialize::Result<Self> {
         Ok(Self {
             id: row.0,
@@ -121,16 +114,14 @@ impl Queryable<packages::SqlType, Sqlite> for Package {
             build_id: row.23,
             build_date: row.24,
             build_action: row.25,
-            build_script: row.26,
-            build_log: row.27,
-            provides: json_vec!(row.28),
-            snapshots: json_vec!(row.29),
-            replaces: json_vec!(row.30),
-            soar_syms: row.31,
-            desktop_integration: row.32,
-            portable: row.33,
-            extra: json_vec!(row.34),
-            files: json_vec!(row.35),
+            provides: json_vec!(row.26),
+            snapshots: json_vec!(row.27),
+            replaces: json_vec!(row.28),
+            soar_syms: row.29,
+            desktop_integration: row.30,
+            portable: row.31,
+            extra: json_vec!(row.32),
+            files: json_vec!(row.33),
         })
     }
 }
@@ -222,10 +213,6 @@ pub struct NewPackage<'a> {
     pub build_id: Option<&'a str>,
     pub build_date: Option<&'a str>,
     pub build_action: Option<&'a str>,
-    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
-    pub build_script: Option<&'a str>,
-    #[deprecated(note = "no repository publishes build logs or scripts anymore")]
-    pub build_log: Option<&'a str>,
     pub provides: Option<Value>,
     pub snapshots: Option<Value>,
     pub replaces: Option<Value>,

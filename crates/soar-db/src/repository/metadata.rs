@@ -631,7 +631,6 @@ impl MetadataRepository {
     /// Inserts a single remote package.
     /// Returns whether the package was accepted; rejected entries are skipped
     /// rather than failing the whole import.
-    #[allow(deprecated)]
     fn insert_remote_package(
         conn: &mut SqliteConnection,
         package: &RemotePackage,
@@ -706,8 +705,6 @@ impl MetadataRepository {
             build_id: package.build_id.as_deref(),
             build_date: package.build_date.as_deref(),
             build_action: package.build_action.as_deref(),
-            build_script: package.build_script.as_deref(),
-            build_log: package.build_log.as_deref(),
             provides: Some(json!(provides)),
             snapshots: Some(json!(package.snapshots)),
             replaces: Some(json!(package.replaces)),
