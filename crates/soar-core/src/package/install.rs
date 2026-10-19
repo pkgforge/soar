@@ -62,8 +62,26 @@ async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()>
             continue;
         }
         let dest = install_dir.join(&e.to);
+        // One left by an earlier attempt is held to the same rules as a fresh
+        // download: kept only if it still matches its hash, or is not a
+        // program when it has none.
         if dest.exists() {
-            continue;
+            let trusted = match &e.blake3 {
+                Some(sum) => calculate_checksum(&dest).is_ok_and(|a| a.eq_ignore_ascii_case(sum)),
+                None => !is_elf(&dest),
+            };
+            if trusted {
+                continue;
+            }
+            fs::remove_file(&dest)
+                .with_context(|| format!("removing unverified side file {}", dest.display()))?;
+            if e.blake3.is_none() {
+                warn!(
+                    file = e.to,
+                    "side file is a program with no published hash; not installed"
+                );
+                continue;
+            }
         }
         let mut dl = Download::new(&e.url)
             .output(dest.to_string_lossy())
@@ -75,8 +93,20 @@ async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()>
             Ok(_) => {
                 // A side file is usually a licence, but it can be a binary an
                 // upstream ships separately, and that has to be runnable to be
-                // worth linking.
+                // worth linking. Only one checked against a published hash is
+                // trusted to run; an unchecked one is not kept at all, since
+                // linking would make it runnable again.
                 if is_elf(&dest) {
+                    if e.blake3.is_none() {
+                        fs::remove_file(&dest).with_context(|| {
+                            format!("removing unverified side file {}", dest.display())
+                        })?;
+                        warn!(
+                            file = e.to,
+                            "side file is a program with no published hash; not installed"
+                        );
+                        continue;
+                    }
                     fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755)).ok();
                 }
                 debug!(file = %dest.display(), "installed side file")
@@ -1578,10 +1608,68 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use soar_db::models::types::PackageFile;
+    use soar_db::models::types::{PackageExtra, PackageFile};
     use tempfile::tempdir;
 
-    use super::{apply_file_layout, clear_for_promotion, relative_to, resolve_source};
+    use super::{
+        Package, apply_file_layout, calculate_checksum, clear_for_promotion, install_extras,
+        relative_to, resolve_source,
+    };
+
+    /// Runs `install_extras`, which never waits on anything, to completion.
+    fn install_side_files(package: &Package, dir: &Path) {
+        let future = std::pin::pin!(install_extras(package, dir));
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        match std::future::Future::poll(future, &mut cx) {
+            std::task::Poll::Ready(result) => result.unwrap(),
+            std::task::Poll::Pending => panic!("install_extras waited"),
+        }
+    }
+
+    /// A package with one side file at `to`, served from nowhere, so any
+    /// download attempt fails.
+    fn with_side_file(to: &str, blake3: Option<String>) -> Package {
+        Package {
+            extra: Some(vec![PackageExtra {
+                url: "http://127.0.0.1:9/unreachable".into(),
+                to: to.into(),
+                blake3,
+                sha256: None,
+            }]),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_leftover_program_without_a_hash_is_removed() {
+        let dir = tempdir().unwrap();
+        let program = dir.path().join("helper");
+        fs::copy(std::env::current_exe().unwrap(), &program).unwrap();
+        fs::write(dir.path().join("LICENSE"), "text").unwrap();
+
+        install_side_files(&with_side_file("helper", None), dir.path());
+        install_side_files(&with_side_file("LICENSE", None), dir.path());
+
+        assert!(!program.exists());
+        assert!(dir.path().join("LICENSE").exists());
+    }
+
+    #[test]
+    fn a_leftover_side_file_is_kept_only_while_it_matches_its_hash() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("helper");
+        fs::copy(std::env::current_exe().unwrap(), &file).unwrap();
+        let sum = calculate_checksum(&file).unwrap();
+
+        install_side_files(
+            &with_side_file("helper", Some(sum.to_uppercase())),
+            dir.path(),
+        );
+        assert!(file.exists(), "a matching file was dropped");
+
+        install_side_files(&with_side_file("helper", Some("0".repeat(64))), dir.path());
+        assert!(!file.exists(), "a mismatched file was kept");
+    }
 
     #[test]
     fn alias_beside_its_target_is_just_the_name() {
