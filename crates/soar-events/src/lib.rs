@@ -14,7 +14,123 @@ pub type EventSinkHandle = Arc<dyn EventSink>;
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::{self, BufWriter, Write},
+        sync::Mutex,
+    };
+
     use super::*;
+
+    /// A writer whose bytes stay readable after the sink takes it.
+    #[derive(Clone, Default)]
+    struct Shared(Arc<Mutex<Vec<u8>>>);
+
+    impl Shared {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    impl Write for Shared {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn json_lines_wire_format() {
+        let out = Shared::default();
+        let sink = JsonLinesSink::new(out.clone());
+        sink.emit(SoarEvent::DownloadProgress {
+            op_id: 1,
+            pkg_name: "a".into(),
+            current: 5,
+            total: 10,
+        });
+        sink.emit(SoarEvent::Installing {
+            op_id: 1,
+            pkg_name: "a".into(),
+            stage: InstallStage::Extracting,
+        });
+        sink.emit(SoarEvent::Verifying {
+            op_id: 1,
+            pkg_name: "a".into(),
+            stage: VerifyStage::Failed("bad".into()),
+        });
+        sink.emit(SoarEvent::Removing {
+            op_id: 2,
+            pkg_name: "b".into(),
+            stage: RemoveStage::Complete {
+                size_freed: Some(3),
+            },
+        });
+        sink.emit(SoarEvent::Log {
+            level: LogLevel::Warning,
+            message: "m".into(),
+        });
+
+        assert_eq!(
+            out.text(),
+            concat!(
+                r#"{"type":"download_progress","op_id":1,"pkg_name":"a","current":5,"total":10}"#,
+                "\n",
+                r#"{"type":"installing","op_id":1,"pkg_name":"a","stage":"extracting"}"#,
+                "\n",
+                r#"{"type":"verifying","op_id":1,"pkg_name":"a","stage":{"failed":"bad"}}"#,
+                "\n",
+                r#"{"type":"removing","op_id":2,"pkg_name":"b","stage":{"complete":{"size_freed":3}}}"#,
+                "\n",
+                r#"{"type":"log","level":"warning","message":"m"}"#,
+                "\n",
+            )
+        );
+    }
+
+    #[test]
+    fn json_lines_are_flushed_per_event() {
+        let out = Shared::default();
+        let sink = JsonLinesSink::new(BufWriter::new(out.clone()));
+        sink.emit(SoarEvent::OperationComplete {
+            op_id: 1,
+            pkg_name: "a".into(),
+        });
+        assert!(out.text().ends_with('\n'), "event still buffered");
+    }
+
+    #[test]
+    fn json_lines_stay_whole_across_threads() {
+        let out = Shared::default();
+        let sink = Arc::new(JsonLinesSink::new(out.clone()));
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                let sink = sink.clone();
+                std::thread::spawn(move || {
+                    for i in 0..200 {
+                        sink.emit(SoarEvent::Log {
+                            level: LogLevel::Info,
+                            message: format!("{t}-{i}"),
+                        });
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+
+        let text = out.text();
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(lines.len(), 8 * 200);
+        for line in lines {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_eq!(value["type"], "log");
+        }
+    }
 
     #[test]
     fn test_null_sink() {

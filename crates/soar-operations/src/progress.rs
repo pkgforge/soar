@@ -1,21 +1,40 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use soar_dl::types::Progress;
 use soar_events::{EventSinkHandle, OperationId, SoarEvent};
 
+/// The shortest gap between two `DownloadProgress` events of one operation.
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+
 /// Creates a soar-dl progress callback that bridges to SoarEvent emissions.
 ///
 /// The returned closure can be passed to `PackageInstaller::new()` as the
 /// `progress_callback` parameter.
+///
+/// soar-dl reports every read, so chunk progress is passed on at most once
+/// per [`PROGRESS_INTERVAL`], plus the chunk that completes the download.
 pub fn create_progress_bridge(
     events: EventSinkHandle,
     op_id: OperationId,
     pkg_name: String,
 ) -> Arc<dyn Fn(Progress) + Send + Sync> {
+    let last_chunk = Mutex::new(None::<Instant>);
     Arc::new(move |progress| {
+        if let Progress::Chunk {
+            current,
+            total,
+        } = progress
+            && !(total > 0 && current >= total)
+            && !due(&last_chunk)
+        {
+            return;
+        }
         let event = match progress {
             Progress::Preparing => {
                 SoarEvent::DownloadPreparing {
@@ -84,6 +103,17 @@ pub fn create_progress_bridge(
         };
         events.emit(event);
     })
+}
+
+/// Whether a chunk event is due, recording now as the last one if it is.
+fn due(last: &Mutex<Option<Instant>>) -> bool {
+    let mut last = last.lock().unwrap_or_else(|e| e.into_inner());
+    let now = Instant::now();
+    if last.is_some_and(|at| now.duration_since(at) < PROGRESS_INTERVAL) {
+        return false;
+    }
+    *last = Some(now);
+    true
 }
 
 /// Generates a unique operation ID.
@@ -179,5 +209,49 @@ mod tests {
         assert!(matches!(&events[5], SoarEvent::DownloadRetry { .. }));
         assert!(matches!(&events[6], SoarEvent::DownloadAborted { .. }));
         assert!(matches!(&events[7], SoarEvent::DownloadRecovered { .. }));
+    }
+
+    fn chunk_positions(collector: &CollectorSink) -> Vec<u64> {
+        collector
+            .events()
+            .iter()
+            .filter_map(|event| {
+                match event {
+                    SoarEvent::DownloadProgress {
+                        current, ..
+                    } => Some(*current),
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn chunk_progress_is_throttled() {
+        let collector = Arc::new(CollectorSink::default());
+        let bridge = create_progress_bridge(collector.clone(), 1, "pkg".into());
+
+        for current in 1..=1000 {
+            bridge(Progress::Chunk {
+                current,
+                total: 1000,
+            });
+        }
+        assert_eq!(
+            chunk_positions(&collector),
+            [1, 1000],
+            "only the first chunk and the one that completes the download"
+        );
+
+        std::thread::sleep(PROGRESS_INTERVAL);
+        bridge(Progress::Chunk {
+            current: 1,
+            total: 0,
+        });
+        bridge(Progress::Chunk {
+            current: 2,
+            total: 0,
+        });
+        assert_eq!(chunk_positions(&collector), [1, 1000, 1]);
     }
 }
