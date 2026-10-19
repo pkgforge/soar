@@ -392,6 +392,39 @@ mod tests {
     }
 
     #[test]
+    fn upgrading_metadata_drops_build_fields_and_keeps_packages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("repo.db");
+        {
+            // The schema as it stood before the build fields were dropped.
+            let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+            for _ in 0..5 {
+                conn.run_next_migration(METADATA_MIGRATIONS).unwrap();
+            }
+            sql_query(
+                "INSERT INTO packages (pkg_name, version, download_url, build_log) \
+                 VALUES ('p', '1', 'https://x', 'https://log')",
+            )
+            .execute(&mut conn)
+            .unwrap();
+        }
+
+        let mut db = DbConnection::open(&path, DbType::Metadata).unwrap();
+        let conn = db.conn();
+        let packages = sql_query("SELECT count(*) AS n FROM packages")
+            .get_result::<Count>(conn)
+            .unwrap();
+        assert_eq!(packages.n, 1, "upgrading lost a package");
+        let build_columns = sql_query(
+            "SELECT count(*) AS n FROM pragma_table_info('packages') \
+             WHERE name IN ('build_script', 'build_log')",
+        )
+        .get_result::<Count>(conn)
+        .unwrap();
+        assert_eq!(build_columns.n, 0);
+    }
+
+    #[test]
     fn readonly_opens_a_path_with_uri_characters() {
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("a?b#c%d");

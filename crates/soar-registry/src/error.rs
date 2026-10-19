@@ -69,14 +69,6 @@ pub enum RegistryError {
     )]
     MetadataTooShort,
 
-    #[error("ETag not found in metadata response")]
-    #[diagnostic(
-        code(soar_registry::missing_etag),
-        help("The server did not return an ETag header")
-    )]
-    #[deprecated(note = "a response without an ETag is accepted and refetched next sync")]
-    MissingEtag,
-
     #[error("Insecure repository URL: {0}")]
     #[diagnostic(
         code(soar_registry::insecure_url),

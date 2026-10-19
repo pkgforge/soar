@@ -42,8 +42,6 @@ diesel::table! {
         build_id -> Nullable<Text>,
         build_date -> Nullable<Text>,
         build_action -> Nullable<Text>,
-        build_script -> Nullable<Text>,
-        build_log -> Nullable<Text>,
         provides -> Nullable<Jsonb>,
         snapshots -> Nullable<Jsonb>,
         replaces -> Nullable<Jsonb>,

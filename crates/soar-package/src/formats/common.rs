@@ -421,8 +421,7 @@ pub fn create_portable_link<P: AsRef<Path>>(
             "refusing to create portable link with unsafe package name: {pkg_name}"
         )));
     }
-    let base_dir = env::current_dir()
-        .map_err(|_| PackageError::Custom("Error retrieving current directory".into()))?;
+    let base_dir = env::current_dir().with_context(|| "retrieving current directory".into())?;
     let portable_path = portable_path.as_ref();
     let portable_path = if portable_path.is_absolute() {
         portable_path
