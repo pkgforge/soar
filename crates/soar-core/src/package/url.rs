@@ -49,8 +49,7 @@ impl UrlPackage {
     /// - `ghcr.io/org/repo@sha256:digest`
     /// - `ghcr.io/org/repo` (implies :latest)
     pub fn is_ghcr(input: &str) -> bool {
-        let input = input.trim().to_lowercase();
-        input.starts_with("ghcr.io/")
+        strip_ghcr_prefix(input.trim()).is_some()
     }
 
     /// Check if input is either a URL or GHCR reference.
@@ -128,17 +127,12 @@ impl UrlPackage {
     ) -> SoarResult<Self> {
         let reference = reference.trim();
 
-        if !Self::is_ghcr(reference) {
+        let Some(path) = strip_ghcr_prefix(reference) else {
             return Err(SoarError::Custom(format!(
                 "Invalid GHCR reference: {}",
                 reference
             )));
-        }
-
-        let path = reference
-            .strip_prefix("ghcr.io/")
-            .or_else(|| reference.strip_prefix("GHCR.IO/"))
-            .unwrap_or(reference);
+        };
 
         let (package, tag) = if let Some((pkg, digest)) = path.split_once('@') {
             (pkg, digest.to_string())
@@ -165,7 +159,7 @@ impl UrlPackage {
         Self::validate_names(&pkg_name, pkg_id.as_deref(), pkg_family.as_deref())?;
 
         Ok(Self {
-            url: reference.to_string(),
+            url: format!("ghcr.io/{path}"),
             pkg_id,
             pkg_family,
             pkg_name,
@@ -292,6 +286,15 @@ impl UrlPackage {
             }
         }
     }
+}
+
+/// The rest of `input` after a `ghcr.io/` prefix in any letter case.
+fn strip_ghcr_prefix(input: &str) -> Option<&str> {
+    const PREFIX: &str = "ghcr.io/";
+    input
+        .get(..PREFIX.len())
+        .filter(|p| p.eq_ignore_ascii_case(PREFIX))
+        .map(|_| &input[PREFIX.len()..])
 }
 
 /// Extract the family from a URL: host plus the first two path segments.
@@ -683,6 +686,18 @@ mod tests {
         assert_eq!(pkg.version, "0.8.1"); // 'v' prefix stripped
         assert_eq!(pkg.pkg_family.as_deref(), Some("pkgforge.soar"));
         assert!(pkg.is_ghcr);
+    }
+
+    #[test]
+    fn ghcr_prefix_is_case_insensitive() {
+        let pkg =
+            UrlPackage::from_ghcr("Ghcr.Io/pkgforge/soar:v0.8.1", None, None, None, None).unwrap();
+
+        assert_eq!(pkg.url, "ghcr.io/pkgforge/soar:v0.8.1");
+        assert_eq!(pkg.pkg_name, "soar");
+        assert_eq!(pkg.pkg_family.as_deref(), Some("pkgforge.soar"));
+        assert!(UrlPackage::is_ghcr("gHcR.iO/org/repo"));
+        assert!(!UrlPackage::is_ghcr("ghcr.i"));
     }
 
     #[test]

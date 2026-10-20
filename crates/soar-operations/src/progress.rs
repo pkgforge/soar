@@ -18,7 +18,7 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 /// `progress_callback` parameter.
 ///
 /// soar-dl reports every read, so chunk progress is passed on at most once
-/// per [`PROGRESS_INTERVAL`], plus the chunk that completes the download.
+/// per `PROGRESS_INTERVAL`, plus the chunk that completes the download.
 pub fn create_progress_bridge(
     events: EventSinkHandle,
     op_id: OperationId,

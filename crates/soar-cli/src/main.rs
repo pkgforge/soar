@@ -13,7 +13,7 @@ use apply::apply_packages;
 use clap::{CommandFactory, Parser};
 use cli::Args;
 use download::{DownloadContext, create_regex_patterns, download};
-use health::{display_health, remove_broken_packages};
+use health::{display_health, remove_broken_packages, remove_broken_symlinks};
 use indicatif::ProgressBar;
 use install::install_packages;
 use json2db::json_to_db;
@@ -29,7 +29,7 @@ use soar_config::config::{
 use soar_core::{
     SoarResult,
     error::{ErrorContext, SoarError},
-    utils::{cleanup_cache, remove_broken_symlinks, setup_required_paths},
+    utils::{cleanup_cache, setup_required_paths},
 };
 use soar_dl::http_client::configure_http_client;
 use soar_events::EventSinkHandle;
@@ -673,7 +673,7 @@ async fn handle_cli() -> SoarResult<()> {
                         cleanup_cache()?;
                     }
                     if unspecified || broken_symlinks {
-                        remove_broken_symlinks()?;
+                        remove_broken_symlinks(&ctx)?;
                     }
                     if unspecified || broken {
                         remove_broken_packages(&ctx).await?;

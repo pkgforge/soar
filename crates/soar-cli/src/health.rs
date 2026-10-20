@@ -99,6 +99,19 @@ pub async fn display_health(ctx: &SoarContext) -> SoarResult<()> {
     Ok(())
 }
 
+pub fn remove_broken_symlinks(ctx: &SoarContext) -> SoarResult<()> {
+    let removed = health::remove_broken_symlinks(ctx)?;
+
+    if removed.is_empty() {
+        info!("No broken symlinks found.");
+    }
+    for path in &removed {
+        info!("Removed broken symlink: {}", path.display());
+    }
+
+    Ok(())
+}
+
 pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
     let report = health::remove_broken_packages(ctx).await?;
 
