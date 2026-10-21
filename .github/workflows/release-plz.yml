@@ -8,26 +8,47 @@ on:
 jobs:
   release-plz-release:
     name: Release-plz release
+    if: ${{ github.repository_owner == 'pkgforge' }}
     runs-on: ubuntu-latest
     permissions:
+      # Starts release.yaml for the binaries.
+      actions: write
       contents: write
+      pull-requests: read
+      # crates.io trusted publishing.
       id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Run release-plz
+        id: release-plz
         uses: release-plz/action@v0.5
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # A release created with GITHUB_TOKEN triggers no workflow, but a
+      # dispatch does. It runs as its own "soar release", which the AUR
+      # workflow waits on.
+      - name: Start the binary release
+        if: ${{ steps.release-plz.outputs.releases_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASES: ${{ steps.release-plz.outputs.releases }}
+        run: |
+          tag=$(jq -r '.[] | select(.package_name == "soar-cli") | .tag' <<< "$RELEASES")
+          if [ -n "$tag" ]; then
+            gh workflow run release.yaml --repo "$GITHUB_REPOSITORY" -f tag="$tag"
+          fi
 
   release-plz-pr:
     name: Release-plz PR
+    if: ${{ github.repository_owner == 'pkgforge' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -40,7 +61,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Run release-plz
@@ -48,4 +68,4 @@ jobs:
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
