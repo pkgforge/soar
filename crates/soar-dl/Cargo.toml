@@ -27,7 +27,7 @@ tracing = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
 xattr = { workspace = true }
-zsync-rs = "0.2.1"
+zsync-rs = "0.3.0"
 
 [dev-dependencies]
 tempfile = { workspace = true }

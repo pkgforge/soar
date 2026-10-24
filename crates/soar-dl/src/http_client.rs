@@ -93,6 +93,7 @@ impl StallTransport {
             NextTimeout {
                 after: stall,
                 reason: Timeout::RecvBody,
+                ..timeout
             }
         } else {
             timeout
