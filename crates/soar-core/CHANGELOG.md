@@ -1,4 +1,31 @@
 
+## [0.18.0](https://github.com/pkgforge/soar/compare/soar-core-v0.17.4...soar-core-v0.18.0) - 2026-10-27
+
+### ⛰️  Features
+
+- *(install)* Integrate local files in place with --integrate - ([8f14c0b](https://github.com/pkgforge/soar/commit/8f14c0b09526a53ee8fde549809adc986922ec85))
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(config)* Isolate system-mode paths behind SOAR_SYSTEM_* ([#212](https://github.com/pkgforge/soar/pull/212)) - ([d079157](https://github.com/pkgforge/soar/commit/d079157517c4dd0418a62e103d721067e8447743))
+- *(dl)* Bound stalls and harden resume, OCI and output writes ([#216](https://github.com/pkgforge/soar/pull/216)) - ([8229155](https://github.com/pkgforge/soar/commit/822915557a248cb2c96f903044ae29509a501dff))
+- *(fs)* Contain symlinks, traversal, and link ownership ([#215](https://github.com/pkgforge/soar/pull/215)) - ([879974c](https://github.com/pkgforge/soar/commit/879974c679cbf17301a05016872f3c70713249dc))
+- *(install)* Drop unhashed side programs, warn on unpinned URLs ([#224](https://github.com/pkgforge/soar/pull/224)) - ([2d3fa80](https://github.com/pkgforge/soar/commit/2d3fa80ca7f9252ed1978169767c7d95fae49a1f))
+- *(registry)* Replace metadata atomically and harden sync ([#223](https://github.com/pkgforge/soar/pull/223)) - ([aca7793](https://github.com/pkgforge/soar/commit/aca7793556a823237adb41f7a74566b1c1941d57))
+- *(sandbox)* Enforce prebuilt ruleset and fail closed ([#214](https://github.com/pkgforge/soar/pull/214)) - ([dfe7a08](https://github.com/pkgforge/soar/commit/dfe7a08a35a1114425795f0e5008190e03b1c7e4))
+- Harden variant switching, symlink cleanup and path checks ([#230](https://github.com/pkgforge/soar/pull/230)) - ([2c1a148](https://github.com/pkgforge/soar/commit/2c1a148f0d160eaebbca6fa8c01c1d9be99b0462))
+- Name the host when a request lookup fails - ([eb6e0ab](https://github.com/pkgforge/soar/commit/eb6e0ab9b20e9837b03a1156092894d07602418a))
+
+### 🚜 Refactor
+
+- [**breaking**] Drop build log fields and keep typed package errors ([#229](https://github.com/pkgforge/soar/pull/229)) - ([e5fce6d](https://github.com/pkgforge/soar/commit/e5fce6d87eb4df97ddedfa7c8edc0a4a2347a166))
+- Deprecate build_log and build_script fields ([#221](https://github.com/pkgforge/soar/pull/221)) - ([6770ba3](https://github.com/pkgforge/soar/commit/6770ba3624687237169d1d8d1e20b0e8a6a299a1))
+
+### ⚙️ Miscellaneous Tasks
+
+- Move to edition 2024 and upgrade dependencies ([#217](https://github.com/pkgforge/soar/pull/217)) - ([8942cb3](https://github.com/pkgforge/soar/commit/8942cb309629c28b3e0d455c3f7c8698a364f067))
+
 ## [0.17.4](https://github.com/pkgforge/soar/compare/soar-core-v0.17.3...soar-core-v0.17.4) - 2026-09-05
 
 ### ⚙️ Miscellaneous Tasks

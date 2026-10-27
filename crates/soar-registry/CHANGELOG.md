@@ -1,4 +1,25 @@
 
+## [0.7.0](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.4...soar-registry-v0.7.0) - 2026-10-27
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(registry)* Replace metadata atomically and harden sync ([#223](https://github.com/pkgforge/soar/pull/223)) - ([aca7793](https://github.com/pkgforge/soar/commit/aca7793556a823237adb41f7a74566b1c1941d57))
+- *(sandbox)* Enforce prebuilt ruleset and fail closed ([#214](https://github.com/pkgforge/soar/pull/214)) - ([dfe7a08](https://github.com/pkgforge/soar/commit/dfe7a08a35a1114425795f0e5008190e03b1c7e4))
+- Name the host when a request lookup fails - ([eb6e0ab](https://github.com/pkgforge/soar/commit/eb6e0ab9b20e9837b03a1156092894d07602418a))
+
+### 🚜 Refactor
+
+- [**breaking**] Drop build log fields and keep typed package errors ([#229](https://github.com/pkgforge/soar/pull/229)) - ([e5fce6d](https://github.com/pkgforge/soar/commit/e5fce6d87eb4df97ddedfa7c8edc0a4a2347a166))
+- Deprecate build_log and build_script fields ([#221](https://github.com/pkgforge/soar/pull/221)) - ([6770ba3](https://github.com/pkgforge/soar/commit/6770ba3624687237169d1d8d1e20b0e8a6a299a1))
+
+### ⚙️ Miscellaneous Tasks
+
+- Move to edition 2024 and upgrade dependencies ([#217](https://github.com/pkgforge/soar/pull/217)) - ([8942cb3](https://github.com/pkgforge/soar/commit/8942cb309629c28b3e0d455c3f7c8698a364f067))
+
 ## [0.6.4](https://github.com/pkgforge/soar/compare/soar-registry-v0.6.3...soar-registry-v0.6.4) - 2026-09-05
 
 ### ⚙️ Miscellaneous Tasks
