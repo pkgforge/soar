@@ -1,4 +1,20 @@
 
+## [0.13.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.12.2...soar-dl-v0.13.0) - 2026-10-27
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(dl)* Bound stalls and harden resume, OCI and output writes ([#216](https://github.com/pkgforge/soar/pull/216)) - ([8229155](https://github.com/pkgforge/soar/commit/822915557a248cb2c96f903044ae29509a501dff))
+- *(events)* Throttle download progress and test the JSON stream ([#227](https://github.com/pkgforge/soar/pull/227)) - ([5f0b825](https://github.com/pkgforge/soar/commit/5f0b8256f19ac0b97eb5ff1af7a5950b54cda2eb))
+- Name the host when a request lookup fails - ([eb6e0ab](https://github.com/pkgforge/soar/commit/eb6e0ab9b20e9837b03a1156092894d07602418a))
+
+### ⚙️ Miscellaneous Tasks
+
+- Move to edition 2024 and upgrade dependencies ([#217](https://github.com/pkgforge/soar/pull/217)) - ([8942cb3](https://github.com/pkgforge/soar/commit/8942cb309629c28b3e0d455c3f7c8698a364f067))
+
 ## [0.12.2](https://github.com/pkgforge/soar/compare/soar-dl-v0.12.1...soar-dl-v0.12.2) - 2026-08-31
 
 ### ⛰️  Features

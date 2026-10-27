@@ -1,4 +1,19 @@
 
+## [0.14.0](https://github.com/pkgforge/soar/compare/soar-config-v0.13.0...soar-config-v0.14.0) - 2026-10-27
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(cli)* Harden prompts, flags, self-update, and config checks ([#218](https://github.com/pkgforge/soar/pull/218)) - ([235c424](https://github.com/pkgforge/soar/commit/235c4242683200a3df900984fedd81499b08a740))
+- *(config)* Isolate system-mode paths behind SOAR_SYSTEM_* ([#212](https://github.com/pkgforge/soar/pull/212)) - ([d079157](https://github.com/pkgforge/soar/commit/d079157517c4dd0418a62e103d721067e8447743))
+
+### ⚙️ Miscellaneous Tasks
+
+- Move to edition 2024 and upgrade dependencies ([#217](https://github.com/pkgforge/soar/pull/217)) - ([8942cb3](https://github.com/pkgforge/soar/commit/8942cb309629c28b3e0d455c3f7c8698a364f067))
+
 ## [0.13.0](https://github.com/pkgforge/soar/compare/soar-config-v0.12.2...soar-config-v0.13.0) - 2026-09-05
 
 ### ⛰️  Features

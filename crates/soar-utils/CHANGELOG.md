@@ -1,4 +1,19 @@
 
+## [0.6.0](https://github.com/pkgforge/soar/compare/soar-utils-v0.5.2...soar-utils-v0.6.0) - 2026-10-27
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(config)* Isolate system-mode paths behind SOAR_SYSTEM_* ([#212](https://github.com/pkgforge/soar/pull/212)) - ([d079157](https://github.com/pkgforge/soar/commit/d079157517c4dd0418a62e103d721067e8447743))
+- *(fs)* Contain symlinks, traversal, and link ownership ([#215](https://github.com/pkgforge/soar/pull/215)) - ([879974c](https://github.com/pkgforge/soar/commit/879974c679cbf17301a05016872f3c70713249dc))
+
+### ⚙️ Miscellaneous Tasks
+
+- Move to edition 2024 and upgrade dependencies ([#217](https://github.com/pkgforge/soar/pull/217)) - ([8942cb3](https://github.com/pkgforge/soar/commit/8942cb309629c28b3e0d455c3f7c8698a364f067))
+
 ## [0.5.2](https://github.com/pkgforge/soar/compare/soar-utils-v0.5.1...soar-utils-v0.5.2) - 2026-08-31
 
 ### 🐛 Bug Fixes

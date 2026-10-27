@@ -1,4 +1,23 @@
 
+## [0.7.0](https://github.com/pkgforge/soar/compare/soar-package-v0.6.0...soar-package-v0.7.0) - 2026-10-27
+
+### ⛰️  Features
+
+- Support codeberg, gitea and forgejo release sources ([#209](https://github.com/pkgforge/soar/pull/209)) - ([af71c58](https://github.com/pkgforge/soar/commit/af71c583140bc493f194d4fef04399de4327f0ff))
+
+### 🐛 Bug Fixes
+
+- *(fs)* Contain symlinks, traversal, and link ownership ([#215](https://github.com/pkgforge/soar/pull/215)) - ([879974c](https://github.com/pkgforge/soar/commit/879974c679cbf17301a05016872f3c70713249dc))
+- *(package)* Bound onelf reads and surface integration errors ([#226](https://github.com/pkgforge/soar/pull/226)) - ([56b21a5](https://github.com/pkgforge/soar/commit/56b21a5845c06b254c3aa92d56dae3576a186f47))
+
+### 🚜 Refactor
+
+- [**breaking**] Drop build log fields and keep typed package errors ([#229](https://github.com/pkgforge/soar/pull/229)) - ([e5fce6d](https://github.com/pkgforge/soar/commit/e5fce6d87eb4df97ddedfa7c8edc0a4a2347a166))
+
+### ⚙️ Miscellaneous Tasks
+
+- Move to edition 2024 and upgrade dependencies ([#217](https://github.com/pkgforge/soar/pull/217)) - ([8942cb3](https://github.com/pkgforge/soar/commit/8942cb309629c28b3e0d455c3f7c8698a364f067))
+
 ## [0.6.0](https://github.com/pkgforge/soar/compare/soar-package-v0.5.2...soar-package-v0.6.0) - 2026-09-05
 
 ### 🐛 Bug Fixes
