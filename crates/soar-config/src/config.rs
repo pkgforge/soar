@@ -75,6 +75,11 @@ pub struct Config {
     /// Default: 8
     pub ghcr_concurrency: Option<usize>,
 
+    /// Number of connections each download may open. More than one splits a
+    /// range-capable server's file into parallel segments.
+    /// Default: 8
+    pub download_concurrency: Option<usize>,
+
     /// Limits the number of results returned by a search.
     /// Default: 20
     pub search_limit: Option<usize>,
@@ -373,6 +378,7 @@ impl Config {
             parallel_limit: Some(4),
             search_limit: Some(20),
             ghcr_concurrency: Some(8),
+            download_concurrency: Some(8),
             cross_repo_updates: Some(false),
             install_patterns: Some(default_install_patterns()),
             completions: None,
@@ -463,6 +469,7 @@ impl Config {
             parallel_limit: Some(4),
             search_limit: Some(20),
             ghcr_concurrency: Some(8),
+            download_concurrency: Some(8),
             cross_repo_updates: Some(false),
             install_patterns: Some(default_install_patterns()),
             completions: None,
@@ -530,6 +537,7 @@ impl Config {
         }
 
         self.ghcr_concurrency.get_or_insert(8);
+        self.download_concurrency.get_or_insert(8);
         self.search_limit.get_or_insert(20);
         self.cross_repo_updates.get_or_insert(false);
 
@@ -538,6 +546,9 @@ impl Config {
         }
         if self.ghcr_concurrency == Some(0) {
             return Err(ConfigError::ZeroLimit("ghcr_concurrency"));
+        }
+        if self.download_concurrency == Some(0) {
+            return Err(ConfigError::ZeroLimit("download_concurrency"));
         }
         if self.search_limit == Some(0) {
             return Err(ConfigError::ZeroLimit("search_limit"));
@@ -839,6 +850,7 @@ mod tests {
         assert_eq!(config.parallel_limit, Some(4));
         assert_eq!(config.search_limit, Some(20));
         assert_eq!(config.ghcr_concurrency, Some(8));
+        assert_eq!(config.download_concurrency, Some(8));
         assert_eq!(config.cross_repo_updates, Some(false));
     }
 
@@ -955,11 +967,17 @@ mod tests {
 
     #[test]
     fn test_config_resolve_rejects_zero_limits() {
-        for field in ["parallel_limit", "ghcr_concurrency", "search_limit"] {
+        for field in [
+            "parallel_limit",
+            "ghcr_concurrency",
+            "download_concurrency",
+            "search_limit",
+        ] {
             let mut config = Config::default_config::<&str>(&[]);
             match field {
                 "parallel_limit" => config.parallel_limit = Some(0),
                 "ghcr_concurrency" => config.ghcr_concurrency = Some(0),
+                "download_concurrency" => config.download_concurrency = Some(0),
                 _ => config.search_limit = Some(0),
             }
             assert!(
@@ -1049,6 +1067,7 @@ mod tests {
     fn test_config_resolve_sets_defaults() {
         let mut config = Config::default_config::<&str>(&[]);
         config.ghcr_concurrency = None;
+        config.download_concurrency = None;
         config.search_limit = None;
         config.cross_repo_updates = None;
         config.install_patterns = None;
@@ -1056,6 +1075,7 @@ mod tests {
         config.resolve().unwrap();
 
         assert_eq!(config.ghcr_concurrency, Some(8));
+        assert_eq!(config.download_concurrency, Some(8));
         assert_eq!(config.search_limit, Some(20));
         assert_eq!(config.cross_repo_updates, Some(false));
         assert!(config.install_patterns.is_some());

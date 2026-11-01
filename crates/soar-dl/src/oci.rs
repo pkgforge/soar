@@ -1041,6 +1041,7 @@ fn download_layer_impl(
                     total: layer.size,
                     etag: new_etag.clone(),
                     last_modified: None,
+                    segments: None,
                 },
             ) {
                 trace!(%err, "failed to save resume checkpoint");
@@ -1459,6 +1460,7 @@ mod tests {
             total: bytes.len() as u64,
             etag: None,
             last_modified: None,
+            segments: None,
         };
         if write_resume(&path, &info).is_err() {
             eprintln!("skipping: filesystem lacks user xattrs");
@@ -1557,7 +1559,9 @@ mod tests {
         match err {
             DownloadError::InvalidJson {
                 reason, ..
-            } => assert!(reason.contains("EOF"), "{reason}"),
+            } => {
+                assert!(reason.contains("EOF"), "{reason}")
+            }
             other => panic!("expected InvalidJson, got {other:?}"),
         }
     }

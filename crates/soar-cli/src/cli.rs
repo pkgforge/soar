@@ -456,6 +456,11 @@ pub enum Commands {
         /// Overwrite existing download with same file
         #[arg(required = false, long)]
         force_overwrite: bool,
+
+        /// Number of connections used per download; more than one fetches a
+        /// range-capable server's file in parallel segments
+        #[arg(required = false, long)]
+        connections: Option<usize>,
     },
 
     /// Health check
