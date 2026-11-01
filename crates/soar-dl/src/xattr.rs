@@ -79,6 +79,7 @@ pub fn read_usable_resume(path: &Path) -> Option<ResumeInfo> {
 ///     total: 10240,
 ///     etag: Some("etag-value".into()),
 ///     last_modified: None,
+///     segments: None,
 /// };
 /// let path = std::path::Path::new("/tmp/download.partial");
 /// write_resume(path, &info).unwrap();
@@ -117,6 +118,7 @@ mod tests {
             total,
             etag: etag.map(String::from),
             last_modified: None,
+            segments: None,
         }
     }
 

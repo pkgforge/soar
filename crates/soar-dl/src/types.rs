@@ -24,6 +24,17 @@ pub enum OverwriteMode {
     Prompt,
 }
 
+/// Where one segment of a segmented download stands.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SegmentProgress {
+    /// First byte of the segment, absolute in the file.
+    pub start: u64,
+    /// Last byte of the segment (inclusive), absolute in the file.
+    pub end: u64,
+    /// Bytes of this segment already on disk, counted from `start`.
+    pub written: u64,
+}
+
 /// Resume information stored in xattrs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResumeInfo {
@@ -31,6 +42,10 @@ pub struct ResumeInfo {
     pub total: u64,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
+    /// Per-segment state of a segmented download. `None` for the
+    /// single-stream layout, where `downloaded` is a prefix length.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<Vec<SegmentProgress>>,
 }
 
 #[cfg(test)]
@@ -127,6 +142,7 @@ mod tests {
             total: 1024,
             etag: Some("\"abc123\"".to_string()),
             last_modified: None,
+            segments: None,
         };
 
         assert_eq!(info.downloaded, 512);
@@ -142,6 +158,7 @@ mod tests {
             total: 1024,
             etag: None,
             last_modified: Some("Wed, 21 Oct 2015 07:28:00 GMT".to_string()),
+            segments: None,
         };
 
         assert_eq!(info.downloaded, 256);
@@ -158,6 +175,7 @@ mod tests {
             total: 2048,
             etag: Some("etag-value".to_string()),
             last_modified: Some("date".to_string()),
+            segments: None,
         };
 
         let json = serde_json::to_string(&info).unwrap();
@@ -167,6 +185,34 @@ mod tests {
         assert_eq!(deserialized.total, info.total);
         assert_eq!(deserialized.etag, info.etag);
         assert_eq!(deserialized.last_modified, info.last_modified);
+        assert!(deserialized.segments.is_none());
+    }
+
+    #[test]
+    fn resume_info_segments_round_trip() {
+        let info = ResumeInfo {
+            downloaded: 100,
+            total: 200,
+            etag: None,
+            last_modified: None,
+            segments: Some(vec![SegmentProgress {
+                start: 0,
+                end: 99,
+                written: 100,
+            }]),
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        let deserialized: ResumeInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.segments.as_ref().unwrap()[0].written, 100);
+    }
+
+    #[test]
+    fn resume_info_without_segments_parses_from_old_json() {
+        let old = r#"{"downloaded":10,"total":20,"etag":null,"last_modified":null}"#;
+        let info: ResumeInfo = serde_json::from_str(old).unwrap();
+        assert_eq!(info.downloaded, 10);
+        assert!(info.segments.is_none());
     }
 
     #[test]
@@ -176,6 +222,7 @@ mod tests {
             total: 200,
             etag: Some("tag".to_string()),
             last_modified: None,
+            segments: None,
         };
 
         let info2 = info1.clone();

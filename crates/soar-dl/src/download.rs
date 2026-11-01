@@ -18,11 +18,21 @@ use ureq::{
 
 use crate::{
     error::DownloadError,
-    http::Http,
-    types::{OverwriteMode, Progress, ResumeInfo},
-    utils::{filename_from_header, filename_from_url, open_output, resolve_output_path},
+    http::{Http, RemoteInfo},
+    segmented,
+    types::{OverwriteMode, Progress, ResumeInfo, SegmentProgress},
+    utils::{
+        filename_from_header, filename_from_url, open_existing, open_output, resolve_output_path,
+    },
     xattr::{read_usable_resume, remove_resume, write_resume},
 };
+
+/// Connections one download uses by default. Where one stream is throttled
+/// below the path's capacity, several in parallel add up.
+const DEFAULT_CONNECTIONS: usize = 8;
+
+/// Bytes a single-stream read loop takes from the network per read.
+const READ_BUFFER: usize = 256 * 1024;
 
 #[derive(Clone)]
 pub struct Download {
@@ -34,6 +44,10 @@ pub struct Download {
     pub on_progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
     pub ghcr_blob: bool,
     pub expected_checksum: Option<String>,
+    /// Connections this download may open at once. One streams without
+    /// ranges; more than one splits a range-capable server's file between
+    /// them.
+    pub connections: usize,
 }
 
 impl Download {
@@ -65,7 +79,26 @@ impl Download {
             on_progress: None,
             ghcr_blob: false,
             expected_checksum: None,
+            connections: DEFAULT_CONNECTIONS,
         }
+    }
+
+    /// Sets how many connections this download may open at once.
+    ///
+    /// More than one lets a range-capable server's file be fetched in
+    /// parallel segments; one streams a single response body. Zero is treated
+    /// as one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use soar_dl::download::Download;
+    ///
+    /// let dl = Download::new("https://example.com/archive.tar.gz").connections(16);
+    /// ```
+    pub fn connections(mut self, connections: usize) -> Self {
+        self.connections = connections.max(1);
+        self
     }
 
     /// Sets the expected blake3 checksum (hex) to verify the downloaded file
@@ -254,10 +287,13 @@ impl Download {
         };
 
         let mut head_size = None;
+        let mut remote: Option<RemoteInfo> = None;
         let (header_filename, url_filename) = if needs_head {
             trace!("performing HEAD request for filename");
             let resp = Http::head(&self.url)?;
-            head_size = content_length(&resp);
+            let info = RemoteInfo::from_head(&resp);
+            head_size = info.size;
+            remote = Some(info);
             (
                 resp.headers()
                     .get(CONTENT_DISPOSITION)
@@ -316,7 +352,7 @@ impl Download {
             std::fs::create_dir_all(parent)?;
         }
 
-        let file = self.download_to_file(&output_path, resume_info)?;
+        let file = self.download_to_file(&output_path, resume_info, remote)?;
 
         if let Err(e) = self.verify_checksum(&output_path) {
             fs::remove_file(&output_path).ok();
@@ -443,6 +479,187 @@ impl Download {
         &self,
         path: &Path,
         resume_info: Option<ResumeInfo>,
+        remote: Option<RemoteInfo>,
+    ) -> Result<File, DownloadError> {
+        // A segmented download continues segment by segment; its file is
+        // pre-allocated, so appending to it as a single stream would splice
+        // the ranges out of place.
+        if let Some(info) = &resume_info
+            && let Some(segments) = &info.segments
+        {
+            // A size the server just reported that disagrees with the state
+            // means the resource changed since it was written; the offsets
+            // no longer describe it and resuming would splice two versions.
+            let size_changed = remote
+                .as_ref()
+                .and_then(|remote| remote.size)
+                .is_some_and(|size| size != info.total);
+            return match segmented::plan_from_resume(info.total, segments) {
+                Some(resumed) if !size_changed => {
+                    debug!(offset = resumed.current, "resuming segmented download");
+                    self.download_segmented(
+                        path,
+                        info.total,
+                        resumed.ranges,
+                        resumed.written,
+                        info.etag.as_deref(),
+                    )
+                }
+                _ => {
+                    warn!(
+                        "segmented resume state does not describe this resource, restarting download"
+                    );
+                    self.download_to_file(path, None, remote)
+                }
+            };
+        }
+
+        if self.connections > 1 {
+            // The HEAD only picks a strategy, so a server that refuses it
+            // still gets the download, in one stream. A HEAD that is silent
+            // about ranges gets a one-byte range probe, since many servers
+            // honor Range on GET without ever saying so on HEAD.
+            let mut remote = match remote {
+                Some(remote) => remote,
+                None => {
+                    match Http::head(&self.url) {
+                        Ok(resp) => RemoteInfo::from_head(&resp),
+                        Err(err) => {
+                            debug!(%err, "size probe by HEAD failed, trying a range probe");
+                            RemoteInfo::default()
+                        }
+                    }
+                }
+            };
+            if (remote.size.is_none() || !remote.ranges_ok)
+                && let Some(probed) = Http::probe_range(&self.url, self.ghcr_blob)
+            {
+                remote = probed;
+            }
+            if let Some(total) = remote.size
+                && remote.ranges_ok
+                && total >= segmented::MIN_SEGMENTED_TOTAL
+            {
+                let ranges = segmented::plan(total, self.connections);
+                let written = vec![0; ranges.len()];
+                return self.download_segmented(
+                    path,
+                    total,
+                    ranges,
+                    written,
+                    remote.etag.as_deref(),
+                );
+            }
+        }
+
+        self.download_single(path, resume_info)
+    }
+
+    /// Fetches a range-capable server's file in parallel segments.
+    ///
+    /// The output is allocated to its full size up front and each segment is
+    /// written at its own offset. The resume state is written before the first
+    /// byte, since a half-filled allocation is indistinguishable by size from
+    /// a finished download; a filesystem that cannot hold that state falls
+    /// back to a single stream.
+    fn download_segmented(
+        &self,
+        path: &Path,
+        total: u64,
+        ranges: Vec<(u64, u64)>,
+        written: Vec<u64>,
+        etag: Option<&str>,
+    ) -> Result<File, DownloadError> {
+        let current: u64 = written.iter().sum();
+        let file = if current == 0 {
+            trace!(path = %path.display(), total = total, "allocating segmented download");
+            let file = open_output(path, None)?;
+            file.set_len(total)?;
+            file
+        } else {
+            let file = open_existing(path)?;
+            if file.metadata()?.len() != total {
+                warn!(
+                    path = %path.display(),
+                    "file size does not match the resource, restarting download"
+                );
+                let ranges = segmented::plan(total, self.connections);
+                let written = vec![0; ranges.len()];
+                return self.download_segmented(path, total, ranges, written, etag);
+            }
+            file
+        };
+
+        let info = ResumeInfo {
+            downloaded: current,
+            total,
+            etag: etag.map(String::from),
+            last_modified: None,
+            segments: Some(
+                ranges
+                    .iter()
+                    .zip(&written)
+                    .map(|(&(start, end), &written)| {
+                        SegmentProgress {
+                            start,
+                            end,
+                            written,
+                        }
+                    })
+                    .collect(),
+            ),
+        };
+        if let Err(err) = write_resume(path, &info) {
+            warn!(%err, "filesystem cannot store resume state, falling back to single stream");
+            return self.download_single(path, None);
+        }
+
+        let result = segmented::run(segmented::Job {
+            url: &self.url,
+            ghcr_blob: self.ghcr_blob,
+            etag,
+            path,
+            file: &file,
+            total,
+            connections: self.connections,
+            ranges,
+            written,
+            on_progress: self.on_progress.as_ref(),
+        });
+
+        match result {
+            Ok(()) => {
+                if let Some(ref cb) = self.on_progress {
+                    cb(Progress::Chunk {
+                        current: total,
+                        total,
+                    });
+                    cb(Progress::Complete {
+                        total,
+                    });
+                }
+                Ok(file)
+            }
+            // The server turned out not to honor ranges after all; a single
+            // stream needs none.
+            Err(
+                err @ DownloadError::RangeUnsupported {
+                    ..
+                },
+            ) => {
+                warn!(%err, "falling back to single stream");
+                self.download_single(path, None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Streams one HTTP response body into the file at `path`, resuming from
+    /// `resume_info` when it describes the same resource.
+    fn download_single(
+        &self,
+        path: &Path,
+        resume_info: Option<ResumeInfo>,
     ) -> Result<File, DownloadError> {
         let (resume_from, etag) = resume_info
             .as_ref()
@@ -458,7 +675,7 @@ impl Download {
                 status: 416, ..
             }) if resume_from.is_some() => {
                 warn!("server rejected the resume range, restarting download");
-                return self.download_to_file(path, None);
+                return self.download_single(path, None);
             }
             resp => resp?,
         };
@@ -472,11 +689,11 @@ impl Download {
                     "server doesn't support resume (status {}), restarting download",
                     status
                 );
-                return self.download_to_file(path, None);
+                return self.download_single(path, None);
             }
             if let Err(err) = check_partial_response(&resp, info) {
                 warn!(%err, "partial response does not continue the file, restarting download");
-                return self.download_to_file(path, None);
+                return self.download_single(path, None);
             }
         }
 
@@ -491,7 +708,7 @@ impl Download {
         let mut file = match open_output(path, resume_from) {
             Err(DownloadError::ResumeMismatch) => {
                 warn!(path = %path.display(), "file shrank below its resume offset, restarting download");
-                return self.download_to_file(path, None);
+                return self.download_single(path, None);
             }
             file => file?,
         };
@@ -513,7 +730,7 @@ impl Download {
         }
 
         let mut reader = resp.into_body().into_reader();
-        let mut buffer = [0u8; 8192];
+        let mut buffer = vec![0u8; READ_BUFFER];
         let mut downloaded = resume_from.unwrap_or(0);
         let mut last_checkpoint = downloaded / (1024 * 1024);
 
@@ -538,6 +755,7 @@ impl Download {
                         total,
                         etag: new_etag.clone(),
                         last_modified: None,
+                        segments: None,
                     },
                 ) {
                     trace!(%err, "failed to save resume checkpoint");
@@ -698,6 +916,7 @@ mod tests {
             total: body().len() as u64,
             etag: None,
             last_modified: None,
+            segments: None,
         };
         if write_resume(&out, &stale).is_err() {
             eprintln!("skipping: filesystem lacks user xattrs");
@@ -723,6 +942,7 @@ mod tests {
             total: body().len() as u64,
             etag: None,
             last_modified: None,
+            segments: None,
         };
         if write_resume(&out, &info).is_err() {
             eprintln!("skipping: filesystem lacks user xattrs");

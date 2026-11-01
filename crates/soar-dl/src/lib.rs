@@ -9,6 +9,7 @@ pub mod http_client;
 pub mod oci;
 pub mod platform;
 pub mod release;
+mod segmented;
 #[cfg(test)]
 mod test_server;
 pub mod types;

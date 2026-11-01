@@ -34,6 +34,7 @@ Control where soar stores its data.
 | `parallel` | Boolean | `true` | Enable parallel downloads |
 | `parallel_limit` | Integer | `4` | Max parallel downloads (1-16) |
 | `ghcr_concurrency` | Integer | `8` | Max GHCR concurrent requests (1-32) |
+| `download_concurrency` | Integer | `8` | Connections per download; more than one fetches a range-capable server's file in parallel segments |
 | `search_limit` | Integer | `20` | Max search results (5-100) |
 | `cross_repo_updates` | Boolean | `false` | Allow cross-repo updates (not implemented) |
 

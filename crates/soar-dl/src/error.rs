@@ -86,6 +86,10 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::resume_mismatch))]
     ResumeMismatch,
 
+    #[error("Server does not support segmented downloads: {url}")]
+    #[diagnostic(code(soar_dl::range_unsupported))]
+    RangeUnsupported { url: String },
+
     /// Several downloads failed. `transient` holds when every one of them
     /// failed in a way a retry may get past.
     #[error("{}", .errors.join("; "))]
@@ -169,6 +173,11 @@ impl DownloadError {
             Self::Multiple {
                 transient, ..
             } => *transient,
+            // Retrying cannot help: the server ignored the range, so the
+            // caller falls back to a single-stream download instead.
+            Self::RangeUnsupported {
+                ..
+            } => false,
             _ => false,
         }
     }

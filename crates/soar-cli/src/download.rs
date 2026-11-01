@@ -35,6 +35,9 @@ pub struct DownloadContext {
     pub extract_dir: Option<String>,
     pub skip_existing: bool,
     pub force_overwrite: bool,
+    /// Connections each download may open; more than one downloads a
+    /// range-capable server's file in parallel segments.
+    pub connections: usize,
 }
 
 impl DownloadContext {
@@ -124,7 +127,8 @@ async fn download_link(ctx: &DownloadContext, link: &str) -> SoarResult<()> {
 
             let mut dl = Download::new(url)
                 .overwrite(ctx.get_overwrite_mode())
-                .extract(ctx.extract);
+                .extract(ctx.extract)
+                .connections(ctx.connections);
 
             if let Some(ref out) = ctx.output {
                 dl = dl.output(out);
@@ -266,8 +270,9 @@ async fn download_link(ctx: &DownloadContext, link: &str) -> SoarResult<()> {
 
                 dl.execute()?;
             } else {
-                let mut dl =
-                    Download::new(&package.download_url).overwrite(ctx.get_overwrite_mode());
+                let mut dl = Download::new(&package.download_url)
+                    .overwrite(ctx.get_overwrite_mode())
+                    .connections(ctx.connections);
 
                 if let Some(ref out) = ctx.output {
                     dl = dl.output(out);
@@ -384,7 +389,8 @@ fn handle_forge_release(
 
     let mut dl = Download::new(selected_asset.url())
         .overwrite(ctx.get_overwrite_mode())
-        .extract(ctx.extract);
+        .extract(ctx.extract)
+        .connections(ctx.connections);
 
     if let Some(ref out) = ctx.output {
         dl = dl.output(out);
