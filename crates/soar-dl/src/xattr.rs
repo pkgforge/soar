@@ -150,7 +150,12 @@ mod tests {
         let moved = dir.path().join("moved");
         std::fs::write(&path, b"data").unwrap();
         let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
-        if write_resume_file(&file, &resume(0, 4, None)).is_err() {
+        if let Err(err) = write_resume_file(&file, &resume(0, 4, None)) {
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::Unsupported,
+                "descriptor resume write failed: {err}"
+            );
             eprintln!("skipping: filesystem lacks user xattrs");
             return;
         }
