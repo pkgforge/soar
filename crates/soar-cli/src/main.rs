@@ -599,8 +599,7 @@ async fn handle_cli() -> SoarResult<()> {
 
                     let connections = connections
                         .or(get_config().download_concurrency)
-                        .unwrap_or(8)
-                        .max(1);
+                        .unwrap_or(8);
                     let context = DownloadContext {
                         regexes,
                         globs,

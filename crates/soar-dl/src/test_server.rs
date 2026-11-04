@@ -9,8 +9,10 @@ use std::{
 };
 
 /// How the server behaves where a download cares.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct ServeOptions {
+    /// ETag returned with responses. `None` omits the header.
+    pub etag: Option<String>,
     /// Send no `Accept-Ranges` header and answer range requests with the
     /// whole body, as a server without range support would.
     pub ignore_ranges: bool,
@@ -33,6 +35,20 @@ pub struct ServeOptions {
     pub refuse_head: bool,
 }
 
+impl Default for ServeOptions {
+    fn default() -> Self {
+        Self {
+            etag: Some("\"test-etag\"".into()),
+            ignore_ranges: false,
+            lie_about_ranges: false,
+            close_after_bytes: None,
+            truncate_periodic: None,
+            oversend: None,
+            refuse_head: false,
+        }
+    }
+}
+
 /// Serves each body in `routes` at its path until the test ends, and returns
 /// the base URL. `Range` requests are honored with a 206, other paths are 404.
 pub fn serve(routes: Vec<(String, Vec<u8>)>) -> String {
@@ -40,19 +56,23 @@ pub fn serve(routes: Vec<(String, Vec<u8>)>) -> String {
 }
 
 /// Serves under `options` and reports every request with its `Range` header,
-/// in arrival order.
+/// in the order their headers are read.
 pub fn serve_with(
     routes: Vec<(String, Vec<u8>)>,
     options: ServeOptions,
 ) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let routes: HashMap<_, _> = routes.into_iter().collect();
+    let routes: Arc<HashMap<_, _>> = Arc::new(routes.into_iter().collect());
+    let options = Arc::new(options);
     let requests: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let recorded = requests.clone();
     thread::spawn(move || {
         for stream in listener.incoming().flatten() {
-            respond(stream, &routes, &options, &recorded);
+            let routes = routes.clone();
+            let options = options.clone();
+            let recorded = recorded.clone();
+            thread::spawn(move || respond(stream, &routes, &options, &recorded));
         }
     });
     (format!("http://{addr}"), requests)
@@ -74,15 +94,18 @@ fn respond(
     let path = parts.next().unwrap_or_default().to_string();
 
     let mut range: Option<(usize, Option<usize>)> = None;
+    let mut if_range = None;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).is_err() || line.trim().is_empty() {
             break;
         }
-        if let Some((name, value)) = line.split_once(':')
-            && name.eq_ignore_ascii_case("range")
-        {
-            range = value.trim().strip_prefix("bytes=").and_then(parse_range);
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("range") {
+                range = value.trim().strip_prefix("bytes=").and_then(parse_range);
+            } else if name.eq_ignore_ascii_case("if-range") {
+                if_range = Some(value.trim().to_string());
+            }
         }
     }
     requests
@@ -95,7 +118,11 @@ fn respond(
         return;
     }
 
-    let range_honored = !options.ignore_ranges && !options.lie_about_ranges;
+    let range_honored = !options.ignore_ranges
+        && !options.lie_about_ranges
+        && if_range
+            .as_deref()
+            .is_none_or(|tag| options.etag.as_deref() == Some(tag) && !tag.starts_with("W/"));
     let (status, extra, body) = match routes.get(&path) {
         None => ("404 Not Found", String::new(), &b""[..]),
         Some(body) => {
@@ -125,13 +152,16 @@ fn respond(
         .filter(|_| method == "GET")
         .and_then(|(period, within)| {
             let (start, _) = range?;
-            (start % period <= within).then_some(within)
+            (period != 0 && start % period <= within).then_some(within)
         });
 
     let mut head = format!(
         "HTTP/1.1 {status}\r\nContent-Length: {}\r\n{extra}",
         body.len() + overshoot
     );
+    if let Some(etag) = &options.etag {
+        head.push_str(&format!("ETag: {etag}\r\n"));
+    }
     if !options.ignore_ranges || options.lie_about_ranges {
         head.push_str("Accept-Ranges: bytes\r\n");
     }
@@ -163,4 +193,28 @@ fn respond(
 fn parse_range(value: &str) -> Option<(usize, Option<usize>)> {
     let (start, end) = value.trim().split_once('-')?;
     Some((start.trim().parse().ok()?, end.trim().parse().ok()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::http::Http;
+
+    #[test]
+    fn if_range_requires_a_matching_strong_etag() {
+        let base = serve(vec![("/file".into(), b"abcdef".to_vec())]);
+        let url = format!("{base}/file");
+        assert_eq!(
+            Http::fetch_range(&url, 0, 2, Some("\"test-etag\""), false)
+                .unwrap()
+                .status(),
+            206
+        );
+        assert_eq!(
+            Http::fetch_range(&url, 0, 2, Some("\"other\""), false)
+                .unwrap()
+                .status(),
+            200
+        );
+    }
 }

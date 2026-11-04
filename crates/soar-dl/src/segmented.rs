@@ -49,7 +49,7 @@ const CHUNK_BUFFER: usize = 256 * 1024;
 /// Aggregate bytes between two resume checkpoints and progress reports.
 const REPORT_INTERVAL: u64 = 1024 * 1024;
 
-/// Times one chunk may fail on the network before the download gives up and
+/// Consecutive attempts without progress before the download gives up and
 /// leaves its resume state for the next run.
 const MAX_ATTEMPTS: u32 = 3;
 
@@ -57,7 +57,10 @@ const MAX_ATTEMPTS: u32 = 3;
 /// [`CHUNKS_PER_CONNECTION`] per connection, capped by the per-chunk minimum
 /// and [`MAX_CHUNKS`]. The last chunk absorbs the remainder.
 pub(crate) fn plan(total: u64, connections: usize) -> Vec<(u64, u64)> {
-    let max_chunks = (total / MIN_SEGMENT_SIZE).max(1) as usize;
+    if total == 0 {
+        return Vec::new();
+    }
+    let max_chunks = (total / MIN_SEGMENT_SIZE).max(1).min(MAX_CHUNKS as u64) as usize;
     let parts = connections
         .max(1)
         .saturating_mul(CHUNKS_PER_CONNECTION)
@@ -148,7 +151,7 @@ struct Shared {
     /// Bytes written across all chunks.
     aggregate: AtomicU64,
     /// The aggregate the last checkpoint and progress report carried.
-    reported: AtomicU64,
+    reported: Mutex<u64>,
     /// Bytes written per chunk, counted from the chunk's start.
     chunk_written: Box<[AtomicU64]>,
     /// The full chunk plan, for resume checkpoints.
@@ -203,7 +206,7 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
     let shared = Arc::new(Shared {
         cancel: AtomicBool::new(false),
         aggregate: AtomicU64::new(initial),
-        reported: AtomicU64::new(initial),
+        reported: Mutex::new(initial),
         chunk_written: job
             .written
             .iter()
@@ -249,7 +252,7 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
                 etag: job.etag,
                 path: job.path,
                 total: job.total,
-                file: job.file.try_clone().expect("cloning the output file"),
+                file: job.file,
                 progress: job.on_progress.cloned(),
             };
             handles.push(scope.spawn(move || worker.run()));
@@ -269,16 +272,14 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
 
     // A server that ignored one range request is treated as ignoring them all;
     // the caller falls back to a single stream, which needs no ranges.
-    if let Some(Outcome::Failed(err)) = outcomes
-        .iter()
-        .find(|o| matches!(o, Outcome::Failed(DownloadError::RangeUnsupported { .. })))
-    {
-        let url = match err {
-            DownloadError::RangeUnsupported {
+    if let Some(url) = outcomes.iter().find_map(|outcome| {
+        match outcome {
+            Outcome::Failed(DownloadError::RangeUnsupported {
                 url,
-            } => url.clone(),
-            _ => unreachable!(),
-        };
+            }) => Some(url.clone()),
+            _ => None,
+        }
+    }) {
         return Err(DownloadError::RangeUnsupported {
             url,
         });
@@ -291,13 +292,6 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
         }
     }
 
-    if let Some(cb) = job.on_progress {
-        cb(Progress::Chunk {
-            current: shared.aggregate.load(Ordering::Relaxed),
-            total: job.total,
-        });
-    }
-
     Ok(())
 }
 
@@ -308,7 +302,7 @@ struct Worker<'a> {
     etag: Option<&'a str>,
     path: &'a Path,
     total: u64,
-    file: File,
+    file: &'a File,
     progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
 }
 
@@ -378,11 +372,15 @@ impl Worker<'_> {
                 return Ok(());
             }
             attempts += 1;
+            let previous_cursor = cursor;
             match self.fetch_and_write(index, start, end, &mut cursor) {
                 Ok(()) => continue,
                 Err(err) => {
                     if self.shared.cancel.load(Ordering::Relaxed) {
                         return Err(err);
+                    }
+                    if cursor > previous_cursor {
+                        attempts = 0;
                     }
                     if err.is_transient() && attempts < MAX_ATTEMPTS {
                         debug!(chunk = index, attempt = attempts, %err, "chunk failed, retrying");
@@ -401,11 +399,24 @@ impl Worker<'_> {
         end: u64,
         cursor: &mut u64,
     ) -> Result<(), DownloadError> {
-        let resp = Http::fetch_range(self.url, *cursor, end, self.etag, self.ghcr_blob)?;
+        let resp = Http::fetch_range(self.url, *cursor, end, self.etag, self.ghcr_blob).map_err(
+            |err| {
+                match err {
+                    DownloadError::HttpError {
+                        status: 416, ..
+                    } => {
+                        DownloadError::RangeUnsupported {
+                            url: self.url.to_string(),
+                        }
+                    }
+                    err => err,
+                }
+            },
+        )?;
 
         if resp.status() != 206 {
             let status = resp.status().as_u16();
-            if status == 200 {
+            if status == 200 || status == 416 {
                 trace!(url = self.url, "server ignored the range request");
                 return Err(DownloadError::RangeUnsupported {
                     url: self.url.to_string(),
@@ -432,10 +443,12 @@ impl Worker<'_> {
                 url: self.url.to_string(),
             });
         };
-        let matches = span
-            .split_once('-')
-            .and_then(|(start, _)| start.trim().parse::<u64>().ok())
-            .is_some_and(|start| start == *cursor)
+        let matches = span.split_once('-').and_then(|(start, finish)| {
+            Some((
+                start.trim().parse::<u64>().ok()?,
+                finish.trim().parse::<u64>().ok()?,
+            ))
+        }) == Some((*cursor, end))
             && total.trim().parse::<u64>() == Ok(self.total);
         if !matches {
             return Err(DownloadError::RangeUnsupported {
@@ -481,27 +494,26 @@ impl Worker<'_> {
     /// [`REPORT_INTERVAL`] aggregate bytes; one worker wins that right per
     /// interval, so the xattr and the bar advance in step.
     fn maybe_report(&self, aggregate: u64) {
-        let reported = self.shared.reported.load(Ordering::Relaxed);
-        if aggregate.saturating_sub(reported) < REPORT_INTERVAL {
+        let mut reported = self.shared.reported.lock().unwrap();
+        // Another worker may have reported more recent progress while this
+        // worker was waiting for the reporting lock.
+        let aggregate = self.shared.aggregate.load(Ordering::Relaxed).max(aggregate);
+        if aggregate.saturating_sub(*reported) < REPORT_INTERVAL {
             return;
         }
-        if self
-            .shared
-            .reported
-            .compare_exchange(reported, aggregate, Ordering::Relaxed, Ordering::Relaxed)
-            .is_err()
-        {
-            return;
-        }
+        *reported = aggregate;
 
-        if let Some(cb) = &self.progress {
+        // The caller emits the final Chunk event after all workers finish.
+        if aggregate < self.total
+            && let Some(cb) = &self.progress
+        {
             cb(Progress::Chunk {
                 current: aggregate,
                 total: self.total,
             });
         }
 
-        let segments = self
+        let segments: Vec<SegmentProgress> = self
             .shared
             .ranges
             .iter()
@@ -515,7 +527,7 @@ impl Worker<'_> {
             })
             .collect();
         let info = ResumeInfo {
-            downloaded: aggregate,
+            downloaded: segments.iter().map(|segment| segment.written).sum(),
             total: self.total,
             etag: self.etag.map(String::from),
             last_modified: None,
@@ -538,6 +550,15 @@ mod tests {
         types::OverwriteMode,
     };
 
+    fn supports_xattrs() -> bool {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        match xattr::set(file.path(), "user.soar.test", b"test") {
+            Ok(()) => true,
+            Err(err) if err.kind() == std::io::ErrorKind::Unsupported => false,
+            Err(err) => panic!("failed to test xattr support: {err}"),
+        }
+    }
+
     fn body(mib: usize) -> Vec<u8> {
         ((0..mib * 1024 * 1024).map(|i| (i % 251) as u8)).collect()
     }
@@ -551,6 +572,86 @@ mod tests {
             next = end + 1;
         }
         next == total
+    }
+
+    #[test]
+    fn unsatisfiable_range_triggers_fallback() {
+        let base = test_server::serve(vec![("/file".into(), b"small".to_vec())]);
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let url = format!("{base}/file");
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 20,
+            connections: 1,
+            ranges: vec![(10, 19)],
+            written: vec![0],
+            on_progress: None,
+        });
+        assert!(matches!(
+            result,
+            Err(DownloadError::RangeUnsupported { .. })
+        ));
+    }
+
+    #[test]
+    fn retries_without_progress_are_bounded() {
+        let (base, requests) = test_server::serve_with(
+            vec![("/file".into(), b"hello".to_vec())],
+            ServeOptions {
+                close_after_bytes: Some(0),
+                ..Default::default()
+            },
+        );
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let url = format!("{base}/file");
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 5,
+            connections: 1,
+            ranges: vec![(0, 4)],
+            written: vec![0],
+            on_progress: None,
+        });
+        assert!(result.is_err());
+        assert_eq!(requests.lock().unwrap().len(), MAX_ATTEMPTS as usize);
+    }
+
+    #[test]
+    fn incorrect_content_range_end_triggers_fallback() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request);
+            let _ = stream.write_all(b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-3/5\r\nContent-Length: 5\r\nConnection: close\r\n\r\nabcde");
+        });
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 5,
+            connections: 1,
+            ranges: vec![(0, 4)],
+            written: vec![0],
+            on_progress: None,
+        });
+        assert!(matches!(
+            result,
+            Err(DownloadError::RangeUnsupported { .. })
+        ));
     }
 
     #[test]
@@ -574,6 +675,11 @@ mod tests {
         let ranges = plan(total, 8);
         assert_eq!(ranges.len(), 2);
         assert!(ranges_are_contiguous(&ranges, total));
+    }
+
+    #[test]
+    fn plan_of_an_empty_file_has_no_segments() {
+        assert!(plan(0, 8).is_empty());
     }
 
     #[test]
@@ -606,6 +712,9 @@ mod tests {
 
     #[test]
     fn a_large_download_is_fetched_in_segments() {
+        if !supports_xattrs() {
+            return;
+        }
         let content = body(16);
         let base = test_server::serve(vec![("/file".into(), content.clone())]);
         let dir = tempfile::tempdir().unwrap();
@@ -623,6 +732,9 @@ mod tests {
 
     #[test]
     fn a_multi_chunk_download_reassembles() {
+        if !supports_xattrs() {
+            return;
+        }
         let content = body(96);
         let (base, requests) = test_server::serve_with(
             vec![("/file".into(), content.clone())],
@@ -631,13 +743,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("file");
 
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let record = seen.clone();
         Download::new(format!("{base}/file"))
             .output(out.to_string_lossy())
             .overwrite(OverwriteMode::Force)
             .connections(8)
+            .progress(move |p| record.lock().unwrap().push(p))
             .execute()
             .unwrap();
 
+        let seen = seen.lock().unwrap();
+        let chunks: Vec<_> = seen
+            .iter()
+            .filter_map(|p| {
+                match p {
+                    Progress::Chunk {
+                        current, ..
+                    } => Some(*current),
+                    _ => None,
+                }
+            })
+            .collect();
+        assert!(chunks.windows(2).all(|w| w[0] < w[1]), "{chunks:?}");
+        assert_eq!(chunks.last(), Some(&(content.len() as u64)));
         assert_eq!(std::fs::read(&out).unwrap(), content);
         let requests = requests.lock().unwrap();
         let gets = requests.iter().filter(|r| r.starts_with("GET")).count();
@@ -646,6 +775,9 @@ mod tests {
 
     #[test]
     fn the_planned_number_of_connections_is_used() {
+        if !supports_xattrs() {
+            return;
+        }
         let content = body(16);
         let (base, requests) = test_server::serve_with(
             vec![("/file".into(), content.clone())],
@@ -731,6 +863,9 @@ mod tests {
 
     #[test]
     fn a_server_that_refuses_head_still_downloads_in_segments() {
+        if !supports_xattrs() {
+            return;
+        }
         let content = body(16);
         let (base, requests) = test_server::serve_with(
             vec![("/file".into(), content.clone())],
@@ -787,7 +922,10 @@ mod tests {
     }
 
     #[test]
-    fn an_interrupted_segmented_download_resumes() {
+    fn repeated_interruptions_with_progress_complete() {
+        if !supports_xattrs() {
+            return;
+        }
         let content = body(16);
         let interrupted = test_server::serve_with(
             vec![("/file".into(), content.clone())],
@@ -805,27 +943,15 @@ mod tests {
             .output(out.to_string_lossy())
             .overwrite(OverwriteMode::Skip)
             .execute();
-        assert!(first.is_err(), "the interrupted transfer must fail");
-
-        let segments = read_resume_segments(&out).expect("resume state kept after failure");
-        assert_eq!(segments.len(), 4);
-        assert!(
-            segments.iter().any(|s| s.written > 0),
-            "the interruption left progress behind: {segments:?}"
-        );
-
-        let healthy = test_server::serve(vec![("/file".into(), content.clone())]);
-        let target = format!("{healthy}/file");
-        Download::new(&target)
-            .output(out.to_string_lossy())
-            .overwrite(OverwriteMode::Skip)
-            .execute()
-            .unwrap();
+        first.unwrap();
         assert_eq!(std::fs::read(&out).unwrap(), content);
     }
 
     #[test]
     fn a_mixed_state_resume_fetches_only_what_is_missing() {
+        if !supports_xattrs() {
+            return;
+        }
         let content = body(32);
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("file");
@@ -863,7 +989,7 @@ mod tests {
             &ResumeInfo {
                 downloaded: current,
                 total: content.len() as u64,
-                etag: None,
+                etag: Some("\"test-etag\"".into()),
                 last_modified: None,
                 segments: Some(segments),
             },
@@ -928,6 +1054,9 @@ mod tests {
 
     #[test]
     fn a_chunk_interrupted_twice_completes_on_its_final_attempt() {
+        if !supports_xattrs() {
+            return;
+        }
         let content = body(16);
         let (base, requests) = test_server::serve_with(
             vec![("/file".into(), content.clone())],
@@ -992,6 +1121,9 @@ mod tests {
 
     #[test]
     fn a_resume_state_from_a_changed_resource_is_discarded() {
+        if !supports_xattrs() {
+            return;
+        }
         let stale = body(16);
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("file");
@@ -1020,7 +1152,7 @@ mod tests {
                 &ResumeInfo {
                     downloaded: segments[0].written,
                     total: stale.len() as u64,
-                    etag: None,
+                    etag: Some("\"test-etag\"".into()),
                     last_modified: None,
                     segments: Some(segments),
                 },

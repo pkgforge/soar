@@ -21,6 +21,7 @@ use crate::{
     download::{Download, check_partial_response},
     error::DownloadError,
     filter::Filter,
+    http::strong_etag,
     http_client::SHARED_AGENT,
     types::{OverwriteMode, Progress, ResumeInfo},
     utils::open_output,
@@ -252,6 +253,7 @@ pub struct OciDownload {
     extract: bool,
     extract_to: Option<PathBuf>,
     parallel: usize,
+    connections: Option<usize>,
     on_progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
 }
 
@@ -265,6 +267,7 @@ impl OciDownload {
     /// - `overwrite` = `OverwriteMode::Prompt`
     /// - `extract` = `false`
     /// - `parallel` = 1 (sequential downloads)
+    /// - direct blob downloads use the default connection count from `Download`
     /// - no progress callback
     ///
     /// # Examples
@@ -287,6 +290,7 @@ impl OciDownload {
             extract: false,
             extract_to: None,
             parallel: 1,
+            connections: None,
             on_progress: None,
         }
     }
@@ -410,6 +414,16 @@ impl OciDownload {
     /// ```
     pub fn parallel(mut self, n: usize) -> Self {
         self.parallel = n.max(1);
+        self
+    }
+
+    /// Sets the maximum connections for a direct digest blob download.
+    ///
+    /// Range-capable servers can use parallel segments. Zero is treated as one.
+    /// Manifest layers use a separate single-stream downloader; use `parallel`
+    /// to control how many layers can download concurrently.
+    pub fn connections(mut self, connections: usize) -> Self {
+        self.connections = Some(connections.max(1));
         self
     }
 
@@ -845,6 +859,12 @@ impl OciDownload {
             .overwrite(self.overwrite)
             .ghcr_blob();
 
+        let dl = if let Some(connections) = self.connections {
+            dl.connections(connections)
+        } else {
+            dl
+        };
+
         let dl = if let Some(ref cb) = self.on_progress {
             let cb = cb.clone();
             dl.progress(move |p| cb(p))
@@ -947,7 +967,8 @@ fn download_layer_impl(
         "downloading layer"
     );
 
-    let mut resume_info = read_usable_resume(path);
+    let mut resume_info = read_usable_resume(path)
+        .filter(|info| info.etag.as_deref().and_then(strong_etag).is_some());
     let resp = loop {
         let mut req = SHARED_AGENT.get(&url).header(AUTHORIZATION, "Bearer QQ==");
         if let Some(info) = &resume_info {
@@ -956,7 +977,7 @@ fn download_layer_impl(
                 "attempting to resume download"
             );
             req = req.header(RANGE, &format!("bytes={}-", info.downloaded));
-            if let Some(tag) = &info.etag {
+            if let Some(tag) = info.etag.as_deref().and_then(strong_etag) {
                 req = req.header(IF_RANGE, tag);
             }
         }
@@ -1458,7 +1479,7 @@ mod tests {
         let info = ResumeInfo {
             downloaded: 20_000,
             total: bytes.len() as u64,
-            etag: None,
+            etag: Some("\"test-etag\"".into()),
             last_modified: None,
             segments: None,
         };
@@ -1485,6 +1506,85 @@ mod tests {
         assert_eq!(downloaded, 50_000);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         assert!(crate::xattr::read_resume(&path).is_none());
+    }
+
+    #[test]
+    fn unvalidated_layer_checkpoint_restarts_without_a_range() {
+        let bytes = vec![7u8; 50_000];
+        let layer = layer("one", &bytes);
+        for etag in [None, Some("W/\"test-etag\"".to_string())] {
+            let (base, requests) = crate::test_server::serve_with(
+                vec![(
+                    format!("/v2/org/repo/blobs/{}", layer.digest),
+                    bytes.clone(),
+                )],
+                Default::default(),
+            );
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("one");
+            std::fs::write(&path, &bytes[..20_000]).unwrap();
+            if write_resume(
+                &path,
+                &ResumeInfo {
+                    downloaded: 20_000,
+                    total: bytes.len() as u64,
+                    etag,
+                    last_modified: None,
+                    segments: None,
+                },
+            )
+            .is_err()
+            {
+                eprintln!("skipping: filesystem lacks user xattrs");
+                return;
+            }
+            let dl = OciDownload::new("org/repo:tag").api(format!("{base}/v2"));
+            dl.download_layer(&layer, &path, &mut 0, layer.size)
+                .unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+            assert!(
+                requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .all(|r| r.contains("range=None"))
+            );
+        }
+    }
+
+    #[test]
+    fn direct_blob_connections_control_segmentation() {
+        let bytes = vec![5u8; 8 * 1024 * 1024];
+        let digest = format!("sha256:{}", sha256_hex(&bytes));
+        for connections in [1, 2] {
+            let (base, requests) = crate::test_server::serve_with(
+                vec![(format!("/v2/org/repo/blobs/{digest}"), bytes.clone())],
+                Default::default(),
+            );
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("blob");
+            OciDownload::new(format!("org/repo@{digest}").as_str())
+                .api(format!("{base}/v2"))
+                .output(path.to_string_lossy())
+                .connections(connections)
+                .execute()
+                .unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+            let requests = requests.lock().unwrap();
+            let ranged = requests
+                .iter()
+                .filter(|r| r.starts_with("GET ") && r.contains("range=Some"))
+                .count();
+            if connections == 1 {
+                assert_eq!(ranged, 0, "{requests:?}");
+            } else {
+                assert!(ranged >= 2, "{requests:?}");
+            }
+        }
+        assert_eq!(
+            OciDownload::new("org/repo:tag").connections(0).connections,
+            Some(1)
+        );
     }
 
     #[test]

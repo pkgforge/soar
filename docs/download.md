@@ -108,7 +108,7 @@ Filters narrow down the available assets. If multiple assets remain after filter
 |--------|-------------|
 | `--skip-existing` | Skip download if the file already exists |
 | `--force-overwrite` | Overwrite existing files without prompting |
-| `--connections` | Number of connections used per download (default: 8). More than one fetches a range-capable server's file in parallel segments, which lifts a server's per-connection speed cap; `1` streams a single response |
+| `--connections` | Positive number of connections per HTTP or OCI blob download (defaults to `download_concurrency`, or 8). More than one fetches parallel segments when the server supports ranges and supplies a strong ETag; `1` streams a single response. Resuming also requires a strong ETag. OCI manifest layers use separate single-stream downloads |
 
 ## Download Sources
 
