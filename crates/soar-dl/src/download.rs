@@ -495,6 +495,10 @@ impl Download {
         if let Some(info) = &resume_info
             && let Some(segments) = &info.segments
         {
+            let Some(resumed) = segmented::plan_from_resume(info.total, segments) else {
+                warn!("segmented resume plan is invalid, restarting download");
+                return self.download_to_file(path, None, remote);
+            };
             let remote = remote.or_else(|| {
                 Http::head(&self.url)
                     .ok()
@@ -511,30 +515,22 @@ impl Download {
                 .as_ref()
                 .and_then(|remote| remote.size)
                 .is_some_and(|size| size != info.total);
-            return match segmented::plan_from_resume(info.total, segments) {
-                Some(resumed)
-                    if !size_changed
-                        && !etag_changed
-                        && (resumed.current < info.total
-                            || remote.as_ref().and_then(|r| r.etag.as_deref())
-                                == info.etag.as_deref()) =>
-                {
-                    debug!(offset = resumed.current, "resuming segmented download");
-                    self.download_segmented(
-                        path,
-                        info.total,
-                        resumed.ranges,
-                        resumed.written,
-                        info.etag.as_deref(),
-                    )
-                }
-                _ => {
-                    warn!(
-                        "segmented resume state does not describe this resource, restarting download"
-                    );
-                    self.download_to_file(path, None, remote)
-                }
-            };
+            if !size_changed
+                && !etag_changed
+                && (resumed.current < info.total
+                    || remote.as_ref().and_then(|r| r.etag.as_deref()) == info.etag.as_deref())
+            {
+                debug!(offset = resumed.current, "resuming segmented download");
+                return self.download_segmented(
+                    path,
+                    info.total,
+                    resumed.ranges,
+                    resumed.written,
+                    info.etag.as_deref(),
+                );
+            }
+            warn!("remote resource changed or could not be verified, restarting download");
+            return self.download_to_file(path, None, remote);
         }
 
         if resume_info.is_some() {
@@ -1052,6 +1048,33 @@ mod tests {
                 .unwrap();
             assert_eq!(std::fs::read(path).unwrap(), body());
         }
+    }
+
+    #[test]
+    fn invalid_segment_plan_restarts_without_a_head_request() {
+        let (base, requests) =
+            crate::test_server::serve_with(vec![("/file".into(), body())], Default::default());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        std::fs::write(&path, vec![42; body().len()]).unwrap();
+        let info = ResumeInfo {
+            downloaded: 8000,
+            total: body().len() as u64,
+            etag: Some("\"test-etag\"".into()),
+            last_modified: None,
+            segments: Some(vec![SegmentProgress {
+                start: 1,
+                end: body().len() as u64 - 1,
+                written: 8000,
+            }]),
+        };
+        Download::new(format!("{base}/file"))
+            .connections(1)
+            .download_to_file(&path, Some(info), None)
+            .unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), body());
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.as_slice(), ["GET /file range=None"]);
     }
 
     #[test]
