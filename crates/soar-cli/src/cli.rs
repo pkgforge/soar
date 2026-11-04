@@ -621,17 +621,22 @@ mod tests {
                 .is_err()
             );
         }
-        for value in ["1", "8"] {
-            assert!(
-                Args::try_parse_from([
-                    "soar",
-                    "download",
-                    "--connections",
-                    value,
-                    "https://example.com/file"
-                ])
-                .is_ok()
-            );
+        for (value, expected) in [("1", 1), ("8", 8)] {
+            let args = Args::try_parse_from([
+                "soar",
+                "download",
+                "--connections",
+                value,
+                "https://example.com/file",
+            ])
+            .unwrap();
+            let Commands::Download {
+                connections, ..
+            } = args.command
+            else {
+                panic!("expected download command");
+            };
+            assert_eq!(connections, Some(expected));
         }
     }
 }

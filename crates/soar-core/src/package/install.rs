@@ -1090,6 +1090,7 @@ impl PackageInstaller {
             let mut dl = OciDownload::new(url.as_str())
                 .output(output_path.to_string_lossy())
                 .parallel(self.config.ghcr_concurrency.unwrap_or(8))
+                .connections(self.config.download_concurrency.unwrap_or(8))
                 .overwrite(OverwriteMode::Skip);
 
             if let Some(ref cb) = self.progress_callback {

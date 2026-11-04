@@ -22,9 +22,10 @@ use crate::{
     segmented,
     types::{OverwriteMode, Progress, ResumeInfo, SegmentProgress},
     utils::{
-        filename_from_header, filename_from_url, open_existing, open_output, resolve_output_path,
+        filename_from_header, filename_from_url, open_existing, open_output, open_untruncated,
+        resolve_output_path,
     },
-    xattr::{read_usable_resume, remove_resume, write_resume},
+    xattr::{finish_resume, read_usable_resume, resume_bytes, write_resume, write_resume_file},
 };
 
 /// Connections one download uses by default. Where one stream is throttled
@@ -364,9 +365,7 @@ impl Download {
             file.set_permissions(Permissions::from_mode(0o755))?;
         }
 
-        if let Err(err) = remove_resume(&output_path) {
-            warn!(path = %output_path.display(), %err, "failed to clear resume state");
-        }
+        finish_resume(&file)?;
 
         // Extraction is driven by what the file actually is, not by what the
         // caller guessed it would be. compak detects by magic number, so an
@@ -499,6 +498,10 @@ impl Download {
                 warn!("segmented resume plan is invalid, restarting download");
                 return self.download_to_file(path, None, remote);
             };
+            if self.connections == 1 {
+                debug!("restarting segmented download in single-stream mode");
+                return self.download_single(path, None);
+            }
             let remote = remote.or_else(|| {
                 Http::head(&self.url)
                     .ok()
@@ -615,21 +618,19 @@ impl Download {
             ),
         };
         let file = if current == 0 {
-            if path.exists() {
-                // Replace old offsets before truncating an existing allocation.
-                if let Err(err) = write_resume(path, &info) {
-                    if read_usable_resume(path).is_some() {
-                        return Err(err.into());
-                    }
-                    warn!(%err, "filesystem cannot store resume state, falling back to single stream");
-                    return self.download_single(path, None);
+            let file = open_untruncated(path)?;
+            if let Err(err) = write_resume_file(&file, &info) {
+                // Never truncate a file whose old offsets may still be stored.
+                match resume_bytes(&file) {
+                    Ok(None) => {}
+                    Err(read_err) if read_err.kind() == std::io::ErrorKind::Unsupported => {}
+                    _ => return Err(err.into()),
                 }
-            }
-            let file = open_output(path, None)?;
-            if let Err(err) = write_resume(path, &info) {
                 warn!(%err, "filesystem cannot store resume state, falling back to single stream");
                 return self.download_single(path, None);
             }
+            file.sync_all()?;
+            file.set_len(0)?;
             file.set_len(total)?;
             file
         } else {
@@ -642,11 +643,6 @@ impl Download {
             }
             file
         };
-
-        if let Err(err) = write_resume(path, &info) {
-            warn!(%err, "filesystem cannot store resume state, falling back to single stream");
-            return self.download_single(path, None);
-        }
 
         let result = segmented::run(segmented::Job {
             url: &self.url,
@@ -1051,6 +1047,40 @@ mod tests {
     }
 
     #[test]
+    fn single_connection_restarts_segmented_resume_as_one_stream() {
+        let (base, requests) =
+            crate::test_server::serve_with(vec![("/file".into(), body())], Default::default());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        std::fs::write(&path, vec![42; body().len()]).unwrap();
+        let info = ResumeInfo {
+            downloaded: 8000,
+            total: body().len() as u64,
+            etag: Some("\"test-etag\"".into()),
+            last_modified: None,
+            segments: Some(vec![SegmentProgress {
+                start: 0,
+                end: body().len() as u64 - 1,
+                written: 8000,
+            }]),
+        };
+        if write_resume(&path, &info).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+        Download::new(format!("{base}/file"))
+            .connections(1)
+            .download_to_file(&path, Some(info), None)
+            .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), body());
+        assert_eq!(
+            requests.lock().unwrap().as_slice(),
+            ["GET /file range=None"]
+        );
+        assert!(read_usable_resume(&path).is_none());
+    }
+
+    #[test]
     fn invalid_segment_plan_restarts_without_a_head_request() {
         let (base, requests) =
             crate::test_server::serve_with(vec![("/file".into(), body())], Default::default());
@@ -1075,6 +1105,54 @@ mod tests {
         assert_eq!(std::fs::read(path).unwrap(), body());
         let requests = requests.lock().unwrap();
         assert_eq!(requests.as_slice(), ["GET /file range=None"]);
+    }
+
+    #[test]
+    fn partial_response_rejects_changed_etag() {
+        let info = ResumeInfo {
+            downloaded: 8,
+            total: 20,
+            etag: Some("\"old\"".into()),
+            last_modified: None,
+            segments: None,
+        };
+        let (base, _) = crate::test_server::serve_with(
+            vec![("/file".into(), vec![0; 20])],
+            crate::test_server::ServeOptions {
+                etag: Some("\"new\"".into()),
+                ..Default::default()
+            },
+        );
+        let response = Http::fetch_range(&format!("{base}/file"), 8, 19, None, false).unwrap();
+        assert!(matches!(
+            check_partial_response(&response, &info),
+            Err(DownloadError::ResumeMismatch)
+        ));
+    }
+
+    #[test]
+    fn fresh_download_without_strong_etag_uses_one_stream() {
+        let data = vec![7; segmented::MIN_SEGMENTED_TOTAL as usize];
+        for etag in [None, Some("W/\"weak\"".to_string())] {
+            let (base, requests) = crate::test_server::serve_with(
+                vec![("/file".into(), data.clone())],
+                crate::test_server::ServeOptions {
+                    etag,
+                    ..Default::default()
+                },
+            );
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("file");
+            Download::new(format!("{base}/file"))
+                .connections(2)
+                .download_to_file(&path, None, None)
+                .unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), data);
+            assert_eq!(
+                requests.lock().unwrap().as_slice(),
+                ["HEAD /file range=None", "GET /file range=None"]
+            );
+        }
     }
 
     #[test]
@@ -1182,6 +1260,58 @@ mod tests {
         let saved = crate::xattr::read_resume(&path).unwrap();
         assert_eq!(saved.downloaded, 0);
         assert!(saved.segments.unwrap().iter().all(|s| s.written == 0));
+    }
+
+    #[test]
+    fn failed_segmented_allocation_keeps_zero_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("output");
+        std::fs::write(&path, b"old data").unwrap();
+        let old = ResumeInfo {
+            downloaded: 1,
+            total: 8,
+            etag: Some("\"old\"".into()),
+            last_modified: None,
+            segments: Some(vec![SegmentProgress {
+                start: 0,
+                end: 7,
+                written: 1,
+            }]),
+        };
+        if write_resume(&path, &old).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+        let dl = Download::new("http://127.0.0.1/unused").connections(2);
+        assert!(
+            dl.download_segmented(
+                &path,
+                u64::MAX,
+                vec![(0, u64::MAX - 1)],
+                vec![0],
+                Some("\"new\"")
+            )
+            .is_err()
+        );
+        let saved = crate::xattr::read_resume(&path).unwrap();
+        assert_eq!(saved.downloaded, 0);
+        assert_eq!(saved.segments.unwrap()[0].written, 0);
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn segmented_initialization_refuses_symlink_without_touching_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let path = dir.path().join("output");
+        std::fs::write(&target, b"keep me").unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        let dl = Download::new("http://127.0.0.1/unused").connections(2);
+        assert!(
+            dl.download_segmented(&path, 16, vec![(0, 15)], vec![0], Some("\"tag\""))
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"keep me");
     }
 
     #[test]

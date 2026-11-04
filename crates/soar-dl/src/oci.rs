@@ -967,8 +967,9 @@ fn download_layer_impl(
         "downloading layer"
     );
 
-    let mut resume_info = read_usable_resume(path)
-        .filter(|info| info.etag.as_deref().and_then(strong_etag).is_some());
+    let mut resume_info = read_usable_resume(path).filter(|info| {
+        info.segments.is_none() && info.etag.as_deref().and_then(strong_etag).is_some()
+    });
     let resp = loop {
         let mut req = SHARED_AGENT.get(&url).header(AUTHORIZATION, "Bearer QQ==");
         if let Some(info) = &resume_info {
@@ -1019,6 +1020,10 @@ fn download_layer_impl(
     };
 
     let resume_from = resume_info.as_ref().map(|info| info.downloaded);
+    if resume_from.is_none() {
+        // Invalidate the old checkpoint before truncating or writing the file.
+        remove_resume(path)?;
+    }
     let mut file = open_output(path, resume_from)?;
 
     if let Some(resume_offset) = resume_from {
@@ -1035,7 +1040,8 @@ fn download_layer_impl(
         .headers()
         .get(ETAG)
         .and_then(|h| h.to_str().ok())
-        .map(String::from);
+        .map(String::from)
+        .or_else(|| resume_info.as_ref().and_then(|info| info.etag.clone()));
     let mut reader = resp.into_body().into_reader();
     let mut buffer = [0u8; 8192];
     let mut layer_downloaded = resume_from.unwrap_or(0);
@@ -1553,7 +1559,131 @@ mod tests {
     }
 
     #[test]
+    fn segmented_layer_checkpoint_restarts_and_clears_stale_state() {
+        let bytes = vec![7u8; 50_000];
+        let layer = layer("one", &bytes);
+        let (base, requests) = crate::test_server::serve_with(
+            vec![(
+                format!("/v2/org/repo/blobs/{}", layer.digest),
+                bytes.clone(),
+            )],
+            crate::test_server::ServeOptions {
+                close_after_bytes: Some(10_000),
+                ..Default::default()
+            },
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one");
+        std::fs::write(&path, vec![0u8; bytes.len()]).unwrap();
+        let info = ResumeInfo {
+            downloaded: 20_000,
+            total: bytes.len() as u64,
+            etag: Some("\"test-etag\"".into()),
+            last_modified: None,
+            segments: Some(vec![crate::types::SegmentProgress {
+                start: 25_000,
+                end: 49_999,
+                written: 20_000,
+            }]),
+        };
+        if write_resume(&path, &info).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+        let dl = OciDownload::new("org/repo:tag").api(format!("{base}/v2"));
+        assert!(
+            dl.download_layer(&layer, &path, &mut 0, layer.size)
+                .is_err()
+        );
+        assert!(crate::xattr::read_resume(&path).is_none());
+        assert!(
+            requests
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|r| r.contains("range=None"))
+        );
+    }
+
+    #[test]
+    fn resumed_layer_checkpoint_keeps_etag_when_response_omits_it() {
+        use std::{
+            io::{BufRead, BufReader},
+            net::TcpListener,
+        };
+
+        let bytes = vec![3u8; 3 * 1024 * 1024];
+        let layer = layer("one", &bytes);
+        let offset = 100_000;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one");
+        std::fs::write(&path, &bytes[..offset]).unwrap();
+        let info = ResumeInfo {
+            downloaded: offset as u64,
+            total: bytes.len() as u64,
+            etag: Some("\"test-etag\"".into()),
+            last_modified: None,
+            segments: None,
+        };
+        if write_resume(&path, &info).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let total = bytes.len();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut headers = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" || line.is_empty() {
+                    break;
+                }
+                headers.push_str(&line.to_ascii_lowercase());
+            }
+            assert!(
+                headers.contains(&format!("range: bytes={offset}-")),
+                "{headers}"
+            );
+            assert!(headers.contains("if-range: \"test-etag\""), "{headers}");
+            write!(stream, "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {offset}-{}/{total}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", total - 1, total - offset).unwrap();
+            stream
+                .write_all(&bytes[offset..offset + 1_200_000])
+                .unwrap();
+        });
+        let dl = OciDownload::new("org/repo:tag").api(format!("http://{addr}/v2"));
+        assert!(
+            dl.download_layer(&layer, &path, &mut 0, layer.size)
+                .is_err()
+        );
+        server.join().unwrap();
+        let checkpoint = crate::xattr::read_resume(&path).unwrap();
+        assert!(checkpoint.downloaded >= 1024 * 1024);
+        assert_eq!(checkpoint.etag.as_deref(), Some("\"test-etag\""));
+        assert!(checkpoint.segments.is_none());
+    }
+
+    #[test]
     fn direct_blob_connections_control_segmentation() {
+        let probe = tempfile::NamedTempFile::new().unwrap();
+        if write_resume(
+            probe.path(),
+            &ResumeInfo {
+                downloaded: 0,
+                total: 0,
+                etag: None,
+                last_modified: None,
+                segments: None,
+            },
+        )
+        .is_err()
+        {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
         let bytes = vec![5u8; 8 * 1024 * 1024];
         let digest = format!("sha256:{}", sha256_hex(&bytes));
         for connections in [1, 2] {

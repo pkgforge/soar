@@ -1,11 +1,32 @@
-use std::path::Path;
+use std::{fs::File, path::Path};
 
 use tracing::warn;
 use ureq::http::HeaderValue;
+use xattr::FileExt as _;
 
 use crate::types::ResumeInfo;
 
 const XATTR_RESUME_KEY: &str = "user.soar.resume";
+
+pub(crate) fn resume_bytes(file: &File) -> std::io::Result<Option<Vec<u8>>> {
+    file.get_xattr(XATTR_RESUME_KEY)
+}
+
+pub(crate) fn write_resume_file(file: &File, info: &ResumeInfo) -> std::io::Result<()> {
+    file.set_xattr(XATTR_RESUME_KEY, &serde_json::to_vec(info)?)
+}
+
+pub(crate) fn finish_resume(file: &File) -> std::io::Result<()> {
+    match resume_bytes(file) {
+        Ok(Some(_)) => {
+            file.sync_all()?;
+            file.remove_xattr(XATTR_RESUME_KEY)
+        }
+        Ok(None) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::Unsupported => Ok(()),
+        Err(err) => Err(err),
+    }
+}
 
 /// Reads the `user.soar.resume` extended attribute from the given path and deserializes it into a `ResumeInfo`.
 ///
@@ -120,6 +141,26 @@ mod tests {
             last_modified: None,
             segments: None,
         }
+    }
+
+    #[test]
+    fn descriptor_marker_follows_open_file_and_is_cleared_on_finish() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("partial");
+        let moved = dir.path().join("moved");
+        std::fs::write(&path, b"data").unwrap();
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        if write_resume_file(&file, &resume(0, 4, None)).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+        std::fs::rename(&path, &moved).unwrap();
+        std::fs::write(&path, b"replacement").unwrap();
+        finish_resume(&file).unwrap();
+        assert!(read_resume(&moved).is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
+        assert_eq!(std::fs::read(&moved).unwrap(), b"data");
+        finish_resume(&file).unwrap();
     }
 
     #[test]

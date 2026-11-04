@@ -17,6 +17,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     thread,
+    time::{Duration, Instant, SystemTime},
 };
 
 use tracing::{debug, trace};
@@ -25,7 +26,7 @@ use crate::{
     error::DownloadError,
     http::Http,
     types::{Progress, ResumeInfo, SegmentProgress},
-    xattr::write_resume,
+    xattr::write_resume_file,
 };
 
 /// The smallest chunk a download is cut into. Below this, another connection
@@ -52,6 +53,43 @@ const REPORT_INTERVAL: u64 = 1024 * 1024;
 /// Consecutive attempts without progress before the download gives up and
 /// leaves its resume state for the next run.
 const MAX_ATTEMPTS: u32 = 3;
+
+/// A chunk also has a total failure limit, even when every attempt writes bytes.
+const MAX_CHUNK_FAILURES: u32 = 32;
+
+const RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(2);
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
+
+struct AttemptError {
+    error: DownloadError,
+    retry_after: Option<Duration>,
+}
+
+impl From<DownloadError> for AttemptError {
+    fn from(error: DownloadError) -> Self {
+        Self {
+            error,
+            retry_after: None,
+        }
+    }
+}
+
+impl From<std::io::Error> for AttemptError {
+    fn from(error: std::io::Error) -> Self {
+        DownloadError::Io(error).into()
+    }
+}
+
+fn retry_after(value: &str, now: SystemTime) -> Option<Duration> {
+    let value = value.trim();
+    if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+        return Some(Duration::from_secs(value.parse().unwrap_or(u64::MAX)));
+    }
+    httpdate::parse_http_date(value)
+        .ok()
+        .map(|date| date.duration_since(now).unwrap_or_default())
+}
 
 /// Cuts `total` bytes into contiguous, inclusive chunks: a queue of
 /// [`CHUNKS_PER_CONNECTION`] per connection, capped by the per-chunk minimum
@@ -366,6 +404,7 @@ impl Worker<'_> {
         written: u64,
     ) -> Result<(), DownloadError> {
         let mut attempts = 0;
+        let mut failures = 0;
         let mut cursor = start + written;
         loop {
             if cursor > end {
@@ -375,20 +414,52 @@ impl Worker<'_> {
             let previous_cursor = cursor;
             match self.fetch_and_write(index, start, end, &mut cursor) {
                 Ok(()) => continue,
-                Err(err) => {
+                Err(attempt_error) => {
+                    let AttemptError {
+                        error: err,
+                        retry_after,
+                    } = attempt_error;
                     if self.shared.cancel.load(Ordering::Relaxed) {
                         return Err(err);
                     }
+                    failures += 1;
                     if cursor > previous_cursor {
                         attempts = 0;
                     }
-                    if err.is_transient() && attempts < MAX_ATTEMPTS {
-                        debug!(chunk = index, attempt = attempts, %err, "chunk failed, retrying");
+                    if err.is_transient()
+                        && attempts < MAX_ATTEMPTS
+                        && failures < MAX_CHUNK_FAILURES
+                    {
+                        if retry_after.is_some_and(|delay| delay > MAX_RETRY_AFTER) {
+                            return Err(err);
+                        }
+                        let delay = RETRY_BASE_DELAY
+                            .saturating_mul(1 << attempts.saturating_sub(1))
+                            .min(RETRY_MAX_DELAY)
+                            .max(retry_after.unwrap_or_default());
+                        debug!(chunk = index, failures, ?delay, %err, "chunk failed, retrying");
+                        if !self.wait_for_retry(delay) {
+                            return Err(err);
+                        }
                         continue;
                     }
                     return Err(err);
                 }
             }
+        }
+    }
+
+    fn wait_for_retry(&self, delay: Duration) -> bool {
+        let deadline = Instant::now() + delay;
+        loop {
+            if self.shared.cancel.load(Ordering::Relaxed) {
+                return false;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return true;
+            }
+            thread::sleep(remaining.min(Duration::from_millis(50)));
         }
     }
 
@@ -398,7 +469,7 @@ impl Worker<'_> {
         start: u64,
         end: u64,
         cursor: &mut u64,
-    ) -> Result<(), DownloadError> {
+    ) -> Result<(), AttemptError> {
         let resp = Http::fetch_range(self.url, *cursor, end, self.etag, self.ghcr_blob).map_err(
             |err| {
                 match err {
@@ -420,12 +491,31 @@ impl Worker<'_> {
                 trace!(url = self.url, "server ignored the range request");
                 return Err(DownloadError::RangeUnsupported {
                     url: self.url.to_string(),
-                });
+                }
+                .into());
             }
-            return Err(DownloadError::HttpError {
-                status,
-                url: self.url.to_string(),
+            let retry_after = resp
+                .headers()
+                .get(ureq::http::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| retry_after(value, SystemTime::now()));
+            return Err(AttemptError {
+                error: DownloadError::HttpError {
+                    status,
+                    url: self.url.to_string(),
+                },
+                retry_after,
             });
+        }
+
+        if let Some(pinned) = self.etag.and_then(crate::http::strong_etag)
+            && let Some(actual) = resp.headers().get(ureq::http::header::ETAG)
+            && actual.as_bytes() != pinned.as_bytes()
+        {
+            return Err(DownloadError::RangeUnsupported {
+                url: self.url.to_string(),
+            }
+            .into());
         }
 
         // A range that does not start where it was asked to start, or that
@@ -441,7 +531,8 @@ impl Worker<'_> {
         let Some((span, total)) = content_range else {
             return Err(DownloadError::RangeUnsupported {
                 url: self.url.to_string(),
-            });
+            }
+            .into());
         };
         let matches = span.split_once('-').and_then(|(start, finish)| {
             Some((
@@ -453,7 +544,8 @@ impl Worker<'_> {
         if !matches {
             return Err(DownloadError::RangeUnsupported {
                 url: self.url.to_string(),
-            });
+            }
+            .into());
         }
 
         let mut reader = resp.into_body().into_reader();
@@ -474,17 +566,19 @@ impl Worker<'_> {
                 return Err(DownloadError::Io(std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
                     "chunk closed before its range was complete",
-                )));
+                ))
+                .into());
             }
             if self.shared.cancel.load(Ordering::Relaxed) {
                 return Err(DownloadError::Io(std::io::Error::new(
                     std::io::ErrorKind::Interrupted,
                     "cancelled",
-                )));
+                ))
+                .into());
             }
             self.file.write_all_at(&buffer[..n], *cursor)?;
             *cursor += n as u64;
-            self.shared.chunk_written[index].store(*cursor - start, Ordering::Relaxed);
+            self.shared.chunk_written[index].store(*cursor - start, Ordering::Release);
             let aggregate = self.shared.aggregate.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
             self.maybe_report(aggregate);
         }
@@ -522,7 +616,7 @@ impl Worker<'_> {
                 SegmentProgress {
                     start,
                     end,
-                    written: self.shared.chunk_written[index].load(Ordering::Relaxed),
+                    written: self.shared.chunk_written[index].load(Ordering::Acquire),
                 }
             })
             .collect();
@@ -533,8 +627,14 @@ impl Worker<'_> {
             last_modified: None,
             segments: Some(segments),
         };
-        if let Err(err) = write_resume(self.path, &info) {
-            trace!(%err, "failed to save resume checkpoint");
+        // Snapshot the counters first, then flush their corresponding writes.
+        // Writes concurrent with the flush can be refetched on resume.
+        if let Err(err) = self.file.sync_data() {
+            trace!(%err, "failed to sync data for resume checkpoint");
+            return;
+        }
+        if let Err(err) = write_resume_file(&self.file, &info) {
+            trace!(path = %self.path.display(), %err, "failed to save resume checkpoint");
         }
     }
 }
@@ -622,6 +722,294 @@ mod tests {
         });
         assert!(result.is_err());
         assert_eq!(requests.lock().unwrap().len(), MAX_ATTEMPTS as usize);
+    }
+
+    #[test]
+    fn retries_with_tiny_progress_are_bounded() {
+        let (base, requests) = test_server::serve_with(
+            vec![("/file".into(), vec![42; 100])],
+            ServeOptions {
+                close_after_bytes: Some(1),
+                ..Default::default()
+            },
+        );
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let url = format!("{base}/file");
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 100,
+            connections: 1,
+            ranges: vec![(0, 99)],
+            written: vec![0],
+            on_progress: None,
+        });
+        assert!(result.is_err());
+        assert_eq!(requests.lock().unwrap().len(), MAX_CHUNK_FAILURES as usize);
+        assert_eq!(
+            std::fs::read(file.path()).unwrap().len(),
+            MAX_CHUNK_FAILURES as usize
+        );
+    }
+
+    #[test]
+    fn contradictory_etag_is_rejected_before_writing() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request);
+            let _ = stream.write_all(b"HTTP/1.1 206 Partial Content\r\nETag: \"different\"\r\nContent-Range: bytes 0-4/5\r\nContent-Length: 5\r\nConnection: close\r\n\r\nabcde");
+        });
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: Some("\"pinned\""),
+            path: file.path(),
+            file: file.as_file(),
+            total: 5,
+            connections: 1,
+            ranges: vec![(0, 4)],
+            written: vec![0],
+            on_progress: None,
+        });
+        assert!(matches!(
+            result,
+            Err(DownloadError::RangeUnsupported { .. })
+        ));
+        assert_eq!(file.as_file().metadata().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn failed_data_sync_does_not_advance_checkpoint() {
+        if !supports_xattrs() {
+            return;
+        }
+        let path = tempfile::NamedTempFile::new().unwrap();
+        let unsyncable = File::open("/dev/null").unwrap();
+        assert!(unsyncable.sync_data().is_err());
+        let shared = Arc::new(Shared {
+            cancel: AtomicBool::new(false),
+            aggregate: AtomicU64::new(REPORT_INTERVAL),
+            reported: Mutex::new(0),
+            chunk_written: vec![AtomicU64::new(REPORT_INTERVAL)].into_boxed_slice(),
+            ranges: Arc::new(vec![(0, REPORT_INTERVAL * 2 - 1)]),
+            cursor: AtomicUsize::new(0),
+            partial: Mutex::new(Vec::new()),
+            claimed: Mutex::new(vec![true]),
+        });
+        let worker = Worker {
+            shared,
+            url: "",
+            ghcr_blob: false,
+            etag: None,
+            path: path.path(),
+            total: REPORT_INTERVAL * 2,
+            file: &unsyncable,
+            progress: None,
+        };
+        worker.maybe_report(REPORT_INTERVAL);
+        assert!(crate::xattr::read_resume(path.path()).is_none());
+    }
+
+    #[test]
+    fn retry_wait_observes_cancellation() {
+        let shared = Arc::new(Shared {
+            cancel: AtomicBool::new(false),
+            aggregate: AtomicU64::new(0),
+            reported: Mutex::new(0),
+            chunk_written: Box::new([]),
+            ranges: Arc::new(Vec::new()),
+            cursor: AtomicUsize::new(0),
+            partial: Mutex::new(Vec::new()),
+            claimed: Mutex::new(Vec::new()),
+        });
+        let other = shared.clone();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let worker = Worker {
+            shared,
+            url: "",
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            total: 0,
+            file: file.as_file(),
+            progress: None,
+        };
+        let thread = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            other.cancel.store(true, Ordering::Relaxed);
+        });
+        let started = Instant::now();
+        assert!(!worker.wait_for_retry(Duration::from_secs(2)));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn rate_limit_retries_are_delayed() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut times = Vec::new();
+            for _ in 0..MAX_ATTEMPTS {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 4096];
+                let _ = stream.read(&mut request);
+                times.push(Instant::now());
+                stream.write_all(b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            }
+            times
+        });
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 5,
+            connections: 1,
+            ranges: vec![(0, 4)],
+            written: vec![0],
+            on_progress: None,
+        });
+        assert!(matches!(
+            result,
+            Err(DownloadError::HttpError {
+                status: 429,
+                ..
+            })
+        ));
+        let times = server.join().unwrap();
+        assert!(times[1].duration_since(times[0]) >= Duration::from_millis(90));
+        assert!(times[2].duration_since(times[1]) >= Duration::from_millis(190));
+    }
+
+    #[test]
+    fn retry_after_parses_seconds_and_dates() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        assert_eq!(retry_after(" 12 ", now), Some(Duration::from_secs(12)));
+        let future = httpdate::fmt_http_date(now + Duration::from_secs(42));
+        assert_eq!(retry_after(&future, now), Some(Duration::from_secs(42)));
+        let past = httpdate::fmt_http_date(now - Duration::from_secs(1));
+        assert_eq!(retry_after(&past, now), Some(Duration::ZERO));
+        assert_eq!(retry_after("invalid", now), None);
+        assert!(retry_after("9999999999999999999999999999", now).unwrap() > MAX_RETRY_AFTER);
+    }
+
+    #[test]
+    fn server_retry_after_delays_next_range_request() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut times = Vec::new();
+            for response in [
+                "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-4/5\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello",
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 4096];
+                stream.read(&mut request).unwrap();
+                times.push(Instant::now());
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            times
+        });
+        let file = tempfile::NamedTempFile::new().unwrap();
+        run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 5,
+            connections: 1,
+            ranges: vec![(0, 4)],
+            written: vec![0],
+            on_progress: None,
+        })
+        .unwrap();
+        let times = server.join().unwrap();
+        assert!(times[1].duration_since(times[0]) >= Duration::from_secs(1));
+        assert_eq!(std::fs::read(file.path()).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn excessive_server_hint_returns_error_without_retry() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 61\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            std::thread::sleep(Duration::from_millis(400));
+            assert!(
+                matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock)
+            );
+        });
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 5,
+            connections: 1,
+            ranges: vec![(0, 4)],
+            written: vec![0],
+            on_progress: None,
+        });
+        assert!(matches!(
+            result,
+            Err(DownloadError::HttpError {
+                status: 503,
+                ..
+            })
+        ));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn missing_response_remains_a_request_error() {
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            // Accept all retries and close without an HTTP response.
+            for _ in 0..MAX_ATTEMPTS {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 4096];
+                let _ = stream.read(&mut request);
+            }
+        });
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 5,
+            connections: 1,
+            ranges: vec![(0, 4)],
+            written: vec![0],
+            on_progress: None,
+        });
+        assert!(result.is_err());
+        server.join().unwrap();
     }
 
     #[test]
@@ -771,6 +1159,74 @@ mod tests {
         let requests = requests.lock().unwrap();
         let gets = requests.iter().filter(|r| r.starts_with("GET")).count();
         assert_eq!(gets, 24, "96 MiB over 24 queued chunks: {requests:?}");
+    }
+
+    #[test]
+    fn workers_issue_overlapping_range_requests() {
+        use std::{
+            io::{BufRead, BufReader, Write},
+            net::TcpListener,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let mut pending = Vec::new();
+            while pending.len() < 2 && Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(2)))
+                            .unwrap();
+                        let mut reader = BufReader::new(stream.try_clone().unwrap());
+                        let mut range = String::new();
+                        loop {
+                            let mut line = String::new();
+                            if reader.read_line(&mut line).unwrap() == 0 || line.trim().is_empty() {
+                                break;
+                            }
+                            if line.to_ascii_lowercase().starts_with("range:") {
+                                range = line;
+                            }
+                        }
+                        pending.push((stream, range));
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(err) => panic!("accept failed: {err}"),
+                }
+            }
+            let overlapping = pending.len();
+            for (mut stream, range) in pending {
+                let (span, content) = if range.contains("bytes=0-4") {
+                    ("0-4", "abcde")
+                } else {
+                    assert!(range.contains("bytes=5-9"), "unexpected range: {range}");
+                    ("5-9", "fghij")
+                };
+                write!(stream, "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {span}/10\r\nContent-Length: 5\r\nConnection: close\r\n\r\n{content}").unwrap();
+            }
+            overlapping
+        });
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let result = run(Job {
+            url: &url,
+            ghcr_blob: false,
+            etag: None,
+            path: file.path(),
+            file: file.as_file(),
+            total: 10,
+            connections: 2,
+            ranges: vec![(0, 4), (5, 9)],
+            written: vec![0, 0],
+            on_progress: None,
+        });
+        assert_eq!(server.join().unwrap(), 2, "requests did not overlap");
+        result.unwrap();
+        assert_eq!(std::fs::read(file.path()).unwrap(), b"abcdefghij");
     }
 
     #[test]
