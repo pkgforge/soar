@@ -162,7 +162,8 @@ impl Http {
     /// The request carries `Range: bytes={start}-{end}` with both ends
     /// inclusive. A server that answers `200` ignored the range; callers
     /// surface that as [`DownloadError::RangeUnsupported`] so the download can
-    /// fall back to a single stream.
+    /// fall back to a single stream. HTTP error statuses are returned as
+    /// responses so callers can inspect retry headers.
     pub(crate) fn fetch_range(
         url: &str,
         start: u64,
@@ -185,7 +186,12 @@ impl Http {
             req = req.header("If-Range", tag);
         }
 
-        let result = req.call().map_err(|err| DownloadError::request(url, err));
+        let result = req
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .call()
+            .map_err(|err| DownloadError::request(url, err));
         if let Ok(ref resp) = result {
             Self::log_response_headers(resp, "GET");
         }
