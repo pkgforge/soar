@@ -257,7 +257,9 @@ async fn download_link(ctx: &DownloadContext, link: &str) -> SoarResult<()> {
 
             info!("Downloading package: {}", package.pkg_name);
             if let Some(ref url) = package.ghcr_blob {
-                let mut dl = OciDownload::new(url.as_str()).overwrite(ctx.get_overwrite_mode());
+                let mut dl = OciDownload::new(url.as_str())
+                    .connections(ctx.connections)
+                    .overwrite(ctx.get_overwrite_mode());
 
                 if let Some(ref out) = ctx.output {
                     dl = dl.output(out);
@@ -294,6 +296,7 @@ async fn handle_oci_download(ctx: &DownloadContext, reference: &str) -> SoarResu
     info!("Downloading using OCI reference: {}", reference);
 
     let mut dl = OciDownload::new(reference)
+        .connections(ctx.connections)
         .filter(ctx.create_filter())
         .parallel(get_config().ghcr_concurrency.unwrap_or(8))
         .overwrite(ctx.get_overwrite_mode());

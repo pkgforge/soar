@@ -38,6 +38,22 @@ impl RemoteInfo {
     }
 }
 
+/// Returns a valid strong entity tag suitable for an If-Range request.
+pub(crate) fn strong_etag(tag: &str) -> Option<&str> {
+    let bytes = tag.as_bytes();
+    if bytes.len() >= 2
+        && bytes[0] == b'"'
+        && bytes[bytes.len() - 1] == b'"'
+        && bytes[1..bytes.len() - 1]
+            .iter()
+            .all(|&byte| byte == 0x21 || (0x23..=0x7e).contains(&byte) || byte >= 0x80)
+    {
+        Some(tag)
+    } else {
+        None
+    }
+}
+
 fn content_length_header(headers: &ureq::http::HeaderMap) -> Option<u64> {
     headers
         .get(CONTENT_LENGTH)
@@ -90,7 +106,7 @@ impl Http {
     /// Fetches a GET response for the given URL, optionally requesting a byte range and using an ETag for conditional requests.
     ///
     /// If `resume_from` is `Some(pos)`, the request includes a `Range: bytes={pos}-` header. If `etag` is `Some(tag)` and a range is requested,
-    /// the request also includes an `If-Range: {tag}` header.
+    /// the request also includes an `If-Range: {tag}` header when the tag is a valid strong ETag.
     ///
     /// # Returns
     ///
@@ -127,7 +143,7 @@ impl Http {
         if let Some(pos) = resume_from {
             debug!("  Range: bytes={}-", pos);
             req = req.header("Range", &format!("bytes={}-", pos));
-            if let Some(tag) = etag {
+            if let Some(tag) = etag.and_then(strong_etag) {
                 trace!(etag = tag, "adding If-Range header");
                 req = req.header("If-Range", tag);
             }
@@ -164,7 +180,7 @@ impl Http {
         }
 
         req = req.header("Range", &format!("bytes={start}-{end}"));
-        if let Some(tag) = etag {
+        if let Some(tag) = etag.and_then(strong_etag) {
             trace!(etag = tag, "adding If-Range header");
             req = req.header("If-Range", tag);
         }
@@ -264,5 +280,20 @@ impl Http {
             trace!(url = url, "JSON parsed successfully");
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strong_etag;
+
+    #[test]
+    fn only_strong_entity_tags_are_usable_for_if_range() {
+        for tag in ["\"\"", "\"abc!#$%\""] {
+            assert_eq!(strong_etag(tag), Some(tag));
+        }
+        for tag in ["W/\"abc\"", "abc", "\"a b\"", "\"a\"b\"", "\"a\n\""] {
+            assert_eq!(strong_etag(tag), None);
+        }
     }
 }

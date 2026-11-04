@@ -4,6 +4,7 @@ use std::{
 };
 
 use semver::Version;
+use soar_config::config::get_config;
 use soar_core::{
     SoarResult,
     error::{ErrorContext, SoarError},
@@ -163,6 +164,7 @@ pub async fn process_self_action(action: &SelfAction) -> SoarResult<()> {
                     })?;
 
                 let dl = Download::new(asset.url())
+                    .connections(get_config().download_concurrency.unwrap_or(8))
                     .output(staging.to_string_lossy())
                     .overwrite(OverwriteMode::Force)
                     .checksum(expected_checksum)
