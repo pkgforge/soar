@@ -32,9 +32,10 @@ Control where soar stores its data.
 | Configuration Option | Type | Default | Description |
 |---------------------|------|---------|-------------|
 | `parallel` | Boolean | `true` | Enable parallel downloads |
-| `parallel_limit` | Integer | `4` | Max parallel downloads (1-16) |
-| `ghcr_concurrency` | Integer | `8` | Max GHCR concurrent requests (1-32) |
-| `search_limit` | Integer | `20` | Max search results (5-100) |
+| `parallel_limit` | Integer | `4` | Max parallel downloads; must be positive |
+| `ghcr_concurrency` | Integer | `8` | Max parallel GHCR layer downloads; must be positive |
+| `download_concurrency` | Integer | `8` | Connections per HTTP or OCI blob download; must be positive. More than one fetches parallel segments when the server supports ranges and supplies a strong ETag. OCI manifest layers use separate single-stream downloads |
+| `search_limit` | Integer | `20` | Max search results; must be positive |
 | `cross_repo_updates` | Boolean | `false` | Allow cross-repo updates (not implemented) |
 
 ### Package Installation
