@@ -186,6 +186,7 @@ enum Outcome {
 
 struct Shared {
     cancel: AtomicBool,
+    retry_deadline: Mutex<Option<Instant>>,
     /// Bytes written across all chunks.
     aggregate: AtomicU64,
     /// The aggregate the last checkpoint and progress report carried.
@@ -243,6 +244,7 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
         .collect();
     let shared = Arc::new(Shared {
         cancel: AtomicBool::new(false),
+        retry_deadline: Mutex::new(None),
         aggregate: AtomicU64::new(initial),
         reported: Mutex::new(initial),
         chunk_written: job
@@ -308,6 +310,15 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
         }
     });
 
+    if let Some(index) = outcomes
+        .iter()
+        .position(|outcome| matches!(outcome, Outcome::Failed(DownloadError::RetryAfter { .. })))
+    {
+        if let Outcome::Failed(err) = outcomes.swap_remove(index) {
+            return Err(err);
+        }
+    }
+
     // A server that ignored one range request is treated as ignoring them all;
     // the caller falls back to a single stream, which needs no ranges.
     if let Some(url) = outcomes.iter().find_map(|outcome| {
@@ -358,7 +369,9 @@ impl Worker<'_> {
                         // Cancellation is fallout from another worker's
                         // failure; that worker's error is the one worth
                         // reporting.
-                        if worker.shared.cancel.load(Ordering::Relaxed) {
+                        if worker.shared.cancel.load(Ordering::Relaxed)
+                            && !matches!(err, DownloadError::RetryAfter { .. })
+                        {
                             return Outcome::Cancelled;
                         }
                         worker.shared.cancel.store(true, Ordering::Relaxed);
@@ -410,6 +423,9 @@ impl Worker<'_> {
             if cursor > end {
                 return Ok(());
             }
+            if !self.wait_for_shared_retry() {
+                return Ok(());
+            }
             attempts += 1;
             let previous_cursor = cursor;
             match self.fetch_and_write(index, start, end, &mut cursor) {
@@ -419,32 +435,76 @@ impl Worker<'_> {
                         error: err,
                         retry_after,
                     } = attempt_error;
-                    if self.shared.cancel.load(Ordering::Relaxed) {
-                        return Err(err);
-                    }
                     failures += 1;
                     if cursor > previous_cursor {
                         attempts = 0;
                     }
-                    if err.is_transient()
+                    let can_retry = err.is_transient()
                         && attempts < MAX_ATTEMPTS
                         && failures < MAX_CHUNK_FAILURES
+                        && !self.shared.cancel.load(Ordering::Relaxed);
+                    if let (
+                        DownloadError::HttpError {
+                            status,
+                            url,
+                        },
+                        Some(delay),
+                    ) = (&err, retry_after)
+                        && !delay.is_zero()
                     {
-                        if retry_after.is_some_and(|delay| delay > MAX_RETRY_AFTER) {
-                            return Err(err);
+                        if delay > MAX_RETRY_AFTER || !can_retry {
+                            return Err(DownloadError::RetryAfter {
+                                status: *status,
+                                url: url.clone(),
+                                delay,
+                            });
                         }
+                        let deadline = Instant::now() + delay;
+                        let mut shared = self.shared.retry_deadline.lock().unwrap();
+                        *shared = Some(shared.map_or(deadline, |current| current.max(deadline)));
+                    }
+                    if can_retry {
                         let delay = RETRY_BASE_DELAY
                             .saturating_mul(1 << attempts.saturating_sub(1))
                             .min(RETRY_MAX_DELAY)
                             .max(retry_after.unwrap_or_default());
                         debug!(chunk = index, failures, ?delay, %err, "chunk failed, retrying");
                         if !self.wait_for_retry(delay) {
+                            if let (
+                                DownloadError::HttpError {
+                                    status,
+                                    url,
+                                },
+                                Some(delay),
+                            ) = (&err, retry_after)
+                                && !delay.is_zero()
+                            {
+                                return Err(DownloadError::RetryAfter {
+                                    status: *status,
+                                    url: url.clone(),
+                                    delay,
+                                });
+                            }
                             return Err(err);
                         }
                         continue;
                     }
                     return Err(err);
                 }
+            }
+        }
+    }
+
+    fn wait_for_shared_retry(&self) -> bool {
+        loop {
+            let deadline = *self.shared.retry_deadline.lock().unwrap();
+            match deadline {
+                Some(deadline) if deadline > Instant::now() => {
+                    if !self.wait_for_retry(deadline.saturating_duration_since(Instant::now())) {
+                        return false;
+                    }
+                }
+                _ => return !self.shared.cancel.load(Ordering::Relaxed),
             }
         }
     }
@@ -588,9 +648,12 @@ impl Worker<'_> {
     /// [`REPORT_INTERVAL`] aggregate bytes; one worker wins that right per
     /// interval, so the xattr and the bar advance in step.
     fn maybe_report(&self, aggregate: u64) {
-        let mut reported = self.shared.reported.lock().unwrap();
-        // Another worker may have reported more recent progress while this
-        // worker was waiting for the reporting lock.
+        let mut reported = match self.shared.reported.try_lock() {
+            Ok(reported) => reported,
+            Err(std::sync::TryLockError::WouldBlock) => return,
+            Err(std::sync::TryLockError::Poisoned(err)) => panic!("{err}"),
+        };
+        // A previous reporter may have recorded more recent progress.
         let aggregate = self.shared.aggregate.load(Ordering::Relaxed).max(aggregate);
         if aggregate.saturating_sub(*reported) < REPORT_INTERVAL {
             return;
@@ -796,6 +859,7 @@ mod tests {
         assert!(unsyncable.sync_data().is_err());
         let shared = Arc::new(Shared {
             cancel: AtomicBool::new(false),
+            retry_deadline: Mutex::new(None),
             aggregate: AtomicU64::new(REPORT_INTERVAL),
             reported: Mutex::new(0),
             chunk_written: vec![AtomicU64::new(REPORT_INTERVAL)].into_boxed_slice(),
@@ -819,9 +883,47 @@ mod tests {
     }
 
     #[test]
+    fn reporting_does_not_block_other_workers() {
+        let shared = Arc::new(Shared {
+            cancel: AtomicBool::new(false),
+            retry_deadline: Mutex::new(None),
+            aggregate: AtomicU64::new(REPORT_INTERVAL),
+            reported: Mutex::new(0),
+            chunk_written: Box::new([]),
+            ranges: Arc::new(Vec::new()),
+            cursor: AtomicUsize::new(0),
+            partial: Mutex::new(Vec::new()),
+            claimed: Mutex::new(Vec::new()),
+        });
+        let guard = shared.reported.lock().unwrap();
+        let other = shared.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let file = tempfile::NamedTempFile::new().unwrap();
+            let worker = Worker {
+                shared: other,
+                url: "",
+                ghcr_blob: false,
+                etag: None,
+                path: file.path(),
+                total: REPORT_INTERVAL * 2,
+                file: file.as_file(),
+                progress: None,
+            };
+            worker.maybe_report(REPORT_INTERVAL);
+            tx.send(()).unwrap();
+        });
+        let result = rx.recv_timeout(Duration::from_secs(1));
+        drop(guard);
+        thread.join().unwrap();
+        assert!(result.is_ok(), "reporter blocked on checkpoint lock");
+    }
+
+    #[test]
     fn retry_wait_observes_cancellation() {
         let shared = Arc::new(Shared {
             cancel: AtomicBool::new(false),
+            retry_deadline: Mutex::new(None),
             aggregate: AtomicU64::new(0),
             reported: Mutex::new(0),
             chunk_written: Box::new([]),
@@ -946,40 +1048,124 @@ mod tests {
     #[test]
     fn excessive_server_hint_returns_error_without_retry() {
         use std::io::{Read, Write};
+        for status in [429, 503] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 4096];
+                stream.read(&mut request).unwrap();
+                write!(stream, "HTTP/1.1 {status} Error\r\nRetry-After: 61\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                listener.set_nonblocking(true).unwrap();
+                std::thread::sleep(Duration::from_millis(400));
+                assert!(
+                    matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock)
+                );
+            });
+            let file = tempfile::NamedTempFile::new().unwrap();
+            let err = run(Job {
+                url: &url,
+                ghcr_blob: false,
+                etag: None,
+                path: file.path(),
+                file: file.as_file(),
+                total: 5,
+                connections: 1,
+                ranges: vec![(0, 4)],
+                written: vec![0],
+                on_progress: None,
+            })
+            .unwrap_err();
+            assert!(
+                matches!(err, DownloadError::RetryAfter { status: actual, delay, .. } if actual == status && delay == Duration::from_secs(61))
+            );
+            assert!(!err.is_transient());
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn cancellation_preserves_another_workers_cooldown() {
+        use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let (mut first, _) = listener.accept().unwrap();
+            let (mut second, _) = listener.accept().unwrap();
             let mut request = [0; 4096];
-            stream.read(&mut request).unwrap();
-            stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 61\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
-            listener.set_nonblocking(true).unwrap();
-            std::thread::sleep(Duration::from_millis(400));
-            assert!(
-                matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock)
-            );
+            first.read(&mut request).unwrap();
+            second.read(&mut request).unwrap();
+            first.write_all(b"HTTP/1.1 429 Error\r\nRetry-After: 10\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            std::thread::sleep(Duration::from_millis(200));
+            second
+                .write_all(b"HTTP/1.1 416 Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .unwrap();
         });
         let file = tempfile::NamedTempFile::new().unwrap();
-        let result = run(Job {
+        let started = Instant::now();
+        let err = run(Job {
             url: &url,
             ghcr_blob: false,
             etag: None,
             path: file.path(),
             file: file.as_file(),
-            total: 5,
-            connections: 1,
-            ranges: vec![(0, 4)],
-            written: vec![0],
+            total: 10,
+            connections: 2,
+            ranges: vec![(0, 4), (5, 9)],
+            written: vec![0, 0],
             on_progress: None,
-        });
+        })
+        .unwrap_err();
         assert!(matches!(
-            result,
-            Err(DownloadError::HttpError {
-                status: 503,
+            err,
+            DownloadError::RetryAfter {
+                status: 429,
                 ..
-            })
+            }
         ));
+        assert!(!err.is_transient());
+        assert!(started.elapsed() < Duration::from_secs(3));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn final_attempt_preserves_outstanding_cooldown() {
+        use std::io::{Read, Write};
+        for delay in [30, 61] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                for attempt in 0..MAX_ATTEMPTS {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    let mut request = [0; 4096];
+                    stream.read(&mut request).unwrap();
+                    if attempt + 1 == MAX_ATTEMPTS {
+                        write!(stream, "HTTP/1.1 429 Error\r\nRetry-After: {delay}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                    } else {
+                        stream.write_all(b"HTTP/1.1 429 Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                    }
+                }
+            });
+            let file = tempfile::NamedTempFile::new().unwrap();
+            let err = run(Job {
+                url: &url,
+                ghcr_blob: false,
+                etag: None,
+                path: file.path(),
+                file: file.as_file(),
+                total: 5,
+                connections: 1,
+                ranges: vec![(0, 4)],
+                written: vec![0],
+                on_progress: None,
+            })
+            .unwrap_err();
+            assert!(
+                matches!(err, DownloadError::RetryAfter { status: 429, delay: d, .. } if d == Duration::from_secs(delay))
+            );
+            assert!(!err.is_transient());
+            server.join().unwrap();
+        }
     }
 
     #[test]
