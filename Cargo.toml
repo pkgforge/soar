@@ -69,7 +69,7 @@ toml = "1.1.8"
 toml_edit = "0.25.17"
 tracing = { version = "0.1.44", default-features = false }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "json", "nu-ansi-term"] }
-ureq = { version = "3.5.0", features = ["json"] }
+ureq = { version = "3.5.0", features = ["json", "platform-verifier"] }
 url = "2.5.8"
 xattr = "1.6.1"
 xxhash-rust = { version = "0.8.19", features = ["xxh32"] }
