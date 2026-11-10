@@ -167,10 +167,30 @@ impl ClientConfig {
         self.build_with_stall(STALL_TIMEOUT)
     }
 
+    /// Builds an agent with a custom idle-read budget and default connection/DNS budgets.
+    ///
+    /// Uses the 30-second [`CONNECT_TIMEOUT`] and no separate DNS-resolution timeout;
+    /// the configured global timeout still applies.
     fn build_with_stall(&self, stall: Duration) -> Agent {
         self.build_with_timeouts(stall, CONNECT_TIMEOUT, None)
     }
 
+    /// Builds an agent with shared TLS policy and caller-supplied timeout budgets.
+    ///
+    /// Uses Rustls with the operating system's trust store (including local CAs)
+    /// through the platform verifier; server certificate verification remains enabled.
+    /// Preserves this configuration's global timeout and IP family, applying the proxy
+    /// and user agent when set. With no explicit proxy, ureq's environment proxy
+    /// discovery remains in effect.
+    ///
+    /// `stall` bounds each wait for input via [`StallTransport`], restarting for each
+    /// read rather than capping the whole transfer. A shorter global or phase timeout
+    /// still wins. `connect` bounds connection establishment, including TLS handshakes.
+    /// `resolve` optionally bounds local target-hostname DNS resolution; `None` adds
+    /// no separate DNS budget. The configured global timeout still applies.
+    ///
+    /// Keeping these budgets separate lets [`zsync_agent`] retain zsync's connection
+    /// and DNS limits without duplicating or drifting from the shared TLS policy.
     fn build_with_timeouts(
         &self,
         stall: Duration,
