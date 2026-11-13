@@ -1,4 +1,10 @@
 
+## [0.18.1](https://github.com/pkgforge/soar/compare/soar-core-v0.18.0...soar-core-v0.18.1) - 2026-11-13
+
+### ⚙️ Miscellaneous Tasks
+
+- Updated the following local packages: soar-dl, soar-db - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.18.0](https://github.com/pkgforge/soar/compare/soar-core-v0.17.4...soar-core-v0.18.0) - 2026-10-27
 
 ### ⛰️  Features
