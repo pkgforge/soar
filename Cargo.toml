@@ -45,6 +45,7 @@ regex = { version = "1.13.1", default-features = false, features = [
   "unicode-case",
   "unicode-perl"
 ] }
+rustls-native-certs = "0.8.4"
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["indexmap"] }

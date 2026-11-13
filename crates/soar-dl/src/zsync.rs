@@ -11,7 +11,7 @@ use std::{fs::File, path::Path};
 use tracing::debug;
 use zsync_rs::{ControlFile, HttpClient, ZsyncAssembly, checksum::calc_sha1_stream};
 
-use crate::{error::DownloadError, types::Progress};
+use crate::{error::DownloadError, http_client::shared_agent, types::Progress};
 
 /// Reject a zsync endpoint that is not served over TLS.
 ///
@@ -115,7 +115,7 @@ pub fn feed_beside(artifact_url: &str) -> Option<String> {
 /// Read the control file at `url` without downloading the artifact.
 pub fn fetch_target(url: &str) -> Result<ZsyncTarget, DownloadError> {
     ensure_https(url, "zsync control file")?;
-    let http = HttpClient::new();
+    let http = HttpClient::with_agent(shared_agent());
     let control = http
         .fetch_control_file(url)
         .map_err(|e| DownloadError::Zsync(format!("fetching zsync control file: {e}")))?;
@@ -187,12 +187,13 @@ where
     // Fetched here rather than left to `ZsyncAssembly::from_url` so the control
     // file that is checked is the same one the blocks are fetched against: a
     // second request could be answered differently.
-    let control = HttpClient::new()
+    let http = HttpClient::with_agent(shared_agent());
+    let control = http
         .fetch_control_file(url)
         .map_err(|e| DownloadError::Zsync(format!("reading zsync control file: {e}")))?;
     ensure_artifact_urls_https(&control.urls)?;
 
-    let mut assembly = ZsyncAssembly::with_base_url(control, output, Some(base_url_of(url)))
+    let mut assembly = ZsyncAssembly::with_client(control, output, Some(base_url_of(url)), http)
         .map_err(|e| DownloadError::Zsync(format!("reading zsync control file: {e}")))?;
 
     if let Some(callback) = on_progress {

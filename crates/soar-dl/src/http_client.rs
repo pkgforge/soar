@@ -3,10 +3,12 @@ use std::{
     time::Duration,
 };
 
+use tracing::debug;
 use ureq::{
     Agent, Proxy, RequestBuilder, Timeout,
     config::IpFamily,
     http::{self, HeaderMap, Uri},
+    tls::{Certificate, RootCerts, TlsConfig},
     typestate::{WithBody, WithoutBody},
     unversioned::{
         resolver::DefaultResolver,
@@ -27,6 +29,25 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// ureq's own receive timeouts each cap a whole phase, the body included, so the bound is
 /// applied by [`StallConnector`] instead.
 const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Roots for verifying servers: the system trust store, so locally installed CAs work, or
+/// the bundled WebPKI roots when the system has none, as in minimal containers.
+static ROOT_CERTS: LazyLock<RootCerts> = LazyLock::new(|| {
+    let loaded = rustls_native_certs::load_native_certs();
+    if loaded.certs.is_empty() {
+        debug!(
+            "no system CA certificates found, using bundled roots: {:?}",
+            loaded.errors
+        );
+        RootCerts::WebPki
+    } else {
+        loaded
+            .certs
+            .iter()
+            .map(|c| Certificate::from_der(c).to_owned())
+            .into()
+    }
+});
 
 /// Wraps each connection ureq makes in a [`StallTransport`].
 ///
@@ -144,8 +165,10 @@ impl ClientConfig {
     /// Builds an HTTP `Agent` configured from this `ClientConfig`.
     ///
     /// The returned `Agent` will incorporate the configured proxy, global timeout,
-    /// IP family, and user agent header (if present). A server that sends nothing for
-    /// two minutes fails the request, whatever the global timeout.
+    /// IP family, and user agent header (if present). Server certificates are verified
+    /// against the system trust store, falling back to bundled roots when it is empty.
+    /// A server that sends nothing for two minutes fails the request, whatever the
+    /// global timeout.
     ///
     /// When no proxy is set, the `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
     /// environment variables are honored.
@@ -166,6 +189,7 @@ impl ClientConfig {
 
     fn build_with_stall(&self, stall: Duration) -> Agent {
         let mut config = ureq::Agent::config_builder()
+            .tls_config(TlsConfig::builder().root_certs(ROOT_CERTS.clone()).build())
             .timeout_global(self.timeout)
             .timeout_connect(Some(CONNECT_TIMEOUT))
             .ip_family(self.ip_family);
@@ -200,6 +224,17 @@ static SHARED_CLIENT_STATE: LazyLock<Arc<RwLock<SharedClient>>> = LazyLock::new(
         config,
     }))
 });
+
+/// Returns the shared agent, for libraries such as zsync-rs that take an `Agent` directly.
+///
+/// Headers from [`ClientConfig::headers`] are not applied, since they are added per request.
+pub(crate) fn shared_agent() -> Agent {
+    SHARED_CLIENT_STATE
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .agent
+        .clone()
+}
 
 #[derive(Clone, Default)]
 pub struct SharedAgent;
@@ -411,6 +446,18 @@ mod tests {
         };
         let agent = config.build();
         let _ = agent;
+    }
+
+    #[test]
+    fn test_client_config_verifies_against_system_roots() {
+        let agent = ClientConfig::default().build();
+        let tls = agent.config().tls_config();
+        assert!(!tls.disable_verification());
+        if rustls_native_certs::load_native_certs().certs.is_empty() {
+            assert!(matches!(tls.root_certs(), RootCerts::WebPki));
+        } else {
+            assert!(matches!(tls.root_certs(), RootCerts::Specific(_)));
+        }
     }
 
     #[test]
