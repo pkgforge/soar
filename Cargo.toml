@@ -45,6 +45,7 @@ regex = { version = "1.13.1", default-features = false, features = [
   "unicode-case",
   "unicode-perl"
 ] }
+rustls-native-certs = "0.8.4"
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["indexmap"] }
@@ -69,7 +70,7 @@ toml = "1.1.8"
 toml_edit = "0.25.17"
 tracing = { version = "0.1.44", default-features = false }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "json", "nu-ansi-term"] }
-ureq = { version = "3.5.0", features = ["json", "platform-verifier"] }
+ureq = { version = "3.5.0", features = ["json"] }
 url = "2.5.8"
 xattr = "1.6.1"
 xxhash-rust = { version = "0.8.19", features = ["xxh32"] }

@@ -3,11 +3,12 @@ use std::{
     time::Duration,
 };
 
+use tracing::debug;
 use ureq::{
     Agent, Proxy, RequestBuilder, Timeout,
     config::IpFamily,
     http::{self, HeaderMap, Uri},
-    tls::{RootCerts, TlsConfig, TlsProvider},
+    tls::{Certificate, RootCerts, TlsConfig},
     typestate::{WithBody, WithoutBody},
     unversioned::{
         resolver::DefaultResolver,
@@ -28,6 +29,25 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// ureq's own receive timeouts each cap a whole phase, the body included, so the bound is
 /// applied by [`StallConnector`] instead.
 const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Roots for verifying servers: the system trust store, so locally installed CAs work, or
+/// the bundled WebPKI roots when the system has none, as in minimal containers.
+static ROOT_CERTS: LazyLock<RootCerts> = LazyLock::new(|| {
+    let loaded = rustls_native_certs::load_native_certs();
+    if loaded.certs.is_empty() {
+        debug!(
+            "no system CA certificates found, using bundled roots: {:?}",
+            loaded.errors
+        );
+        RootCerts::WebPki
+    } else {
+        loaded
+            .certs
+            .iter()
+            .map(|c| Certificate::from_der(c).to_owned())
+            .into()
+    }
+});
 
 /// Wraps each connection ureq makes in a [`StallTransport`].
 ///
@@ -145,8 +165,8 @@ impl ClientConfig {
     /// Builds an HTTP `Agent` configured from this `ClientConfig`.
     ///
     /// The returned `Agent` will incorporate the configured proxy, global timeout,
-    /// IP family, and user agent header (if present). TLS certificates are verified
-    /// against the operating system's trust store, including locally installed CAs.
+    /// IP family, and user agent header (if present). Server certificates are verified
+    /// against the system trust store, falling back to bundled roots when it is empty.
     /// A server that sends nothing for two minutes fails the request, whatever the
     /// global timeout.
     ///
@@ -167,46 +187,11 @@ impl ClientConfig {
         self.build_with_stall(STALL_TIMEOUT)
     }
 
-    /// Builds an agent with a custom idle-read budget and default connection/DNS budgets.
-    ///
-    /// Uses the 30-second [`CONNECT_TIMEOUT`] and no separate DNS-resolution timeout;
-    /// the configured global timeout still applies.
     fn build_with_stall(&self, stall: Duration) -> Agent {
-        self.build_with_timeouts(stall, CONNECT_TIMEOUT, None)
-    }
-
-    /// Builds an agent with shared TLS policy and caller-supplied timeout budgets.
-    ///
-    /// Uses Rustls with the operating system's trust store (including local CAs)
-    /// through the platform verifier; server certificate verification remains enabled.
-    /// Preserves this configuration's global timeout and IP family, applying the proxy
-    /// and user agent when set. With no explicit proxy, ureq's environment proxy
-    /// discovery remains in effect.
-    ///
-    /// `stall` bounds each wait for input via [`StallTransport`], restarting for each
-    /// read rather than capping the whole transfer. A shorter global or phase timeout
-    /// still wins. `connect` bounds connection establishment, including TLS handshakes.
-    /// `resolve` optionally bounds local target-hostname DNS resolution; `None` adds
-    /// no separate DNS budget. The configured global timeout still applies.
-    ///
-    /// Keeping these budgets separate lets [`zsync_agent`] retain zsync's connection
-    /// and DNS limits without duplicating or drifting from the shared TLS policy.
-    fn build_with_timeouts(
-        &self,
-        stall: Duration,
-        connect: Duration,
-        resolve: Option<Duration>,
-    ) -> Agent {
         let mut config = ureq::Agent::config_builder()
-            .tls_config(
-                TlsConfig::builder()
-                    .provider(TlsProvider::Rustls)
-                    .root_certs(RootCerts::PlatformVerifier)
-                    .build(),
-            )
+            .tls_config(TlsConfig::builder().root_certs(ROOT_CERTS.clone()).build())
             .timeout_global(self.timeout)
-            .timeout_connect(Some(connect))
-            .timeout_resolve(resolve)
+            .timeout_connect(Some(CONNECT_TIMEOUT))
             .ip_family(self.ip_family);
 
         if self.proxy.is_some() {
@@ -240,19 +225,15 @@ static SHARED_CLIENT_STATE: LazyLock<Arc<RwLock<SharedClient>>> = LazyLock::new(
     }))
 });
 
-/// Builds a zsync transport from the current shared policy, preserving zsync's
-/// connection and DNS budgets. No shared-state lock is held during networking.
-pub(crate) fn zsync_agent() -> Agent {
-    let config = SHARED_CLIENT_STATE
+/// Returns the shared agent, for libraries such as zsync-rs that take an `Agent` directly.
+///
+/// Headers from [`ClientConfig::headers`] are not applied, since they are added per request.
+pub(crate) fn shared_agent() -> Agent {
+    SHARED_CLIENT_STATE
         .read()
         .unwrap_or_else(PoisonError::into_inner)
-        .config
-        .clone();
-    config.build_with_timeouts(
-        STALL_TIMEOUT,
-        zsync_rs::http::CONNECT_TIMEOUT,
-        Some(zsync_rs::http::RESOLVE_TIMEOUT),
-    )
+        .agent
+        .clone()
 }
 
 #[derive(Clone, Default)]
@@ -467,58 +448,16 @@ mod tests {
         let _ = agent;
     }
 
-    fn assert_platform_tls(agent: &Agent) {
+    #[test]
+    fn test_client_config_verifies_against_system_roots() {
+        let agent = ClientConfig::default().build();
         let tls = agent.config().tls_config();
-        assert_eq!(tls.provider(), TlsProvider::Rustls);
-        assert!(matches!(tls.root_certs(), RootCerts::PlatformVerifier));
-        assert!(
-            !tls.disable_verification(),
-            "TLS verification must remain enabled"
-        );
-    }
-
-    #[test]
-    fn test_client_config_uses_system_trust_with_verification() {
-        assert_platform_tls(&ClientConfig::default().build());
-    }
-
-    #[test]
-    fn test_zsync_agent_uses_system_trust_and_preserves_timeouts() {
-        let agent = zsync_agent();
-        assert_platform_tls(&agent);
-        assert_eq!(
-            agent.config().timeouts().connect,
-            Some(zsync_rs::http::CONNECT_TIMEOUT)
-        );
-        assert_eq!(
-            agent.config().timeouts().resolve,
-            Some(zsync_rs::http::RESOLVE_TIMEOUT)
-        );
-    }
-
-    #[test]
-    fn test_zsync_transport_keeps_custom_policy() {
-        let config = ClientConfig {
-            user_agent: Some("custom-zsync-agent".to_string()),
-            proxy: Some(Proxy::new("http://127.0.0.1:8080").unwrap()),
-            timeout: Some(Duration::from_secs(60)),
-            ip_family: IpFamily::Ipv4Only,
-            ..Default::default()
-        };
-        let agent = config.build_with_timeouts(
-            STALL_TIMEOUT,
-            zsync_rs::http::CONNECT_TIMEOUT,
-            Some(zsync_rs::http::RESOLVE_TIMEOUT),
-        );
-        assert_platform_tls(&agent);
-        assert_eq!(agent.config().proxy().unwrap().port(), 8080);
-        assert_eq!(agent.config().ip_family(), IpFamily::Ipv4Only);
-        assert_eq!(agent.config().timeouts().global, config.timeout);
-        assert!(matches!(
-            agent.config().user_agent(),
-            ureq::config::AutoHeaderValue::Provided(value)
-                if value.as_str() == "custom-zsync-agent"
-        ));
+        assert!(!tls.disable_verification());
+        if rustls_native_certs::load_native_certs().certs.is_empty() {
+            assert!(matches!(tls.root_certs(), RootCerts::WebPki));
+        } else {
+            assert!(matches!(tls.root_certs(), RootCerts::Specific(_)));
+        }
     }
 
     #[test]
