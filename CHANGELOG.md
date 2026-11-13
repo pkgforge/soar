@@ -1,4 +1,10 @@
 
+## [0.14.1](https://github.com/pkgforge/soar/compare/v0.14.0...v0.14.1) - 2026-11-13
+
+### 🐛 Bug Fixes
+
+- *(dl)* Use system trust for TLS verification ([#236](https://github.com/pkgforge/soar/pull/236)) - ([a752c79](https://github.com/pkgforge/soar/commit/a752c795e6093db9b45735c51a297fd029da83ed))
+
 ## [0.14.0](https://github.com/pkgforge/soar/compare/v0.13.4...v0.14.0) - 2026-10-27
 
 ### ⛰️  Features

@@ -1,4 +1,10 @@
 
+## [0.7.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.7.0...soar-operations-v0.7.1) - 2026-11-13
+
+### ⚙️ Miscellaneous Tasks
+
+- Updated the following local packages: soar-dl, soar-registry, soar-db, soar-core - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.7.0](https://github.com/pkgforge/soar/compare/soar-operations-v0.6.0...soar-operations-v0.7.0) - 2026-10-27
 
 ### ⛰️  Features
