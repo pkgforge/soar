@@ -261,16 +261,54 @@ fn exec_line(field: &str, old: &str, command: &str) -> String {
     }
 }
 
+/// The command a desktop entry's `Exec` or `TryExec` is rewritten to.
+///
+/// When the entry named one of the package's own commands, an entrypoint
+/// alias rather than the default, that alias is kept: under the shared bin
+/// directory if soar linked it there, else beside the binary in the install
+/// directory. This is how a GUI entry keeps launching the GUI instead of the
+/// package's default command. A command given by path is matched on its
+/// file name alone, so a system path never stands in for the package's own
+/// command and an entry soar already rewrote keeps its alias. Anything else
+/// falls back to the package binary.
+fn desktop_command(install_dir: &Path, old: &str, bin_path: &str, pkg_name: &str) -> String {
+    if let Some(name) = old
+        .split_whitespace()
+        .next()
+        .and_then(|command| Path::new(command).file_name())
+        && name != pkg_name
+    {
+        let shared = Path::new(bin_path).join(name);
+        if let (Ok(dir), Ok(resolved)) = (fs::canonicalize(install_dir), fs::canonicalize(&shared))
+            && resolved.starts_with(&dir)
+        {
+            return shared.display().to_string();
+        }
+        let sibling = install_dir.join("bin").join(name);
+        if sibling
+            .symlink_metadata()
+            .is_ok_and(|m| m.is_file() || m.file_type().is_symlink())
+        {
+            return sibling.display().to_string();
+        }
+    }
+    format!("{bin_path}/{pkg_name}")
+}
+
 /// Creates a symlink for a desktop file with modified fields.
 ///
 /// Updates the Exec and TryExec fields in the desktop file to point to the
 /// installed package, then creates a symlink in the applications directory.
-/// The Icon field is rewritten to the soar-managed icon only when the package
-/// ships a matching icon (`icon_name`); otherwise it is left untouched so that
-/// references to generic system icons keep working.
+/// When the entry named one of the package's own commands, the rewrite keeps
+/// that command instead of the default. The Icon field is rewritten to the
+/// soar-managed icon only when the package ships a matching icon
+/// (`icon_name`); otherwise it is left untouched so that references to
+/// generic system icons keep working.
 ///
 /// # Arguments
 ///
+/// * `install_dir` - Directory the package is installed in; its `bin` holds
+///   the command aliases an entry may refer to
 /// * `real_path` - Path to the desktop file
 /// * `package` - Package metadata
 /// * `icon_name` - Name of the soar-managed icon for this desktop file, if the
@@ -285,26 +323,16 @@ fn exec_line(field: &str, old: &str, command: &str) -> String {
 /// Returns [`PackageError`] if the desktop file name cannot be determined
 /// from `real_path`, if `real_path` is not a regular file, or if file
 /// operations fail.
-pub fn symlink_desktop<P: AsRef<Path>, T: PackageExt>(
-    real_path: P,
-    package: &T,
-    icon_name: Option<&str>,
-) -> Result<PathBuf> {
-    symlink_desktop_with_config(real_path, package, icon_name, &get_config())
-}
-
-/// Creates a symlink for a desktop file using the provided config.
-///
-/// Uses the provided `config` to determine bin and desktop paths
-/// instead of the global config.
-pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
-    real_path: P,
+pub fn symlink_desktop_with_config<P: AsRef<Path>, Q: AsRef<Path>, T: PackageExt>(
+    install_dir: P,
+    real_path: Q,
     package: &T,
     icon_name: Option<&str>,
     config: &soar_config::config::Config,
 ) -> Result<PathBuf> {
     let pkg_name = package.pkg_name();
     let real_path = real_path.as_ref();
+    let install_dir = install_dir.as_ref();
     trace!(path = %real_path.display(), pkg_name = pkg_name, "creating desktop file symlink");
     // A path with no file name is an error, never a panic.
     let file_name = real_path.file_stem().ok_or_else(|| {
@@ -339,11 +367,13 @@ pub fn symlink_desktop_with_config<P: AsRef<Path>, T: PackageExt>(
                         }
                     }
                     "Exec" | "TryExec" => {
-                        exec_line(
-                            &caps[1],
+                        let command = desktop_command(
+                            install_dir,
                             &caps[2],
-                            &format!("{}/{}", bin_path.display(), pkg_name),
-                        )
+                            &bin_path.display().to_string(),
+                            pkg_name,
+                        );
+                        exec_line(&caps[1], &caps[2], &command)
                     }
                     _ => unreachable!(),
                 }
@@ -636,7 +666,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
             .filter(|stem| icon_stems.contains(&**stem))
             .and_then(|stem| icon_names.get(&*stem))
             .map(String::as_str);
-        symlink_desktop_with_config(path, package, icon_name, config)?;
+        symlink_desktop_with_config(install_dir, path, package, icon_name, config)?;
     }
 
     let has_icon = !icon_paths.is_empty();
@@ -743,10 +773,107 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{
-        create_portable_link, desktop_entry_name, exec_line, integrate_package, managed_icon_name,
-        setup_portable_dir, symlink_desktop_with_config, symlink_icon_with_mode,
+        create_portable_link, desktop_command, desktop_entry_name, exec_line, integrate_package,
+        managed_icon_name, setup_portable_dir, symlink_desktop_with_config, symlink_icon_with_mode,
     };
     use crate::traits::PackageExt;
+
+    /// An alias the shared bin directory holds is rewritten to that stable
+    /// path, so a GUI entry survives package upgrades. The alias must be
+    /// this package's own, resolving inside the install directory.
+    #[test]
+    fn a_shared_bin_alias_is_kept_as_the_command() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let target = dir.path().join("gui-binary");
+        fs::write(&target, "elf").unwrap();
+        symlink(&target, bin.join("tool-gui")).unwrap();
+
+        let command = desktop_command(dir.path(), "tool-gui", &bin.to_string_lossy(), "tool");
+        assert_eq!(command, bin.join("tool-gui").display().to_string());
+    }
+
+    /// Another package's command of the same name is never adopted.
+    #[test]
+    fn a_foreign_shared_alias_is_not_adopted() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let other = TempDir::new().unwrap();
+        let shared = other.path().join("shared-bin");
+        fs::create_dir_all(shared.join("pkg")).unwrap();
+        let target = shared.join("pkg/binary");
+        fs::write(&target, "elf").unwrap();
+        symlink(&target, shared.join("tool-gui")).unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        assert_eq!(
+            desktop_command(dir.path(), "tool-gui", &shared.to_string_lossy(), "tool"),
+            format!("{}/tool", shared.display())
+        );
+    }
+
+    /// Without a shared alias, an alias beside the binary in the install
+    /// directory is still kept.
+    #[test]
+    fn a_package_local_alias_is_kept_as_the_command() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        symlink("/real/target", bin.join("tool-gui")).unwrap();
+        let shared = dir.path().join("absent");
+
+        let command = desktop_command(dir.path(), "tool-gui", &shared.to_string_lossy(), "tool");
+        assert_eq!(command, bin.join("tool-gui").display().to_string());
+    }
+
+    /// A command no alias of the package carries falls back to the package
+    /// binary, and the default command is never re-derived.
+    #[test]
+    fn an_unknown_command_falls_back_to_the_package_binary() {
+        let dir = TempDir::new().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        assert_eq!(
+            desktop_command(dir.path(), "xdg-open", &bin.to_string_lossy(), "tool"),
+            format!("{}/tool", bin.display())
+        );
+        assert_eq!(
+            desktop_command(dir.path(), "tool", &bin.to_string_lossy(), "tool"),
+            format!("{}/tool", bin.display())
+        );
+    }
+
+    /// A command given by path is matched on its file name: a system binary
+    /// is never adopted, and an entry soar already rewrote keeps its alias.
+    #[test]
+    fn a_command_path_is_matched_on_its_file_name() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("tool"), "elf").unwrap();
+        symlink("tool", bin.join("tool-gui")).unwrap();
+        let bin_path = bin.to_string_lossy();
+
+        assert_eq!(
+            desktop_command(dir.path(), "/bin/sh", &bin_path, "tool"),
+            format!("{bin_path}/tool")
+        );
+        let rewritten = bin.join("tool-gui").display().to_string();
+        assert_eq!(
+            desktop_command(dir.path(), &rewritten, &bin_path, "tool"),
+            rewritten
+        );
+    }
 
     struct TestPackage;
 
@@ -788,7 +915,8 @@ mod tests {
 
         let real_path = dir.path().join("desktop.desktop");
         fs::write(&real_path, ENTRY).unwrap();
-        symlink_desktop_with_config(&real_path, &TestPackage, icon_name, &config).unwrap();
+        symlink_desktop_with_config(dir.path(), &real_path, &TestPackage, icon_name, &config)
+            .unwrap();
 
         let content = fs::read_to_string(&real_path).unwrap();
         (dir, content)
@@ -894,8 +1022,14 @@ Name=New Note
                 .to_string_lossy()
                 .into_owned(),
         );
-        let err = symlink_desktop_with_config(dir.path().join(".."), &TestPackage, None, &config)
-            .unwrap_err();
+        let err = symlink_desktop_with_config(
+            dir.path(),
+            dir.path().join(".."),
+            &TestPackage,
+            None,
+            &config,
+        )
+        .unwrap_err();
         assert!(
             err.to_string()
                 .contains("cannot determine desktop file name"),
@@ -945,7 +1079,8 @@ Name=New Note
         let link = dir.path().join("evil.desktop");
         symlink(&victim, &link).unwrap();
 
-        let err = symlink_desktop_with_config(&link, &TestPackage, None, &config).unwrap_err();
+        let err = symlink_desktop_with_config(dir.path(), &link, &TestPackage, None, &config)
+            .unwrap_err();
         assert!(err.to_string().contains("not a regular file"), "{err}");
         assert_eq!(fs::read_to_string(&victim).unwrap(), ENTRY);
         assert!(
@@ -990,7 +1125,14 @@ Name=New Note
         let real_path = dir.path().join("desktop.desktop");
         fs::write(&real_path, ENTRY).unwrap();
         fs::set_permissions(&real_path, fs::Permissions::from_mode(0o444)).unwrap();
-        symlink_desktop_with_config(&real_path, &TestPackage, Some("noteboard"), &config).unwrap();
+        symlink_desktop_with_config(
+            dir.path(),
+            &real_path,
+            &TestPackage,
+            Some("noteboard"),
+            &config,
+        )
+        .unwrap();
 
         let content = fs::read_to_string(&real_path).unwrap();
         assert!(content.contains("Icon=noteboard-soar"), "{content}");
@@ -1044,7 +1186,14 @@ Name=New Note
         let occupant = applications.join("desktop-soar.desktop");
         fs::write(&occupant, b"mine").unwrap();
 
-        symlink_desktop_with_config(&real_path, &TestPackage, Some("noteboard"), &config).unwrap();
+        symlink_desktop_with_config(
+            dir.path(),
+            &real_path,
+            &TestPackage,
+            Some("noteboard"),
+            &config,
+        )
+        .unwrap();
         assert_eq!(fs::read(&occupant).unwrap(), b"mine");
     }
 

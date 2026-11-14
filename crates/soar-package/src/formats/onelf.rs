@@ -8,10 +8,11 @@
 use std::{
     fs::{self, File},
     io::{Read, Seek, SeekFrom},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use onelf_format::{Entry, EntryKind, FOOTER_SIZE, Footer, Manifest};
+use soar_utils::path::is_safe_component;
 
 use super::common::{
     desktop_entry_name, managed_icon_name, symlink_desktop_with_config, symlink_icon_with_mode,
@@ -201,15 +202,16 @@ fn resolve_icon(manifest: &Manifest, entrypoint: &str) -> Option<usize> {
         .find_map(|path| find_entry_by_path(manifest, path))
 }
 
-/// Resolves the desktop entry for `entrypoint`, falling back to the package default.
-fn resolve_desktop(manifest: &Manifest, entrypoint: &str) -> Option<usize> {
-    let candidates = [
-        format!(".onelf/desktop/{entrypoint}.desktop"),
-        ".onelf/desktop/default.desktop".to_string(),
-    ];
-    candidates
-        .iter()
-        .find_map(|path| find_entry_by_path(manifest, path))
+/// Resolves the desktop entry for `entrypoint`.
+///
+/// Only the default entrypoint falls back to the package default, so the
+/// other entrypoints do not each repeat it as a menu entry of their own.
+fn resolve_desktop(manifest: &Manifest, entrypoint: &str, is_default: bool) -> Option<usize> {
+    find_entry_by_path(manifest, &format!(".onelf/desktop/{entrypoint}.desktop")).or_else(|| {
+        is_default
+            .then(|| find_entry_by_path(manifest, ".onelf/desktop/default.desktop"))
+            .flatten()
+    })
 }
 
 /// Returns the name of the manifest's default entrypoint, or an empty string.
@@ -223,9 +225,11 @@ fn default_entrypoint_name(manifest: &Manifest) -> String {
 
 /// Integrates an onelf package by extracting its embedded resources.
 ///
-/// This function extracts the icon and desktop file that onelf stores under the
-/// `.onelf/` convention and sets up the appropriate symlinks for desktop
-/// integration, reusing soar's shared symlink helpers.
+/// This function extracts the icon and desktop files that onelf stores under
+/// the `.onelf/` convention and sets up the appropriate symlinks for desktop
+/// integration, reusing soar's shared symlink helpers. Every entrypoint with
+/// a desktop entry of its own is linked, so a package can ship a hidden CLI
+/// entry and a visible GUI one.
 ///
 /// # Arguments
 ///
@@ -261,32 +265,81 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
         File::open(file_path).with_context(|| format!("opening {}", file_path.display()))?;
     let (footer, manifest) = read_footer_and_manifest(&mut file)?;
     let dict = read_dict(&mut file, &footer)?;
-    let ep_name = default_entrypoint_name(&manifest);
+    let default_ep = default_entrypoint_name(&manifest);
 
-    // The extracted icon is named after the app rather than after the package,
-    // whose own name is often a generic word the icon theme already claims, so
-    // the desktop file has to be extracted and read first.
-    let mut desktop_path = None;
-    if !has_desktop && let Some(idx) = resolve_desktop(&manifest, &ep_name) {
-        let desktop_data =
-            decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
-        let dest = install_dir.join(format!("{pkg_name}.desktop"));
-        fs::write(&dest, &desktop_data)
-            .with_context(|| format!("writing desktop file to {}", dest.display()))?;
-        desktop_path = Some(dest);
+    // The default entrypoint's desktop keeps its `{pkg_name}.desktop` name,
+    // the name the walk-based flow keys on; the rest are named after their
+    // entrypoint. The first entrypoint to claim a stem wins.
+    let mut desktops: Vec<(String, String, PathBuf)> = Vec::new();
+    let mut seen_stems = std::collections::HashSet::new();
+    if !has_desktop {
+        for ep in &manifest.entrypoints {
+            let ep_name = manifest.get_string(ep.name);
+            let is_default = ep_name == default_ep;
+            // Any other entrypoint names files in the install directory.
+            if !is_default && !is_safe_component(ep_name) {
+                continue;
+            }
+            let Some(idx) = resolve_desktop(&manifest, ep_name, is_default) else {
+                continue;
+            };
+            let stem = if is_default {
+                pkg_name.to_string()
+            } else {
+                ep_name.to_string()
+            };
+            if !seen_stems.insert(stem.clone()) {
+                continue;
+            }
+            let dest = install_dir.join(format!("{stem}.desktop"));
+            let desktop_data =
+                decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
+            fs::write(&dest, &desktop_data)
+                .with_context(|| format!("writing desktop file to {}", dest.display()))?;
+            desktops.push((stem, ep_name.to_string(), dest));
+        }
     }
 
-    let desktop_icon_name = desktop_path
-        .as_ref()
-        .and_then(|dest| fs::read_to_string(dest).ok())
-        .and_then(|content| desktop_entry_name(&content).map(str::to_string))
-        .map_or_else(
-            || pkg_name.to_string(),
-            |name| managed_icon_name(&name, pkg_name),
-        );
+    for (stem, ep_name, dest) in &desktops {
+        // The icon is named after the desktop entry's `Name`, so entries
+        // sharing the package default still keep distinct names.
+        let content = fs::read_to_string(dest).ok();
+        let managed = content
+            .as_deref()
+            .and_then(desktop_entry_name)
+            .map_or_else(|| stem.clone(), |name| managed_icon_name(name, stem));
 
-    let mut icon_name = pkg_icon_name.map(str::to_string);
-    if !has_icon && let Some(idx) = resolve_icon(&manifest, &ep_name) {
+        // An icon the walk already linked under the package's own stem wins
+        // for the default entry; otherwise the entrypoint's own icon, or the
+        // package default, is extracted and linked.
+        let icon = if stem == pkg_name && has_icon {
+            pkg_icon_name.map(str::to_string)
+        } else if let Some(idx) = resolve_icon(&manifest, ep_name) {
+            let ext = if manifest.entry_path(idx).ends_with(".svg") {
+                "svg"
+            } else {
+                "png"
+            };
+            let icon_data =
+                decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
+            let icon_dest = install_dir.join(format!("{stem}.{ext}"));
+            fs::write(&icon_dest, &icon_data)
+                .with_context(|| format!("writing icon to {}", icon_dest.display()))?;
+            symlink_icon_with_mode(&icon_dest, &managed, config.is_system())?;
+            Some(managed)
+        } else {
+            None
+        };
+
+        symlink_desktop_with_config(install_dir, dest, package, icon.as_deref(), config)?;
+    }
+
+    // A package may ship an icon with no desktop entry at all; it is still
+    // linked under the package's own name.
+    if desktops.is_empty()
+        && !has_icon
+        && let Some(idx) = resolve_icon(&manifest, &default_ep)
+    {
         let ext = if manifest.entry_path(idx).ends_with(".svg") {
             "svg"
         } else {
@@ -294,15 +347,10 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
         };
         let icon_data =
             decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
-        let dest = install_dir.join(format!("{pkg_name}.{ext}"));
-        fs::write(&dest, &icon_data)
-            .with_context(|| format!("writing icon to {}", dest.display()))?;
-        symlink_icon_with_mode(&dest, &desktop_icon_name, config.is_system())?;
-        icon_name = Some(desktop_icon_name);
-    }
-
-    if let Some(dest) = desktop_path {
-        symlink_desktop_with_config(&dest, package, icon_name.as_deref(), config)?;
+        let icon_dest = install_dir.join(format!("{pkg_name}.{ext}"));
+        fs::write(&icon_dest, &icon_data)
+            .with_context(|| format!("writing icon to {}", icon_dest.display()))?;
+        symlink_icon_with_mode(&icon_dest, pkg_name, config.is_system())?;
     }
 
     Ok(())
@@ -472,5 +520,46 @@ mod tests {
 
         let (_, parsed) = read_footer_and_manifest(&mut file).unwrap();
         assert_eq!(parsed.header.version, 3);
+    }
+
+    /// Only the default entrypoint takes the package's `default.desktop`, so a
+    /// package with several entrypoints does not list it once per command.
+    #[test]
+    fn only_the_default_entrypoint_falls_back_to_the_default_desktop() {
+        let mut string_table = b"\0".to_vec();
+        let mut entries = Vec::new();
+        for path in [
+            ".onelf/desktop/default.desktop",
+            ".onelf/desktop/gui.desktop",
+        ] {
+            entries.push(Entry {
+                name: string_table.len() as u32,
+                ..entry(vec![])
+            });
+            string_table.extend_from_slice(path.as_bytes());
+            string_table.push(0);
+        }
+        let manifest = Manifest {
+            header: ManifestHeader {
+                version: 3,
+                entry_count: entries.len() as u32,
+                string_table_size: string_table.len() as u32,
+                entrypoint_count: 0,
+                default_entrypoint: 0,
+                lib_dir_count: 0,
+                name_offset: 0,
+                package_id: [0; 32],
+                prefix_hash: [0; 32],
+                footer_hash: [0; 32],
+            },
+            entrypoints: vec![],
+            entries,
+            lib_dir_offsets: vec![],
+            string_table,
+        };
+
+        assert_eq!(resolve_desktop(&manifest, "cli", true), Some(0));
+        assert_eq!(resolve_desktop(&manifest, "web", false), None);
+        assert_eq!(resolve_desktop(&manifest, "gui", false), Some(1));
     }
 }

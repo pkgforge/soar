@@ -99,7 +99,7 @@ pub async fn integrate_appimage<P: AsRef<Path>, T: PackageExt>(
     }
 
     if let Some(dest) = desktop_path {
-        symlink_desktop_with_config(dest, package, icon_name.as_deref(), config)?;
+        symlink_desktop_with_config(install_dir, dest, package, icon_name.as_deref(), config)?;
     }
 
     if let Some(entry) = appimage.find_appstream()
