@@ -52,7 +52,11 @@ use crate::{
 /// the artifact. A licence publishes none, because it is served from a branch
 /// and is documentation rather than something that runs: pinning it would turn
 /// an upstream copyright-year edit into a failed download.
-async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()> {
+async fn install_extras(
+    package: &Package,
+    install_dir: &Path,
+    connections: usize,
+) -> SoarResult<()> {
     let Some(extras) = &package.extra else {
         return Ok(());
     };
@@ -85,7 +89,8 @@ async fn install_extras(package: &Package, install_dir: &Path) -> SoarResult<()>
         }
         let mut dl = Download::new(&e.url)
             .output(dest.to_string_lossy())
-            .overwrite(OverwriteMode::Skip);
+            .overwrite(OverwriteMode::Skip)
+            .connections(connections);
         if let Some(sum) = e.blake3.as_ref() {
             dl = dl.checksum(sum);
         }
@@ -1085,6 +1090,7 @@ impl PackageInstaller {
             let mut dl = OciDownload::new(url.as_str())
                 .output(output_path.to_string_lossy())
                 .parallel(self.config.ghcr_concurrency.unwrap_or(8))
+                .connections(self.config.download_concurrency.unwrap_or(8))
                 .overwrite(OverwriteMode::Skip);
 
             if let Some(ref cb) = self.progress_callback {
@@ -1205,7 +1211,8 @@ impl PackageInstaller {
                     .output(output_path.to_string_lossy())
                     .overwrite(OverwriteMode::Skip)
                     .extract(should_extract)
-                    .extract_to(&extract_dir);
+                    .extract_to(&extract_dir)
+                    .connections(self.config.download_concurrency.unwrap_or(8));
 
                 if let Some(ref bsum) = self.package.bsum {
                     dl = dl.checksum(bsum);
@@ -1353,7 +1360,12 @@ impl PackageInstaller {
                 mark_elfs_executable(&self.install_dir);
             }
 
-            install_extras(&self.package, &self.install_dir).await?;
+            install_extras(
+                &self.package,
+                &self.install_dir,
+                self.config.download_concurrency.unwrap_or(8),
+            )
+            .await?;
 
             // Handle nested_extract: extract an archive within the package
             if let Some(ref nested_archive) = self.nested_extract {
@@ -1619,7 +1631,7 @@ mod tests {
 
     /// Runs `install_extras`, which never waits on anything, to completion.
     fn install_side_files(package: &Package, dir: &Path) {
-        let future = std::pin::pin!(install_extras(package, dir));
+        let future = std::pin::pin!(install_extras(package, dir, 8));
         let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
         match std::future::Future::poll(future, &mut cx) {
             std::task::Poll::Ready(result) => result.unwrap(),
