@@ -1,4 +1,15 @@
 
+## [0.8.0](https://github.com/pkgforge/soar/compare/soar-package-v0.7.0...soar-package-v0.8.0) - 2026-11-14
+
+### 🐛 Bug Fixes
+
+- *(package)* Preserve entrypoint commands in desktop files - ([7f9b68a](https://github.com/pkgforge/soar/commit/7f9b68a5316f5496e553544f9eeb2e03664970b3))
+- *(package)* Verify onelf manifest checksum per version - ([82e048d](https://github.com/pkgforge/soar/commit/82e048d271823aab67a12e92a34d18298aeab4e9))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(package)* Log skipped install entries at debug - ([6ea0ca7](https://github.com/pkgforge/soar/commit/6ea0ca7ed907ce281b96933334f0a19c62dd0a5d))
+
 ## [0.7.0](https://github.com/pkgforge/soar/compare/soar-package-v0.6.0...soar-package-v0.7.0) - 2026-10-27
 
 ### ⛰️  Features

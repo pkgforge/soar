@@ -1,4 +1,21 @@
 
+## [0.14.1](https://github.com/pkgforge/soar/compare/v0.14.0...v0.14.1) - 2026-11-14
+
+### ⛰️  Features
+
+- *(dl)* Segmented multi-connection downloads ([#234](https://github.com/pkgforge/soar/pull/234)) - ([a2df667](https://github.com/pkgforge/soar/commit/a2df6673dc895c105899cdd82ef59016696fe40c))
+
+### 🐛 Bug Fixes
+
+- *(apply)* Leave floating forge versions in packages.toml ([#239](https://github.com/pkgforge/soar/pull/239)) - ([2f143a3](https://github.com/pkgforge/soar/commit/2f143a3b7da4b44e8af02da986fb33618b22339b))
+- *(dl)* Use system trust for TLS verification ([#236](https://github.com/pkgforge/soar/pull/236)) - ([a752c79](https://github.com/pkgforge/soar/commit/a752c795e6093db9b45735c51a297fd029da83ed))
+- *(package)* Preserve entrypoint commands in desktop files - ([7f9b68a](https://github.com/pkgforge/soar/commit/7f9b68a5316f5496e553544f9eeb2e03664970b3))
+- *(package)* Verify onelf manifest checksum per version - ([82e048d](https://github.com/pkgforge/soar/commit/82e048d271823aab67a12e92a34d18298aeab4e9))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(package)* Log skipped install entries at debug - ([6ea0ca7](https://github.com/pkgforge/soar/commit/6ea0ca7ed907ce281b96933334f0a19c62dd0a5d))
+
 ## [0.14.0](https://github.com/pkgforge/soar/compare/v0.13.4...v0.14.0) - 2026-10-27
 
 ### ⛰️  Features

@@ -1,4 +1,14 @@
 
+## [0.14.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.13.0...soar-dl-v0.14.0) - 2026-11-14
+
+### ⛰️  Features
+
+- *(dl)* Segmented multi-connection downloads ([#234](https://github.com/pkgforge/soar/pull/234)) - ([a2df667](https://github.com/pkgforge/soar/commit/a2df6673dc895c105899cdd82ef59016696fe40c))
+
+### 🐛 Bug Fixes
+
+- *(dl)* Use system trust for TLS verification ([#236](https://github.com/pkgforge/soar/pull/236)) - ([a752c79](https://github.com/pkgforge/soar/commit/a752c795e6093db9b45735c51a297fd029da83ed))
+
 ## [0.13.0](https://github.com/pkgforge/soar/compare/soar-dl-v0.12.2...soar-dl-v0.13.0) - 2026-10-27
 
 ### ⛰️  Features
