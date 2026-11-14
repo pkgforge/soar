@@ -1,4 +1,14 @@
 
+## [0.18.1](https://github.com/pkgforge/soar/compare/soar-core-v0.18.0...soar-core-v0.18.1) - 2026-11-14
+
+### ⛰️  Features
+
+- *(dl)* Segmented multi-connection downloads ([#234](https://github.com/pkgforge/soar/pull/234)) - ([a2df667](https://github.com/pkgforge/soar/commit/a2df6673dc895c105899cdd82ef59016696fe40c))
+
+### 🐛 Bug Fixes
+
+- *(apply)* Leave floating forge versions in packages.toml ([#239](https://github.com/pkgforge/soar/pull/239)) - ([2f143a3](https://github.com/pkgforge/soar/commit/2f143a3b7da4b44e8af02da986fb33618b22339b))
+
 ## [0.18.0](https://github.com/pkgforge/soar/compare/soar-core-v0.17.4...soar-core-v0.18.0) - 2026-10-27
 
 ### ⛰️  Features
