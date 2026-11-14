@@ -313,10 +313,9 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
     if let Some(index) = outcomes
         .iter()
         .position(|outcome| matches!(outcome, Outcome::Failed(DownloadError::RetryAfter { .. })))
+        && let Outcome::Failed(err) = outcomes.swap_remove(index)
     {
-        if let Outcome::Failed(err) = outcomes.swap_remove(index) {
-            return Err(err);
-        }
+        return Err(err);
     }
 
     // A server that ignored one range request is treated as ignoring them all;
@@ -696,7 +695,7 @@ impl Worker<'_> {
             trace!(%err, "failed to sync data for resume checkpoint");
             return;
         }
-        if let Err(err) = write_resume_file(&self.file, &info) {
+        if let Err(err) = write_resume_file(self.file, &info) {
             trace!(path = %self.path.display(), %err, "failed to save resume checkpoint");
         }
     }
@@ -1020,7 +1019,7 @@ mod tests {
             ] {
                 let (mut stream, _) = listener.accept().unwrap();
                 let mut request = [0; 4096];
-                stream.read(&mut request).unwrap();
+                let _ = stream.read(&mut request);
                 times.push(Instant::now());
                 stream.write_all(response.as_bytes()).unwrap();
             }
@@ -1054,7 +1053,7 @@ mod tests {
             let server = std::thread::spawn(move || {
                 let (mut stream, _) = listener.accept().unwrap();
                 let mut request = [0; 4096];
-                stream.read(&mut request).unwrap();
+                let _ = stream.read(&mut request);
                 write!(stream, "HTTP/1.1 {status} Error\r\nRetry-After: 61\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
                 listener.set_nonblocking(true).unwrap();
                 std::thread::sleep(Duration::from_millis(400));
@@ -1093,8 +1092,8 @@ mod tests {
             let (mut first, _) = listener.accept().unwrap();
             let (mut second, _) = listener.accept().unwrap();
             let mut request = [0; 4096];
-            first.read(&mut request).unwrap();
-            second.read(&mut request).unwrap();
+            let _ = first.read(&mut request);
+            let _ = second.read(&mut request);
             first.write_all(b"HTTP/1.1 429 Error\r\nRetry-After: 10\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
             std::thread::sleep(Duration::from_millis(200));
             second
@@ -1138,7 +1137,7 @@ mod tests {
                 for attempt in 0..MAX_ATTEMPTS {
                     let (mut stream, _) = listener.accept().unwrap();
                     let mut request = [0; 4096];
-                    stream.read(&mut request).unwrap();
+                    let _ = stream.read(&mut request);
                     if attempt + 1 == MAX_ATTEMPTS {
                         write!(stream, "HTTP/1.1 429 Error\r\nRetry-After: {delay}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
                     } else {
