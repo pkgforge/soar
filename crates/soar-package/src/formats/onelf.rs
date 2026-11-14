@@ -85,7 +85,8 @@ fn read_footer_and_manifest(file: &mut File) -> Result<(Footer, Manifest)> {
         zstd::bulk::decompress(&manifest_compressed, footer.manifest_original as usize)
             .map_err(|e| invalid(format!("onelf manifest decompression failed: {e}")))?;
 
-    let checksum = xxhash_rust::xxh32::xxh32(&manifest_bytes, 0).to_le_bytes();
+    let checksum = onelf_format::manifest::manifest_checksum(&manifest_bytes)
+        .map_err(|e| invalid(e.to_string()))?;
     if checksum != footer.manifest_checksum {
         return Err(invalid("onelf manifest checksum mismatch"));
     }
@@ -311,7 +312,7 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
 mod tests {
     use std::io::Write as _;
 
-    use onelf_format::{Block, Flags};
+    use onelf_format::{Block, Flags, ManifestHeader};
 
     use super::*;
 
@@ -425,5 +426,51 @@ mod tests {
             let err = decompress_entry(&mut file, &footer, &entry(blocks), None).unwrap_err();
             assert!(message(err).contains("too large"));
         }
+    }
+
+    /// A manifest as current onelf writes it: version 3, nonzero footer_hash,
+    /// checksum taken with that field zeroed. A plain hash of the bytes, the
+    /// pre-v3 rule this reader used to apply, would not match.
+    #[test]
+    fn a_v3_manifest_checksums_its_zeroed_footer_hash() {
+        let manifest = Manifest {
+            header: ManifestHeader {
+                version: 3,
+                entry_count: 0,
+                string_table_size: 1,
+                entrypoint_count: 0,
+                default_entrypoint: 0,
+                lib_dir_count: 0,
+                name_offset: 0,
+                package_id: [1; 32],
+                prefix_hash: [2; 32],
+                footer_hash: [3; 32],
+            },
+            entrypoints: vec![],
+            entries: vec![],
+            lib_dir_offsets: vec![],
+            string_table: b"\0".to_vec(),
+        };
+        let raw = manifest.serialize().unwrap();
+        let checksum = onelf_format::manifest::manifest_checksum(&raw).unwrap();
+        let compressed = zstd::bulk::compress(&raw, 3).unwrap();
+        let footer = Footer {
+            format_version: 1,
+            flags: Flags::from_bits_retain(0),
+            manifest_offset: 0,
+            manifest_compressed: compressed.len() as u64,
+            manifest_original: raw.len() as u64,
+            payload_offset: 0,
+            payload_size: 0,
+            dict_offset: 0,
+            dict_size: 0,
+            manifest_checksum: checksum,
+        };
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&compressed).unwrap();
+        footer.write_to(&mut file).unwrap();
+
+        let (_, parsed) = read_footer_and_manifest(&mut file).unwrap();
+        assert_eq!(parsed.header.version, 3);
     }
 }

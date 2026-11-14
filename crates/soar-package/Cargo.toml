@@ -20,7 +20,6 @@ soar-utils = { workspace = true }
 squishy = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-xxhash-rust = { workspace = true }
 zstd = { workspace = true }
 
 [dev-dependencies]
