@@ -501,6 +501,13 @@ impl ResolvedPackage {
             || self.codeberg.is_some()
             || self.gitea.is_some()
     }
+
+    /// Whether this forge package follows the newest release rather than naming
+    /// a version. Such a declaration is left as written, since the installed
+    /// version is already recorded in the database.
+    pub fn floats_on_forge(&self) -> bool {
+        self.has_forge_source() && self.version.is_none() && self.version_command.is_none()
+    }
 }
 
 impl PackagesConfig {
