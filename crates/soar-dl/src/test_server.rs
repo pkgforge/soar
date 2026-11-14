@@ -33,6 +33,9 @@ pub struct ServeOptions {
     /// Drop every HEAD connection without a response, as HEAD-refusing
     /// servers do.
     pub refuse_head: bool,
+    /// Gzip the body for a client that accepts gzip, with ranges and lengths
+    /// counted in the coded bytes, as a compressing server would.
+    pub gzip_when_accepted: bool,
 }
 
 impl Default for ServeOptions {
@@ -45,6 +48,7 @@ impl Default for ServeOptions {
             truncate_periodic: None,
             oversend: None,
             refuse_head: false,
+            gzip_when_accepted: false,
         }
     }
 }
@@ -95,6 +99,7 @@ fn respond(
 
     let mut range: Option<(usize, Option<usize>)> = None;
     let mut if_range = None;
+    let mut accepts_gzip = false;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).is_err() || line.trim().is_empty() {
@@ -105,6 +110,8 @@ fn respond(
                 range = value.trim().strip_prefix("bytes=").and_then(parse_range);
             } else if name.eq_ignore_ascii_case("if-range") {
                 if_range = Some(value.trim().to_string());
+            } else if name.eq_ignore_ascii_case("accept-encoding") {
+                accepts_gzip = value.contains("gzip");
             }
         }
     }
@@ -123,9 +130,17 @@ fn respond(
         && if_range
             .as_deref()
             .is_none_or(|tag| options.etag.as_deref() == Some(tag) && !tag.starts_with("W/"));
+    let gzip = options.gzip_when_accepted && accepts_gzip;
+    let coded;
     let (status, extra, body) = match routes.get(&path) {
         None => ("404 Not Found", String::new(), &b""[..]),
         Some(body) => {
+            let body = if gzip {
+                coded = gzip_bytes(body);
+                &coded
+            } else {
+                body
+            };
             match range.filter(|_| range_honored) {
                 Some((start, end)) if start < body.len() => {
                     let end = end.map_or(body.len() - 1, |end| end.min(body.len() - 1));
@@ -162,6 +177,9 @@ fn respond(
     if let Some(etag) = &options.etag {
         head.push_str(&format!("ETag: {etag}\r\n"));
     }
+    if gzip {
+        head.push_str("Content-Encoding: gzip\r\n");
+    }
     if !options.ignore_ranges || options.lie_about_ranges {
         head.push_str("Accept-Ranges: bytes\r\n");
     }
@@ -187,6 +205,12 @@ fn respond(
             }
         }
     }
+}
+
+fn gzip_bytes(body: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(body).unwrap();
+    encoder.finish().unwrap()
 }
 
 /// Parses a `bytes=N-M` or `bytes=N-` range value.

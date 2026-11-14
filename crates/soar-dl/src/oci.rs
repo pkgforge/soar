@@ -15,7 +15,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use soar_utils::fs::is_elf;
 use tracing::{debug, trace, warn};
-use ureq::http::header::{ACCEPT, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
+use ureq::http::header::{ACCEPT, ACCEPT_ENCODING, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
 
 use crate::{
     download::{Download, check_partial_response},
@@ -971,7 +971,10 @@ fn download_layer_impl(
         info.segments.is_none() && info.etag.as_deref().and_then(strong_etag).is_some()
     });
     let resp = loop {
-        let mut req = SHARED_AGENT.get(&url).header(AUTHORIZATION, "Bearer QQ==");
+        let mut req = SHARED_AGENT
+            .get(&url)
+            .header(AUTHORIZATION, "Bearer QQ==")
+            .header(ACCEPT_ENCODING, "identity");
         if let Some(info) = &resume_info {
             trace!(
                 resume_from = info.downloaded,

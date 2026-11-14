@@ -3,13 +3,21 @@ use ureq::{
     Body,
     http::{
         Response,
-        header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG, LOCATION},
+        header::{
+            ACCEPT_ENCODING, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG,
+            LOCATION,
+        },
     },
 };
 
 use crate::{error::DownloadError, http_client::SHARED_AGENT};
 
 pub struct Http;
+
+/// Asks for the bytes as stored. ureq otherwise offers gzip and decodes it,
+/// while sizes and byte ranges count the coded bytes, so a compressing server
+/// would hand back a size and ranges that do not match what is written.
+const IDENTITY: &str = "identity";
 
 /// What a HEAD response says about the resource a segmented download would
 /// target: its size, whether it can be fetched in byte ranges, and the ETag a
@@ -66,6 +74,7 @@ impl Http {
         trace!(url = url, "sending HEAD request");
         let result = SHARED_AGENT
             .head(url)
+            .header(ACCEPT_ENCODING, IDENTITY)
             .call()
             .map_err(|err| DownloadError::request(url, err));
         if let Ok(ref resp) = result {
@@ -133,7 +142,7 @@ impl Http {
     ) -> Result<Response<Body>, DownloadError> {
         debug!("GET {}", url);
         trace!(resume_from = ?resume_from, ghcr_blob = ghcr_blob, "request details");
-        let mut req = SHARED_AGENT.get(url);
+        let mut req = SHARED_AGENT.get(url).header(ACCEPT_ENCODING, IDENTITY);
 
         if ghcr_blob {
             trace!("adding GHCR authorization header");
@@ -173,7 +182,7 @@ impl Http {
     ) -> Result<Response<Body>, DownloadError> {
         debug!("GET {url} (Range: bytes={start}-{end})");
         trace!(etag = ?etag, ghcr_blob = ghcr_blob, "range request details");
-        let mut req = SHARED_AGENT.get(url);
+        let mut req = SHARED_AGENT.get(url).header(ACCEPT_ENCODING, IDENTITY);
 
         if ghcr_blob {
             trace!("adding GHCR authorization header");
@@ -209,7 +218,7 @@ impl Http {
     /// gives no usable answer; the caller then downloads in one stream.
     pub(crate) fn probe_range(url: &str, ghcr_blob: bool) -> Option<RemoteInfo> {
         debug!("probing range support: GET {url} (Range: bytes=0-0)");
-        let mut req = SHARED_AGENT.get(url);
+        let mut req = SHARED_AGENT.get(url).header(ACCEPT_ENCODING, IDENTITY);
         if ghcr_blob {
             req = req.header("Authorization", "Bearer QQ==");
         }

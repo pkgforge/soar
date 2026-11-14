@@ -1347,6 +1347,48 @@ mod tests {
     }
 
     #[test]
+    fn a_compressing_server_still_yields_the_stored_bytes() {
+        if !supports_xattrs() {
+            return;
+        }
+        // Incompressible, so the coded body is large enough to be split too.
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let content: Vec<u8> = (0..8 * 1024 * 1024)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state as u8
+            })
+            .collect();
+        let (base, requests) = test_server::serve_with(
+            vec![("/file".into(), content.clone())],
+            ServeOptions {
+                gzip_when_accepted: true,
+                ..Default::default()
+            },
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+
+        Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .overwrite(OverwriteMode::Force)
+            .connections(2)
+            .execute()
+            .unwrap();
+
+        assert_eq!(std::fs::read(&out).unwrap(), content);
+        let requests = requests.lock().unwrap();
+        assert!(
+            requests
+                .iter()
+                .any(|r| r.starts_with("GET") && r.contains("Some((4194304")),
+            "{requests:?}"
+        );
+    }
+
+    #[test]
     fn workers_issue_overlapping_range_requests() {
         use std::{
             io::{BufRead, BufReader, Write},

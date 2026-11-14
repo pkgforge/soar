@@ -32,4 +32,5 @@ xattr = { workspace = true }
 zsync-rs = "0.3.0"
 
 [dev-dependencies]
+flate2 = "1"
 tempfile = { workspace = true }

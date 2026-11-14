@@ -2355,6 +2355,7 @@ version = "0.13.0"
 dependencies = [
  "compak",
  "fast-glob",
+ "flate2",
  "httpdate",
  "miette",
  "nix",
