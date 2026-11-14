@@ -582,6 +582,7 @@ async fn handle_cli() -> SoarResult<()> {
                     extract_dir,
                     skip_existing,
                     force_overwrite,
+                    connections,
                 } => {
                     let progress_callback: Arc<dyn Fn(soar_dl::types::Progress) + Send + Sync> = {
                         let pb: Arc<Mutex<Option<ProgressBar>>> = Arc::new(Mutex::new(None));
@@ -596,6 +597,9 @@ async fn handle_cli() -> SoarResult<()> {
                     let match_keywords = match_keywords.unwrap_or_default();
                     let exclude_keywords = exclude_keywords.unwrap_or_default();
 
+                    let connections = connections
+                        .or(get_config().download_concurrency)
+                        .unwrap_or(8);
                     let context = DownloadContext {
                         regexes,
                         globs,
@@ -609,6 +613,7 @@ async fn handle_cli() -> SoarResult<()> {
                         extract_dir,
                         skip_existing,
                         force_overwrite,
+                        connections,
                     };
 
                     download(context, links, github, gitlab, codeberg, gitea, ghcr).await?;

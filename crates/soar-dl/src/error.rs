@@ -26,6 +26,18 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::http_error))]
     HttpError { status: u16, url: String },
 
+    /// The server requested a cooldown that this download could not honor.
+    /// Callers must not automatically retry without honoring the delay.
+    #[error(
+        "HTTP {status}: {url}: server requested a retry after {delay:?}; automatic retry stopped"
+    )]
+    #[diagnostic(code(soar_dl::retry_after))]
+    RetryAfter {
+        status: u16,
+        url: String,
+        delay: std::time::Duration,
+    },
+
     #[error(transparent)]
     #[diagnostic(code(soar_dl::io))]
     Io(#[from] std::io::Error),
@@ -85,6 +97,10 @@ pub enum DownloadError {
     #[error("Resume metadata mismatch")]
     #[diagnostic(code(soar_dl::resume_mismatch))]
     ResumeMismatch,
+
+    #[error("Server does not support segmented downloads: {url}")]
+    #[diagnostic(code(soar_dl::range_unsupported))]
+    RangeUnsupported { url: String },
 
     /// Several downloads failed. `transient` holds when every one of them
     /// failed in a way a retry may get past.
@@ -146,7 +162,8 @@ impl DownloadError {
     ///
     /// A body read that fails surfaces as `Io`. ureq hands its own errors
     /// there wrapped in an `io::Error`, the stall timeout among them, so a
-    /// wrapped ureq error counts as a network failure.
+    /// wrapped ureq error counts as a network failure. `RetryAfter` is not
+    /// transient for automatic retries because its cooldown remains outstanding.
     pub fn is_transient(&self) -> bool {
         match self {
             Self::Network {
@@ -169,6 +186,11 @@ impl DownloadError {
             Self::Multiple {
                 transient, ..
             } => *transient,
+            // Retrying cannot help: the server ignored the range, so the
+            // caller falls back to a single-stream download instead.
+            Self::RangeUnsupported {
+                ..
+            } => false,
             _ => false,
         }
     }

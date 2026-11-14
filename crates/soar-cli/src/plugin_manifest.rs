@@ -48,6 +48,12 @@ type = "number"
 default = 4
 
 [[config]]
+key = "download_concurrency"
+label = "Connections per download"
+type = "number"
+default = 8
+
+[[config]]
 key = "search_limit"
 label = "Search result limit"
 type = "number"
@@ -260,6 +266,13 @@ mod tests {
             toml::from_str(&manifest(&["default".into()])).expect("manifest must parse");
         assert_eq!(parsed["schema_version"].as_integer(), Some(1));
         assert_eq!(parsed["id"].as_str(), Some("soar"));
+        let connections = parsed["config"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["key"].as_str() == Some("download_concurrency"))
+            .expect("download concurrency setting");
+        assert_eq!(connections["default"].as_integer(), Some(8));
     }
 
     #[test]

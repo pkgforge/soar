@@ -253,6 +253,7 @@ pub async fn prepare_run(
         &output_path,
         &cache_dir,
         no_verify,
+        config.download_concurrency.unwrap_or(8),
         progress_callback,
     )?;
 
@@ -298,11 +299,13 @@ fn download_to_cache(
     output_path: &Path,
     cache_bin: &Path,
     no_verify: bool,
+    connections: usize,
     progress_callback: Arc<dyn Fn(soar_dl::types::Progress) + Send + Sync>,
 ) -> SoarResult<()> {
     if let Some(ref url) = package.ghcr_blob {
         let cb = progress_callback.clone();
         let mut dl = OciDownload::new(url.as_str())
+            .connections(connections)
             .output(output_path.to_string_lossy())
             .overwrite(OverwriteMode::Force);
         dl = dl.progress(move |p| {
@@ -313,6 +316,7 @@ fn download_to_cache(
         let extract_dir = get_extract_dir(cache_bin);
         let cb = progress_callback.clone();
         let mut dl = Download::new(&package.download_url)
+            .connections(connections)
             .output(output_path.to_string_lossy())
             .overwrite(OverwriteMode::Force)
             .extract(true)

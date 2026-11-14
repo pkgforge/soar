@@ -15,12 +15,13 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use soar_utils::fs::is_elf;
 use tracing::{debug, trace, warn};
-use ureq::http::header::{ACCEPT, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
+use ureq::http::header::{ACCEPT, ACCEPT_ENCODING, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
 
 use crate::{
     download::{Download, check_partial_response},
     error::DownloadError,
     filter::Filter,
+    http::strong_etag,
     http_client::SHARED_AGENT,
     types::{OverwriteMode, Progress, ResumeInfo},
     utils::open_output,
@@ -252,6 +253,7 @@ pub struct OciDownload {
     extract: bool,
     extract_to: Option<PathBuf>,
     parallel: usize,
+    connections: Option<usize>,
     on_progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
 }
 
@@ -265,6 +267,7 @@ impl OciDownload {
     /// - `overwrite` = `OverwriteMode::Prompt`
     /// - `extract` = `false`
     /// - `parallel` = 1 (sequential downloads)
+    /// - direct blob downloads use the default connection count from `Download`
     /// - no progress callback
     ///
     /// # Examples
@@ -287,6 +290,7 @@ impl OciDownload {
             extract: false,
             extract_to: None,
             parallel: 1,
+            connections: None,
             on_progress: None,
         }
     }
@@ -410,6 +414,16 @@ impl OciDownload {
     /// ```
     pub fn parallel(mut self, n: usize) -> Self {
         self.parallel = n.max(1);
+        self
+    }
+
+    /// Sets the maximum connections for a direct digest blob download.
+    ///
+    /// Range-capable servers can use parallel segments. Zero is treated as one.
+    /// Manifest layers use a separate single-stream downloader; use `parallel`
+    /// to control how many layers can download concurrently.
+    pub fn connections(mut self, connections: usize) -> Self {
+        self.connections = Some(connections.max(1));
         self
     }
 
@@ -845,6 +859,12 @@ impl OciDownload {
             .overwrite(self.overwrite)
             .ghcr_blob();
 
+        let dl = if let Some(connections) = self.connections {
+            dl.connections(connections)
+        } else {
+            dl
+        };
+
         let dl = if let Some(ref cb) = self.on_progress {
             let cb = cb.clone();
             dl.progress(move |p| cb(p))
@@ -947,16 +967,21 @@ fn download_layer_impl(
         "downloading layer"
     );
 
-    let mut resume_info = read_usable_resume(path);
+    let mut resume_info = read_usable_resume(path).filter(|info| {
+        info.segments.is_none() && info.etag.as_deref().and_then(strong_etag).is_some()
+    });
     let resp = loop {
-        let mut req = SHARED_AGENT.get(&url).header(AUTHORIZATION, "Bearer QQ==");
+        let mut req = SHARED_AGENT
+            .get(&url)
+            .header(AUTHORIZATION, "Bearer QQ==")
+            .header(ACCEPT_ENCODING, "identity");
         if let Some(info) = &resume_info {
             trace!(
                 resume_from = info.downloaded,
                 "attempting to resume download"
             );
             req = req.header(RANGE, &format!("bytes={}-", info.downloaded));
-            if let Some(tag) = &info.etag {
+            if let Some(tag) = info.etag.as_deref().and_then(strong_etag) {
                 req = req.header(IF_RANGE, tag);
             }
         }
@@ -998,6 +1023,10 @@ fn download_layer_impl(
     };
 
     let resume_from = resume_info.as_ref().map(|info| info.downloaded);
+    if resume_from.is_none() {
+        // Invalidate the old checkpoint before truncating or writing the file.
+        remove_resume(path)?;
+    }
     let mut file = open_output(path, resume_from)?;
 
     if let Some(resume_offset) = resume_from {
@@ -1014,7 +1043,8 @@ fn download_layer_impl(
         .headers()
         .get(ETAG)
         .and_then(|h| h.to_str().ok())
-        .map(String::from);
+        .map(String::from)
+        .or_else(|| resume_info.as_ref().and_then(|info| info.etag.clone()));
     let mut reader = resp.into_body().into_reader();
     let mut buffer = [0u8; 8192];
     let mut layer_downloaded = resume_from.unwrap_or(0);
@@ -1041,6 +1071,7 @@ fn download_layer_impl(
                     total: layer.size,
                     etag: new_etag.clone(),
                     last_modified: None,
+                    segments: None,
                 },
             ) {
                 trace!(%err, "failed to save resume checkpoint");
@@ -1457,8 +1488,9 @@ mod tests {
         let info = ResumeInfo {
             downloaded: 20_000,
             total: bytes.len() as u64,
-            etag: None,
+            etag: Some("\"test-etag\"".into()),
             last_modified: None,
+            segments: None,
         };
         if write_resume(&path, &info).is_err() {
             eprintln!("skipping: filesystem lacks user xattrs");
@@ -1483,6 +1515,209 @@ mod tests {
         assert_eq!(downloaded, 50_000);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         assert!(crate::xattr::read_resume(&path).is_none());
+    }
+
+    #[test]
+    fn unvalidated_layer_checkpoint_restarts_without_a_range() {
+        let bytes = vec![7u8; 50_000];
+        let layer = layer("one", &bytes);
+        for etag in [None, Some("W/\"test-etag\"".to_string())] {
+            let (base, requests) = crate::test_server::serve_with(
+                vec![(
+                    format!("/v2/org/repo/blobs/{}", layer.digest),
+                    bytes.clone(),
+                )],
+                Default::default(),
+            );
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("one");
+            std::fs::write(&path, &bytes[..20_000]).unwrap();
+            if write_resume(
+                &path,
+                &ResumeInfo {
+                    downloaded: 20_000,
+                    total: bytes.len() as u64,
+                    etag,
+                    last_modified: None,
+                    segments: None,
+                },
+            )
+            .is_err()
+            {
+                eprintln!("skipping: filesystem lacks user xattrs");
+                return;
+            }
+            let dl = OciDownload::new("org/repo:tag").api(format!("{base}/v2"));
+            dl.download_layer(&layer, &path, &mut 0, layer.size)
+                .unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+            assert!(
+                requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .all(|r| r.contains("range=None"))
+            );
+        }
+    }
+
+    #[test]
+    fn segmented_layer_checkpoint_restarts_and_clears_stale_state() {
+        let bytes = vec![7u8; 50_000];
+        let layer = layer("one", &bytes);
+        let (base, requests) = crate::test_server::serve_with(
+            vec![(
+                format!("/v2/org/repo/blobs/{}", layer.digest),
+                bytes.clone(),
+            )],
+            crate::test_server::ServeOptions {
+                close_after_bytes: Some(10_000),
+                ..Default::default()
+            },
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one");
+        std::fs::write(&path, vec![0u8; bytes.len()]).unwrap();
+        let info = ResumeInfo {
+            downloaded: 20_000,
+            total: bytes.len() as u64,
+            etag: Some("\"test-etag\"".into()),
+            last_modified: None,
+            segments: Some(vec![crate::types::SegmentProgress {
+                start: 25_000,
+                end: 49_999,
+                written: 20_000,
+            }]),
+        };
+        if write_resume(&path, &info).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+        let dl = OciDownload::new("org/repo:tag").api(format!("{base}/v2"));
+        assert!(
+            dl.download_layer(&layer, &path, &mut 0, layer.size)
+                .is_err()
+        );
+        assert!(crate::xattr::read_resume(&path).is_none());
+        assert!(
+            requests
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|r| r.contains("range=None"))
+        );
+    }
+
+    #[test]
+    fn resumed_layer_checkpoint_keeps_etag_when_response_omits_it() {
+        use std::{
+            io::{BufRead, BufReader},
+            net::TcpListener,
+        };
+
+        let bytes = vec![3u8; 3 * 1024 * 1024];
+        let layer = layer("one", &bytes);
+        let offset = 100_000;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one");
+        std::fs::write(&path, &bytes[..offset]).unwrap();
+        let info = ResumeInfo {
+            downloaded: offset as u64,
+            total: bytes.len() as u64,
+            etag: Some("\"test-etag\"".into()),
+            last_modified: None,
+            segments: None,
+        };
+        if write_resume(&path, &info).is_err() {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let total = bytes.len();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut headers = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" || line.is_empty() {
+                    break;
+                }
+                headers.push_str(&line.to_ascii_lowercase());
+            }
+            assert!(
+                headers.contains(&format!("range: bytes={offset}-")),
+                "{headers}"
+            );
+            assert!(headers.contains("if-range: \"test-etag\""), "{headers}");
+            write!(stream, "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {offset}-{}/{total}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", total - 1, total - offset).unwrap();
+            stream
+                .write_all(&bytes[offset..offset + 1_200_000])
+                .unwrap();
+        });
+        let dl = OciDownload::new("org/repo:tag").api(format!("http://{addr}/v2"));
+        assert!(
+            dl.download_layer(&layer, &path, &mut 0, layer.size)
+                .is_err()
+        );
+        server.join().unwrap();
+        let checkpoint = crate::xattr::read_resume(&path).unwrap();
+        assert!(checkpoint.downloaded >= 1024 * 1024);
+        assert_eq!(checkpoint.etag.as_deref(), Some("\"test-etag\""));
+        assert!(checkpoint.segments.is_none());
+    }
+
+    #[test]
+    fn direct_blob_connections_control_segmentation() {
+        let probe = tempfile::NamedTempFile::new().unwrap();
+        if write_resume(
+            probe.path(),
+            &ResumeInfo {
+                downloaded: 0,
+                total: 0,
+                etag: None,
+                last_modified: None,
+                segments: None,
+            },
+        )
+        .is_err()
+        {
+            eprintln!("skipping: filesystem lacks user xattrs");
+            return;
+        }
+        let bytes = vec![5u8; 8 * 1024 * 1024];
+        let digest = format!("sha256:{}", sha256_hex(&bytes));
+        for connections in [1, 2] {
+            let (base, requests) = crate::test_server::serve_with(
+                vec![(format!("/v2/org/repo/blobs/{digest}"), bytes.clone())],
+                Default::default(),
+            );
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("blob");
+            OciDownload::new(format!("org/repo@{digest}").as_str())
+                .api(format!("{base}/v2"))
+                .output(path.to_string_lossy())
+                .connections(connections)
+                .execute()
+                .unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+            let requests = requests.lock().unwrap();
+            let ranged = requests
+                .iter()
+                .filter(|r| r.starts_with("GET ") && r.contains("range=Some"))
+                .count();
+            if connections == 1 {
+                assert_eq!(ranged, 0, "{requests:?}");
+            } else {
+                assert!(ranged >= 2, "{requests:?}");
+            }
+        }
+        assert_eq!(
+            OciDownload::new("org/repo:tag").connections(0).connections,
+            Some(1)
+        );
     }
 
     #[test]
@@ -1557,7 +1792,9 @@ mod tests {
         match err {
             DownloadError::InvalidJson {
                 reason, ..
-            } => assert!(reason.contains("EOF"), "{reason}"),
+            } => {
+                assert!(reason.contains("EOF"), "{reason}")
+            }
             other => panic!("expected InvalidJson, got {other:?}"),
         }
     }

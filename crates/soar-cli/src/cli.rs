@@ -1,7 +1,17 @@
+// clap derives the large frames, which only matter in unoptimized builds.
+#![allow(unknown_lints, clippy::large_unopt_stack_frames)]
+
 use clap::{ArgAction, Parser, Subcommand, ValueHint};
 use clap_complete::Shell;
 
 use crate::utils::parse_default_repos_arg;
+
+fn parse_connections(value: &str) -> Result<usize, String> {
+    value
+        .parse::<std::num::NonZeroUsize>()
+        .map(std::num::NonZeroUsize::get)
+        .map_err(|_| "connections must be a positive integer".to_string())
+}
 
 #[derive(Parser)]
 #[command(
@@ -456,6 +466,11 @@ pub enum Commands {
         /// Overwrite existing download with same file
         #[arg(required = false, long)]
         force_overwrite: bool,
+
+        /// Connections per HTTP or OCI blob download (must be positive).
+        /// OCI manifest layers use separate single-stream downloads.
+        #[arg(required = false, long, value_parser = parse_connections)]
+        connections: Option<usize>,
     },
 
     /// Health check
@@ -589,4 +604,42 @@ pub enum Commands {
         #[arg(short, long)]
         repo: Option<String>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn download_connections_must_be_positive() {
+        for value in ["0", "-1", "invalid"] {
+            assert!(
+                Args::try_parse_from([
+                    "soar",
+                    "download",
+                    "--connections",
+                    value,
+                    "https://example.com/file"
+                ])
+                .is_err()
+            );
+        }
+        for (value, expected) in [("1", 1), ("8", 8)] {
+            let args = Args::try_parse_from([
+                "soar",
+                "download",
+                "--connections",
+                value,
+                "https://example.com/file",
+            ])
+            .unwrap();
+            let Commands::Download {
+                connections, ..
+            } = args.command
+            else {
+                panic!("expected download command");
+            };
+            assert_eq!(connections, Some(expected));
+        }
+    }
 }

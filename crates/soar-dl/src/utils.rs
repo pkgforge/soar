@@ -122,6 +122,42 @@ pub(crate) fn open_output(path: &Path, resume_pos: Option<u64>) -> Result<File, 
     Ok(file)
 }
 
+/// Opens or creates an output without truncating it, refusing symlinks and
+/// non-regular files.
+pub(crate) fn open_untruncated(path: &Path) -> Result<File, DownloadError> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(
+            std::io::Error::other(format!("{} is not a regular file", path.display())).into(),
+        );
+    }
+    Ok(file)
+}
+
+/// Opens an existing download output at `path` for in-place writes, refusing
+/// to follow a symlink planted there or to write into anything but a regular
+/// file.
+///
+/// Segmented downloads write this way: the file is already allocated to its
+/// full size and workers fill their own byte ranges inside it.
+pub(crate) fn open_existing(path: &Path) -> Result<File, DownloadError> {
+    let mut options = OpenOptions::new();
+    options.write(true).custom_flags(libc::O_NOFOLLOW);
+
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(
+            std::io::Error::other(format!("{} is not a regular file", path.display())).into(),
+        );
+    }
+    Ok(file)
+}
+
 /// Compute the final file system path for a download based on an explicit output and inferred filenames.
 ///
 /// The `output` argument can be:
