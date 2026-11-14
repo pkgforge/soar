@@ -90,9 +90,9 @@ mod tests {
         let patterns = default_install_patterns();
 
         assert_eq!(patterns.len(), 4);
-        assert!(patterns.contains(&"!*.log".to_string()));
-        assert!(patterns.contains(&"!SBUILD".to_string()));
-        assert!(patterns.contains(&"!*.json".to_string()));
-        assert!(patterns.contains(&"!*.version".to_string()));
+        assert!(patterns.iter().any(|i| i == "!*.log"));
+        assert!(patterns.iter().any(|i| i == "!SBUILD"));
+        assert!(patterns.iter().any(|i| i == "!*.json"));
+        assert!(patterns.iter().any(|i| i == "!*.version"));
     }
 }

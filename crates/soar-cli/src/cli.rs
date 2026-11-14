@@ -1,3 +1,6 @@
+// clap derives the large frames, which only matter in unoptimized builds.
+#![allow(unknown_lints, clippy::large_unopt_stack_frames)]
+
 use clap::{ArgAction, Parser, Subcommand, ValueHint};
 use clap_complete::Shell;
 
