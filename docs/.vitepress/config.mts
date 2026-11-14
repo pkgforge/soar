@@ -105,6 +105,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'Overview', link: '/releases' },
+            { text: 'Soar 0.14', link: '/releases/v0.14' },
             { text: 'Soar 0.13', link: '/releases/v0.13' },
             { text: 'Soar 0.12', link: '/releases/v0.12' },
             { text: 'Soar 0.11', link: '/releases/v0.11' },
