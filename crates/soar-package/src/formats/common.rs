@@ -621,7 +621,7 @@ pub async fn integrate_package<P: AsRef<Path>, T: PackageExt>(
         // Shipped links stay in place, untouched; anything not provably a
         // regular file is skipped the same way.
         if !fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
-            warn!(path = %path.display(), "skipping package entry that is not a regular file");
+            debug!(path = %path.display(), "skipping package entry that is not a regular file");
             return Ok(());
         }
         let ext = path.extension();
