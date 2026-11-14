@@ -82,7 +82,8 @@ remote-tool = { url = "https://example.com/tool.tar.gz" }
 - Remote packages (url and forge sources) are never auto-pinned unless you explicitly set `pinned = true`
 - Pinned packages are skipped during auto-update operations
 - Version `*` always resolves to latest and is never pinned
-- Only `url`, forge (`github`, `gitlab`, `codeberg`, `gitea`) and `version_command` packages have the installed version written back to `packages.toml`. A repository package is asked for its version on every apply, so a `"*"` declaration stays `"*"` rather than turning into a pin
+- Only `url`, `version_command` and versioned forge (`github`, `gitlab`, `codeberg`, `gitea`) packages have the installed version written back to `packages.toml`. A repository package is asked for its version on every apply, so a `"*"` declaration stays `"*"` rather than turning into a pin
+- A forge package with no version or `version = "*"` is left as written. Once installed, `soar apply` keeps it without asking the forge as long as the installed release still matches the declared repository, `asset_pattern` and `tag_pattern`. `soar update` moves it to the newest release
 
 ### Detailed Format
 

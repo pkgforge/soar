@@ -254,7 +254,7 @@ pub async fn execute_apply(
     if !diff.to_install.is_empty() {
         let mut version_updates: Vec<(String, String)> = Vec::new();
         for (pkg, target) in &diff.to_install {
-            if !tracks_own_version(pkg) {
+            if !tracks_own_version(pkg) || pkg.floats_on_forge() {
                 continue;
             }
             let declared_version = pkg
@@ -307,7 +307,7 @@ pub async fn execute_apply(
     if !diff.to_update.is_empty() {
         let mut update_version_updates: Vec<(String, String)> = Vec::new();
         for (pkg, target) in &diff.to_update {
-            if !tracks_own_version(pkg) {
+            if !tracks_own_version(pkg) || pkg.floats_on_forge() {
                 continue;
             }
             let declared_version = pkg
@@ -559,6 +559,20 @@ fn handle_local_package(
                 return Ok(());
             }
         };
+
+        // A floating declaration keeps what is installed from this source, so
+        // only `soar update` asks the forge for a newer release.
+        if pkg.floats_on_forge()
+            && let Some(ref existing) = installed
+            && existing
+                .download_url
+                .as_deref()
+                .is_some_and(|url| source.accepts_download_url(url))
+        {
+            diff.in_sync.push(format!("{} (local)", pkg.name));
+            return Ok(());
+        }
+
         let release = match source.resolve_version(pkg.version.as_deref()) {
             Ok(r) => r,
             Err(e) => {

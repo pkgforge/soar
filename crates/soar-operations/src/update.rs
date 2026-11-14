@@ -677,7 +677,7 @@ pub async fn perform_update(
         .filter_map(|u| {
             resolved_packages
                 .iter()
-                .find(|r| r.name == u.pkg_name && has_update_source(r))
+                .find(|r| r.name == u.pkg_name && has_update_source(r) && !r.floats_on_forge())
                 .map(|_| {
                     (
                         u.pkg_name.clone(),

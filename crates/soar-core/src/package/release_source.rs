@@ -223,6 +223,27 @@ impl ReleaseSource {
             .ok_or_else(|| self.no_release_error(None))
     }
 
+    /// Whether `url` is a release asset this source could have picked, judged
+    /// from the URL alone without asking the forge.
+    ///
+    /// The forge, repository, tag pattern and asset pattern are all checked.
+    /// Whether the release was a prerelease cannot be read from a URL, so the
+    /// prerelease setting is not.
+    pub fn accepts_download_url(&self, url: &str) -> bool {
+        let Some(download) = ReleaseDownload::parse(url) else {
+            return false;
+        };
+        let asset_pattern = substitute_placeholders(
+            &self.asset_pattern,
+            Some(&download.tag),
+            self.arch_map.as_ref(),
+        );
+        download.forge == self.forge
+            && download.repo.eq_ignore_ascii_case(&self.repo)
+            && matches_tag_pattern(&download.tag, self.tag_pattern.as_deref())
+            && fast_glob::glob_match(&asset_pattern, &download.asset)
+    }
+
     fn fetch_error(&self, err: DownloadError) -> SoarError {
         SoarError::Custom(format!(
             "Failed to fetch {} releases for {}: {}",
@@ -661,6 +682,37 @@ mod tests {
             asset_glob("nightly", "tool-x86_64.AppImage"),
             "tool-x86_64.AppImage"
         );
+    }
+
+    #[test]
+    fn an_installed_url_is_accepted_only_by_its_own_source() {
+        let mut source = ReleaseSource::new(Forge::GitHub, "cli/cli", "gh_*_linux_{arch}.tar.gz");
+        source.arch_map = Some(HashMap::from([("x86_64".to_string(), "amd64".to_string())]));
+        let url =
+            "https://github.com/cli/cli/releases/download/v2.40.0/gh_2.40.0_linux_amd64.tar.gz";
+        if std::env::consts::ARCH == "x86_64" {
+            assert!(source.accepts_download_url(url));
+        }
+
+        let source = ReleaseSource::new(Forge::GitHub, "Cli/CLI", "gh_*_linux_amd64.tar.gz");
+        assert!(source.accepts_download_url(url));
+
+        let other_repo = ReleaseSource::new(Forge::GitHub, "cli/other", "gh_*_linux_amd64.tar.gz");
+        assert!(!other_repo.accepts_download_url(url));
+
+        let other_forge = ReleaseSource::new(Forge::Codeberg, "cli/cli", "gh_*_linux_amd64.tar.gz");
+        assert!(!other_forge.accepts_download_url(url));
+
+        let other_asset = ReleaseSource::new(Forge::GitHub, "cli/cli", "gh_*_linux_arm64.tar.gz");
+        assert!(!other_asset.accepts_download_url(url));
+
+        let mut tagged = source.clone();
+        tagged.tag_pattern = Some("v3*".to_string());
+        assert!(!tagged.accepts_download_url(url));
+        tagged.tag_pattern = Some("v2*".to_string());
+        assert!(tagged.accepts_download_url(url));
+
+        assert!(!source.accepts_download_url("https://example.com/gh_2.40.0_linux_amd64.tar.gz"));
     }
 
     #[test]
