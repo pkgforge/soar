@@ -1,4 +1,10 @@
 
+## [0.4.0](https://github.com/pkgforge/soar/compare/soar-events-v0.3.2...soar-events-v0.4.0) - 2026-11-15
+
+### ⛰️  Features
+
+- *(package)* Provide onelf dependency sets - ([e7c0700](https://github.com/pkgforge/soar/commit/e7c07004c5baf4a155bd1752aad0e104ca6246ba))
+
 ## [0.3.2](https://github.com/pkgforge/soar/compare/soar-events-v0.3.1...soar-events-v0.3.2) - 2026-10-27
 
 ### ⛰️  Features
