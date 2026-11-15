@@ -21,6 +21,7 @@ use soar_core::{
     package::{
         install::{InstallMarker, InstallTarget, PackageInstaller},
         local::LocalPackage,
+        onelf_sets,
         query::PackageQuery,
         remove::make_tree_writable,
         update::remove_old_versions,
@@ -1262,6 +1263,39 @@ async fn install_single_package(
             ctx.config(),
         )
         .await?;
+    }
+
+    // An onelf package's sets are fetched and kept by soar, so launching it
+    // fetches nothing into the onelf cache.
+    {
+        let binaries: Vec<PathBuf> = symlinks.iter().map(|(src, _)| src.clone()).collect();
+        let on_fetch = |label: &str| {
+            events.emit(SoarEvent::Installing {
+                op_id,
+                pkg_name: pkg.pkg_name.clone(),
+                stage: InstallStage::FetchingSet(label.to_string()),
+            });
+        };
+        let report = onelf_sets::FetchReport {
+            on_fetch: &on_fetch,
+            progress: Some(create_progress_bridge(
+                events.clone(),
+                op_id,
+                pkg.pkg_name.clone(),
+            )),
+        };
+        if let Err(err) = onelf_sets::provide_sets(
+            ctx.config(),
+            target.profile.as_deref(),
+            &install_dir,
+            &binaries,
+            &report,
+        ) {
+            warn!(
+                "could not provide the onelf sets of {}: {err}",
+                pkg.pkg_name
+            );
+        }
     }
 
     // Record to database

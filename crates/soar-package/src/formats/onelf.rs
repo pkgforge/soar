@@ -146,6 +146,49 @@ fn open_image(file: &File, footer: &Footer) -> Result<Image<'static>> {
     Ok(image)
 }
 
+/// The payload `footer` describes, read through `image` when it is a
+/// stipplefs payload. The image is opened by the caller, since the
+/// payload's reader borrows it.
+fn open_payload<'a>(
+    file: &mut File,
+    footer: &Footer,
+    image: Option<&'a Image<'static>>,
+) -> Result<Payload<'a>> {
+    match image {
+        Some(image) => {
+            Ok(Payload::Stipple(Box::new(image.reader().map_err(|e| {
+                invalid(format!("invalid onelf stipplefs payload: {e}"))
+            })?)))
+        }
+        None => Ok(Payload::Blocks(read_dict(file, footer)?)),
+    }
+}
+
+/// Reads the file at the package-relative `path` out of the onelf binary
+/// at `file_path`, or `None` when the package holds no file there.
+///
+/// The same bounds apply as for desktop integration: a file larger than a
+/// desktop resource is refused.
+///
+/// # Errors
+///
+/// Returns [`PackageError`] if `file_path` is not a readable onelf binary
+/// or the file cannot be read out of its payload.
+pub fn read_file(file_path: &Path, path: &str) -> Result<Option<Vec<u8>>> {
+    let mut file =
+        File::open(file_path).with_context(|| format!("opening {}", file_path.display()))?;
+    let (footer, manifest) = read_footer_and_manifest(&mut file)?;
+    let Some(idx) = find_entry_by_path(&manifest, path) else {
+        return Ok(None);
+    };
+    let image = footer
+        .is_stipple()
+        .then(|| open_image(&file, &footer))
+        .transpose()?;
+    let payload = open_payload(&mut file, &footer, image.as_ref())?;
+    decompress_entry(&mut file, &footer, &manifest.entries[idx], &payload).map(Some)
+}
+
 /// Decompresses a single file entry from the payload section.
 ///
 /// The entry's total size is checked against [`MAX_RESOURCE_SIZE`] and every
@@ -315,16 +358,7 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
         .is_stipple()
         .then(|| open_image(&file, &footer))
         .transpose()?;
-    let payload = match &image {
-        Some(image) => {
-            Payload::Stipple(Box::new(
-                image
-                    .reader()
-                    .map_err(|e| invalid(format!("invalid onelf stipplefs payload: {e}")))?,
-            ))
-        }
-        None => Payload::Blocks(read_dict(&mut file, &footer)?),
-    };
+    let payload = open_payload(&mut file, &footer, image.as_ref())?;
     let default_ep = default_entrypoint_name(&manifest);
 
     // The default entrypoint's desktop keeps its `{pkg_name}.desktop` name,

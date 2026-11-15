@@ -174,6 +174,9 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
         let mut batch_job: Option<ProgressBar> = None;
         let mut batch_msg: Option<String> = None;
         let mut remove_ops: HashSet<OperationId> = HashSet::new();
+        // The set each operation is fetching, so its download is told apart
+        // from the package's own.
+        let mut set_fetches: HashMap<OperationId, String> = HashMap::new();
 
         // Ensure the batch progress job stays at the bottom of the job list
         // by removing and recreating it after new download jobs are added.
@@ -208,7 +211,11 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                         .entry(op_id)
                         .or_insert_with(|| create_download_bar(&pkg_name));
                     pb.set_style(waiting_style());
-                    pb.set_message(format!("{pkg_name}: connecting"));
+                    pb.reset_elapsed();
+                    pb.set_message(match set_fetches.get(&op_id) {
+                        Some(label) => format!("{pkg_name}: fetching set {label}"),
+                        None => format!("{pkg_name}: connecting"),
+                    });
                     if is_new {
                         reposition_batch!(batch_job, batch_msg);
                     }
@@ -266,7 +273,13 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 } => {
                     if let Some(pb) = jobs.get(&op_id) {
                         pb.set_style(spinner_style());
-                        pb.set_message(format!("{pkg_name}: downloaded"));
+                        match set_fetches.remove(&op_id) {
+                            Some(label) => {
+                                pb.set_prefix(colored_prefix(&pkg_name));
+                                pb.set_message(format!("{pkg_name}: fetched set {label}"));
+                            }
+                            None => pb.set_message(format!("{pkg_name}: downloaded")),
+                        }
                     }
                 }
                 SoarEvent::DownloadRetry {
@@ -283,6 +296,7 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                 SoarEvent::DownloadAborted {
                     op_id, ..
                 } => {
+                    set_fetches.remove(&op_id);
                     if let Some(pb) = jobs.remove(&op_id) {
                         pb.finish_and_clear();
                     }
@@ -351,6 +365,9 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                         InstallStage::DesktopIntegration => {
                             format!("{pkg_name}: desktop integration")
                         }
+                        InstallStage::FetchingSet(label) => {
+                            format!("{pkg_name}: fetching set {label}")
+                        }
                         InstallStage::SetupPortable => {
                             format!("{pkg_name}: setting up portable")
                         }
@@ -365,6 +382,16 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     let pb = jobs.entry(op_id).or_insert_with(|| create_op_spinner(&msg));
                     pb.set_style(spinner_style());
                     pb.set_message(msg);
+                    // The download that follows draws under the prefix, so
+                    // it names the set rather than looking like the package.
+                    if let InstallStage::FetchingSet(label) = &stage {
+                        pb.set_prefix(format!(
+                            "{} {}",
+                            colored_prefix(&pkg_name),
+                            nu_ansi_term::Style::new().dimmed().paint(label)
+                        ));
+                        set_fetches.insert(op_id, label.clone());
+                    }
                 }
 
                 // ── Build stages ───────────────────────────────────────
@@ -548,6 +575,7 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     pkg_name,
                     ..
                 } => {
+                    set_fetches.remove(&op_id);
                     if !remove_ops.remove(&op_id) {
                         MULTI.suspend(|| {
                             eprintln!(
@@ -569,6 +597,7 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     ..
                 } => {
                     remove_ops.remove(&op_id);
+                    set_fetches.remove(&op_id);
                     MULTI.suspend(|| {
                         eprintln!(
                             " {} {}: {}",

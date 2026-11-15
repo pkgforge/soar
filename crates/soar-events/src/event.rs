@@ -155,6 +155,9 @@ pub enum InstallStage {
     LinkingBinaries,
     /// Integrating desktop files, icons, and appstream metadata.
     DesktopIntegration,
+    /// Fetching a dependency set, named by its label, that an onelf
+    /// package runs on.
+    FetchingSet(String),
     /// Setting up portable directories.
     SetupPortable,
     /// Recording installation metadata to database.

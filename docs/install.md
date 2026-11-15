@@ -37,6 +37,21 @@ Licences and other side files are installed inside the package directory and
 are not linked. Removing a package unlinks only what points back into it, so a
 manual page or completion installed by your distribution is left alone.
 
+### onelf dependency sets
+
+An onelf package can run on a shared dependency set, such as GTK, instead of
+bundling it. Soar fetches each set the package pins, checks it against the
+pinned BLAKE3, keeps it in `onelf/platform` under the soar root, and links it
+into `~/.local/share/onelf/platform` (`/usr/local/share/onelf/platform` with
+`--system`). The onelf runtime looks there first, so launching the package
+fetches nothing into `~/.cache/onelf`. Packages pinning the same set share one
+copy, and the set is removed with the last package that pins it.
+
+If a set cannot be fetched, the install still succeeds and the package fetches
+the set itself the first time it runs. A package packed with an onelf runtime
+from before this directory existed does not look there, and keeps fetching its
+sets into its own cache until it is rebuilt.
+
 ## Basic Installation
 
 To install a package, use the `install` command or one of its aliases.

@@ -359,6 +359,11 @@ impl PackageRemover {
             debug!("removed symlink: {}", symlink.display());
         }
 
+        // The sets this package pinned go once nothing else pins them.
+        if let Err(err) = super::onelf_sets::prune_sets(&self.config, Some(&self.package.profile)) {
+            warn!("could not remove unused onelf sets: {err}");
+        }
+
         debug!(
             "removed {}:{} ({}) - reclaimed {}",
             self.package.pkg_name, self.package.repo_name, self.package.version, size_str
