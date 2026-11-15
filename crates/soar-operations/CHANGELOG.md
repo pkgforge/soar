@@ -1,4 +1,10 @@
 
+## [0.7.2](https://github.com/pkgforge/soar/compare/soar-operations-v0.7.1...soar-operations-v0.7.2) - 2026-11-15
+
+### ⛰️  Features
+
+- *(package)* Provide onelf dependency sets - ([e7c0700](https://github.com/pkgforge/soar/commit/e7c07004c5baf4a155bd1752aad0e104ca6246ba))
+
 ## [0.7.1](https://github.com/pkgforge/soar/compare/soar-operations-v0.7.0...soar-operations-v0.7.1) - 2026-11-14
 
 ### ⛰️  Features
