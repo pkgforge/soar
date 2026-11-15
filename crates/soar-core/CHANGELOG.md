@@ -1,4 +1,10 @@
 
+## [0.18.2](https://github.com/pkgforge/soar/compare/soar-core-v0.18.1...soar-core-v0.18.2) - 2026-11-15
+
+### ⛰️  Features
+
+- *(package)* Provide onelf dependency sets - ([e7c0700](https://github.com/pkgforge/soar/commit/e7c07004c5baf4a155bd1752aad0e104ca6246ba))
+
 ## [0.18.1](https://github.com/pkgforge/soar/compare/soar-core-v0.18.0...soar-core-v0.18.1) - 2026-11-14
 
 ### ⛰️  Features

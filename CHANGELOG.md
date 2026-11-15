@@ -1,4 +1,14 @@
 
+## [0.14.2](https://github.com/pkgforge/soar/compare/v0.14.1...v0.14.2) - 2026-11-15
+
+### ⛰️  Features
+
+- *(package)* Provide onelf dependency sets - ([e7c0700](https://github.com/pkgforge/soar/commit/e7c07004c5baf4a155bd1752aad0e104ca6246ba))
+
+### 🐛 Bug Fixes
+
+- *(package)* Read onelf resources from stipplefs payloads - ([67f0b4e](https://github.com/pkgforge/soar/commit/67f0b4e5d9fd672cae9a5d9d2a4c8096a4dde6c5))
+
 ## [0.14.1](https://github.com/pkgforge/soar/compare/v0.14.0...v0.14.1) - 2026-11-14
 
 ### ⛰️  Features
