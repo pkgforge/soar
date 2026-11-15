@@ -2419,6 +2419,7 @@ dependencies = [
  "soar-config",
  "soar-utils",
  "squishy",
+ "stipplefs",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2505,6 +2506,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd7db3726a1eabef77083f4e1afaa94c5608cd90064a256977e421da8fbf4f07"
 dependencies = [
+ "libc",
  "twox-hash",
  "zstd 0.14.3",
 ]

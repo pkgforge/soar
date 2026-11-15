@@ -61,6 +61,7 @@ soar-package = { version = "0.8.0", path = "crates/soar-package" }
 soar-registry = { version = "0.7.1", path = "crates/soar-registry" }
 soar-utils = { version = "0.6.0", path = "crates/soar-utils" }
 squishy = { version = "0.5.3", features = ["appimage", "dwarfs"] }
+stipplefs = { version = "0.2.0", default-features = false, features = ["fs", "read", "zstd"] }
 tabled = { version = "0.22", default-features = false, features = ["ansi"] }
 terminal_size = "0.4"
 tempfile = "3.27.0"

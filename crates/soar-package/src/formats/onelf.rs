@@ -13,6 +13,10 @@ use std::{
 
 use onelf_format::{Entry, EntryKind, FOOTER_SIZE, Footer, Manifest};
 use soar_utils::path::is_safe_component;
+use stipplefs::{
+    read::{Image, Reader},
+    source::FileSource,
+};
 
 use super::common::{
     desktop_entry_name, managed_icon_name, symlink_desktop_with_config, symlink_icon_with_mode,
@@ -116,6 +120,32 @@ fn read_dict(file: &mut File, footer: &Footer) -> Result<Option<Vec<u8>>> {
     Ok(Some(buf))
 }
 
+/// How the payload section turns an entry's blocks back into its content.
+enum Payload<'a> {
+    /// Separately compressed zstd blocks, with the package's dictionary if it
+    /// has one, or raw bytes when the footer says the payload is stored.
+    Blocks(Option<Vec<u8>>),
+    /// A stipplefs image. A block is then a slice of a file in the image:
+    /// `compressed_size` is the file's inode, `payload_offset` where the
+    /// slice starts within it, and `original_size` its length.
+    Stipple(Box<Reader<'a>>),
+}
+
+/// Opens the stipplefs image a stipple payload is stored as.
+///
+/// The image's own metadata limit is far above anything a package needs, so
+/// it is held to the manifest's.
+fn open_image(file: &File, footer: &Footer) -> Result<Image<'static>> {
+    let file = file
+        .try_clone()
+        .with_context(|| "opening onelf payload".to_string())?;
+    let mut image = FileSource::new(file)
+        .and_then(|source| Image::new(source, footer.payload_offset, footer.payload_size))
+        .map_err(|e| invalid(format!("invalid onelf stipplefs payload: {e}")))?;
+    image.set_metadata_limit(MAX_MANIFEST_SIZE);
+    Ok(image)
+}
+
 /// Decompresses a single file entry from the payload section.
 ///
 /// The entry's total size is checked against [`MAX_RESOURCE_SIZE`] and every
@@ -125,14 +155,15 @@ fn decompress_entry(
     file: &mut File,
     footer: &Footer,
     entry: &Entry,
-    dict: Option<&[u8]>,
+    payload: &Payload,
 ) -> Result<Vec<u8>> {
     let file_size = file_size(file)?;
+    let stored = footer.is_stored() && matches!(payload, Payload::Blocks(_));
     let total = entry
         .blocks
         .iter()
         .map(|block| {
-            if footer.is_stored() {
+            if stored {
                 block.compressed_size
             } else {
                 block.original_size
@@ -144,6 +175,22 @@ fn decompress_entry(
 
     let mut result = Vec::with_capacity(total as usize);
     for block in &entry.blocks {
+        let dict = match payload {
+            Payload::Blocks(dict) => dict.as_deref(),
+            Payload::Stipple(reader) => {
+                let ino = u32::try_from(block.compressed_size)
+                    .map_err(|_| invalid("onelf block names an inode outside the image"))?;
+                let start = result.len();
+                result.resize(start + block.original_size as usize, 0);
+                let read = reader
+                    .read(ino, block.payload_offset, &mut result[start..])
+                    .map_err(|e| invalid(format!("reading onelf stipplefs payload: {e}")))?;
+                if start + read != result.len() {
+                    return Err(invalid("onelf block size mismatch"));
+                }
+                continue;
+            }
+        };
         let offset = footer
             .payload_offset
             .checked_add(block.payload_offset)
@@ -155,7 +202,7 @@ fn decompress_entry(
         file.read_exact(&mut compressed)
             .with_context(|| "reading onelf payload block".to_string())?;
 
-        if footer.is_stored() {
+        if stored {
             result.extend_from_slice(&compressed);
             continue;
         }
@@ -264,7 +311,20 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
     let mut file =
         File::open(file_path).with_context(|| format!("opening {}", file_path.display()))?;
     let (footer, manifest) = read_footer_and_manifest(&mut file)?;
-    let dict = read_dict(&mut file, &footer)?;
+    let image = footer
+        .is_stipple()
+        .then(|| open_image(&file, &footer))
+        .transpose()?;
+    let payload = match &image {
+        Some(image) => {
+            Payload::Stipple(Box::new(
+                image
+                    .reader()
+                    .map_err(|e| invalid(format!("invalid onelf stipplefs payload: {e}")))?,
+            ))
+        }
+        None => Payload::Blocks(read_dict(&mut file, &footer)?),
+    };
     let default_ep = default_entrypoint_name(&manifest);
 
     // The default entrypoint's desktop keeps its `{pkg_name}.desktop` name,
@@ -293,7 +353,7 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
             }
             let dest = install_dir.join(format!("{stem}.desktop"));
             let desktop_data =
-                decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
+                decompress_entry(&mut file, &footer, &manifest.entries[idx], &payload)?;
             fs::write(&dest, &desktop_data)
                 .with_context(|| format!("writing desktop file to {}", dest.display()))?;
             desktops.push((stem, ep_name.to_string(), dest));
@@ -320,8 +380,7 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
             } else {
                 "png"
             };
-            let icon_data =
-                decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
+            let icon_data = decompress_entry(&mut file, &footer, &manifest.entries[idx], &payload)?;
             let icon_dest = install_dir.join(format!("{stem}.{ext}"));
             fs::write(&icon_dest, &icon_data)
                 .with_context(|| format!("writing icon to {}", icon_dest.display()))?;
@@ -345,8 +404,7 @@ pub async fn integrate_onelf<P: AsRef<Path>, T: PackageExt>(
         } else {
             "png"
         };
-        let icon_data =
-            decompress_entry(&mut file, &footer, &manifest.entries[idx], dict.as_deref())?;
+        let icon_data = decompress_entry(&mut file, &footer, &manifest.entries[idx], &payload)?;
         let icon_dest = install_dir.join(format!("{pkg_name}.{ext}"));
         fs::write(&icon_dest, &icon_data)
             .with_context(|| format!("writing icon to {}", icon_dest.display()))?;
@@ -453,12 +511,83 @@ mod tests {
         assert!(message(err).contains("outside the file"));
     }
 
+    /// A file holding one stipplefs image with `content` at `icon.png`, and
+    /// that file's inode in the image.
+    fn stipple_file(content: &[u8]) -> (File, Footer, u32) {
+        use stipplefs::write::{Builder, Node, Options};
+
+        let mut builder = Builder::new(Options::default()).unwrap();
+        builder
+            .insert(
+                b"icon.png",
+                Node::File {
+                    content: content.to_vec(),
+                    mode: 0o644,
+                    uid: 0,
+                    gid: 0,
+                    link_group: None,
+                },
+            )
+            .unwrap();
+        let image = builder.build().unwrap();
+        let ino = Image::new(image.as_slice(), 0, image.len() as u64)
+            .unwrap()
+            .reader()
+            .unwrap()
+            .resolve(b"icon.png")
+            .unwrap();
+
+        let footer = Footer {
+            flags: Flags::STIPPLE_PAYLOAD,
+            payload_offset: BODY as u64,
+            payload_size: image.len() as u64,
+            ..footer()
+        };
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&[0; BODY]).unwrap();
+        file.write_all(&image).unwrap();
+        footer.write_to(&mut file).unwrap();
+        (file, footer, ino)
+    }
+
+    /// In a stipplefs payload a block is a slice of a file in the image, not
+    /// a zstd frame. Reading one as a frame failed with "Src size is
+    /// incorrect".
+    #[test]
+    fn a_stipple_payload_entry_is_read_slice_by_slice() {
+        let content: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+        let (mut file, footer, ino) = stipple_file(&content);
+        let image = open_image(&file, &footer).unwrap();
+        let payload = Payload::Stipple(Box::new(image.reader().unwrap()));
+
+        let split = 65_536;
+        let blocks = vec![
+            block(0, ino.into(), split),
+            block(split, ino.into(), content.len() as u64 - split),
+        ];
+        let read = decompress_entry(&mut file, &footer, &entry(blocks), &payload).unwrap();
+        assert_eq!(read, content);
+    }
+
+    /// A block claiming more of a file than the image holds is refused.
+    #[test]
+    fn a_stipple_block_past_its_file_is_refused() {
+        let (mut file, footer, ino) = stipple_file(b"short");
+        let image = open_image(&file, &footer).unwrap();
+        let payload = Payload::Stipple(Box::new(image.reader().unwrap()));
+
+        let blocks = vec![block(0, ino.into(), 64)];
+        let err = decompress_entry(&mut file, &footer, &entry(blocks), &payload).unwrap_err();
+        assert!(message(err).contains("size mismatch"));
+    }
+
     #[test]
     fn a_block_reaching_past_the_file_is_refused() {
         let footer = footer();
         let mut file = onelf_file(&footer);
         for blocks in [vec![block(0, 1 << 40, 16)], vec![block(u64::MAX, 1, 16)]] {
-            let err = decompress_entry(&mut file, &footer, &entry(blocks), None).unwrap_err();
+            let err = decompress_entry(&mut file, &footer, &entry(blocks), &Payload::Blocks(None))
+                .unwrap_err();
             assert!(message(err).contains("outside the file"));
         }
     }
@@ -471,7 +600,8 @@ mod tests {
             vec![block(0, 8, 1 << 40)],
             vec![block(0, 8, u64::MAX), block(0, 8, u64::MAX)],
         ] {
-            let err = decompress_entry(&mut file, &footer, &entry(blocks), None).unwrap_err();
+            let err = decompress_entry(&mut file, &footer, &entry(blocks), &Payload::Blocks(None))
+                .unwrap_err();
             assert!(message(err).contains("too large"));
         }
     }

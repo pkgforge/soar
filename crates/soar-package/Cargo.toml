@@ -18,11 +18,13 @@ regex = { workspace = true }
 soar-config = { workspace = true }
 soar-utils = { workspace = true }
 squishy = { workspace = true }
+stipplefs = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 zstd = { workspace = true }
 
 [dev-dependencies]
+stipplefs = { workspace = true, features = ["write"] }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 serial_test = { workspace = true }
