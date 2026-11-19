@@ -621,15 +621,19 @@ mod tests {
     };
 
     /// A loaded installed list holding the given entries, with the total
-    /// size and count summed from them.
+    /// size and count summed from them, answering the load the app still
+    /// expects before any reload has started.
     fn installed(entries: Vec<InstalledEntry>) -> Msg {
         let total_size = entries.iter().map(|entry| entry.disk_size).sum();
         let total_count = entries.len();
-        Msg::Loaded(Loaded::Installed(Ok(InstalledListResult {
-            packages: entries,
-            total_count,
-            total_size,
-        })))
+        Msg::Loaded(Loaded::Installed {
+            check: 0,
+            result: Ok(InstalledListResult {
+                packages: entries,
+                total_count,
+                total_size,
+            }),
+        })
     }
 
     fn catalog() -> Vec<InstalledEntry> {
@@ -641,7 +645,10 @@ mod tests {
     }
 
     fn failed(message: &str) -> Msg {
-        Msg::Loaded(Loaded::Installed(Err(message.to_string())))
+        Msg::Loaded(Loaded::Installed {
+            check: 0,
+            result: Err(message.to_string()),
+        })
     }
 
     /// The interface state on the installed view, where its keys and its
@@ -1052,7 +1059,7 @@ mod tests {
         let now = Instant::now();
         app.update(code(KeyCode::Enter), now);
         let screen = screen(&mut app, 80, 24);
-        assert!(screen.contains(&app.theme.sym().error.to_string()));
+        assert!(screen.contains(app.theme.sym().error));
         assert!(
             screen.contains("Files are missing. Remove it, or use Health (6) to clean up."),
             "screen is {screen:?}"

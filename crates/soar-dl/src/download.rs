@@ -349,6 +349,10 @@ impl Download {
                     if resume_info.is_none() {
                         if self.is_complete(&output_path, head_size) {
                             debug!(path = %output_path.display(), "file exists, skipping download");
+                            // A retained file still gets the same finalization
+                            // as a fresh download, or a complete archive kept
+                            // by a later Skip would never be extracted.
+                            self.extract_if_requested(&output_path)?;
                             return Ok(output_path);
                         }
                         warn!(path = %output_path.display(), "existing file is not a complete download, re-downloading");
@@ -393,43 +397,50 @@ impl Download {
         }
 
         finish_resume(&file)?;
-
-        // Extraction is driven by what the file actually is, not by what the
-        // caller guessed it would be. compak detects by magic number, so an
-        // ELF (an AppImage, say) is never mistaken for an archive even when
-        // extraction was requested.
-        if self.extract {
-            match compak::detect_from_file(&output_path) {
-                Err(
-                    err @ compak::error::ArchiveError::Io {
-                        ..
-                    },
-                ) => return Err(err.into()),
-                Ok(format) => {
-                    let extract_dir = self.extract_to.unwrap_or_else(|| {
-                        output_path
-                            .parent()
-                            .map(PathBuf::from)
-                            .unwrap_or_else(|| PathBuf::from("."))
-                    });
-                    debug!(archive = %output_path.display(), dest = %extract_dir.display(),
-                           ?format, "extracting archive");
-                    // A failure here fails the install. A bare .gz of a single
-                    // file shares its magic number with the tar-wrapped form,
-                    // but detection decompresses far enough to tell the two
-                    // apart, so what is left is a download that really is
-                    // broken, and swallowing that installs an empty package.
-                    compak::extract_archive(&output_path, &extract_dir)?;
-                }
-                Err(_) => {
-                    trace!(path = %output_path.display(),
-                           "not an archive, installing as-is");
-                }
-            }
-        }
+        self.extract_if_requested(&output_path)?;
 
         debug!(path = %output_path.display(), "download completed successfully");
         Ok(output_path)
+    }
+
+    /// Runs the requested extraction on a finished archive.
+    ///
+    /// Extraction is driven by what the file actually is, not by what the
+    /// caller guessed it would be. compak detects by magic number, so an
+    /// ELF (an AppImage, say) is never mistaken for an archive even when
+    /// extraction was requested.
+    fn extract_if_requested(&self, output_path: &Path) -> Result<(), DownloadError> {
+        if !self.extract {
+            return Ok(());
+        }
+        match compak::detect_from_file(output_path) {
+            Err(
+                err @ compak::error::ArchiveError::Io {
+                    ..
+                },
+            ) => return Err(err.into()),
+            Ok(format) => {
+                let extract_dir = self.extract_to.clone().unwrap_or_else(|| {
+                    output_path
+                        .parent()
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("."))
+                });
+                debug!(archive = %output_path.display(), dest = %extract_dir.display(),
+                       ?format, "extracting archive");
+                // A failure here fails the install. A bare .gz of a single
+                // file shares its magic number with the tar-wrapped form,
+                // but detection decompresses far enough to tell the two
+                // apart, so what is left is a download that really is
+                // broken, and swallowing that installs an empty package.
+                compak::extract_archive(output_path, &extract_dir)?;
+            }
+            Err(_) => {
+                trace!(path = %output_path.display(),
+                       "not an archive, installing as-is");
+            }
+        }
+        Ok(())
     }
 
     /// Whether the file already at `path` is this download, finished: it
@@ -822,12 +833,16 @@ impl Download {
         let mut last_checkpoint = downloaded / (1024 * 1024);
 
         loop {
-            if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
-                return Err(DownloadError::Cancelled);
-            }
             let n = reader.read(&mut buffer)?;
             if n == 0 {
                 break;
+            }
+            // The token is only honored while the transfer is still short of
+            // EOF: reporting a cancelled download once the last chunk is in
+            // would leave a complete file that a later Skip treats as done
+            // without ever finalizing it.
+            if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+                return Err(DownloadError::Cancelled);
             }
 
             file.write_all(&buffer[..n])?;
@@ -1452,7 +1467,10 @@ mod tests {
 
     #[test]
     fn a_download_cancelled_on_its_first_chunk_keeps_the_partial_file() {
-        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        // Larger than one read buffer, so the chunk that triggers the
+        // callback is not also the last one and the token fires mid-transfer.
+        let data = vec![9u8; READ_BUFFER + 4096];
+        let base = crate::test_server::serve(vec![("/file".into(), data.clone())]);
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("file");
         let token = CancelToken::new();
@@ -1469,5 +1487,98 @@ mod tests {
 
         assert!(matches!(result, Err(DownloadError::Cancelled)));
         assert!(out.exists(), "the partial file was deleted");
+        assert!(
+            std::fs::metadata(&out).unwrap().len() < data.len() as u64,
+            "the file was already complete when cancelled"
+        );
+    }
+
+    #[test]
+    fn a_cancel_that_arrives_at_eof_does_not_fail_a_finished_transfer() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+        let token = CancelToken::new();
+
+        // The token fires only after the last chunk is written, so the next
+        // read is EOF and the transfer is already complete.
+        let result = Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .cancel(token.clone())
+            .progress(move |p| {
+                if let Progress::Chunk {
+                    current,
+                    total,
+                    ..
+                } = p
+                    && current == total
+                {
+                    token.cancel();
+                }
+            })
+            .execute();
+
+        assert!(
+            result.is_ok(),
+            "a transfer that reached EOF must not be reported cancelled: {result:?}"
+        );
+        assert_eq!(std::fs::read(&out).unwrap(), body());
+    }
+
+    /// Builds a minimal gzip-compressed tar holding one regular file.
+    ///
+    /// The header is assembled by hand because the archive only has to be
+    /// good enough for compak to detect and unpack, and this crate wires up
+    /// no packing API.
+    fn tar_gz_with_member(name: &str, contents: &[u8]) -> Vec<u8> {
+        let mut header = [0u8; 512];
+        header[..name.len()].copy_from_slice(name.as_bytes());
+        header[100..108].copy_from_slice(b"0000644\0");
+        header[108..116].copy_from_slice(b"0000000\0");
+        header[116..124].copy_from_slice(b"0000000\0");
+        let size = format!("{:011o}\0", contents.len());
+        header[124..136].copy_from_slice(size.as_bytes());
+        header[136..148].copy_from_slice(b"00000000000\0");
+        header[148..156].copy_from_slice(b"        ");
+        header[156] = b'0';
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        let sum: u32 = header.iter().map(|&b| b as u32).sum();
+        let checksum = format!("{sum:06o}\0 ");
+        header[148..156].copy_from_slice(checksum.as_bytes());
+
+        let padding = (512 - contents.len() % 512) % 512;
+        let mut tar = header.to_vec();
+        tar.extend_from_slice(contents);
+        tar.resize(tar.len() + padding + 1024, 0);
+
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+        gz.write_all(&tar).unwrap();
+        gz.finish().unwrap()
+    }
+
+    #[test]
+    fn skip_finalizes_a_retained_archive_instead_of_returning_it_raw() {
+        let dir = tempfile::tempdir().unwrap();
+        let extract_dir = dir.path().join("unpacked");
+        let archive = dir.path().join("pkg.tar.gz");
+        std::fs::write(&archive, tar_gz_with_member("member.txt", b"contents")).unwrap();
+        let checksum = soar_utils::hash::calculate_checksum(&archive).unwrap();
+
+        // The archive is already on disk and matches its checksum, so the
+        // Skip fast path retains it without any request being made. The
+        // member file only appears if that path finalizes the archive.
+        Download::new("http://127.0.0.1:9/unused")
+            .output(archive.to_string_lossy())
+            .overwrite(OverwriteMode::Skip)
+            .checksum(checksum)
+            .extract(true)
+            .extract_to(&extract_dir)
+            .execute()
+            .unwrap();
+
+        let member = extract_dir.join("member.txt");
+        assert!(member.is_file(), "the retained archive was not extracted");
+        assert_eq!(std::fs::read(&member).unwrap(), b"contents");
     }
 }

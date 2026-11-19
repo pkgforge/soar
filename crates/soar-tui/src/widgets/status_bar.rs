@@ -117,7 +117,13 @@ mod tests {
             catalog_row("bat", "0.24.0", "bincache"),
             catalog_row("fd", "10.2.0", "pkgforge"),
         ];
-        app.update(Msg::Loaded(Loaded::Catalog(Ok(rows))), now);
+        app.update(
+            Msg::Loaded(Loaded::Catalog {
+                check: 0,
+                result: Ok(rows),
+            }),
+            now,
+        );
         app.update(key(' '), now);
         let lines = render(&mut app, 73, 20);
         let bar = lines.last().unwrap();

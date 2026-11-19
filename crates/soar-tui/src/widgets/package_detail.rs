@@ -282,8 +282,13 @@ mod tests {
         views::browse::{CatalogRow, PackageKey},
     };
 
+    /// A catalog reply for the load the app still expects before any
+    /// reload has started.
     fn loaded(rows: Vec<CatalogRow>) -> Msg {
-        Msg::Loaded(Loaded::Catalog(Ok(rows)))
+        Msg::Loaded(Loaded::Catalog {
+            check: 0,
+            result: Ok(rows),
+        })
     }
 
     /// Builds the interface with the catalog loaded, the cursor resting on

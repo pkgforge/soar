@@ -114,10 +114,10 @@ mod tests {
         );
         long.description = "shaped by the glyph set".to_string();
         app.update(
-            Msg::Loaded(Loaded::Catalog(Ok(vec![
-                catalog_row("bat", "0.24.0", "bincache"),
-                long,
-            ]))),
+            Msg::Loaded(Loaded::Catalog {
+                check: 0,
+                result: Ok(vec![catalog_row("bat", "0.24.0", "bincache"), long]),
+            }),
             std::time::Instant::now(),
         );
         let screen = screen(&mut app, 60, 20);

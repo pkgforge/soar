@@ -104,6 +104,11 @@ fn session_main(options: TuiOptions, env: AppEnv, handle: Handle) -> SoarResult<
     session
         .leave()
         .map_err(io_failed("restoring the terminal"))?;
+    // The interface cannot show a dead input thread's error itself, so
+    // the reason it gave up is reported once the screen is back.
+    if let Some(fatal) = &app.fatal {
+        eprintln!("soar-tui: {fatal}");
+    }
     result.map_err(io_failed("running the interface"))?;
     Ok(())
 }

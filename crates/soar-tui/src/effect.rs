@@ -27,11 +27,21 @@ pub(crate) enum Effect {
     /// Stops the job running now at its next safe point.
     AbortJob,
     /// Loads the package catalog the Browse view shows.
-    LoadCatalog,
+    LoadCatalog {
+        /// Which load this is: every start numbers itself, and a reply
+        /// from a load a newer one replaced is dropped, so only the
+        /// newest load fills the catalog.
+        check: u32,
+    },
     /// Loads the installed packages the Installed view shows. The listing
     /// walks the disk for sizes, so the runner runs it off the async
     /// workers.
-    LoadInstalled,
+    LoadInstalled {
+        /// Which load this is: every start numbers itself, and a reply
+        /// from a load a newer one replaced is dropped, so only the
+        /// newest load fills the list.
+        check: u32,
+    },
     /// Loads the configured repositories the Repos view shows.
     LoadRepos,
     /// Loads the installation health report and the paths it names, for
@@ -45,6 +55,10 @@ pub(crate) enum Effect {
         /// Whether applying also removes packages the file does not
         /// declare.
         prune: bool,
+        /// Which computation this is: every start numbers itself, and a
+        /// result from an older one is dropped, so only the newest
+        /// computation fills the view.
+        check: u32,
     },
     /// Loads the installed variants of one package name, for the flow
     /// that chooses which one is linked. The listing queries the
@@ -145,5 +159,9 @@ pub(crate) enum Suspended {
         tool: EscalationTool,
         /// Where the declared packages are written.
         packages_path: String,
+        /// The system names the confirm named. The runner reads the file
+        /// again before spawning the child, so an edit after the
+        /// confirmation cannot apply unapproved packages.
+        names: Vec<String>,
     },
 }

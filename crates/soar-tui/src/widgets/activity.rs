@@ -238,7 +238,7 @@ fn job_ratio(job: &Job) -> Option<f64> {
     else {
         return None;
     };
-    (total > 0).then(|| current as f64 / total as f64)
+    (total > 0).then_some(current as f64 / total as f64)
 }
 
 /// One operation line: the name, then where its work is. The activity

@@ -6,11 +6,18 @@
 //! Both matter for an AppImage, where a release changes a fraction of a file
 //! measured in tens of megabytes.
 
-use std::{fs::File, path::Path};
+use std::{
+    fs::File,
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use soar_utils::cancel::CancelToken;
 use tracing::debug;
-use zsync_rs::{ControlFile, HttpClient, ZsyncAssembly, checksum::calc_sha1_stream};
+use zsync_rs::{AssemblyError, ControlFile, HttpClient, ZsyncAssembly, checksum::calc_sha1_stream};
 
 use crate::{error::DownloadError, http_client::shared_agent, types::Progress};
 
@@ -206,19 +213,35 @@ where
     let mut assembly = ZsyncAssembly::with_client(control, output, Some(base_url_of(url)), http)
         .map_err(|e| DownloadError::Zsync(format!("reading zsync control file: {e}")))?;
 
-    if let Some(callback) = on_progress {
-        let total = 0;
+    // download_missing_blocks walks every missing range in one call, so the
+    // crate's own abort flag is the only thing that can stop a range already
+    // in flight. The callback is installed even without a caller callback,
+    // since raising that flag from the token is its job too.
+    let abort = Arc::new(AtomicBool::new(false));
+    assembly.set_abort_flag(Arc::clone(&abort));
+    if let Some(ref callback) = on_progress {
         callback(Progress::Starting {
-            total,
+            total: 0,
         });
-        assembly.set_progress_callback(move |done, total| {
+    }
+    // The callback owns a clone of the token, since it has to keep watching
+    // it for as long as the assembly lives.
+    let callback_cancel = cancel.cloned();
+    assembly.set_progress_callback(move |done, total| {
+        if callback_cancel
+            .as_ref()
+            .is_some_and(CancelToken::is_cancelled)
+        {
+            abort.store(true, Ordering::Relaxed);
+            return;
+        }
+        if let Some(ref callback) = on_progress {
             callback(Progress::Chunk {
                 total,
                 current: done,
             });
-        });
-    }
-
+        }
+    });
     // Everything the installed copy already holds is taken from disk; only
     // what it does not is fetched.
     if seed.exists() {
@@ -233,9 +256,14 @@ where
         if cancel.is_some_and(CancelToken::is_cancelled) {
             return Err(DownloadError::Cancelled);
         }
-        let fetched = assembly
-            .download_missing_blocks()
-            .map_err(|e| DownloadError::Zsync(format!("fetching blocks: {e}")))?;
+        let fetched = assembly.download_missing_blocks().map_err(|err| {
+            match err {
+                // Aborted is only ever raised by the flag the token raised,
+                // so it is a cancellation rather than a transfer failure.
+                AssemblyError::Aborted => DownloadError::Cancelled,
+                err => DownloadError::Zsync(format!("fetching blocks: {err}")),
+            }
+        })?;
         // No progress and still incomplete means the remote will not serve
         // what is missing, and looping would spin forever.
         if fetched == 0 {
@@ -531,6 +559,37 @@ mod tests {
         assemble(&feed, &seed, &out, None, None::<fn(Progress)>).unwrap();
 
         assert_eq!(fs::read(&out).unwrap(), new, "rebuilt artifact differs");
+    }
+
+    #[test]
+    fn a_cancelled_transfer_stops_at_the_next_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = artifact_bytes(512 * 1024, 11);
+        publish(dir.path(), "App-x86_64.AppImage", &bytes);
+
+        let port = serve(dir.path());
+        let feed = format!("http://127.0.0.1:{port}/App-x86_64.AppImage.zsync");
+
+        let out = dir.path().join("rebuilt.AppImage");
+        let cancel = CancelToken::new();
+        let hook = cancel.clone();
+
+        // No seed, so blocks come off the wire and the per-block callback
+        // fires; cancelling on its first report has to reach the crate's
+        // own abort flag, or the whole transfer would run to the end.
+        let result = assemble(
+            &feed,
+            Path::new("/nonexistent"),
+            &out,
+            Some(&cancel),
+            Some(move |p: Progress| {
+                if matches!(p, Progress::Chunk { .. }) {
+                    hook.cancel();
+                }
+            }),
+        );
+
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
     }
 
     #[test]

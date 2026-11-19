@@ -43,6 +43,10 @@ pub(crate) struct ApplyView {
     pub(crate) plan: Loadable<ApplyPlan>,
     /// Whether applying also removes packages the file does not declare.
     pub(crate) prune: bool,
+    /// The number of the computation in flight. Every start numbers
+    /// itself so a result from a computation a newer one replaced can be
+    /// dropped, whatever it found.
+    pub(crate) check: u32,
     /// The body line the cursor sits on.
     pub(crate) cursor: ListCursor,
     /// How many lines the body drew last frame, so the cursor knows its
@@ -52,8 +56,10 @@ pub(crate) struct ApplyView {
 
 impl ApplyView {
     /// Starts a fresh computation. The last plan goes when the new one
-    /// arrives.
+    /// arrives, and the start numbers itself so a result from a
+    /// computation a newer one replaced is dropped.
     pub(crate) fn start(&mut self) {
+        self.check = self.check.wrapping_add(1);
         self.plan = Loadable::Loading;
     }
 
@@ -369,9 +375,13 @@ mod tests {
         (app, Instant::now())
     }
 
-    /// A finished computation for the given plan.
+    /// A finished computation for the given plan, answering the check the
+    /// view still expects before any recompute has started.
     fn loaded(plan: ApplyPlan) -> Msg {
-        Msg::Loaded(Loaded::ApplyDiff(Ok(plan)))
+        Msg::Loaded(Loaded::ApplyDiff {
+            check: 0,
+            result: Ok(plan),
+        })
     }
 
     #[test]
@@ -380,7 +390,7 @@ mod tests {
         let effects = app.update(key('4'), Instant::now());
         let [
             Effect::ComputeApplyDiff {
-                prune,
+                prune, ..
             },
         ] = &effects[..]
         else {
@@ -395,7 +405,13 @@ mod tests {
         let mut app = test_app();
         let now = Instant::now();
         app.update(key('4'), now);
-        app.update(loaded(apply_plan()), now);
+        app.update(
+            Msg::Loaded(Loaded::ApplyDiff {
+                check: app.apply.check,
+                result: Ok(apply_plan()),
+            }),
+            now,
+        );
         app.update(key('1'), now);
         let effects = app.update(key('4'), now);
         assert!(effects.is_empty());
@@ -409,7 +425,7 @@ mod tests {
         let effects = app.update(ctrl('r'), now);
         let [
             Effect::ComputeApplyDiff {
-                prune,
+                prune, ..
             },
         ] = &effects[..]
         else {
@@ -490,9 +506,10 @@ mod tests {
         let mut app = test_app();
         app.view = ViewId::Apply;
         app.update(
-            Msg::Loaded(Loaded::ApplyDiff(Err(
-                "packages file unreadable".to_string()
-            ))),
+            Msg::Loaded(Loaded::ApplyDiff {
+                check: 0,
+                result: Err("packages file unreadable".to_string()),
+            }),
             Instant::now(),
         );
         let screen = screen(&mut app, 80, 24);

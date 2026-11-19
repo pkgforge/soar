@@ -142,17 +142,24 @@ impl Runner {
                     cancel.cancel();
                 }
             }
-            Effect::LoadCatalog => {
+            Effect::LoadCatalog {
+                check,
+            } => {
                 let ctx = self.ctx.clone();
                 self.spawn(async move {
                     let result = match list::list_packages(&ctx, None).await {
                         Ok(listing) => Ok(listing.packages.into_iter().map(catalog_row).collect()),
                         Err(err) => Err(err.to_string()),
                     };
-                    Msg::Loaded(Loaded::Catalog(result))
+                    Msg::Loaded(Loaded::Catalog {
+                        check,
+                        result,
+                    })
                 });
             }
-            Effect::LoadInstalled => {
+            Effect::LoadInstalled {
+                check,
+            } => {
                 let ctx = self.ctx.clone();
                 self.spawn(async move {
                     let result = tokio::task::spawn_blocking(move || {
@@ -160,7 +167,10 @@ impl Runner {
                     })
                     .await
                     .unwrap_or_else(|err| Err(err.to_string()));
-                    Msg::Loaded(Loaded::Installed(result))
+                    Msg::Loaded(Loaded::Installed {
+                        check,
+                        result,
+                    })
                 });
             }
             Effect::LoadRepos => {
@@ -186,11 +196,15 @@ impl Runner {
             }
             Effect::ComputeApplyDiff {
                 prune,
+                check,
             } => {
                 let ctx = self.ctx.clone();
                 self.spawn(async move {
                     let result = compute_apply_plan(&ctx, prune).await;
-                    Msg::Loaded(Loaded::ApplyDiff(result))
+                    Msg::Loaded(Loaded::ApplyDiff {
+                        check,
+                        result,
+                    })
                 });
             }
             Effect::LoadVariants {
@@ -322,13 +336,14 @@ impl Runner {
                         id,
                         tool,
                         packages_path,
+                        names,
                     } => {
                         println!(
                             "\nApplying system packages. {} may ask for your password.",
                             tool_name(&tool)
                         );
                         let outcome =
-                            run_system_terminal(&self.forward_args, &tool, &packages_path);
+                            run_system_terminal(&self.forward_args, &tool, &packages_path, &names);
                         terminal::wait_for_enter();
                         finished = Some((id, outcome));
                     }
@@ -638,14 +653,14 @@ async fn run_job(
         // flow; the other modes never run here, since the interface asks
         // first and a terminal pass suspends the interface itself.
         JobSpec::ApplySystem {
-            names: _,
+            names,
             packages_path,
             mode: SystemMode::Direct,
         } => {
             let forward = forward_args.to_vec();
             let pass_tx = tx.clone();
             match tokio::task::spawn_blocking(move || {
-                run_system_direct(packages_path, forward, pass_tx)
+                run_system_direct(packages_path, names, forward, pass_tx)
             })
             .await
             {
@@ -833,14 +848,82 @@ fn system_pass_args(packages_path: &str, forward_args: &[OsString], json: bool) 
     args
 }
 
+/// The names the packages file declares `system = true` right now, read
+/// the way the apply plan reads it. A missing file declares nothing.
+fn declared_system_names() -> Result<Vec<String>, String> {
+    match PackagesConfig::load(None) {
+        Ok(config) => {
+            Ok(config
+                .resolved_packages()
+                .into_iter()
+                .filter(|package| package.system)
+                .map(|package| package.name)
+                .collect())
+        }
+        Err(ConfigError::PackagesConfigNotFound(_)) => Ok(Vec::new()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+/// Whether the confirmed system names still match what the file declares.
+/// Order-insensitive, since the file's order means nothing to the pass.
+fn system_names_agree(confirmed: &[String], declared: &[String]) -> bool {
+    let mut confirmed: Vec<&str> = confirmed.iter().map(String::as_str).collect();
+    let mut declared: Vec<&str> = declared.iter().map(String::as_str).collect();
+    confirmed.sort_unstable();
+    declared.sort_unstable();
+    confirmed == declared
+}
+
+/// The outcome of a system pass refused before its child ran, because the
+/// file it would apply no longer declares what the confirm named.
+fn system_stale_outcome() -> JobOutcome {
+    JobOutcome {
+        ok: false,
+        aborted: false,
+        headline: "packages.toml changed since the confirmation".to_string(),
+        lines: vec![OutcomeLine::Failed {
+            name: "System apply".to_string(),
+            error:
+                "The system packages in packages.toml changed since you confirmed the apply. Confirm it again to run the new list."
+                    .to_string(),
+        }],
+    }
+}
+
+/// Checks the file against the names the confirm named, so a pass never
+/// applies an edit the user has not seen. `Ok(())` lets the child run;
+/// `Err(outcome)` fails the job with it instead.
+fn verify_system_names(confirmed: &[String]) -> Result<(), JobOutcome> {
+    let declared = match declared_system_names() {
+        Ok(declared) => declared,
+        Err(err) => {
+            return Err(system_failed(format!(
+                "reading packages.toml before the system pass: {err}"
+            )));
+        }
+    };
+    if system_names_agree(confirmed, &declared) {
+        Ok(())
+    } else {
+        Err(system_stale_outcome())
+    }
+}
+
 /// Runs the system pass with the terminal handed over, so the escalation
 /// tool can ask for the password itself. The output lands in the terminal
-/// the user is looking at, and only the exit status reports back.
+/// the user is looking at, and only the exit status reports back. The
+/// confirmed names are checked against the file first, so the child
+/// applies what was approved and nothing else.
 fn run_system_terminal(
     forward_args: &[OsString],
     tool: &EscalationTool,
     packages_path: &str,
+    confirmed: &[String],
 ) -> JobOutcome {
+    if let Err(outcome) = verify_system_names(confirmed) {
+        return outcome;
+    }
     let exe = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(err) => return system_failed(format!("finding the soar executable: {err}")),
@@ -856,12 +939,17 @@ fn run_system_terminal(
 /// Runs the system pass through the escalation tool with its output
 /// captured, so the child's JSON event stream feeds the job's progress.
 /// Root runs the executable on its own; otherwise the tool runs it with
-/// the credentials the password check cached.
+/// the credentials the password check cached. The confirmed names are
+/// checked against the file first, like the terminal pass does.
 fn run_system_direct(
     packages_path: String,
+    confirmed: Vec<String>,
     forward_args: Vec<OsString>,
     tx: Sender<Msg>,
 ) -> JobOutcome {
+    if let Err(outcome) = verify_system_names(&confirmed) {
+        return outcome;
+    }
     let exe = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(err) => return system_failed(format!("finding the soar executable: {err}")),
@@ -1242,6 +1330,37 @@ mod tests {
     fn password_demanded_spots_sudos_own_words() {
         assert!(password_demanded("sudo: a password is required"));
         assert!(!password_demanded("dpkg gave up halfway"));
+    }
+
+    #[test]
+    fn the_system_names_compare_is_order_insensitive() {
+        let confirmed = vec!["jq".to_string(), "bat".to_string()];
+        let reordered = vec!["bat".to_string(), "jq".to_string()];
+        assert!(system_names_agree(&confirmed, &reordered));
+        let with_extra = vec![
+            "bat".to_string(),
+            "docker-compose".to_string(),
+            "jq".to_string(),
+        ];
+        assert!(!system_names_agree(&confirmed, &with_extra));
+        let with_missing = vec!["jq".to_string()];
+        assert!(!system_names_agree(&confirmed, &with_missing));
+        assert!(system_names_agree(&[], &[]));
+    }
+
+    #[test]
+    fn a_stale_packages_file_names_the_reconfirm_in_its_report() {
+        let outcome = system_stale_outcome();
+        assert!(!outcome.ok);
+        assert!(!outcome.aborted);
+        assert_eq!(
+            outcome.headline,
+            "packages.toml changed since the confirmation"
+        );
+        assert!(matches!(
+            &outcome.lines[0],
+            OutcomeLine::Failed { error, .. } if error.contains("Confirm it again")
+        ));
     }
 
     #[test]

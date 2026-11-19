@@ -114,11 +114,20 @@ fn input_loop(
                             break;
                         }
                     }
-                    Err(_) => break,
+                    Err(error) => {
+                        // The runner and the other senders keep the
+                        // channel alive, so a dead reader would go
+                        // unnoticed and leave the interface deaf.
+                        let _ = tx.send(Msg::InputFailed(error.to_string()));
+                        break;
+                    }
                 }
             }
             Ok(false) => {}
-            Err(_) => break,
+            Err(error) => {
+                let _ = tx.send(Msg::InputFailed(error.to_string()));
+                break;
+            }
         }
     }
 }

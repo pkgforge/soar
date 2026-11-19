@@ -193,6 +193,25 @@ pub(crate) struct App {
     /// numbers itself so an answer from a check a newer one replaced can
     /// be dropped.
     pub(crate) pass_check: u32,
+    /// The number of the catalog load in flight. Every load numbers
+    /// itself so a reply from a load a newer one replaced, success or
+    /// error, can be dropped instead of overwriting newer state.
+    pub(crate) catalog_load: u32,
+    /// The number of the installed list load in flight, numbered like
+    /// the catalog's so a replaced load's reply is dropped.
+    pub(crate) installed_load: u32,
+    /// The job the abort confirm was opened for. The confirm names that
+    /// job, so accepting it stops that one and not whatever runs by the
+    /// time the answer comes.
+    pub(crate) abort_pick: Option<JobId>,
+    /// The plan number the apply confirm was opened against. A fresh
+    /// plan arriving under the confirm retires it, so accepting can
+    /// never queue removals the confirm never named.
+    pub(crate) apply_pick: Option<u32>,
+    /// The error that ended the terminal input, if any. The interface
+    /// cannot show it once its input is gone, so the entry point prints
+    /// it after the terminal is restored.
+    pub(crate) fatal: Option<String>,
 }
 
 impl App {
@@ -229,6 +248,11 @@ impl App {
             run_args: None,
             quit_when_idle: false,
             pass_check: 0,
+            catalog_load: 0,
+            installed_load: 0,
+            abort_pick: None,
+            apply_pick: None,
+            fatal: None,
         }
     }
 
@@ -321,6 +345,18 @@ impl App {
     /// actions are accepted; until then only tests do.
     #[allow(dead_code)]
     pub(crate) fn enqueue(&mut self, spec: JobSpec, now: Instant) -> Vec<Effect> {
+        // Wait-and-quit drops the queue and leaves at the next idle
+        // moment, so a confirmation accepted after it must not sneak an
+        // unapproved job past the guard, and must not hold the quit open
+        // either.
+        if self.quit_when_idle {
+            self.toast(
+                ToastKind::Info,
+                "Quitting soon, so no new work is accepted",
+                now,
+            );
+            return Vec::new();
+        }
         let id = self.jobs.next_id;
         self.jobs.next_id += 1;
         self.jobs.list.push(Job {
@@ -481,6 +517,8 @@ impl App {
         self.update_pick = None;
         self.version_pick = None;
         self.run_args = None;
+        self.abort_pick = None;
+        self.apply_pick = None;
     }
 
     /// Opens the administrator password dialog for the authorizing job.
@@ -563,6 +601,9 @@ impl App {
             self.browse.details.clear();
             self.dirty = true;
         }
+        // Whatever starts next was never named by an open abort confirm,
+        // so the confirm goes with the job it was opened for.
+        self.retire_abort_confirm(id);
         let mut effects = self.after_job(kind, now);
         if self.quit_when_idle
             && self.running_job().is_none()
@@ -604,8 +645,8 @@ impl App {
                 self.repos.start();
                 let mut effects = vec![
                     Effect::RebuildContext,
-                    Effect::LoadCatalog,
-                    Effect::LoadInstalled,
+                    self.catalog_effect(),
+                    self.installed_effect(),
                     Effect::LoadRepos,
                 ];
                 if !self.updates.list.is_idle() {
@@ -621,12 +662,12 @@ impl App {
                 vec![
                     Effect::RebuildContext,
                     Effect::LoadRepos,
-                    Effect::LoadCatalog,
-                    Effect::LoadInstalled,
+                    self.catalog_effect(),
+                    self.installed_effect(),
                 ]
             }
             JobKind::Install => {
-                let mut effects = vec![Effect::LoadCatalog, Effect::LoadInstalled];
+                let mut effects = vec![self.catalog_effect(), self.installed_effect()];
                 if !self.health.report.is_idle() {
                     self.health.start();
                     effects.push(Effect::LoadHealth);
@@ -634,7 +675,7 @@ impl App {
                 effects
             }
             JobKind::Remove | JobKind::Switch => {
-                let mut effects = vec![Effect::LoadInstalled];
+                let mut effects = vec![self.installed_effect()];
                 if kind == JobKind::Remove && !self.health.report.is_idle() {
                     self.health.start();
                     effects.push(Effect::LoadHealth);
@@ -642,13 +683,10 @@ impl App {
                 effects
             }
             JobKind::Apply => {
-                self.apply.start();
                 let mut effects = vec![
-                    Effect::ComputeApplyDiff {
-                        prune: self.apply.prune,
-                    },
-                    Effect::LoadCatalog,
-                    Effect::LoadInstalled,
+                    self.apply_effect(),
+                    self.catalog_effect(),
+                    self.installed_effect(),
                 ];
                 if !self.health.report.is_idle() {
                     self.health.start();
@@ -657,28 +695,22 @@ impl App {
                 effects
             }
             JobKind::ApplySystem => {
-                self.apply.start();
-                vec![Effect::ComputeApplyDiff {
-                    prune: self.apply.prune,
-                }]
+                vec![self.apply_effect()]
             }
             JobKind::RemoveBrokenPackages => {
                 self.health.start();
-                vec![Effect::LoadInstalled, Effect::LoadHealth]
+                vec![self.installed_effect(), Effect::LoadHealth]
             }
             JobKind::CleanCache | JobKind::RemoveBrokenSymlinks => {
                 self.health.start();
                 vec![Effect::LoadHealth]
             }
             JobKind::CreatePackagesConfig => {
-                self.apply.start();
-                vec![Effect::ComputeApplyDiff {
-                    prune: self.apply.prune,
-                }]
+                vec![self.apply_effect()]
             }
             JobKind::Update => {
                 let check = self.check_effect(self.updates.scope.clone(), now);
-                vec![check, Effect::LoadInstalled, Effect::LoadCatalog]
+                vec![check, self.installed_effect(), self.catalog_effect()]
             }
         };
         if matches!(
@@ -698,7 +730,7 @@ impl App {
     pub(crate) fn startup(&mut self) -> Vec<Effect> {
         self.browse.catalog = Loadable::Loading;
         self.installed.list = Loadable::Loading;
-        vec![Effect::LoadCatalog, Effect::LoadInstalled]
+        vec![self.catalog_effect(), self.installed_effect()]
     }
 
     /// Applies one message and returns the work it asks for.
@@ -727,7 +759,17 @@ impl App {
                 Vec::new()
             }
             Msg::Soar(event) => self.on_soar(event, now),
-            Msg::Loaded(Loaded::Catalog(result)) => {
+            Msg::Loaded(Loaded::Catalog {
+                check,
+                result,
+            }) => {
+                // Two loads can overlap, as when a manual reload races
+                // the reload a repository change started, so a reply
+                // from a load a newer one replaced must not overwrite
+                // what the newer state already holds, whatever it found.
+                if check != self.catalog_load {
+                    return Vec::new();
+                }
                 let catalog_ok = result.is_ok();
                 self.browse.catalog = match result {
                     Ok(rows) => Loadable::Ready(rows),
@@ -742,7 +784,13 @@ impl App {
                 }
                 Vec::new()
             }
-            Msg::Loaded(Loaded::Installed(result)) => {
+            Msg::Loaded(Loaded::Installed {
+                check,
+                result,
+            }) => {
+                if check != self.installed_load {
+                    return Vec::new();
+                }
                 self.installed.list = match result {
                     Ok(listing) => Loadable::Ready(listing),
                     Err(error) => Loadable::Failed(error),
@@ -767,8 +815,24 @@ impl App {
                 self.dirty = true;
                 Vec::new()
             }
-            Msg::Loaded(Loaded::ApplyDiff(result)) => {
+            Msg::Loaded(Loaded::ApplyDiff {
+                check,
+                result,
+            }) => {
+                if check != self.apply.check {
+                    return Vec::new();
+                }
                 self.apply.loaded(result);
+                // The plan the confirm named is gone, so accepting it
+                // could queue removals the user never saw named.
+                if self.apply_pick.take().is_some() {
+                    self.close_apply_confirm();
+                    self.toast(
+                        ToastKind::Info,
+                        "The plan changed, so the confirm closed",
+                        now,
+                    );
+                }
                 self.dirty = true;
                 Vec::new()
             }
@@ -917,17 +981,22 @@ impl App {
                     vec![
                         Effect::RebuildContext,
                         Effect::LoadRepos,
-                        Effect::LoadCatalog,
-                        Effect::LoadInstalled,
+                        self.catalog_effect(),
+                        self.installed_effect(),
                     ]
                 } else if path == self.env.packages_path {
-                    self.apply.start();
-                    vec![Effect::ComputeApplyDiff {
-                        prune: self.apply.prune,
-                    }]
+                    vec![self.apply_effect()]
                 } else {
                     Vec::new()
                 }
+            }
+            Msg::InputFailed(error) => {
+                // The reader is gone and no key will ever arrive, so the
+                // interface quits and the entry point reports why.
+                self.fatal = Some(error);
+                self.quit = true;
+                self.dirty = true;
+                Vec::new()
             }
             Msg::Redraw => {
                 self.dirty = true;
@@ -1098,7 +1167,7 @@ impl App {
                 self.dirty = true;
                 Vec::new()
             }
-            OnAccept::Abort => self.abort_running(),
+            OnAccept::Abort => self.abort_confirmed(now),
             OnAccept::Remove(packages) => {
                 self.installed.marks.clear();
                 self.dirty = true;
@@ -1654,6 +1723,17 @@ impl App {
                 return Vec::new();
             }
         };
+        // The load may answer long after the password dialog took the
+        // overlay slot, so no step of the switch may open while a pass
+        // is being authorized, and the flow waits for a retry instead.
+        if self.authorizing() {
+            self.toast(
+                ToastKind::Info,
+                "A pass is being authorized, so the switch waits. Try again once it finishes.",
+                now,
+            );
+            return Vec::new();
+        }
         match variants.as_slice() {
             [] => {
                 self.toast(ToastKind::Info, format!("{name} is not installed"), now);
@@ -1679,6 +1759,12 @@ impl App {
     /// variant the switch links, noting that the active variant of the
     /// package moves to it.
     fn confirm_switch(&mut self, name: String, variant: &VariantInfo) -> Vec<Effect> {
+        // The confirm takes the overlay slot from whatever else is
+        // open, so the state that overlay kept goes the way its own
+        // close path would drop it.
+        if self.overlay.is_some() && !matches!(self.overlay, Some(Overlay::Confirm(_))) {
+            self.drop_overlay_state();
+        }
         let package = &variant.package;
         let target = match package.pkg_family.as_deref() {
             Some(family) => format!("{family}/{}", package.pkg_name),
@@ -2014,6 +2100,9 @@ impl App {
                 plan.system.len()
             )));
         }
+        // The confirm names this plan, so a fresh computation landing
+        // under it can be told apart from the one the user accepted.
+        self.apply_pick = Some(self.apply.check);
         self.overlay = Some(Overlay::Confirm(Confirm::new(
             "Apply packages.toml",
             lines,
@@ -2030,6 +2119,7 @@ impl App {
     /// The packages marked `system = true` follow in their own job,
     /// applied through the administrator pass.
     fn apply_plan(&mut self, now: Instant) -> Vec<Effect> {
+        self.apply_pick = None;
         let Some(plan) = self.apply.plan.ready_mut() else {
             return Vec::new();
         };
@@ -2119,12 +2209,15 @@ impl App {
         self.dirty = true;
         match spec {
             Some(JobSpec::ApplySystem {
-                packages_path, ..
+                packages_path,
+                names,
+                ..
             }) => {
                 vec![Effect::Suspend(Suspended::SystemPass {
                     id,
                     tool,
                     packages_path,
+                    names,
                 })]
             }
             _ => Vec::new(),
@@ -2354,6 +2447,47 @@ impl App {
         vec![Effect::AbortJob]
     }
 
+    /// Stops the job the abort confirm was opened for, if it still runs.
+    /// The confirm names the job running when it opened, and another job
+    /// may have taken its place by the time the answer comes, so only the
+    /// named one may be stopped. A job that finished meanwhile only gets
+    /// a note, and nothing is cancelled.
+    fn abort_confirmed(&mut self, now: Instant) -> Vec<Effect> {
+        let Some(id) = self.abort_pick.take() else {
+            return Vec::new();
+        };
+        if self.running_job().is_some_and(|job| job.id == id) {
+            return self.abort_running();
+        }
+        let title = self
+            .jobs
+            .list
+            .iter()
+            .find(|job| job.id == id)
+            .map(|job| job.title.clone());
+        let note = match title {
+            Some(title) => format!("{title} already finished"),
+            None => "That job already finished".to_string(),
+        };
+        self.toast(ToastKind::Info, note, now);
+        Vec::new()
+    }
+
+    /// Retires an open abort confirm whose job just finished, mirroring
+    /// how a fresh update check retires the update confirm: whatever
+    /// runs next was never named by it, so it must not stay open.
+    fn retire_abort_confirm(&mut self, id: JobId) {
+        if self.abort_pick != Some(id) {
+            return;
+        }
+        self.abort_pick = None;
+        if let Some(Overlay::Confirm(confirm)) = &self.overlay
+            && matches!(confirm.action(), OnAccept::Abort)
+        {
+            self.overlay = None;
+        }
+    }
+
     /// Asks to stop the running job. Nothing running says so, a sync has
     /// no safe stop point, the system pass runs as root in another
     /// process the interface cannot stop cleanly, and a job already
@@ -2382,6 +2516,7 @@ impl App {
             return;
         }
         let title = job.title.clone();
+        self.abort_pick = Some(job.id);
         self.overlay = Some(Overlay::Confirm(Confirm::new(
             format!("Abort {title}?"),
             vec![
@@ -2817,11 +2952,8 @@ impl App {
             }
             Action::TogglePrune if self.view == ViewId::Apply => {
                 self.apply.prune = !self.apply.prune;
-                self.apply.start();
                 self.dirty = true;
-                return vec![Effect::ComputeApplyDiff {
-                    prune: self.apply.prune,
-                }];
+                return vec![self.apply_effect()];
             }
             Action::Apply if self.view == ViewId::Apply => {
                 self.open_apply_confirm(now);
@@ -2896,12 +3028,12 @@ impl App {
             Action::Reload if self.view == ViewId::Browse => {
                 self.browse.catalog = Loadable::Loading;
                 self.dirty = true;
-                return vec![Effect::LoadCatalog];
+                return vec![self.catalog_effect()];
             }
             Action::Reload if self.view == ViewId::Installed => {
                 self.installed.list = Loadable::Loading;
                 self.dirty = true;
-                return vec![Effect::LoadInstalled];
+                return vec![self.installed_effect()];
             }
             Action::Reload if self.view == ViewId::Updates => {
                 let check = self.check_effect(self.updates.scope.clone(), now);
@@ -2909,11 +3041,8 @@ impl App {
                 return vec![check];
             }
             Action::Reload if self.view == ViewId::Apply => {
-                self.apply.start();
                 self.dirty = true;
-                return vec![Effect::ComputeApplyDiff {
-                    prune: self.apply.prune,
-                }];
+                return vec![self.apply_effect()];
             }
             Action::Reload if self.view == ViewId::Repos => {
                 self.repos.start();
@@ -2988,11 +3117,52 @@ impl App {
         }
     }
 
+    /// Starts a catalog load and builds the effect that runs it, numbered
+    /// for this start, so a reply from a load a newer start replaced is
+    /// dropped when it arrives.
+    fn catalog_effect(&mut self) -> Effect {
+        self.catalog_load = self.catalog_load.wrapping_add(1);
+        Effect::LoadCatalog {
+            check: self.catalog_load,
+        }
+    }
+
+    /// Starts an installed list load and builds the effect that runs it,
+    /// numbered like the catalog's so a replaced load's reply is dropped.
+    fn installed_effect(&mut self) -> Effect {
+        self.installed_load = self.installed_load.wrapping_add(1);
+        Effect::LoadInstalled {
+            check: self.installed_load,
+        }
+    }
+
+    /// Starts a plan computation and builds the effect that runs it,
+    /// numbered for this start, so a result from a computation a newer
+    /// start replaced is dropped when it arrives.
+    fn apply_effect(&mut self) -> Effect {
+        self.apply.start();
+        Effect::ComputeApplyDiff {
+            prune: self.apply.prune,
+            check: self.apply.check,
+        }
+    }
+
     /// Drops an open update confirm whose list a fresh check replaced, so
     /// accepting it cannot update rows that moved under it.
     fn close_update_confirm(&mut self) {
         if let Some(Overlay::Confirm(confirm)) = &self.overlay
             && matches!(confirm.action(), OnAccept::UpdateNow)
+        {
+            self.overlay = None;
+        }
+    }
+
+    /// Drops an open apply confirm whose plan a fresh computation
+    /// replaced, so accepting it cannot queue removals the confirm never
+    /// named.
+    fn close_apply_confirm(&mut self) {
+        if let Some(Overlay::Confirm(confirm)) = &self.overlay
+            && matches!(confirm.action(), OnAccept::ApplyPlan)
         {
             self.overlay = None;
         }
@@ -3329,12 +3499,7 @@ impl App {
             ViewId::Updates if self.updates.list.is_idle() => {
                 vec![self.check_effect(None, now)]
             }
-            ViewId::Apply if self.apply.plan.is_idle() => {
-                self.apply.start();
-                vec![Effect::ComputeApplyDiff {
-                    prune: self.apply.prune,
-                }]
-            }
+            ViewId::Apply if self.apply.plan.is_idle() => vec![self.apply_effect()],
             ViewId::Repos if self.repos.list.is_idle() => {
                 self.repos.start();
                 vec![Effect::LoadRepos]
@@ -3534,9 +3699,13 @@ mod tests {
         )
     }
 
-    /// A catalog of one row, loaded, so the cursor has a package to act on.
+    /// A catalog reply for the load the app still expects before any
+    /// reload has started.
     fn catalog_loaded(rows: Vec<CatalogRow>) -> Msg {
-        Msg::Loaded(Loaded::Catalog(Ok(rows)))
+        Msg::Loaded(Loaded::Catalog {
+            check: 0,
+            result: Ok(rows),
+        })
     }
 
     /// A repositories list, loaded.
@@ -3557,15 +3726,19 @@ mod tests {
         }
     }
 
-    /// An installed list over the given entries.
+    /// An installed list over the given entries, answering the load the
+    /// app still expects before any reload has started.
     fn installed_loaded(entries: Vec<soar_operations::InstalledEntry>) -> Msg {
         let total_count = entries.len();
         let total_size = entries.iter().map(|entry| entry.disk_size).sum();
-        Msg::Loaded(Loaded::Installed(Ok(InstalledListResult {
-            packages: entries,
-            total_count,
-            total_size,
-        })))
+        Msg::Loaded(Loaded::Installed {
+            check: 0,
+            result: Ok(InstalledListResult {
+                packages: entries,
+                total_count,
+                total_size,
+            }),
+        })
     }
 
     /// A variants result for one package name.
@@ -3671,7 +3844,7 @@ mod tests {
         let effects = app.startup();
         assert!(matches!(
             effects.as_slice(),
-            [Effect::LoadCatalog, Effect::LoadInstalled]
+            [Effect::LoadCatalog { .. }, Effect::LoadInstalled { .. }]
         ));
         assert!(app.browse.catalog.is_loading());
         assert!(app.installed.list.is_loading());
@@ -3680,12 +3853,21 @@ mod tests {
     #[test]
     fn a_loaded_catalog_replaces_the_view_state() {
         let mut app = app();
-        app.update(Msg::Loaded(Loaded::Catalog(Ok(Vec::new()))), Instant::now());
+        app.update(
+            Msg::Loaded(Loaded::Catalog {
+                check: 0,
+                result: Ok(Vec::new()),
+            }),
+            Instant::now(),
+        );
         assert!(app.browse.catalog.ready().is_some());
         assert!(app.dirty);
         app.dirty = false;
         app.update(
-            Msg::Loaded(Loaded::Catalog(Err("offline".to_string()))),
+            Msg::Loaded(Loaded::Catalog {
+                check: 0,
+                result: Err("offline".to_string()),
+            }),
             Instant::now(),
         );
         assert!(app.browse.catalog.ready().is_none());
@@ -3741,7 +3923,10 @@ mod tests {
     fn a_failed_catalog_load_starts_no_check() {
         let mut app = app();
         let effects = app.update(
-            Msg::Loaded(Loaded::Catalog(Err("offline".to_string()))),
+            Msg::Loaded(Loaded::Catalog {
+                check: 0,
+                result: Err("offline".to_string()),
+            }),
             Instant::now(),
         );
         assert!(effects.is_empty());
@@ -3759,7 +3944,7 @@ mod tests {
             ),
             Instant::now(),
         );
-        assert!(matches!(effects.as_slice(), [Effect::LoadCatalog]));
+        assert!(matches!(effects.as_slice(), [Effect::LoadCatalog { .. }]));
         assert!(app.browse.catalog.is_loading());
     }
 
@@ -3880,6 +4065,22 @@ mod tests {
     }
 
     #[test]
+    fn enqueue_refuses_new_work_once_a_wait_and_quit_is_pending() {
+        let mut app = app();
+        let now = Instant::now();
+        app.enqueue(install_spec("bat"), now);
+        app.quit_when_idle = true;
+        let effects = app.enqueue(install_spec("fd"), now);
+        assert!(effects.is_empty());
+        assert_eq!(app.jobs.list.len(), 1, "no job may join a quitting queue");
+        let toasts = format!("{:?}", app.toasts);
+        assert!(
+            toasts.contains("Quitting soon, so no new work is accepted"),
+            "toasts are {toasts:?}"
+        );
+    }
+
+    #[test]
     fn nothing_starts_while_a_job_waits_for_authorization() {
         let mut app = app();
         let now = Instant::now();
@@ -3930,8 +4131,8 @@ mod tests {
         app.enqueue(JobSpec::CleanCache, now);
         let effects = app.update(finished(0, true, "Repositories synced"), now);
         assert!(matches!(effects[0], Effect::RebuildContext));
-        assert!(matches!(effects[1], Effect::LoadCatalog));
-        assert!(matches!(effects[2], Effect::LoadInstalled));
+        assert!(matches!(effects[1], Effect::LoadCatalog { .. }));
+        assert!(matches!(effects[2], Effect::LoadInstalled { .. }));
         assert!(matches!(effects[3], Effect::LoadRepos));
         assert!(matches!(
             effects[4..],
@@ -4003,8 +4204,8 @@ mod tests {
             [
                 Effect::RebuildContext,
                 Effect::LoadRepos,
-                Effect::LoadCatalog,
-                Effect::LoadInstalled
+                Effect::LoadCatalog { .. },
+                Effect::LoadInstalled { .. }
             ]
         ));
     }
@@ -4019,8 +4220,8 @@ mod tests {
             [
                 Effect::RebuildContext,
                 Effect::LoadRepos,
-                Effect::LoadCatalog,
-                Effect::LoadInstalled
+                Effect::LoadCatalog { .. },
+                Effect::LoadInstalled { .. }
             ]
         ));
         assert!(app.dirty);
@@ -4098,7 +4299,8 @@ mod tests {
         assert!(matches!(
             effects.as_slice(),
             [Effect::ComputeApplyDiff {
-                prune: false
+                prune: false,
+                ..
             }]
         ));
         assert!(app.apply.plan.is_loading());
@@ -4425,18 +4627,8 @@ mod tests {
         let mut app = app();
         let now = Instant::now();
         app.enqueue(install_spec("bat"), now);
-        app.update(
-            press(
-                KeyCode::Char('x'),
-                KeyModifiers::CONTROL,
-                KeyEventKind::Press,
-            ),
-            now,
-        );
-        let effects = app.update(
-            press(KeyCode::Char('y'), KeyModifiers::NONE, KeyEventKind::Press),
-            now,
-        );
+        app.update(ctrl('x'), now);
+        let effects = app.update(key('y'), now);
         assert!(matches!(effects.as_slice(), [Effect::AbortJob]));
         assert!(app.overlay.is_none());
         assert!(matches!(
@@ -4446,15 +4638,42 @@ mod tests {
                 ..
             })
         ));
-        app.update(
-            press(
-                KeyCode::Char('x'),
-                KeyModifiers::CONTROL,
-                KeyEventKind::Press,
-            ),
-            now,
-        );
+        app.update(ctrl('x'), now);
         assert!(app.overlay.is_none());
+    }
+
+    #[test]
+    fn the_abort_confirm_retires_when_its_job_finishes() {
+        let mut app = app();
+        let now = Instant::now();
+        app.enqueue(install_spec("bat"), now);
+        app.update(ctrl('x'), now);
+        assert!(matches!(app.overlay, Some(Overlay::Confirm(_))));
+        assert_eq!(app.abort_pick, Some(0));
+        app.enqueue(install_spec("fd"), now);
+        app.update(finished(0, true, "Installed bat 1.0.0"), now);
+        assert!(app.overlay.is_none(), "the confirm cannot outlive its job");
+        assert!(app.abort_pick.is_none());
+        assert!(matches!(app.jobs.list[1].state, JobState::Running { .. }));
+    }
+
+    #[test]
+    fn accepting_a_retired_abort_confirm_cannot_stop_the_next_job() {
+        let mut app = app();
+        let now = Instant::now();
+        app.enqueue(install_spec("bat"), now);
+        app.update(ctrl('x'), now);
+        app.enqueue(install_spec("fd"), now);
+        app.update(finished(0, true, "Installed bat 1.0.0"), now);
+        let effects = app.update(key('y'), now);
+        assert!(effects.is_empty());
+        assert!(matches!(
+            app.running_job().map(|job| &job.state),
+            Some(JobState::Running {
+                aborting: false,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -5259,6 +5478,20 @@ mod tests {
     }
 
     #[test]
+    fn a_dead_input_thread_sets_the_fatal_error_and_quits() {
+        let mut app = app();
+        app.dirty = false;
+        let effects = app.update(
+            Msg::InputFailed("got an error from the terminal".to_string()),
+            Instant::now(),
+        );
+        assert!(effects.is_empty());
+        assert!(app.quit, "a deaf interface has no way to stay open");
+        assert!(app.dirty);
+        assert_eq!(app.fatal.as_deref(), Some("got an error from the terminal"));
+    }
+
+    #[test]
     fn a_not_found_resolution_toasts_with_suggestions() {
         let mut app = app();
         let now = Instant::now();
@@ -5327,7 +5560,7 @@ mod tests {
         let effects = app.update(finished(0, true, "Installed bat 1.0.0"), now);
         assert!(matches!(
             effects.as_slice(),
-            [Effect::LoadCatalog, Effect::LoadInstalled]
+            [Effect::LoadCatalog { .. }, Effect::LoadInstalled { .. }]
         ));
     }
 
@@ -5344,7 +5577,7 @@ mod tests {
             now,
         );
         let effects = app.update(finished(0, true, "Removed bat 1.0.0"), now);
-        assert!(matches!(effects.as_slice(), [Effect::LoadInstalled]));
+        assert!(matches!(effects.as_slice(), [Effect::LoadInstalled { .. }]));
     }
 
     #[test]
@@ -5379,7 +5612,7 @@ mod tests {
         let effects = app.update(finished(0, true, "Removed bat 1.0.0"), now);
         assert!(matches!(
             effects.as_slice(),
-            [Effect::LoadInstalled, Effect::LoadHealth]
+            [Effect::LoadInstalled { .. }, Effect::LoadHealth]
         ));
         assert!(app.health.report.is_loading());
     }
@@ -5392,13 +5625,14 @@ mod tests {
         )];
         let total_size = entries.iter().map(|entry| entry.disk_size).sum();
         app.update(
-            Msg::Loaded(Loaded::Installed(Ok(
-                soar_operations::InstalledListResult {
+            Msg::Loaded(Loaded::Installed {
+                check: 0,
+                result: Ok(soar_operations::InstalledListResult {
                     packages: entries,
                     total_count: 1,
                     total_size,
-                },
-            ))),
+                }),
+            }),
             Instant::now(),
         );
         assert!(app.installed.list.ready().is_some());
@@ -5406,7 +5640,10 @@ mod tests {
         assert!(app.dirty);
         app.dirty = false;
         app.update(
-            Msg::Loaded(Loaded::Installed(Err("offline".to_string()))),
+            Msg::Loaded(Loaded::Installed {
+                check: 0,
+                result: Err("offline".to_string()),
+            }),
             Instant::now(),
         );
         assert!(app.installed.list.ready().is_none());
@@ -5425,7 +5662,7 @@ mod tests {
             ),
             Instant::now(),
         );
-        assert!(matches!(effects.as_slice(), [Effect::LoadInstalled]));
+        assert!(matches!(effects.as_slice(), [Effect::LoadInstalled { .. }]));
         assert!(app.installed.list.is_loading());
     }
 
@@ -5636,6 +5873,30 @@ mod tests {
             "the pass dialog keeps its slot"
         );
         assert!(app.variant_pick.is_none(), "the switch waits for a retry");
+    }
+
+    #[test]
+    fn a_sole_variant_switch_cannot_displace_a_password_dialog() {
+        let (mut app, now) = authorizing_app();
+        app.update(
+            Msg::Loaded(Loaded::Escalation(EscalationProbe::Password)),
+            now,
+        );
+        let effects = app.update(
+            variants_loaded("bat", vec![variant(7, "bat", "0.24.0", "bincache", false)]),
+            now,
+        );
+        assert!(effects.is_empty());
+        assert!(
+            matches!(app.overlay, Some(Overlay::Authorize(_))),
+            "the pass dialog keeps its slot"
+        );
+        assert!(app.variant_pick.is_none(), "the switch waits for a retry");
+        let toasts = format!("{:?}", app.toasts);
+        assert!(
+            toasts.contains("Try again once it finishes"),
+            "toasts are {toasts:?}"
+        );
     }
 
     #[test]
@@ -5870,8 +6131,12 @@ mod tests {
             Effect::CheckUpdates {
                 names, ..
             },
-            Effect::LoadInstalled,
-            Effect::LoadCatalog,
+            Effect::LoadInstalled {
+                ..
+            },
+            Effect::LoadCatalog {
+                ..
+            },
         ] = &effects[..]
         else {
             panic!("expected a recheck with the reloads");
@@ -5894,8 +6159,8 @@ mod tests {
         assert!(matches!(
             effects.as_slice(),
             [
-                Effect::LoadCatalog,
-                Effect::LoadInstalled,
+                Effect::LoadCatalog { .. },
+                Effect::LoadInstalled { .. },
                 Effect::CheckUpdates { .. }
             ]
         ));
@@ -5917,7 +6182,7 @@ mod tests {
         let effects = app.update(finished(0, true, "Removed bat 1.0.0"), now);
         assert!(matches!(
             effects.as_slice(),
-            [Effect::LoadInstalled, Effect::CheckUpdates { .. }]
+            [Effect::LoadInstalled { .. }, Effect::CheckUpdates { .. }]
         ));
     }
 
@@ -5938,7 +6203,7 @@ mod tests {
         let effects = app.update(finished(0, true, "Switched bat"), now);
         assert!(matches!(
             effects.as_slice(),
-            [Effect::LoadInstalled, Effect::CheckUpdates { .. }]
+            [Effect::LoadInstalled { .. }, Effect::CheckUpdates { .. }]
         ));
     }
 
@@ -6132,9 +6397,13 @@ mod tests {
         (app, Instant::now())
     }
 
-    /// A finished computation for the given plan.
+    /// A finished computation for the given plan, answering the check the
+    /// view still expects before any recompute has started.
     fn apply_loaded(plan: ApplyPlan) -> Msg {
-        Msg::Loaded(Loaded::ApplyDiff(Ok(plan)))
+        Msg::Loaded(Loaded::ApplyDiff {
+            check: 0,
+            result: Ok(plan),
+        })
     }
 
     /// A plan whose only change is removing the named package.
@@ -6200,7 +6469,7 @@ mod tests {
         let effects = app.update(key('p'), now);
         let [
             Effect::ComputeApplyDiff {
-                prune,
+                prune, ..
             },
         ] = &effects[..]
         else {
@@ -6265,6 +6534,60 @@ mod tests {
     }
 
     #[test]
+    fn a_fresh_plan_under_the_apply_confirm_closes_it_with_a_note() {
+        let (mut app, now) = apply_app(apply_plan());
+        app.update(code(KeyCode::Enter), now);
+        assert!(app.overlay.is_some());
+        assert_eq!(app.apply_pick, Some(app.apply.check));
+        // An edit of the packages file recomputes while the confirm is
+        // open, exactly the reload that can land under it.
+        app.update(Msg::Edited(app.env.packages_path.clone()), now);
+        assert!(app.apply.plan.is_loading());
+        let effects = app.update(
+            Msg::Loaded(Loaded::ApplyDiff {
+                check: app.apply.check,
+                result: Ok(apply_plan()),
+            }),
+            now,
+        );
+        assert!(effects.is_empty());
+        assert!(app.overlay.is_none(), "the confirm cannot outlive its plan");
+        assert!(app.apply_pick.is_none());
+        assert!(app.jobs.list.is_empty(), "nothing was queued from it");
+        let toasts = format!("{:?}", app.toasts);
+        assert!(
+            toasts.contains("The plan changed, so the confirm closed"),
+            "toasts are {toasts:?}"
+        );
+    }
+
+    #[test]
+    fn a_stale_plan_result_under_the_apply_confirm_changes_nothing() {
+        let (mut app, now) = apply_app(apply_plan());
+        app.update(code(KeyCode::Enter), now);
+        assert!(app.overlay.is_some());
+        let stale = app.apply.check;
+        app.update(Msg::Edited(app.env.packages_path.clone()), now);
+        let effects = app.update(
+            Msg::Loaded(Loaded::ApplyDiff {
+                check: stale,
+                result: Ok(removal_plan("obsidian")),
+            }),
+            now,
+        );
+        assert!(effects.is_empty());
+        assert!(
+            app.apply.plan.is_loading(),
+            "a stale result must not fill the view"
+        );
+        assert!(
+            app.overlay.is_some(),
+            "a stale result leaves the confirm alone"
+        );
+        assert_eq!(app.apply_pick, Some(stale));
+    }
+
+    #[test]
     fn a_finished_apply_recomputes_the_plan_and_reloads_the_lists() {
         let mut app = app();
         app.view = ViewId::Apply;
@@ -6280,10 +6603,14 @@ mod tests {
         let effects = app.update(finished(0, true, "Applied packages.toml"), now);
         let [
             Effect::ComputeApplyDiff {
-                prune,
+                prune, ..
             },
-            Effect::LoadCatalog,
-            Effect::LoadInstalled,
+            Effect::LoadCatalog {
+                ..
+            },
+            Effect::LoadInstalled {
+                ..
+            },
         ] = &effects[..]
         else {
             panic!("expected the plan to recompute and the lists to reload");
@@ -6311,8 +6638,8 @@ mod tests {
             effects.as_slice(),
             [
                 Effect::ComputeApplyDiff { .. },
-                Effect::LoadCatalog,
-                Effect::LoadInstalled,
+                Effect::LoadCatalog { .. },
+                Effect::LoadInstalled { .. },
                 Effect::CheckUpdates { .. }
             ]
         ));
@@ -6605,6 +6932,7 @@ mod tests {
                 id,
                 tool,
                 packages_path,
+                names,
             }),
         ] = &effects[..]
         else {
@@ -6613,6 +6941,7 @@ mod tests {
         assert_eq!(*id, 0);
         assert_eq!(tool.path, PathBuf::from("/usr/bin/doas"));
         assert_eq!(packages_path, "packages.toml");
+        assert_eq!(names, &["jq".to_string()]);
         assert!(app.overlay.is_none());
         assert!(matches!(app.jobs.list[0].state, JobState::Running { .. }));
     }
@@ -6727,7 +7056,13 @@ mod tests {
         let mut app = app();
         app.view = ViewId::Apply;
         let now = Instant::now();
-        app.update(Msg::Loaded(Loaded::ApplyDiff(Ok(full))), now);
+        app.update(
+            Msg::Loaded(Loaded::ApplyDiff {
+                check: 0,
+                result: Ok(full),
+            }),
+            now,
+        );
         app.update(code(KeyCode::Enter), now);
         let effects = app.update(key('y'), now);
         let [
@@ -6754,7 +7089,13 @@ mod tests {
         let mut app = app();
         app.view = ViewId::Apply;
         let now = Instant::now();
-        app.update(Msg::Loaded(Loaded::ApplyDiff(Ok(full))), now);
+        app.update(
+            Msg::Loaded(Loaded::ApplyDiff {
+                check: 0,
+                result: Ok(full),
+            }),
+            now,
+        );
         app.update(code(KeyCode::Enter), now);
         app.update(key('y'), now);
         let effects = app.update(finished(0, true, "Applied: 1 installed"), now);
@@ -6785,6 +7126,74 @@ mod tests {
             app.updates.list.is_loading(),
             "a stale result must not fill the list"
         );
+    }
+
+    #[test]
+    fn a_catalog_reply_from_a_replaced_load_is_dropped() {
+        let mut app = app();
+        let now = Instant::now();
+        app.update(ctrl('r'), now);
+        let replaced = app.catalog_load;
+        app.update(ctrl('r'), now);
+        let effects = app.update(
+            Msg::Loaded(Loaded::Catalog {
+                check: replaced,
+                result: Ok(vec![catalog_row("bat", "0.24.0", "bincache")]),
+            }),
+            now,
+        );
+        assert!(effects.is_empty());
+        assert!(
+            app.browse.catalog.is_loading(),
+            "a stale reply must not fill the catalog"
+        );
+        assert!(app.updates.list.is_idle(), "a stale reply starts no check");
+        let effects = app.update(
+            Msg::Loaded(Loaded::Catalog {
+                check: app.catalog_load,
+                result: Ok(vec![catalog_row("bat", "0.24.0", "bincache")]),
+            }),
+            now,
+        );
+        assert!(matches!(effects.as_slice(), [Effect::CheckUpdates { .. }]));
+        assert!(app.browse.catalog.ready().is_some());
+    }
+
+    #[test]
+    fn an_installed_reply_from_a_replaced_load_is_dropped() {
+        let mut app = app();
+        app.view = ViewId::Installed;
+        let now = Instant::now();
+        app.update(ctrl('r'), now);
+        let replaced = app.installed_load;
+        app.update(ctrl('r'), now);
+        app.update(
+            Msg::Loaded(Loaded::Installed {
+                check: replaced,
+                result: Ok(InstalledListResult {
+                    packages: Vec::new(),
+                    total_count: 0,
+                    total_size: 0,
+                }),
+            }),
+            now,
+        );
+        assert!(
+            app.installed.list.is_loading(),
+            "a stale reply must not fill the list"
+        );
+        app.update(
+            Msg::Loaded(Loaded::Installed {
+                check: app.installed_load,
+                result: Ok(InstalledListResult {
+                    packages: vec![installed_entry("bat", "0.24.0", "bincache")],
+                    total_count: 1,
+                    total_size: 0,
+                }),
+            }),
+            now,
+        );
+        assert!(app.installed.list.ready().is_some());
     }
 
     #[test]

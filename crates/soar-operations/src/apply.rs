@@ -363,6 +363,18 @@ pub async fn execute_apply(
     // Remove pruned packages
     if !ctx.cancel_token().is_cancelled() && !diff.to_remove.is_empty() {
         for pkg in diff.to_remove {
+            // Cancellation is checked per package, so a batch stops between
+            // removals instead of running every remaining one once the
+            // token has fired.
+            if ctx.cancel_token().is_cancelled() {
+                ctx.events().emit(SoarEvent::OperationCancelled {
+                    op_id: next_op_id(),
+                    pkg_name: pkg.pkg_name.clone(),
+                });
+                cancelled_count += 1;
+                continue;
+            }
+
             let op_id = next_op_id();
             ctx.events().emit(SoarEvent::Removing {
                 op_id,

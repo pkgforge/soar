@@ -923,8 +923,8 @@ mod tests {
         assert!(path.ends_with("x.toml"), "config path is {path}");
         let profile_at = forward.iter().position(|arg| arg == "--profile").unwrap();
         assert_eq!(forward[profile_at + 1], "work");
-        assert!(!forward.contains(&"--json".to_string()));
-        assert!(!forward.contains(&"-S".to_string()));
+        assert!(!forward.iter().any(|arg| arg == "--json"));
+        assert!(!forward.iter().any(|arg| arg == "-S"));
     }
 
     #[cfg(feature = "tui")]

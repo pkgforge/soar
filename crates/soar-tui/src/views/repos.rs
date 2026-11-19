@@ -380,8 +380,12 @@ mod tests {
         let effects = app.update(finished(0, "Repositories synced"), now);
         let [
             Effect::RebuildContext,
-            Effect::LoadCatalog,
-            Effect::LoadInstalled,
+            Effect::LoadCatalog {
+                ..
+            },
+            Effect::LoadInstalled {
+                ..
+            },
             Effect::LoadRepos,
         ] = &effects[..]
         else {
@@ -401,8 +405,8 @@ mod tests {
             [
                 Effect::RebuildContext,
                 Effect::LoadRepos,
-                Effect::LoadCatalog,
-                Effect::LoadInstalled
+                Effect::LoadCatalog { .. },
+                Effect::LoadInstalled { .. }
             ]
         ));
     }

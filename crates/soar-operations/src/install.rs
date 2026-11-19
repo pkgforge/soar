@@ -1246,6 +1246,13 @@ async fn install_single_package(
         }
     }
 
+    // Cancellation is honored only up to here: once linking starts the rest
+    // runs to completion, because stopping after the links are published
+    // would leave them with no database row to match.
+    if ctx.cancel_token().is_cancelled() {
+        return Err(SoarError::Cancelled);
+    }
+
     // Create symlinks
     events.emit(SoarEvent::Installing {
         op_id,
@@ -1276,10 +1283,6 @@ async fn install_single_package(
 
     // Desktop integration
     if !unlinked || has_desktop_integration(pkg, ctx.config()) {
-        if ctx.cancel_token().is_cancelled() {
-            return Err(SoarError::Cancelled);
-        }
-
         events.emit(SoarEvent::Installing {
             op_id,
             pkg_name: pkg.pkg_name.clone(),

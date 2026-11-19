@@ -9,8 +9,12 @@ use std::{
     io::{BufRead as _, BufReader},
     os::unix::process::CommandExt as _,
     process::{Command, ExitStatus, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use soar_events::{EventSinkHandle, OperationId, SoarEvent};
@@ -23,6 +27,11 @@ use crate::{
 
 /// How often the running child is polled for exit and cancellation.
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// How long the readers may keep draining after the child has exited. The
+/// command's own output is worth waiting for, but a process it daemonized
+/// cannot hold the whole operation hostage over its leftover pipes.
+const READER_GRACE: Duration = Duration::from_secs(10);
 
 /// Where a child's output goes, and what can stop it.
 pub struct ProcessContext<'a> {
@@ -42,6 +51,12 @@ pub struct ProcessContext<'a> {
 /// The child gets no input. If `cancel` fires, the child is killed and
 /// [`SoarError::Cancelled`] is returned.
 pub fn run(mut cmd: Command, ctx: &ProcessContext) -> SoarResult<ExitStatus> {
+    // The command must never start under a token that already fired, or a
+    // fast command could finish before the first poll sees the cancellation.
+    if ctx.cancel.is_cancelled() {
+        return Err(SoarError::Cancelled);
+    }
+
     let program = cmd.get_program().to_string_lossy().into_owned();
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -57,12 +72,29 @@ pub fn run(mut cmd: Command, ctx: &ProcessContext) -> SoarResult<ExitStatus> {
     let pkg_name = ctx.pkg_name;
 
     thread::scope(|scope| {
+        // Each reader marks its stream done, so the drain after a normal
+        // exit can tell a closed pipe from one a leftover process still
+        // holds without blocking on the join.
+        let out_done = Arc::new(AtomicBool::new(false));
+        let err_done = Arc::new(AtomicBool::new(false));
         if let Some(out) = child.stdout.take() {
             let events = events.clone();
-            scope.spawn(move || read_lines(out, events, op_id, pkg_name));
+            let done = Arc::clone(&out_done);
+            scope.spawn(move || {
+                read_lines(out, events, op_id, pkg_name);
+                done.store(true, Ordering::Release);
+            });
+        } else {
+            out_done.store(true, Ordering::Release);
         }
         if let Some(err) = child.stderr.take() {
-            scope.spawn(move || read_lines(err, events, op_id, pkg_name));
+            let done = Arc::clone(&err_done);
+            scope.spawn(move || {
+                read_lines(err, events, op_id, pkg_name);
+                done.store(true, Ordering::Release);
+            });
+        } else {
+            err_done.store(true, Ordering::Release);
         }
 
         loop {
@@ -70,22 +102,49 @@ pub fn run(mut cmd: Command, ctx: &ProcessContext) -> SoarResult<ExitStatus> {
                 .try_wait()
                 .with_context(|| format!("waiting for {program}"))?;
             if let Some(status) = status {
+                // The child is gone, but a process it left behind may still
+                // hold the pipes. Keep draining for a bounded grace, with
+                // the token still live, so the command's own output is kept
+                // without a daemonized leftover holding the operation
+                // hostage. Killing the group closes the pipes and lets the
+                // readers finish.
+                let deadline = Instant::now() + READER_GRACE;
+                let mut cancelled = false;
+                while !out_done.load(Ordering::Acquire) || !err_done.load(Ordering::Acquire) {
+                    if ctx.cancel.is_cancelled() {
+                        cancelled = true;
+                    }
+                    if cancelled || Instant::now() >= deadline {
+                        kill_group(child.id());
+                        break;
+                    }
+                    thread::sleep(POLL_INTERVAL);
+                }
+                if cancelled {
+                    return Err(SoarError::Cancelled);
+                }
                 return Ok(status);
             }
             if ctx.cancel.is_cancelled() {
-                // The child leads its own process group, so the signal takes
-                // its own children down with it and the pipes close. A group
-                // that already exited fails the call, which is fine here.
-                let group = -(child.id() as i32);
-                unsafe {
-                    nix::libc::kill(group, nix::libc::SIGKILL);
-                }
+                kill_group(child.id());
                 let _ = child.wait();
                 return Err(SoarError::Cancelled);
             }
             thread::sleep(POLL_INTERVAL);
         }
     })
+}
+
+/// Kills the process group the child led.
+///
+/// The child leads its own group, so the signal takes its own children down
+/// with it and the pipes close. A group that already exited fails the call,
+/// which is fine here.
+fn kill_group(pid: u32) {
+    let group = -(pid as i32);
+    unsafe {
+        nix::libc::kill(group, nix::libc::SIGKILL);
+    }
 }
 
 /// Emits each line of `stream` as [`SoarEvent::ProcessOutput`].
@@ -166,6 +225,21 @@ mod tests {
     }
 
     #[test]
+    fn an_already_cancelled_command_is_never_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("marker");
+        let events: EventSinkHandle = Arc::new(NullSink);
+        let cancel = CancelToken::new();
+        cancel.cancel();
+        let ctx = context(&events, &cancel);
+
+        let result = run(shell(&format!("touch {}", marker.display())), &ctx);
+
+        assert!(matches!(result, Err(SoarError::Cancelled)));
+        assert!(!marker.exists(), "the command ran despite the cancellation");
+    }
+
+    #[test]
     fn a_cancelled_child_is_killed_and_reports_cancelled() {
         let events: EventSinkHandle = Arc::new(NullSink);
         let cancel = CancelToken::new();
@@ -187,6 +261,36 @@ mod tests {
             elapsed < Duration::from_secs(1),
             "cancellation took {elapsed:?}"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_daemonized_leftover_cannot_hold_a_finished_child_hostage() {
+        let collector = Arc::new(CollectorSink::default());
+        let events: EventSinkHandle = collector.clone();
+        let cancel = CancelToken::new();
+        let ctx = context(&events, &cancel);
+
+        // The child itself exits at once, but the sleep it daemonized keeps
+        // the pipes open. Cancelling after the start has to be seen by the
+        // drain that follows the exit, since the poll loop is already done.
+        let canceller = cancel.clone();
+        let timer = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            canceller.cancel();
+        });
+
+        let start = Instant::now();
+        let result = run(shell("echo hi; sleep 300 &"), &ctx);
+        timer.join().unwrap();
+        let elapsed = start.elapsed();
+
+        assert!(matches!(result, Err(SoarError::Cancelled)));
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "a leftover holding the pipes stalled the call for {elapsed:?}"
+        );
+        assert!(output_lines(&collector).iter().any(|line| line == "hi"));
     }
 
     #[test]

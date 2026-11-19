@@ -157,12 +157,19 @@ impl BrowseView {
     }
 
     /// The detail request whose row the cursor has rested on long enough,
-    /// if any, marking it loading so it is requested only once.
+    /// if any, marking it loading so it is requested only once. The row's
+    /// version is resolved here, because the catalog can be mid-reload
+    /// while the cursor rests: asking then would park the row on a
+    /// Loading entry no request ever answers, so the want stays put and
+    /// the next tick retries once the reload has landed.
     pub(crate) fn due_detail(&mut self, now: Instant) -> Option<PackageKey> {
         let (key, rested_at) = self.wanted.clone()?;
         if now.duration_since(rested_at) < DETAIL_DELAY {
             return None;
         }
+        // The version must resolve now, or the request would go out
+        // for a variant the mid-reload catalog cannot name yet.
+        self.row_version(&key)?;
         self.wanted = None;
         if self.details.contains_key(&key) {
             return None;
@@ -673,8 +680,13 @@ mod tests {
         views::browse::{BrowseView, CatalogRow, PackageKey},
     };
 
+    /// A catalog reply for the load the app still expects before any
+    /// reload has started.
     fn loaded(rows: Vec<CatalogRow>) -> Msg {
-        Msg::Loaded(Loaded::Catalog(Ok(rows)))
+        Msg::Loaded(Loaded::Catalog {
+            check: 0,
+            result: Ok(rows),
+        })
     }
 
     fn catalog() -> Vec<CatalogRow> {
@@ -730,7 +742,10 @@ mod tests {
     fn a_failed_catalog_shows_the_error() {
         let mut app = test_app();
         app.update(
-            Msg::Loaded(Loaded::Catalog(Err("metadata unreadable".to_string()))),
+            Msg::Loaded(Loaded::Catalog {
+                check: 0,
+                result: Err("metadata unreadable".to_string()),
+            }),
             Instant::now(),
         );
         let screen = screen(&mut app, 80, 24);
@@ -1132,6 +1147,38 @@ mod tests {
         ));
         assert!(matches!(
             app.browse.details.get(&key_for("fd", "pkgforge")),
+            Some(Loadable::Loading)
+        ));
+    }
+
+    #[test]
+    fn a_detail_request_waits_for_a_mid_reload_catalog() {
+        let mut app = test_app();
+        app.startup();
+        let now = Instant::now();
+        let key = bat_key();
+        app.browse.wanted = Some((key.clone(), now));
+        let effects = app.update(Msg::Tick, now + Duration::from_millis(200));
+        assert!(effects.is_empty());
+        assert!(app.browse.details.is_empty(), "nothing is cached yet");
+        assert!(app.browse.wanted.is_some(), "the want stays for a retry");
+        app.update(
+            Msg::Loaded(Loaded::Catalog {
+                check: app.catalog_load,
+                result: Ok(catalog()),
+            }),
+            now,
+        );
+        let effects = app.update(Msg::Tick, now + Duration::from_millis(200));
+        assert!(matches!(
+            &effects[..],
+            [Effect::LoadDetail {
+                key,
+                version,
+            }] if key.pkg_name == "bat" && version == "0.24.0"
+        ));
+        assert!(matches!(
+            app.browse.details.get(&bat_key()),
             Some(Loadable::Loading)
         ));
     }
