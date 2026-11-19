@@ -28,6 +28,14 @@ deny = []
 
 [advisories]
 yanked = "deny"
+ignore = [
+    # chrono is unmaintained with no patched replacement; pre-existing
+    # workspace dependency. Remove when the workspace migrates off chrono.
+    "RUSTSEC-2026-0543",
+    # bundled-SQLite CVE; we link the system SQLite, and libsqlite3-sys is
+    # capped below 0.39 by diesel 2.3.x. Remove once diesel allows 0.39.
+    "RUSTSEC-2026-0459",
+]
 
 [sources]
 unknown-registry = "deny"

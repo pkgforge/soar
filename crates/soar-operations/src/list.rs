@@ -167,6 +167,7 @@ pub async fn list_packages(
                 pkg_family: entry.pkg.pkg_family,
                 pkg_type: entry.pkg.pkg_type,
                 version: entry.pkg.version,
+                description: entry.pkg.description.unwrap_or_default(),
                 ..Default::default()
             };
 

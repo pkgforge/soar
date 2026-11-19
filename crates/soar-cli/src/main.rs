@@ -3,8 +3,7 @@ use std::{
     ffi::OsString,
     fs,
     io::{IsTerminal as _, Read},
-    os::unix::fs::PermissionsExt as _,
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
     sync::{Arc, Mutex},
 };
@@ -23,8 +22,8 @@ use progress::{ProgressGuard, create_download_job, handle_download_progress, spa
 use remove::remove_packages;
 use run::run_package;
 use soar_config::config::{
-    self, CONFIG_PATH, Config, PATH_ENV_SUFFIXES, enable_system_mode, generate_default_config,
-    get_config, path_env_var, set_current_profile,
+    self, CONFIG_PATH, Config, enable_system_mode, generate_default_config, get_config,
+    path_env_var, set_current_profile,
 };
 use soar_core::{
     SoarResult,
@@ -33,7 +32,10 @@ use soar_core::{
 };
 use soar_dl::http_client::configure_http_client;
 use soar_events::EventSinkHandle;
-use soar_operations::SoarContext;
+use soar_operations::{
+    SoarContext,
+    privilege::{ESCALATION_DIRS, escalated_command, find_escalation_tool},
+};
 use soar_utils::path::resolve_path;
 use tracing::{debug, info, warn};
 use update::update_packages;
@@ -50,6 +52,7 @@ mod cli;
 mod download;
 mod health;
 mod install;
+mod interrupt;
 mod json2db;
 mod json_output;
 mod list;
@@ -97,7 +100,7 @@ pub fn create_context_for(answers_with_document: bool) -> (SoarContext, Option<P
         let guard = spawn_event_handler(receiver);
         (ctx, Some(guard))
     } else {
-        let events: EventSinkHandle = Arc::new(soar_events::NullSink);
+        let events: EventSinkHandle = Arc::new(progress::OutputOnlySink);
         let ctx = SoarContext::new(config, events);
         (ctx, None)
     }
@@ -138,6 +141,11 @@ fn requires_root(command: &cli::Commands) -> bool {
         return true;
     }
 
+    #[cfg(feature = "tui")]
+    if matches!(command, cli::Commands::Tui) {
+        return true;
+    }
+
     matches!(
         command,
         cli::Commands::Install { .. }
@@ -168,35 +176,6 @@ fn requires_root(command: &cli::Commands) -> bool {
     )
 }
 
-/// Directories a privilege escalation tool is taken from.
-///
-/// They are writable only by root. A tool found through `PATH` could be any
-/// program the user's environment points at, which would then show the
-/// password prompt.
-const ESCALATION_DIRS: &[&str] = &[
-    "/run/wrappers/bin",
-    "/usr/local/bin",
-    "/usr/bin",
-    "/bin",
-    "/usr/sbin",
-    "/sbin",
-];
-
-/// The absolute path of `doas` or else `sudo`, from [`ESCALATION_DIRS`].
-///
-/// Probing by running the escalation tool would prompt for a password just to
-/// learn whether it is installed, which is what the caller is trying to avoid.
-fn find_escalation_tool() -> Option<PathBuf> {
-    ["doas", "sudo"].iter().find_map(|name| {
-        ESCALATION_DIRS
-            .iter()
-            .map(|dir| Path::new(dir).join(name))
-            .find(|path| {
-                fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-            })
-    })
-}
-
 /// Handle system mode - check for root privileges and re-exec with sudo/doas if needed
 fn handle_system_mode(command: &cli::Commands) -> SoarResult<()> {
     if nix::unistd::geteuid().is_root() {
@@ -215,7 +194,7 @@ fn handle_system_mode(command: &cli::Commands) -> SoarResult<()> {
         .map_err(|e| SoarError::Custom(format!("Failed to get current executable path: {e}")))?;
     let args: Vec<String> = env::args().skip(1).collect();
 
-    let escalation_cmd = find_escalation_tool().ok_or_else(|| {
+    let tool = find_escalation_tool().ok_or_else(|| {
         SoarError::Custom(format!(
             "System mode requires root privileges. Neither 'doas' nor 'sudo' found in {}.",
             ESCALATION_DIRS.join(", ")
@@ -224,43 +203,63 @@ fn handle_system_mode(command: &cli::Commands) -> SoarResult<()> {
 
     debug!(
         "System mode requires root privileges. Re-executing with {}...",
-        escalation_cmd.display()
+        tool.path.display()
     );
 
-    // sudo and doas both reset the environment, so the system overrides are
-    // handed to the privileged process explicitly. Without this, a read-only
-    // `--system` command and a privileged one would resolve different trees.
-    let forwarded: Vec<OsString> = PATH_ENV_SUFFIXES
-        .iter()
-        .filter_map(|suffix| {
-            let var = path_env_var(suffix, true);
-            env::var_os(&var).map(|value| {
-                let mut assignment = OsString::from(format!("{var}="));
-                assignment.push(value);
-                assignment
-            })
-        })
-        .collect();
+    let os_args: Vec<OsString> = args.iter().map(OsString::from).collect();
+    let mut command = escalated_command(&tool, &[], &current_exe, &os_args);
 
-    let mut command = Command::new(&escalation_cmd);
-    if !forwarded.is_empty() {
-        command.arg("env").args(&forwarded);
-    }
-
-    let status = command
-        .arg(&current_exe)
-        .args(&args)
-        .status()
-        .with_context(|| {
-            format!(
-                "executing {} {:?} {:?}",
-                escalation_cmd.display(),
-                current_exe,
-                args
-            )
-        })?;
+    let status = command.status().with_context(|| {
+        format!(
+            "executing {} {:?} {:?}",
+            tool.path.display(),
+            current_exe,
+            args
+        )
+    })?;
 
     std::process::exit(status.code().unwrap_or(1));
+}
+
+/// Rebuilds the global options a privileged soar child needs, so it reads
+/// the same configuration and connections this process was given. The
+/// configuration path is the resolved one, since the child starts in the
+/// working directory the interface runs in, not the one the user typed in.
+#[cfg(feature = "tui")]
+fn global_args(args: &Args, config_path: &Path) -> Vec<OsString> {
+    let mut forward: Vec<OsString> = Vec::new();
+    if args.config.is_some() {
+        forward.push("--config".into());
+        forward.push(config_path.as_os_str().to_os_string());
+    }
+    if let Some(profile) = &args.profile {
+        forward.push("--profile".into());
+        forward.push(profile.into());
+    }
+    if let Some(proxy) = &args.proxy {
+        forward.push("--proxy".into());
+        forward.push(proxy.into());
+    }
+    if let Some(headers) = &args.header {
+        for header in headers {
+            forward.push("--header".into());
+            forward.push(header.into());
+        }
+    }
+    if let Some(user_agent) = &args.user_agent {
+        forward.push("--user-agent".into());
+        forward.push(user_agent.into());
+    }
+    if args.ipv4 {
+        forward.push("-4".into());
+    }
+    if args.ipv6 {
+        forward.push("-6".into());
+    }
+    if args.no_color {
+        forward.push("--no-color".into());
+    }
+    forward
 }
 
 /// Replaces a `-` among `values` with the words `read` supplies.
@@ -357,6 +356,12 @@ async fn handle_cli() -> SoarResult<()> {
     let mut args = Args::parse();
     expand_stdin(&mut args.command)?;
 
+    #[cfg(feature = "tui")]
+    if !matches!(args.command, cli::Commands::Tui) {
+        setup_logging(&args);
+    }
+
+    #[cfg(not(feature = "tui"))]
     setup_logging(&args);
 
     if args.no_color {
@@ -427,6 +432,20 @@ async fn handle_cli() -> SoarResult<()> {
             config.headers = headers;
         }
     });
+
+    #[cfg(feature = "tui")]
+    // The match below moves the command out of `args`, so the global
+    // options the interface forwards to a privileged child are rebuilt
+    // here, after the configuration path has been resolved.
+    let forward_args = if matches!(args.command, cli::Commands::Tui) {
+        let config_path = CONFIG_PATH
+            .read()
+            .map(|path| path.to_path_buf())
+            .unwrap_or_default();
+        global_args(&args, &config_path)
+    } else {
+        Vec::new()
+    };
 
     match args.command {
         cli::Commands::DefConfig {
@@ -750,6 +769,28 @@ async fn handle_cli() -> SoarResult<()> {
                     let mut cmd = cli::Args::command();
                     clap_complete::generate(shell, &mut cmd, "soar", &mut std::io::stdout());
                 }
+                #[cfg(feature = "tui")]
+                cli::Commands::Tui => {
+                    if utils::json_enabled() {
+                        return Err(SoarError::Custom("soar tui does not support --json".into()));
+                    }
+                    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+                        return Err(SoarError::Custom(
+                            "soar tui needs an interactive terminal".into(),
+                        ));
+                    }
+                    let no_color = !*COLOR.read().unwrap()
+                        || env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+                    soar_tui::run(soar_tui::TuiOptions {
+                        version: env!("CARGO_PKG_VERSION").to_string(),
+                        no_color,
+                        icons: get_config().display().icons(),
+                        verbosity: args.verbose,
+                        quiet: args.quiet,
+                        forward_args,
+                    })
+                    .await?;
+                }
                 _ => unreachable!(),
             }
 
@@ -785,6 +826,14 @@ async fn main() {
     .ok();
 
     if let Err(err) = handle_cli().await {
+        // An aborted operation has already said what finished and what did
+        // not, so a full report would only repeat it.
+        if matches!(err, SoarError::Cancelled) {
+            if !utils::json_enabled() {
+                eprintln!("Aborted");
+            }
+            std::process::exit(130);
+        }
         // Use miette's error display for Diagnostic errors
         eprintln!("{:?}", miette::Report::new(err));
         // Anything driving soar reads the exit code to know whether the work
@@ -854,14 +903,35 @@ mod tests {
         assert!(open_in_editor("false", &path).is_err());
     }
 
+    #[cfg(feature = "tui")]
     #[test]
-    fn the_escalation_tool_comes_from_a_root_owned_directory() {
-        if let Some(tool) = find_escalation_tool() {
-            assert!(
-                ESCALATION_DIRS
-                    .iter()
-                    .any(|dir| tool.parent() == Some(Path::new(dir)))
-            );
-        }
+    fn tui_requires_root_in_system_mode() {
+        assert!(requires_root(&cli::Commands::Tui));
+    }
+
+    #[cfg(feature = "tui")]
+    #[test]
+    fn the_tui_child_gets_the_resolved_global_options() {
+        let args = Args::try_parse_from(["soar", "-c", "x.toml", "-p", "work", "tui"]).unwrap();
+        let forward: Vec<String> = global_args(&args, Path::new("/home/user/.config/soar/x.toml"))
+            .into_iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let config_at = forward.iter().position(|arg| arg == "--config").unwrap();
+        let path = &forward[config_at + 1];
+        assert!(Path::new(path).is_absolute(), "config path is {path}");
+        assert!(path.ends_with("x.toml"), "config path is {path}");
+        let profile_at = forward.iter().position(|arg| arg == "--profile").unwrap();
+        assert_eq!(forward[profile_at + 1], "work");
+        assert!(!forward.iter().any(|arg| arg == "--json"));
+        assert!(!forward.iter().any(|arg| arg == "-S"));
+    }
+
+    #[cfg(feature = "tui")]
+    #[test]
+    fn global_options_not_given_stay_out_of_the_forwarded_arguments() {
+        let args = Args::try_parse_from(["soar", "-4", "tui"]).unwrap();
+        let forward = global_args(&args, Path::new("/unused/config.toml"));
+        assert_eq!(forward, [OsString::from("-4")]);
     }
 }

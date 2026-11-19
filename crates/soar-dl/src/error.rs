@@ -98,6 +98,12 @@ pub enum DownloadError {
     #[diagnostic(code(soar_dl::resume_mismatch))]
     ResumeMismatch,
 
+    /// The download was asked to stop through its cancel token. Partial
+    /// files and resume metadata are left for the next attempt.
+    #[error("Download cancelled")]
+    #[diagnostic(code(soar_dl::cancelled))]
+    Cancelled,
+
     #[error("Server does not support segmented downloads: {url}")]
     #[diagnostic(code(soar_dl::range_unsupported))]
     RangeUnsupported { url: String },

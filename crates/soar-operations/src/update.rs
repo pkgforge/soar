@@ -802,6 +802,7 @@ pub async fn perform_update(
     Ok(UpdateReport {
         updated: install_report.installed,
         failed: install_report.failed,
+        cancelled: install_report.cancelled,
         url_updates,
     })
 }

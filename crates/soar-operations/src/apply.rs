@@ -7,6 +7,7 @@ use soar_core::{
         connection::DieselDatabase,
         models::{InstalledPackage, Package},
     },
+    error::SoarError,
     package::{
         install::InstallTarget,
         release_source::{ReleaseSource, run_version_command},
@@ -237,6 +238,7 @@ pub async fn execute_apply(
     let mut updated_count = 0;
     let mut removed_count = 0;
     let mut failed_count = 0;
+    let mut cancelled_count = 0;
 
     // Apply pending version updates for in-sync packages
     for (pkg_name, version) in &diff.pending_version_updates {
@@ -251,7 +253,7 @@ pub async fn execute_apply(
     }
 
     // Install new packages
-    if !diff.to_install.is_empty() {
+    if !ctx.cancel_token().is_cancelled() && !diff.to_install.is_empty() {
         let mut version_updates: Vec<(String, String)> = Vec::new();
         for (pkg, target) in &diff.to_install {
             if !tracks_own_version(pkg) || pkg.floats_on_forge() {
@@ -280,6 +282,7 @@ pub async fn execute_apply(
         let report = perform_installation(ctx, targets, &options).await?;
         installed_count = report.installed.len();
         failed_count += report.failed.len();
+        cancelled_count += report.cancelled.len();
 
         let succeeded: HashSet<&str> = report
             .installed
@@ -304,7 +307,7 @@ pub async fn execute_apply(
     }
 
     // Update packages
-    if !diff.to_update.is_empty() {
+    if !ctx.cancel_token().is_cancelled() && !diff.to_update.is_empty() {
         let mut update_version_updates: Vec<(String, String)> = Vec::new();
         for (pkg, target) in &diff.to_update {
             if !tracks_own_version(pkg) || pkg.floats_on_forge() {
@@ -333,6 +336,7 @@ pub async fn execute_apply(
         let report = perform_installation(ctx, targets, &options).await?;
         updated_count = report.installed.len();
         failed_count += report.failed.len();
+        cancelled_count += report.cancelled.len();
 
         let succeeded: HashSet<&str> = report
             .installed
@@ -357,8 +361,20 @@ pub async fn execute_apply(
     }
 
     // Remove pruned packages
-    if !diff.to_remove.is_empty() {
+    if !ctx.cancel_token().is_cancelled() && !diff.to_remove.is_empty() {
         for pkg in diff.to_remove {
+            // Cancellation is checked per package, so a batch stops between
+            // removals instead of running every remaining one once the
+            // token has fired.
+            if ctx.cancel_token().is_cancelled() {
+                ctx.events().emit(SoarEvent::OperationCancelled {
+                    op_id: next_op_id(),
+                    pkg_name: pkg.pkg_name.clone(),
+                });
+                cancelled_count += 1;
+                continue;
+            }
+
             let op_id = next_op_id();
             ctx.events().emit(SoarEvent::Removing {
                 op_id,
@@ -369,6 +385,8 @@ pub async fn execute_apply(
             let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
             match PackageRemover::new(pkg.clone(), diesel_db.clone(), ctx.config().clone())
                 .await
+                .with_events(ctx.events().clone(), op_id)
+                .with_cancel(ctx.cancel_token().clone())
                 .with_hooks(hooks)
                 .with_sandbox(sandbox)
                 .remove()
@@ -383,6 +401,13 @@ pub async fn execute_apply(
                         },
                     });
                     removed_count += 1;
+                }
+                Err(SoarError::Cancelled) => {
+                    ctx.events().emit(SoarEvent::OperationCancelled {
+                        op_id,
+                        pkg_name: pkg.pkg_name.clone(),
+                    });
+                    cancelled_count += 1;
                 }
                 Err(e) => {
                     ctx.events().emit(SoarEvent::OperationFailed {
@@ -408,6 +433,7 @@ pub async fn execute_apply(
         updated_count,
         removed_count,
         failed_count,
+        cancelled_count,
     })
 }
 

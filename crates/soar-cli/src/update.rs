@@ -1,5 +1,5 @@
-use nu_ansi_term::Color::{Blue, Cyan, Green, Red};
-use soar_core::SoarResult;
+use nu_ansi_term::Color::{Blue, Cyan, Green, Red, Yellow};
+use soar_core::{SoarResult, error::SoarError};
 use soar_operations::{SoarContext, UpdateInfo, UpdateReport, update};
 use tabled::{
     builder::Builder,
@@ -8,6 +8,7 @@ use tabled::{
 use tracing::{error, info};
 
 use crate::{
+    interrupt::InterruptGuard,
     json_output::{self, Listing, UpdateJson},
     progress::create_wait_job,
     utils::{Colored, Icons, ask_target_action, display_settings, icon_or, json_enabled},
@@ -45,8 +46,13 @@ pub async fn update_packages(
         }
     }
 
+    let _interrupt = InterruptGuard::install(ctx.cancel_token().clone());
     let report = update::perform_update(ctx, updates, keep, no_verify).await?;
     display_update_report(&report);
+
+    if ctx.cancel_token().is_cancelled() {
+        return Err(SoarError::Cancelled);
+    }
 
     Ok(())
 }
@@ -90,7 +96,8 @@ fn display_update_report(report: &UpdateReport) {
 
     let updated_count = report.updated.len();
     let failed_count = report.failed.len();
-    let total_packages = updated_count + failed_count;
+    let cancelled_count = report.cancelled.len();
+    let total_packages = updated_count + failed_count + cancelled_count;
 
     if use_icons {
         let mut builder = Builder::new();
@@ -111,7 +118,13 @@ fn display_update_report(report: &UpdateReport) {
                 format!("{}", Colored(Red, failed_count)),
             ]);
         }
-        if updated_count == 0 && failed_count == 0 {
+        if cancelled_count > 0 {
+            builder.push_record([
+                format!("{} Cancelled", icon_or(Icons::WARNING, "!")),
+                format!("{}", Colored(Yellow, cancelled_count)),
+            ]);
+        }
+        if updated_count == 0 && failed_count == 0 && cancelled_count == 0 {
             builder.push_record([
                 format!("{} Status", icon_or(Icons::WARNING, "!")),
                 "No packages updated".to_string(),
@@ -128,11 +141,16 @@ fn display_update_report(report: &UpdateReport) {
         info!("\n{table}");
     } else {
         info!(
-            "Updated {}/{} packages{}",
+            "Updated {}/{} packages{}{}",
             updated_count,
             total_packages,
             if failed_count > 0 {
                 format!(", {} failed", failed_count)
+            } else {
+                String::new()
+            },
+            if cancelled_count > 0 {
+                format!(", {} cancelled", cancelled_count)
             } else {
                 String::new()
             }

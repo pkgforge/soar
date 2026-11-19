@@ -13,7 +13,7 @@ use std::{
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use soar_utils::fs::is_elf;
+use soar_utils::{cancel::CancelToken, fs::is_elf};
 use tracing::{debug, trace, warn};
 use ureq::http::header::{ACCEPT, ACCEPT_ENCODING, AUTHORIZATION, ETAG, IF_RANGE, RANGE};
 
@@ -254,6 +254,7 @@ pub struct OciDownload {
     extract_to: Option<PathBuf>,
     parallel: usize,
     connections: Option<usize>,
+    cancel: Option<CancelToken>,
     on_progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
 }
 
@@ -291,6 +292,7 @@ impl OciDownload {
             extract_to: None,
             parallel: 1,
             connections: None,
+            cancel: None,
             on_progress: None,
         }
     }
@@ -427,6 +429,24 @@ impl OciDownload {
         self
     }
 
+    /// Sets a token that asks this download to stop at its next read.
+    ///
+    /// Cancelling keeps the partial layers and their resume state, so a
+    /// later attempt continues where this one stopped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use soar_dl::oci::OciDownload;
+    /// use soar_utils::cancel::CancelToken;
+    ///
+    /// let dl = OciDownload::new("ghcr.io/org/repo:tag").cancel(CancelToken::new());
+    /// ```
+    pub fn cancel(mut self, token: CancelToken) -> Self {
+        self.cancel = Some(token);
+        self
+    }
+
     /// Registers a progress callback to receive download `Progress` events.
     ///
     /// The provided callback will be invoked with progress updates (e.g., Starting, Chunk, Complete)
@@ -483,6 +503,10 @@ impl OciDownload {
             tag = self.reference.tag,
             "starting OCI download"
         );
+
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
 
         if let Some(cb) = &self.on_progress {
             cb(Progress::Preparing);
@@ -577,6 +601,9 @@ impl OciDownload {
         let total_size: u64 = layers.iter().map(|l| l.size).sum();
 
         for layer in layers {
+            if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+                return Err(DownloadError::Cancelled);
+            }
             let filename = layer.title().unwrap();
             let path = safe_layer_path(output_dir, filename)?;
 
@@ -597,6 +624,7 @@ impl OciDownload {
                 &self.reference,
                 layer,
                 &path,
+                self.cancel.as_ref(),
                 self.on_progress.as_ref(),
                 &downloaded,
                 total_size,
@@ -675,10 +703,14 @@ impl OciDownload {
                 let errors = Arc::clone(&errors);
                 let extract = self.extract;
                 let extract_to = self.extract_to.clone();
+                let cancel = self.cancel.clone();
                 let on_progress = self.on_progress.clone();
 
                 thread::spawn(move || {
                     for layer in chunk {
+                        if cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+                            break;
+                        }
                         let filename = match layer.title() {
                             Some(f) => f,
                             None => continue,
@@ -709,6 +741,7 @@ impl OciDownload {
                             &reference,
                             &layer,
                             &path,
+                            cancel.as_ref(),
                             on_progress.as_ref(),
                             &downloaded,
                             total_size,
@@ -726,6 +759,7 @@ impl OciDownload {
                                 }
                                 lock(&paths).push(path);
                             }
+                            Err(DownloadError::Cancelled) => break,
                             Err(e) => {
                                 lock(&errors).push((format!("{filename}: {e}"), e.is_transient()));
                             }
@@ -739,6 +773,10 @@ impl OciDownload {
             if let Err(err) = handle.join() {
                 lock(&errors).push((format!("Worker thread panicked: {err:?}"), false));
             }
+        }
+
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
         }
 
         let errors = lock(&errors);
@@ -768,6 +806,9 @@ impl OciDownload {
     /// let manifest = dl.fetch_manifest().unwrap();
     /// ```
     pub fn fetch_manifest(&self) -> Result<OciManifest, DownloadError> {
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
         let url = registry_url(
             &self.api,
             &self.reference.package,
@@ -832,6 +873,9 @@ impl OciDownload {
     /// println!("Downloaded to: {:?}", downloaded);
     /// ```
     pub fn download_blob(&self) -> Result<Vec<PathBuf>, DownloadError> {
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
         let filename = self
             .reference
             .package
@@ -861,6 +905,12 @@ impl OciDownload {
 
         let dl = if let Some(connections) = self.connections {
             dl.connections(connections)
+        } else {
+            dl
+        };
+
+        let dl = if let Some(ref token) = self.cancel {
+            dl.cancel(token.clone())
         } else {
             dl
         };
@@ -924,6 +974,7 @@ impl OciDownload {
             &self.reference,
             layer,
             path,
+            self.cancel.as_ref(),
             self.on_progress.as_ref(),
             &counter,
             total_size,
@@ -949,16 +1000,22 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// - Marks the file executable (0o755) if it appears to be an ELF binary and removes any resume metadata on success.
 ///
 /// Returns `Ok(())` on success or a `DownloadError` on failure.
+#[allow(clippy::too_many_arguments)]
 fn download_layer_impl(
     api: &str,
     reference: &OciReference,
     layer: &OciLayer,
     path: &Path,
+    cancel: Option<&CancelToken>,
     on_progress: Option<&Arc<dyn Fn(Progress) + Send + Sync>>,
     downloaded: &AtomicU64,
     total_size: u64,
 ) -> Result<(), DownloadError> {
     let url = registry_url(api, &reference.package, "blobs", &layer.digest);
+
+    if cancel.is_some_and(CancelToken::is_cancelled) {
+        return Err(DownloadError::Cancelled);
+    }
 
     trace!(
         digest = layer.digest,
@@ -971,6 +1028,9 @@ fn download_layer_impl(
         info.segments.is_none() && info.etag.as_deref().and_then(strong_etag).is_some()
     });
     let resp = loop {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
         let mut req = SHARED_AGENT
             .get(&url)
             .header(AUTHORIZATION, "Bearer QQ==")
@@ -1051,6 +1111,9 @@ fn download_layer_impl(
     let mut last_checkpoint = layer_downloaded / (1024 * 1024);
 
     loop {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
         let n = reader.read(&mut buffer)?;
         if n == 0 {
             break;

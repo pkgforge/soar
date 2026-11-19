@@ -53,6 +53,9 @@ pub struct InstallReport {
     pub installed: Vec<InstalledInfo>,
     pub failed: Vec<FailedInfo>,
     pub warnings: Vec<String>,
+    /// Names of the packages skipped or stopped because the operation was
+    /// cancelled.
+    pub cancelled: Vec<String>,
 }
 
 /// Info about a successfully installed package.
@@ -92,6 +95,9 @@ pub enum RemoveResolveResult {
 pub struct RemoveReport {
     pub removed: Vec<RemovedInfo>,
     pub failed: Vec<FailedInfo>,
+    /// Names of the packages skipped or stopped because the operation was
+    /// cancelled.
+    pub cancelled: Vec<String>,
 }
 
 pub struct RemovedInfo {
@@ -115,6 +121,9 @@ pub struct UpdateReport {
     pub updated: Vec<InstalledInfo>,
     pub failed: Vec<FailedInfo>,
     pub url_updates: Vec<UrlUpdateInfo>,
+    /// Names of the packages skipped or stopped because the operation was
+    /// cancelled.
+    pub cancelled: Vec<String>,
 }
 
 /// Tracks URL packages that need their packages.toml updated after successful update.
@@ -216,6 +225,9 @@ pub struct ApplyReport {
     pub updated_count: usize,
     pub removed_count: usize,
     pub failed_count: usize,
+    /// How many packages were skipped or stopped because the operation was
+    /// cancelled.
+    pub cancelled_count: usize,
 }
 
 // ---- Run ----

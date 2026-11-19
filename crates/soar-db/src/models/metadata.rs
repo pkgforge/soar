@@ -137,6 +137,7 @@ pub struct PackageListing {
     pub pkg_name: String,
     pub pkg_type: Option<String>,
     pub version: String,
+    pub description: Option<String>,
 }
 
 /// Minimal package data for fuzzy search candidate matching.

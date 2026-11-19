@@ -732,13 +732,13 @@ pub async fn perform_installation(
     options: &InstallOptions,
 ) -> SoarResult<InstallReport> {
     debug!(count = targets.len(), "performing installation");
-    let diesel_db = ctx.diesel_core_db()?.clone();
     let parallel_limit = ctx.config().parallel_limit.unwrap_or(4);
     let semaphore = Arc::new(Semaphore::new(parallel_limit as usize));
 
     let installed = Arc::new(Mutex::new(Vec::new()));
     let failed = Arc::new(Mutex::new(Vec::new()));
     let warnings = Arc::new(Mutex::new(Vec::new()));
+    let cancelled = Arc::new(Mutex::new(Vec::new()));
 
     let total = targets.len() as u32;
     let completed = Arc::new(AtomicU32::new(0));
@@ -756,12 +756,26 @@ pub async fn perform_installation(
     let mut handles = Vec::new();
 
     for target in targets {
+        if ctx.cancel_token().is_cancelled() {
+            let op_id = next_op_id();
+            ctx.events().emit(SoarEvent::OperationCancelled {
+                op_id,
+                pkg_name: target.package.pkg_name.clone(),
+            });
+            cancelled
+                .lock()
+                .unwrap()
+                .push(target.package.pkg_name.clone());
+            continue;
+        }
+
         let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let db = ctx.diesel_core_db()?.clone();
         let ctx = ctx.clone();
-        let db = diesel_db.clone();
         let installed = installed.clone();
         let failed = failed.clone();
         let warnings = warnings.clone();
+        let cancelled = cancelled.clone();
         let completed = completed.clone();
         let failed_count = failed_count.clone();
         let binary_only = options.binary_only;
@@ -816,6 +830,17 @@ pub async fn perform_installation(
                                 warn!(error = %err, "could not remove the superseded version");
                             }
                         }
+                        SoarError::Cancelled => {
+                            let op_id = next_op_id();
+                            ctx.events().emit(SoarEvent::OperationCancelled {
+                                op_id,
+                                pkg_name: target.package.pkg_name.clone(),
+                            });
+                            cancelled
+                                .lock()
+                                .unwrap()
+                                .push(target.package.pkg_name.clone());
+                        }
                         _ => {
                             let op_id = next_op_id();
                             ctx.events().emit(SoarEvent::OperationFailed {
@@ -854,11 +879,13 @@ pub async fn perform_installation(
     let installed = Arc::try_unwrap(installed).unwrap().into_inner().unwrap();
     let failed = Arc::try_unwrap(failed).unwrap().into_inner().unwrap();
     let warnings = Arc::try_unwrap(warnings).unwrap().into_inner().unwrap();
+    let cancelled = Arc::try_unwrap(cancelled).unwrap().into_inner().unwrap();
 
     Ok(InstallReport {
         installed,
         failed,
         warnings,
+        cancelled,
     })
 }
 
@@ -1123,11 +1150,16 @@ async fn install_single_package(
         config.clone(),
         events.clone(),
         op_id,
+        ctx.cancel_token().clone(),
     )
     .await?;
 
     // Download
     let downloaded_checksum = installer.download_package().await?;
+
+    if ctx.cancel_token().is_cancelled() {
+        return Err(SoarError::Cancelled);
+    }
 
     // Signature verification
     let mut verified_sig_count = 0usize;
@@ -1212,6 +1244,13 @@ async fn install_single_package(
             }
             _ => {}
         }
+    }
+
+    // Cancellation is honored only up to here: once linking starts the rest
+    // runs to completion, because stopping after the links are published
+    // would leave them with no database row to match.
+    if ctx.cancel_token().is_cancelled() {
+        return Err(SoarError::Cancelled);
     }
 
     // Create symlinks
@@ -1409,6 +1448,12 @@ fn cleanup_sig_files(install_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path, sync::Arc};
+
+    use soar_config::config::Config;
+    use soar_events::{CollectorSink, EventSinkHandle};
+    use soar_utils::cancel::CancelToken;
+
     use super::*;
 
     fn pkg(repo_name: &str, ghcr: Option<&str>, bsum: Option<&str>) -> Package {
@@ -1418,6 +1463,65 @@ mod tests {
             bsum: bsum.map(String::from),
             ..Default::default()
         }
+    }
+
+    fn named_target(name: &str) -> InstallTarget {
+        InstallTarget {
+            package: Package {
+                pkg_name: name.to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// A context whose config keeps every path inside `root`.
+    fn context_in(root: &Path, events: EventSinkHandle) -> SoarContext {
+        let mut config = Config::default_config::<&str>(&[]);
+        config.db_path = Some(root.join("db").display().to_string());
+        config.bin_path = Some(root.join("bin").display().to_string());
+        fs::create_dir_all(root.join("bin")).unwrap();
+        SoarContext::new(config, events)
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_install_skips_every_target_without_touching_files() {
+        let root = tempfile::tempdir().unwrap();
+        let collector = Arc::new(CollectorSink::default());
+        let events: EventSinkHandle = collector.clone();
+        let token = CancelToken::new();
+        let ctx = context_in(root.path(), events).with_cancel(token.clone());
+        token.cancel();
+
+        let report = perform_installation(
+            &ctx,
+            vec![named_target("one"), named_target("two")],
+            &InstallOptions::default(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.cancelled, ["one", "two"]);
+        assert!(report.installed.is_empty());
+        assert!(report.failed.is_empty());
+        assert!(report.warnings.is_empty());
+
+        let cancelled_events = collector
+            .events()
+            .iter()
+            .filter(|e| matches!(e, SoarEvent::OperationCancelled { .. }))
+            .count();
+        assert_eq!(cancelled_events, 2);
+
+        assert!(
+            !root.path().join("db").exists(),
+            "the core database was created"
+        );
+        assert!(
+            !root.path().join("packages").exists(),
+            "a package directory was created"
+        );
+        assert_eq!(fs::read_dir(root.path().join("bin")).unwrap().count(), 0);
     }
 
     #[test]

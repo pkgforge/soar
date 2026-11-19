@@ -51,6 +51,7 @@ export default defineConfig({
             { text: 'Configuration', link: '/configuration' },
             { text: 'Profiles', link: '/profiles' },
             { text: 'Package Management', link: '/package-management' },
+            { text: 'Terminal Interface', link: '/tui' },
           ],
         },
         { text: 'Releases', link: '/releases' },
@@ -66,6 +67,7 @@ export default defineConfig({
             { text: 'Configuration', link: '/configuration' },
             { text: 'Profiles', link: '/profiles' },
             { text: 'CLI Reference', link: '/cli-reference' },
+            { text: 'Terminal Interface', link: '/tui' },
           ],
         },
         {

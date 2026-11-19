@@ -28,6 +28,7 @@ use soar_dl::{
 };
 use soar_events::{BuildStage, EventSinkHandle, InstallStage, OperationId, SoarEvent};
 use soar_utils::{
+    cancel::CancelToken,
     error::FileSystemResult,
     fs::{safe_remove, walk_dir},
     hash::calculate_checksum,
@@ -43,6 +44,7 @@ use crate::{
     package::{
         local::local_path_from_url, remove::remove_provide_symlinks, update_info::UpdateInfo,
     },
+    process::{self, ProcessContext},
     utils::get_extract_dir,
 };
 
@@ -56,6 +58,7 @@ async fn install_extras(
     package: &Package,
     install_dir: &Path,
     connections: usize,
+    cancel: &CancelToken,
 ) -> SoarResult<()> {
     let Some(extras) = &package.extra else {
         return Ok(());
@@ -90,7 +93,8 @@ async fn install_extras(
         let mut dl = Download::new(&e.url)
             .output(dest.to_string_lossy())
             .overwrite(OverwriteMode::Skip)
-            .connections(connections);
+            .connections(connections)
+            .cancel(cancel.clone());
         if let Some(sum) = e.blake3.as_ref() {
             dl = dl.checksum(sum);
         }
@@ -526,6 +530,7 @@ pub struct PackageInstaller {
     integrate: bool,
     events: EventSinkHandle,
     op_id: OperationId,
+    cancel: CancelToken,
 }
 
 /// A zsync feed and the installed copy to rebuild the new artifact from.
@@ -576,6 +581,7 @@ impl PackageInstaller {
         config: Config,
         events: EventSinkHandle,
         op_id: OperationId,
+        cancel: CancelToken,
     ) -> SoarResult<Self> {
         let install_dir = install_dir.as_ref().to_path_buf();
         let package = &target.package;
@@ -692,7 +698,30 @@ impl PackageInstaller {
             integrate: target.integrate,
             events,
             op_id,
+            cancel,
         })
+    }
+
+    /// Stops before a stage starts once the token has been cancelled.
+    ///
+    /// The stages past this point have touched nothing a later install
+    /// cannot rebuild on its own.
+    fn ensure_not_cancelled(&self) -> SoarResult<()> {
+        if self.cancel.is_cancelled() {
+            return Err(SoarError::Cancelled);
+        }
+        Ok(())
+    }
+
+    /// The event reporting and cancellation state shared by every command
+    /// this installer runs.
+    fn process_context(&self) -> ProcessContext<'_> {
+        ProcessContext {
+            events: &self.events,
+            op_id: self.op_id,
+            pkg_name: &self.package.pkg_name,
+            cancel: &self.cancel,
+        }
     }
 
     /// Run a hook command with environment variables set.
@@ -712,7 +741,13 @@ impl PackageInstaller {
             stage: InstallStage::RunningHook(hook_name.to_string()),
         });
 
-        run_hook(hook_name, command, &env, self.sandbox.as_ref())
+        run_hook(
+            hook_name,
+            command,
+            &env,
+            self.sandbox.as_ref(),
+            &self.process_context(),
+        )
     }
 
     /// Run post_download hook if configured.
@@ -824,6 +859,8 @@ impl PackageInstaller {
         }
 
         for (i, cmd) in build_config.commands.iter().enumerate() {
+            self.ensure_not_cancelled()?;
+
             debug!(
                 "running build command {}/{}: {}",
                 i + 1,
@@ -874,9 +911,10 @@ impl PackageInstaller {
                         sandbox_cmd = sandbox_cmd.write_path(path);
                     }
                 }
-                sandbox_cmd.run()?
+                process::run(sandbox_cmd.build()?, &self.process_context())?
             } else {
-                Command::new("sh")
+                let mut build_cmd = Command::new("sh");
+                build_cmd
                     .arg("-c")
                     .arg(cmd)
                     .env("INSTALL_DIR", &self.install_dir)
@@ -885,9 +923,8 @@ impl PackageInstaller {
                     .env("PKG_ID", self.package.pkg_id.as_deref().unwrap_or_default())
                     .env("PKG_VERSION", &self.package.version)
                     .env("NPROC", &nproc)
-                    .current_dir(&self.install_dir)
-                    .status()
-                    .with_context(|| format!("executing build command {}", i + 1))?
+                    .current_dir(&self.install_dir);
+                process::run(build_cmd, &self.process_context())?
             };
 
             if !status.success() {
@@ -1066,6 +1103,8 @@ impl PackageInstaller {
     }
 
     pub async fn download_package(&self) -> SoarResult<Option<String>> {
+        self.ensure_not_cancelled()?;
+
         debug!(
             pkg_name = self.package.pkg_name,
             pkg_id = self.package.pkg_id,
@@ -1091,7 +1130,8 @@ impl PackageInstaller {
                 .output(output_path.to_string_lossy())
                 .parallel(self.config.ghcr_concurrency.unwrap_or(8))
                 .connections(self.config.download_concurrency.unwrap_or(8))
-                .overwrite(OverwriteMode::Skip);
+                .overwrite(OverwriteMode::Skip)
+                .cancel(self.cancel.clone());
 
             if let Some(ref cb) = self.progress_callback {
                 let cb = cb.clone();
@@ -1129,6 +1169,7 @@ impl PackageInstaller {
                         debug!("OCI download completed successfully");
                         break;
                     }
+                    Err(err @ DownloadError::Cancelled) => return Err(err.into()),
                     Err(err) => {
                         if err.is_transient() {
                             warn!(
@@ -1153,6 +1194,8 @@ impl PackageInstaller {
             // A layer is checked against its digest, but the digest comes from
             // the registry. The binary is held to the repository's checksum
             // before any hook or build step runs against it.
+            self.ensure_not_cancelled()?;
+
             let binary = self.install_dir.join(&self.package.pkg_name);
             if binary.is_file() {
                 self.verify_pinned_checksum(&binary, url)?;
@@ -1160,8 +1203,11 @@ impl PackageInstaller {
 
             // Run post_download hook for OCI packages
             // For OCI packages, content is directly placed, so post_extract also applies
+            self.ensure_not_cancelled()?;
             self.run_post_download_hook()?;
+            self.ensure_not_cancelled()?;
             self.run_post_extract_hook()?;
+            self.ensure_not_cancelled()?;
             self.run_build()?;
 
             Ok(None)
@@ -1184,6 +1230,7 @@ impl PackageInstaller {
                     &seed.url,
                     &seed.seed,
                     output_path,
+                    Some(&self.cancel),
                     callback.map(|cb| move |p| cb(p)),
                 )?;
                 self.verify_pinned_checksum(output_path, &seed.url)?;
@@ -1212,7 +1259,8 @@ impl PackageInstaller {
                     .overwrite(OverwriteMode::Skip)
                     .extract(should_extract)
                     .extract_to(&extract_dir)
-                    .connections(self.config.download_concurrency.unwrap_or(8));
+                    .connections(self.config.download_concurrency.unwrap_or(8))
+                    .cancel(self.cancel.clone());
 
                 if let Some(ref bsum) = self.package.bsum {
                     dl = dl.checksum(bsum);
@@ -1228,6 +1276,7 @@ impl PackageInstaller {
                 dl.execute()?
             };
 
+            self.ensure_not_cancelled()?;
             self.run_post_download_hook()?;
 
             let checksum = if PathBuf::from(&file_path).exists() {
@@ -1239,6 +1288,7 @@ impl PackageInstaller {
             let extract_path = PathBuf::from(&extract_dir);
             let extracted = extract_path.exists();
             if extracted {
+                self.ensure_not_cancelled()?;
                 fs::remove_file(file_path).ok();
 
                 for entry in fs::read_dir(&extract_path)
@@ -1364,6 +1414,7 @@ impl PackageInstaller {
                 &self.package,
                 &self.install_dir,
                 self.config.download_concurrency.unwrap_or(8),
+                &self.cancel,
             )
             .await?;
 
@@ -1426,7 +1477,9 @@ impl PackageInstaller {
                 }
             }
 
+            self.ensure_not_cancelled()?;
             self.run_post_extract_hook()?;
+            self.ensure_not_cancelled()?;
             self.run_build()?;
 
             Ok(checksum)
@@ -1622,6 +1675,7 @@ mod tests {
     };
 
     use soar_db::models::types::{PackageExtra, PackageFile};
+    use soar_utils::cancel::CancelToken;
     use tempfile::tempdir;
 
     use super::{
@@ -1631,7 +1685,8 @@ mod tests {
 
     /// Runs `install_extras`, which never waits on anything, to completion.
     fn install_side_files(package: &Package, dir: &Path) {
-        let future = std::pin::pin!(install_extras(package, dir, 8));
+        let cancel = CancelToken::new();
+        let future = std::pin::pin!(install_extras(package, dir, 8, &cancel));
         let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
         match std::future::Future::poll(future, &mut cx) {
             std::task::Poll::Ready(result) => result.unwrap(),

@@ -577,6 +577,11 @@ pub enum Commands {
         only_system: bool,
     },
 
+    /// Open the interactive terminal interface
+    #[cfg(feature = "tui")]
+    #[clap(name = "tui")]
+    Tui,
+
     /// Generate default packages configuration
     #[clap(name = "defpackages")]
     DefPackages,
@@ -641,5 +646,12 @@ mod tests {
             };
             assert_eq!(connections, Some(expected));
         }
+    }
+
+    #[cfg(feature = "tui")]
+    #[test]
+    fn tui_parses() {
+        let args = Args::try_parse_from(["soar", "tui"]).unwrap();
+        assert!(matches!(args.command, Commands::Tui));
     }
 }

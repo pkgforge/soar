@@ -69,7 +69,11 @@ pub enum SoarError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    DownloadError(#[from] soar_dl::error::DownloadError),
+    DownloadError(soar_dl::error::DownloadError),
+
+    #[error("Cancelled")]
+    #[diagnostic(code(soar::cancelled))]
+    Cancelled,
 
     #[error(transparent)]
     #[diagnostic(transparent)]
@@ -195,6 +199,15 @@ impl SoarError {
             }
             Self::Config(err) => err.to_string(),
             _ => self.to_string(),
+        }
+    }
+}
+
+impl From<soar_dl::error::DownloadError> for SoarError {
+    fn from(err: soar_dl::error::DownloadError) -> Self {
+        match err {
+            soar_dl::error::DownloadError::Cancelled => Self::Cancelled,
+            err => Self::DownloadError(err),
         }
     }
 }

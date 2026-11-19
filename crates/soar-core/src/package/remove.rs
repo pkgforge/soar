@@ -3,6 +3,7 @@ use std::{
     fs,
     os::unix::fs::PermissionsExt,
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
 
 use soar_config::{
@@ -10,13 +11,16 @@ use soar_config::{
     packages::{PackageHooks, SandboxConfig},
 };
 use soar_db::{models::types::PackageProvide, repository::core::CoreRepository};
+use soar_events::{EventSinkHandle, NullSink, OperationId};
 use soar_utils::{
+    cancel::CancelToken,
     error::FileSystemResult,
     fs::{remove_contained_dir, walk_dir},
 };
 use tracing::{debug, trace, warn};
 
 use super::hooks::{HookEnv, run_hook};
+use crate::process::ProcessContext;
 
 /// Remove every symlink under `dir` that points into `installed_path`.
 ///
@@ -134,6 +138,9 @@ pub struct PackageRemover {
     config: Config,
     hooks: Option<PackageHooks>,
     sandbox: Option<SandboxConfig>,
+    events: EventSinkHandle,
+    op_id: OperationId,
+    cancel: CancelToken,
 }
 
 /// Give every directory under `path` the owner write bit.
@@ -176,7 +183,25 @@ impl PackageRemover {
             config,
             hooks: None,
             sandbox: None,
+            events: Arc::new(NullSink),
+            op_id: 0,
+            cancel: CancelToken::new(),
         }
+    }
+
+    /// Report the hook's printed lines as events of one operation.
+    ///
+    /// Without this, hook output is dropped.
+    pub fn with_events(mut self, events: EventSinkHandle, op_id: OperationId) -> Self {
+        self.events = events;
+        self.op_id = op_id;
+        self
+    }
+
+    /// Stop a running hook through this token.
+    pub fn with_cancel(mut self, cancel: CancelToken) -> Self {
+        self.cancel = cancel;
+        self
     }
 
     /// Set hooks configuration for the package removal.
@@ -200,8 +225,14 @@ impl PackageRemover {
             pkg_name: &self.package.pkg_name,
             pkg_version: &self.package.version,
         };
+        let ctx = ProcessContext {
+            events: &self.events,
+            op_id: self.op_id,
+            pkg_name: &self.package.pkg_name,
+            cancel: &self.cancel,
+        };
 
-        run_hook(hook_name, command, &env, self.sandbox.as_ref())
+        run_hook(hook_name, command, &env, self.sandbox.as_ref(), &ctx)
     }
 
     /// Run pre_remove hook if configured.

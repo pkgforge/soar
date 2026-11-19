@@ -134,7 +134,7 @@ impl<'a> SandboxedCommand<'a> {
     /// Create a new sandboxed command builder.
     ///
     /// Set a working directory with [`working_dir`](Self::working_dir)
-    /// before [`run`](Self::run). A deleted current directory is an
+    /// before [`build`](Self::build). A deleted current directory is an
     /// error, never a silent fallback to `/`.
     pub fn new(command: &'a str) -> Self {
         Self {
@@ -195,8 +195,12 @@ impl<'a> SandboxedCommand<'a> {
         self
     }
 
-    /// Run the command and return the exit status.
-    pub fn run(self) -> SoarResult<std::process::ExitStatus> {
+    /// Build the configured command, including the Landlock `pre_exec`.
+    ///
+    /// The command has not started. Run it through
+    /// [`crate::process::run`], so its output arrives as events and a
+    /// cancel can stop it.
+    pub fn build(self) -> SoarResult<Command> {
         let working_dir = match self.working_dir {
             Some(dir) => dir,
             None => {
@@ -207,7 +211,7 @@ impl<'a> SandboxedCommand<'a> {
                 })?
             }
         };
-        run_sandboxed_command(
+        build_sandboxed_command(
             self.command,
             &working_dir,
             &self.env_vars,
@@ -215,6 +219,14 @@ impl<'a> SandboxedCommand<'a> {
             &self.extra_read_paths,
             &self.extra_write_paths,
         )
+    }
+
+    /// Run the command and return the exit status.
+    #[cfg(test)]
+    pub(crate) fn run(self) -> SoarResult<std::process::ExitStatus> {
+        self.build()?
+            .status()
+            .map_err(|e| SoarError::SandboxExecution(e.to_string()))
     }
 }
 
@@ -524,15 +536,19 @@ fn check_landlock_support(supported: bool, required: bool) -> SoarResult<()> {
     Ok(())
 }
 
-/// Execute a shell command with Landlock sandbox restrictions.
-fn run_sandboxed_command(
+/// Build a shell command with Landlock sandbox restrictions applied.
+///
+/// The returned command has not started; the caller runs it and reads its
+/// output. The ruleset is built here, in the parent, and enforced by the
+/// command's `pre_exec` in the forked child.
+fn build_sandboxed_command(
     command: &str,
     working_dir: &Path,
     env_vars: &[(String, String)],
     config: &SandboxConfig,
     extra_read_paths: &[PathBuf],
     extra_write_paths: &[PathBuf],
-) -> SoarResult<std::process::ExitStatus> {
+) -> SoarResult<Command> {
     // If sandbox is disabled, run directly
     if !config.enabled {
         debug!("Sandbox disabled, running command directly");
@@ -541,9 +557,7 @@ fn run_sandboxed_command(
         for (key, value) in env_vars {
             cmd.env(key, value);
         }
-        return cmd
-            .status()
-            .map_err(|e| SoarError::SandboxExecution(e.to_string()));
+        return Ok(cmd);
     }
 
     // Check Landlock support. A required sandbox fails closed.
@@ -556,9 +570,7 @@ fn run_sandboxed_command(
         for (key, value) in env_vars {
             cmd.env(key, value);
         }
-        return cmd
-            .status()
-            .map_err(|e| SoarError::SandboxExecution(e.to_string()));
+        return Ok(cmd);
     }
 
     // Build the ruleset in the parent. The child only enforces it.
@@ -615,8 +627,7 @@ fn run_sandboxed_command(
         });
     }
 
-    cmd.status()
-        .map_err(|e| SoarError::SandboxExecution(e.to_string()))
+    Ok(cmd)
 }
 
 #[cfg(test)]

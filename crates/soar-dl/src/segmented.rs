@@ -20,6 +20,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+use soar_utils::cancel::CancelToken;
 use tracing::{debug, trace};
 
 use crate::{
@@ -175,6 +176,9 @@ pub(crate) struct Job<'a> {
     pub ranges: Vec<(u64, u64)>,
     /// Bytes of each chunk already on disk, from a resume state.
     pub written: Vec<u64>,
+    /// Token that asks the whole download to stop, where the caller holds
+    /// one. Cancellation keeps the partial state for the next attempt.
+    pub cancel: Option<&'a CancelToken>,
     pub on_progress: Option<&'a Arc<dyn Fn(Progress) + Send + Sync>>,
 }
 
@@ -233,6 +237,9 @@ impl Shared {
 /// ignores a range request surfaces as [`DownloadError::RangeUnsupported`] so
 /// the caller can fall back to a single stream.
 pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
+    if job.cancel.is_some_and(CancelToken::is_cancelled) {
+        return Err(DownloadError::Cancelled);
+    }
     let initial: u64 = job.written.iter().sum();
     let ranges = Arc::new(job.ranges.clone());
     let partial = (0..job.ranges.len())
@@ -293,6 +300,7 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
                 path: job.path,
                 total: job.total,
                 file: job.file,
+                cancel: job.cancel,
                 progress: job.on_progress.cloned(),
             };
             handles.push(scope.spawn(move || worker.run()));
@@ -309,6 +317,12 @@ pub(crate) fn run(job: Job) -> Result<(), DownloadError> {
             }
         }
     });
+
+    // The caller's token outranks worker errors: an abort ends the download
+    // with its partial state kept for the next attempt.
+    if job.cancel.is_some_and(CancelToken::is_cancelled) {
+        return Err(DownloadError::Cancelled);
+    }
 
     if let Some(index) = outcomes
         .iter()
@@ -351,14 +365,31 @@ struct Worker<'a> {
     path: &'a Path,
     total: u64,
     file: &'a File,
+    cancel: Option<&'a CancelToken>,
     progress: Option<Arc<dyn Fn(Progress) + Send + Sync>>,
 }
 
 impl Worker<'_> {
+    /// Whether this worker should stop: another worker's failure cancelled
+    /// the run, or the caller's token fired. The caller's request is mirrored
+    /// into the shared flag so every wait and retry path stops the same way.
+    fn cancelled(&self) -> bool {
+        if self.shared.cancel.load(Ordering::Relaxed) {
+            return true;
+        }
+        if let Some(token) = self.cancel
+            && token.is_cancelled()
+        {
+            self.shared.cancel.store(true, Ordering::Relaxed);
+            return true;
+        }
+        false
+    }
+
     fn run(self) -> Outcome {
         let mut worker = self;
         loop {
-            if worker.shared.cancel.load(Ordering::Relaxed) {
+            if worker.cancelled() {
                 return Outcome::Cancelled;
             }
             match worker.next_chunk() {
@@ -368,9 +399,7 @@ impl Worker<'_> {
                         // Cancellation is fallout from another worker's
                         // failure; that worker's error is the one worth
                         // reporting.
-                        if worker.shared.cancel.load(Ordering::Relaxed)
-                            && !matches!(err, DownloadError::RetryAfter { .. })
-                        {
+                        if worker.cancelled() && !matches!(err, DownloadError::RetryAfter { .. }) {
                             return Outcome::Cancelled;
                         }
                         worker.shared.cancel.store(true, Ordering::Relaxed);
@@ -422,6 +451,9 @@ impl Worker<'_> {
             if cursor > end {
                 return Ok(());
             }
+            if self.cancelled() {
+                return Err(DownloadError::Cancelled);
+            }
             if !self.wait_for_shared_retry() {
                 return Ok(());
             }
@@ -441,7 +473,7 @@ impl Worker<'_> {
                     let can_retry = err.is_transient()
                         && attempts < MAX_ATTEMPTS
                         && failures < MAX_CHUNK_FAILURES
-                        && !self.shared.cancel.load(Ordering::Relaxed);
+                        && !self.cancelled();
                     if let (
                         DownloadError::HttpError {
                             status,
@@ -503,7 +535,7 @@ impl Worker<'_> {
                         return false;
                     }
                 }
-                _ => return !self.shared.cancel.load(Ordering::Relaxed),
+                _ => return !self.cancelled(),
             }
         }
     }
@@ -511,7 +543,7 @@ impl Worker<'_> {
     fn wait_for_retry(&self, delay: Duration) -> bool {
         let deadline = Instant::now() + delay;
         loop {
-            if self.shared.cancel.load(Ordering::Relaxed) {
+            if self.cancelled() {
                 return false;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -613,6 +645,9 @@ impl Worker<'_> {
             if *cursor > end {
                 return Ok(());
             }
+            if self.cancelled() {
+                return Err(DownloadError::Cancelled.into());
+            }
             // Never read past the chunk's last byte, whatever the server
             // sends; a body that overshoots its Content-Range must not leak
             // into the neighboring chunks.
@@ -625,13 +660,6 @@ impl Worker<'_> {
                 return Err(DownloadError::Io(std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
                     "chunk closed before its range was complete",
-                ))
-                .into());
-            }
-            if self.shared.cancel.load(Ordering::Relaxed) {
-                return Err(DownloadError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Interrupted,
-                    "cancelled",
                 ))
                 .into());
             }
@@ -751,6 +779,7 @@ mod tests {
             connections: 1,
             ranges: vec![(10, 19)],
             written: vec![0],
+            cancel: None,
             on_progress: None,
         });
         assert!(matches!(
@@ -780,6 +809,7 @@ mod tests {
             connections: 1,
             ranges: vec![(0, 4)],
             written: vec![0],
+            cancel: None,
             on_progress: None,
         });
         assert!(result.is_err());
@@ -807,6 +837,7 @@ mod tests {
             connections: 1,
             ranges: vec![(0, 99)],
             written: vec![0],
+            cancel: None,
             on_progress: None,
         });
         assert!(result.is_err());
@@ -839,6 +870,7 @@ mod tests {
             connections: 1,
             ranges: vec![(0, 4)],
             written: vec![0],
+            cancel: None,
             on_progress: None,
         });
         assert!(matches!(
@@ -875,6 +907,7 @@ mod tests {
             path: path.path(),
             total: REPORT_INTERVAL * 2,
             file: &unsyncable,
+            cancel: None,
             progress: None,
         };
         worker.maybe_report(REPORT_INTERVAL);
@@ -907,6 +940,7 @@ mod tests {
                 path: file.path(),
                 total: REPORT_INTERVAL * 2,
                 file: file.as_file(),
+                cancel: None,
                 progress: None,
             };
             worker.maybe_report(REPORT_INTERVAL);
@@ -941,6 +975,7 @@ mod tests {
             path: file.path(),
             total: 0,
             file: file.as_file(),
+            cancel: None,
             progress: None,
         };
         let thread = std::thread::spawn(move || {
@@ -980,6 +1015,7 @@ mod tests {
             connections: 1,
             ranges: vec![(0, 4)],
             written: vec![0],
+            cancel: None,
             on_progress: None,
         });
         assert!(matches!(
@@ -1036,6 +1072,7 @@ mod tests {
             connections: 1,
             ranges: vec![(0, 4)],
             written: vec![0],
+            cancel: None,
             on_progress: None,
         })
         .unwrap();
@@ -1072,6 +1109,7 @@ mod tests {
                 connections: 1,
                 ranges: vec![(0, 4)],
                 written: vec![0],
+                cancel: None,
                 on_progress: None,
             })
             .unwrap_err();
@@ -1112,6 +1150,7 @@ mod tests {
             connections: 2,
             ranges: vec![(0, 4), (5, 9)],
             written: vec![0, 0],
+            cancel: None,
             on_progress: None,
         })
         .unwrap_err();
@@ -1156,6 +1195,7 @@ mod tests {
                 connections: 1,
                 ranges: vec![(0, 4)],
                 written: vec![0],
+                cancel: None,
                 on_progress: None,
             })
             .unwrap_err();
@@ -1191,6 +1231,7 @@ mod tests {
             connections: 1,
             ranges: vec![(0, 4)],
             written: vec![0],
+            cancel: None,
             on_progress: None,
         });
         assert!(result.is_err());
@@ -1219,6 +1260,7 @@ mod tests {
             connections: 1,
             ranges: vec![(0, 4)],
             written: vec![0],
+            cancel: None,
             on_progress: None,
         });
         assert!(matches!(
@@ -1449,6 +1491,7 @@ mod tests {
             connections: 2,
             ranges: vec![(0, 4), (5, 9)],
             written: vec![0, 0],
+            cancel: None,
             on_progress: None,
         });
         assert_eq!(server.join().unwrap(), 2, "requests did not overlap");
@@ -1865,6 +1908,40 @@ mod tests {
             .execute()
             .unwrap();
         assert_eq!(std::fs::read(&out).unwrap(), shrank);
+    }
+
+    #[test]
+    fn a_segmented_download_cancelled_on_its_first_chunk_stops_promptly() {
+        if !supports_xattrs() {
+            return;
+        }
+        let content = body(16);
+        let base = test_server::serve(vec![("/file".into(), content)]);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+        let token = CancelToken::new();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = token.clone();
+        thread::spawn(move || {
+            let result = Download::new(format!("{base}/file"))
+                .output(out.to_string_lossy())
+                .overwrite(OverwriteMode::Force)
+                .connections(4)
+                .cancel(worker.clone())
+                .progress(move |p| {
+                    if matches!(p, Progress::Chunk { .. }) {
+                        worker.cancel();
+                    }
+                })
+                .execute();
+            tx.send(result).unwrap();
+        });
+
+        let result = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("segmented download did not stop after cancellation");
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
     }
 
     fn read_resume_segments(path: &std::path::Path) -> Option<Vec<SegmentProgress>> {

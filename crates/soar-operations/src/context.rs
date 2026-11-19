@@ -23,7 +23,7 @@ use soar_db::{
 };
 use soar_events::{EventSinkHandle, LogLevel, SoarEvent, SyncStage};
 use soar_registry::{MetadataContent, fetch_metadata};
-use soar_utils::system::is_root;
+use soar_utils::{cancel::CancelToken, system::is_root};
 use tokio::sync::OnceCell as AsyncOnceCell;
 use tracing::{debug, trace};
 
@@ -117,6 +117,7 @@ fn replace_metadata_db(
 #[derive(Clone)]
 pub struct SoarContext {
     inner: Arc<SoarContextInner>,
+    cancel: CancelToken,
 }
 
 struct SoarContextInner {
@@ -135,6 +136,29 @@ impl SoarContext {
                 diesel_core_db: OnceCell::new(),
                 metadata_manager: AsyncOnceCell::new(),
             }),
+            cancel: CancelToken::new(),
+        }
+    }
+
+    /// The token the operation running through this context is aborted
+    /// through.
+    ///
+    /// A frontend creates one token per operation it may want to abort and
+    /// hands it to [`SoarContext::with_cancel`], so an abort reaches only the
+    /// work of that operation.
+    pub fn cancel_token(&self) -> &CancelToken {
+        &self.cancel
+    }
+
+    /// A context sharing everything with this one, but aborted through
+    /// `cancel`.
+    ///
+    /// A frontend creates one token per operation it may want to abort, so
+    /// cancelling one operation never stops another.
+    pub fn with_cancel(&self, cancel: CancelToken) -> SoarContext {
+        SoarContext {
+            inner: self.inner.clone(),
+            cancel,
         }
     }
 
@@ -424,6 +448,11 @@ impl SoarContext {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use soar_events::NullSink;
+    use soar_utils::cancel::CancelToken;
+
     use super::*;
 
     fn mode(path: &Path) -> u32 {
@@ -449,5 +478,20 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(left.len(), 2, "temporary files left behind: {left:?}");
+    }
+
+    #[test]
+    fn with_cancel_aborts_through_its_own_token_only() {
+        let ctx = SoarContext::new(Config::default_config::<&str>(&[]), Arc::new(NullSink));
+        let token = CancelToken::new();
+        let scoped = ctx.with_cancel(token.clone());
+
+        assert!(!scoped.cancel_token().is_cancelled());
+        assert!(!ctx.cancel_token().is_cancelled());
+
+        token.cancel();
+
+        assert!(scoped.cancel_token().is_cancelled());
+        assert!(!ctx.cancel_token().is_cancelled());
     }
 }

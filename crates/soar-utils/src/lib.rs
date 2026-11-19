@@ -1,4 +1,5 @@
 pub mod bytes;
+pub mod cancel;
 pub mod elf;
 pub mod error;
 pub mod fs;

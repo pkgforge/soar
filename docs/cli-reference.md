@@ -164,6 +164,26 @@ System paths:
 - Root: `/opt/soar`
 - Binaries: `/opt/soar/bin`
 
+## Terminal Interface
+
+### `soar tui`
+
+Open the full-screen terminal interface for browsing, installing, updating, and
+maintaining packages. It takes no flags of its own and inherits the global
+options, including `--system` / `-S`, `--profile` / `-p`, `--no-color`, and the
+proxy and network options.
+
+```bash
+soar tui
+soar -p work tui
+```
+
+It needs an interactive terminal, so piping it is refused. `--json` is refused
+for the same reason: the interface draws its own screen. Colored output follows
+`--no-color` and the `NO_COLOR` environment variable.
+
+See [Terminal Interface](./tui.md) for the full guide.
+
 ## Common Combinations
 
 ::: code-group
@@ -257,3 +277,4 @@ sudo is involved at all.
 - [Profiles](./profiles.md) for managing multiple installation profiles
 - [Installation](./installation.md) for the installation guide
 - [Health & Diagnostics](./health.md) for health checks and debugging
+- [Terminal Interface](./tui.md) for the full-screen interface guide
