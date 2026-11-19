@@ -17,6 +17,7 @@ use tabled::{
 use tracing::{info, warn};
 
 use crate::{
+    interrupt::InterruptGuard,
     json_output::{self, ApplyDiffJson},
     progress::create_wait_job,
     utils::{Colored, Icons, display_settings, icon_or, json_enabled},
@@ -190,9 +191,16 @@ pub async fn apply_packages(
         }
     }
 
-    let report =
-        apply::execute_apply(ctx, diff, no_verify, &packages_path.to_string_lossy()).await?;
-    display_apply_report(&report);
+    {
+        let _interrupt = InterruptGuard::install(ctx.cancel_token().clone());
+        let report =
+            apply::execute_apply(ctx, diff, no_verify, &packages_path.to_string_lossy()).await?;
+        display_apply_report(&report);
+
+        if ctx.cancel_token().is_cancelled() {
+            return Err(SoarError::Cancelled);
+        }
+    }
 
     if !deferred_system.is_empty() {
         return apply_system(deferred_system.len());
@@ -331,5 +339,8 @@ fn display_apply_report(report: &ApplyReport) {
     info!("  Removed:   {}", report.removed_count);
     if report.failed_count > 0 {
         warn!("  Failed:    {}", report.failed_count);
+    }
+    if report.cancelled_count > 0 {
+        warn!("  Cancelled: {}", report.cancelled_count);
     }
 }

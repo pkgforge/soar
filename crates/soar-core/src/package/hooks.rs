@@ -3,7 +3,11 @@ use std::{path::Path, process::Command};
 use soar_config::{config::get_config, packages::SandboxConfig};
 use tracing::{debug, warn};
 
-use crate::{SoarError, SoarResult, error::ErrorContext, sandbox};
+use crate::{
+    SoarError, SoarResult,
+    process::{self, ProcessContext},
+    sandbox,
+};
 
 /// Environment variables passed to hook commands.
 pub struct HookEnv<'a> {
@@ -16,12 +20,14 @@ pub struct HookEnv<'a> {
 /// Run a hook command with environment variables set.
 ///
 /// This is the shared hook execution logic used by both package installation
-/// and removal operations.
+/// and removal operations. Each line the hook prints is reported through
+/// `ctx`, and a cancelled token stops the hook.
 pub fn run_hook(
     hook_name: &str,
     command: &str,
     env: &HookEnv,
     sandbox_config: Option<&SandboxConfig>,
+    ctx: &ProcessContext,
 ) -> SoarResult<()> {
     debug!("running {} hook: {}", hook_name, command);
 
@@ -61,7 +67,7 @@ pub fn run_hook(
                 cmd = cmd.write_path(path);
             }
         }
-        cmd.run()?
+        process::run(cmd.build()?, ctx)?
     } else {
         if sandbox_enabled && sandbox_config.is_some_and(|s| s.is_required()) {
             return Err(SoarError::Custom(format!(
@@ -82,17 +88,16 @@ pub fn run_hook(
                 hook_name
             );
         }
-        Command::new("sh")
-            .arg("-c")
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
             .arg(command)
             .env("INSTALL_DIR", env.install_dir)
             .env("BIN_DIR", &bin_dir)
             .env("PKG_NAME", env.pkg_name)
             .env("PKG_ID", env.pkg_id)
             .env("PKG_VERSION", env.pkg_version)
-            .current_dir(env.install_dir)
-            .status()
-            .with_context(|| format!("executing {} hook", hook_name))?
+            .current_dir(env.install_dir);
+        process::run(cmd, ctx)?
     };
 
     if !status.success() {

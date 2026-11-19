@@ -30,6 +30,7 @@ changelog_include=[
   "soar-operations",
   "soar-package",
   "soar-registry",
+  "soar-tui",
   "soar-utils"
 ]
 changelog_path="./CHANGELOG.md"

@@ -1,5 +1,5 @@
 use nu_ansi_term::Color::{Blue, Green, Red, Yellow};
-use soar_core::SoarResult;
+use soar_core::{SoarResult, error::SoarError};
 use soar_operations::{SoarContext, health};
 use tabled::{
     builder::Builder,
@@ -7,7 +7,10 @@ use tabled::{
 };
 use tracing::info;
 
-use crate::utils::{Colored, Icons, icon_or, term_width};
+use crate::{
+    interrupt::InterruptGuard,
+    utils::{Colored, Icons, icon_or, term_width},
+};
 
 pub async fn display_health(ctx: &SoarContext) -> SoarResult<()> {
     let report = health::check_health(ctx)?;
@@ -113,9 +116,10 @@ pub fn remove_broken_symlinks(ctx: &SoarContext) -> SoarResult<()> {
 }
 
 pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
+    let _interrupt = InterruptGuard::install(ctx.cancel_token().clone());
     let report = health::remove_broken_packages(ctx).await?;
 
-    if report.removed.is_empty() && report.failed.is_empty() {
+    if report.removed.is_empty() && report.failed.is_empty() && !ctx.cancel_token().is_cancelled() {
         info!("No broken packages found.");
         return Ok(());
     }
@@ -126,6 +130,10 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<()> {
 
     for failed in &report.failed {
         tracing::error!("Failed to remove {}: {}", failed.pkg_name, failed.error);
+    }
+
+    if ctx.cancel_token().is_cancelled() {
+        return Err(SoarError::Cancelled);
     }
 
     if !report.removed.is_empty() && report.failed.is_empty() {

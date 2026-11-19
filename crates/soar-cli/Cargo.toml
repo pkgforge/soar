@@ -16,7 +16,9 @@ name = "soar"
 path = "src/main.rs"
 
 [features]
+default = ["tui"]
 self = []
+tui = ["dep:soar-tui"]
 
 [dependencies]
 clap = { workspace = true }
@@ -37,6 +39,7 @@ soar-events = { workspace = true }
 soar-operations = { workspace = true }
 soar-package = { workspace = true }
 soar-registry = { workspace = true }
+soar-tui = { workspace = true, optional = true }
 soar-utils = { workspace = true }
 tabled = { workspace = true }
 tempfile = { workspace = true }

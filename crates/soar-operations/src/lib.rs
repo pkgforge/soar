@@ -1,4 +1,5 @@
 pub mod context;
+pub mod privilege;
 pub mod progress;
 pub mod types;
 pub mod utils;

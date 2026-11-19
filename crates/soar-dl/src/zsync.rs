@@ -8,6 +8,7 @@
 
 use std::{fs::File, path::Path};
 
+use soar_utils::cancel::CancelToken;
 use tracing::debug;
 use zsync_rs::{ControlFile, HttpClient, ZsyncAssembly, checksum::calc_sha1_stream};
 
@@ -148,6 +149,9 @@ pub fn differs_from(target: &ZsyncTarget, installed: impl AsRef<Path>) -> bool {
 /// Build `output` from the remote artifact, reusing every block `seed` already
 /// holds and fetching only the rest.
 ///
+/// A token passed as `cancel` stops the transfer at its next block fetch,
+/// leaving what was assembled so far on disk.
+///
 /// The result is verified against the control file's checksums before it is
 /// moved into place, so a mismatched or truncated transfer fails here rather
 /// than producing a broken package. Those checksums are only as trustworthy as
@@ -158,13 +162,14 @@ pub fn download<F>(
     url: &str,
     seed: &Path,
     output: &Path,
+    cancel: Option<&CancelToken>,
     on_progress: Option<F>,
 ) -> Result<(), DownloadError>
 where
     F: Fn(Progress) + Send + Sync + 'static,
 {
     ensure_https(url, "zsync control file")?;
-    assemble(url, seed, output, on_progress)
+    assemble(url, seed, output, cancel, on_progress)
 }
 
 /// The transfer itself, with the scheme already settled by the caller.
@@ -175,11 +180,16 @@ fn assemble<F>(
     url: &str,
     seed: &Path,
     output: &Path,
+    cancel: Option<&CancelToken>,
     on_progress: Option<F>,
 ) -> Result<(), DownloadError>
 where
     F: Fn(Progress) + Send + Sync + 'static,
 {
+    if cancel.is_some_and(CancelToken::is_cancelled) {
+        return Err(DownloadError::Cancelled);
+    }
+
     if let Some(ref callback) = on_progress {
         callback(Progress::Preparing);
     }
@@ -220,6 +230,9 @@ where
     }
 
     while !assembly.is_complete() {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
         let fetched = assembly
             .download_missing_blocks()
             .map_err(|e| DownloadError::Zsync(format!("fetching blocks: {e}")))?;
@@ -353,6 +366,7 @@ mod tests {
             "http://e.test/App.AppImage.zsync",
             Path::new("/nonexistent/seed"),
             &out,
+            None,
             None::<fn(Progress)>,
         )
         .unwrap_err();
@@ -486,7 +500,14 @@ mod tests {
         // No seed, so every block comes off the wire: this is what proves the
         // relative entry resolved against the right base.
         let out = dir.path().join("rebuilt.AppImage");
-        assemble(&feed, Path::new("/nonexistent"), &out, None::<fn(Progress)>).unwrap();
+        assemble(
+            &feed,
+            Path::new("/nonexistent"),
+            &out,
+            None,
+            None::<fn(Progress)>,
+        )
+        .unwrap();
 
         assert_eq!(fs::read(&out).unwrap(), bytes, "rebuilt artifact differs");
     }
@@ -507,7 +528,7 @@ mod tests {
         let feed = format!("http://127.0.0.1:{port}/App-x86_64.AppImage.zsync");
 
         let out = dir.path().join("rebuilt.AppImage");
-        assemble(&feed, &seed, &out, None::<fn(Progress)>).unwrap();
+        assemble(&feed, &seed, &out, None, None::<fn(Progress)>).unwrap();
 
         assert_eq!(fs::read(&out).unwrap(), new, "rebuilt artifact differs");
     }
@@ -529,7 +550,13 @@ mod tests {
         let feed = format!("http://127.0.0.1:{port}/App-x86_64.AppImage.zsync");
 
         let out = dir.path().join("rebuilt.AppImage");
-        let result = assemble(&feed, Path::new("/nonexistent"), &out, None::<fn(Progress)>);
+        let result = assemble(
+            &feed,
+            Path::new("/nonexistent"),
+            &out,
+            None,
+            None::<fn(Progress)>,
+        );
         assert!(
             result.is_err(),
             "a substituted artifact must not be accepted"

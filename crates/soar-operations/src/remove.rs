@@ -127,8 +127,19 @@ pub async fn perform_removal(
 
     let mut removed = Vec::new();
     let mut failed = Vec::new();
+    let mut cancelled = Vec::new();
 
     for pkg in packages {
+        if ctx.cancel_token().is_cancelled() {
+            let op_id = next_op_id();
+            ctx.events().emit(SoarEvent::OperationCancelled {
+                op_id,
+                pkg_name: pkg.pkg_name.clone(),
+            });
+            cancelled.push(pkg.pkg_name.clone());
+            continue;
+        }
+
         let op_id = next_op_id();
 
         ctx.events().emit(SoarEvent::Removing {
@@ -146,6 +157,8 @@ pub async fn perform_removal(
         let (hooks, sandbox) = get_package_hooks(&pkg.pkg_name);
         let remover = PackageRemover::new(pkg.clone(), diesel_db.clone(), ctx.config().clone())
             .await
+            .with_events(ctx.events().clone(), op_id)
+            .with_cancel(ctx.cancel_token().clone())
             .with_hooks(hooks)
             .with_sandbox(sandbox);
 
@@ -169,6 +182,13 @@ pub async fn perform_removal(
                     version: pkg.version,
                 });
             }
+            Err(SoarError::Cancelled) => {
+                ctx.events().emit(SoarEvent::OperationCancelled {
+                    op_id,
+                    pkg_name: pkg.pkg_name.clone(),
+                });
+                cancelled.push(pkg.pkg_name);
+            }
             Err(err) => {
                 ctx.events().emit(SoarEvent::OperationFailed {
                     op_id,
@@ -187,5 +207,74 @@ pub async fn perform_removal(
     Ok(RemoveReport {
         removed,
         failed,
+        cancelled,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use soar_config::config::Config;
+    use soar_events::{CollectorSink, EventSinkHandle, SoarEvent};
+    use soar_utils::cancel::CancelToken;
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn installed(name: &str) -> InstalledPackage {
+        InstalledPackage {
+            id: 1,
+            repo_name: "local".into(),
+            pkg_id: None,
+            pkg_name: name.into(),
+            pkg_family: None,
+            pkg_type: None,
+            version: "1.0".into(),
+            size: 0,
+            checksum: None,
+            installed_path: String::new(),
+            installed_date: String::new(),
+            profile: "default".into(),
+            pinned: false,
+            is_installed: true,
+            detached: false,
+            unlinked: false,
+            provides: None,
+            portable_path: None,
+            portable_home: None,
+            portable_config: None,
+            portable_share: None,
+            portable_cache: None,
+            install_patterns: None,
+            download_url: None,
+            update_info: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_removal_skips_every_package() {
+        let root = tempdir().unwrap();
+        let mut config = Config::default_config::<&str>(&[]);
+        config.db_path = Some(root.path().join("db").display().to_string());
+
+        let collector = Arc::new(CollectorSink::default());
+        let events: EventSinkHandle = collector.clone();
+        let token = CancelToken::new();
+        let ctx = SoarContext::new(config, events).with_cancel(token.clone());
+        token.cancel();
+
+        let report = perform_removal(&ctx, vec![installed("foo")]).await.unwrap();
+
+        assert_eq!(report.cancelled, ["foo"]);
+        assert!(report.removed.is_empty());
+        assert!(report.failed.is_empty());
+
+        let cancelled_events = collector
+            .events()
+            .iter()
+            .filter(|e| matches!(e, SoarEvent::OperationCancelled { .. }))
+            .count();
+        assert_eq!(cancelled_events, 1);
+    }
 }

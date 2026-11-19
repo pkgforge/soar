@@ -1,5 +1,5 @@
 use nu_ansi_term::Color::{Blue, Cyan, Green, Magenta, Red, Yellow};
-use soar_core::{SoarResult, package::install::InstallTarget};
+use soar_core::{SoarResult, error::SoarError, package::install::InstallTarget};
 use soar_operations::{InstallOptions, InstallReport, ResolveResult, SoarContext, install, search};
 use tabled::{
     builder::Builder,
@@ -8,6 +8,7 @@ use tabled::{
 use tracing::{debug, error, info, warn};
 
 use crate::{
+    interrupt::InterruptGuard,
     progress::create_wait_job,
     utils::{
         Colored, Icons, ask_target_action, display_settings, icon_or, select_package_interactively,
@@ -126,8 +127,13 @@ pub async fn install_packages(
         return Ok(());
     }
 
+    let _interrupt = InterruptGuard::install(ctx.cancel_token().clone());
     let report = install::perform_installation(ctx, install_targets, &options).await?;
     display_install_report(&report, no_notes);
+
+    if ctx.cancel_token().is_cancelled() {
+        return Err(SoarError::Cancelled);
+    }
 
     Ok(())
 }
@@ -387,8 +393,13 @@ async fn install_with_show(
         return Ok(());
     }
 
+    let _interrupt = InterruptGuard::install(ctx.cancel_token().clone());
     let report = install::perform_installation(ctx, install_targets, options).await?;
     display_install_report(&report, no_notes);
+
+    if ctx.cancel_token().is_cancelled() {
+        return Err(SoarError::Cancelled);
+    }
 
     Ok(())
 }
@@ -471,7 +482,8 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
 
     let installed_count = report.installed.len();
     let failed_count = report.failed.len();
-    let total_packages = installed_count + failed_count;
+    let cancelled_count = report.cancelled.len();
+    let total_packages = installed_count + failed_count + cancelled_count;
 
     if use_icons {
         let mut builder = Builder::new();
@@ -492,7 +504,13 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
                 format!("{}", Colored(Red, failed_count)),
             ]);
         }
-        if installed_count == 0 && failed_count == 0 {
+        if cancelled_count > 0 {
+            builder.push_record([
+                format!("{} Cancelled", icon_or(Icons::WARNING, "!")),
+                format!("{}", Colored(Yellow, cancelled_count)),
+            ]);
+        }
+        if installed_count == 0 && failed_count == 0 && cancelled_count == 0 {
             builder.push_record([
                 format!("{} Status", icon_or(Icons::WARNING, "!")),
                 "No packages installed".to_string(),
@@ -509,15 +527,22 @@ fn display_install_report(report: &InstallReport, no_notes: bool) {
         info!("\n{table}");
     } else if installed_count > 0 {
         info!(
-            "Installed {}/{} packages{}",
+            "Installed {}/{} packages{}{}",
             installed_count,
             total_packages,
             if failed_count > 0 {
                 format!(", {} failed", failed_count)
             } else {
                 String::new()
+            },
+            if cancelled_count > 0 {
+                format!(", {} cancelled", cancelled_count)
+            } else {
+                String::new()
             }
         );
+    } else if cancelled_count > 0 {
+        info!("No packages installed, {} cancelled.", cancelled_count);
     } else {
         info!("No packages installed.");
     }

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use soar_core::{SoarResult, package::remove::PackageRemover};
+use soar_core::{SoarResult, error::SoarError, package::remove::PackageRemover};
 use soar_db::repository::core::CoreRepository;
 use soar_events::{RemoveStage, SoarEvent};
 use soar_utils::{error::FileSystemResult, fs::walk_dir, path::resolve_path};
@@ -71,8 +71,19 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
 
     let mut removed = Vec::new();
     let mut failed = Vec::new();
+    let mut cancelled = Vec::new();
 
     for package in broken {
+        if ctx.cancel_token().is_cancelled() {
+            let op_id = next_op_id();
+            ctx.events().emit(SoarEvent::OperationCancelled {
+                op_id,
+                pkg_name: package.pkg_name.clone(),
+            });
+            cancelled.push(package.pkg_name.clone());
+            continue;
+        }
+
         let op_id = next_op_id();
         let pkg_name = package.pkg_name.clone();
         let repo_name = package.repo_name.clone();
@@ -88,6 +99,8 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
         let installed_pkg = package.into();
         let remover = PackageRemover::new(installed_pkg, diesel_db.clone(), ctx.config().clone())
             .await
+            .with_events(ctx.events().clone(), op_id)
+            .with_cancel(ctx.cancel_token().clone())
             .with_hooks(hooks)
             .with_sandbox(sandbox);
 
@@ -106,6 +119,13 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
                     version,
                 });
             }
+            Err(SoarError::Cancelled) => {
+                ctx.events().emit(SoarEvent::OperationCancelled {
+                    op_id,
+                    pkg_name: pkg_name.clone(),
+                });
+                cancelled.push(pkg_name);
+            }
             Err(err) => {
                 ctx.events().emit(SoarEvent::OperationFailed {
                     op_id,
@@ -123,6 +143,7 @@ pub async fn remove_broken_packages(ctx: &SoarContext) -> SoarResult<RemoveRepor
     Ok(RemoveReport {
         removed,
         failed,
+        cancelled,
     })
 }
 

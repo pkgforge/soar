@@ -8,7 +8,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use nu_ansi_term::Color::{Cyan, Green, Red, Yellow};
 use soar_dl::types::Progress;
 use soar_events::{
-    BuildStage, InstallStage, LogLevel, OperationId, RemoveStage, SoarEvent, SyncStage,
+    BuildStage, EventSink, InstallStage, LogLevel, OperationId, RemoveStage, SoarEvent, SyncStage,
     UpdateCleanupStage, VerifyStage,
 };
 
@@ -25,6 +25,24 @@ pub fn suspend<F: FnOnce()>(f: F) {
 /// Stop and clear all progress bars.
 pub fn stop() {
     MULTI.clear().ok();
+}
+
+/// Prints the lines a hook or build command wrote, and drops everything else.
+///
+/// Used when the progress display is off, where no other event has anywhere
+/// to go. Keeping the lines on stdout is where a child's output used to land
+/// when it owned the terminal.
+pub struct OutputOnlySink;
+
+impl EventSink for OutputOnlySink {
+    fn emit(&self, event: SoarEvent) {
+        if let SoarEvent::ProcessOutput {
+            line, ..
+        } = event
+        {
+            println!("{line}");
+        }
+    }
 }
 
 /// Handle returned by [`spawn_event_handler`] that owns the background progress thread.
@@ -437,6 +455,13 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                     }
                 }
 
+                // ── Hook and build output ─────────────────────────────
+                SoarEvent::ProcessOutput {
+                    line, ..
+                } => {
+                    suspend(|| println!("{line}"));
+                }
+
                 // ── Removal stages ─────────────────────────────────────
                 SoarEvent::Removing {
                     op_id,
@@ -604,6 +629,25 @@ pub fn spawn_event_handler(receiver: Receiver<SoarEvent>) -> ProgressGuard {
                             Red.paint("✗"),
                             Cyan.paint(&pkg_name),
                             Red.paint(&error)
+                        );
+                    });
+                    if let Some(pb) = jobs.remove(&op_id) {
+                        pb.finish_and_clear();
+                    }
+                }
+                SoarEvent::OperationCancelled {
+                    op_id,
+                    pkg_name,
+                    ..
+                } => {
+                    remove_ops.remove(&op_id);
+                    set_fetches.remove(&op_id);
+                    MULTI.suspend(|| {
+                        eprintln!(
+                            " {} {}: {}",
+                            Red.paint("✗"),
+                            Cyan.paint(&pkg_name),
+                            Red.paint("cancelled")
                         );
                     });
                     if let Some(pb) = jobs.remove(&op_id) {

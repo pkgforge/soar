@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use soar_utils::fs::is_elf;
+use soar_utils::{cancel::CancelToken, fs::is_elf};
 use tracing::{debug, trace, warn};
 use ureq::{
     Body,
@@ -49,6 +49,9 @@ pub struct Download {
     /// ranges; more than one splits a range-capable server's file between
     /// them.
     pub connections: usize,
+    /// Token that asks the download to stop at its next read. A cancelled
+    /// download keeps its partial file and resume state.
+    pub cancel: Option<CancelToken>,
 }
 
 impl Download {
@@ -81,6 +84,7 @@ impl Download {
             ghcr_blob: false,
             expected_checksum: None,
             connections: DEFAULT_CONNECTIONS,
+            cancel: None,
         }
     }
 
@@ -99,6 +103,24 @@ impl Download {
     /// ```
     pub fn connections(mut self, connections: usize) -> Self {
         self.connections = connections.max(1);
+        self
+    }
+
+    /// Sets a token that asks this download to stop at its next read.
+    ///
+    /// Cancelling keeps the partial file and its resume state, so a later
+    /// attempt continues where this one stopped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use soar_dl::download::Download;
+    /// use soar_utils::cancel::CancelToken;
+    ///
+    /// let dl = Download::new("https://example.com/file").cancel(CancelToken::new());
+    /// ```
+    pub fn cancel(mut self, token: CancelToken) -> Self {
+        self.cancel = Some(token);
         self
     }
 
@@ -244,8 +266,9 @@ impl Download {
     /// directories as needed, respects the configured overwrite mode (skip, force, or prompt),
     /// supports resuming interrupted downloads when resume metadata is available, and persists
     /// resume state during an active download. After a successful download, it clears any
-    /// stored resume metadata, sets the executable bit on ELF binaries, and—if extraction was
-    /// requested—extracts the archive into the configured destination directory.
+    /// stored resume metadata, sets the executable bit on ELF binaries, and
+    /// extracts the archive into the configured destination directory when
+    /// extraction was requested.
     ///
     /// # Returns
     ///
@@ -265,6 +288,10 @@ impl Download {
     /// ```
     pub fn execute(self) -> Result<PathBuf, DownloadError> {
         debug!(url = self.url, "starting download");
+
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
 
         if let Some(ref cb) = self.on_progress {
             cb(Progress::Preparing);
@@ -450,11 +477,24 @@ impl Download {
     ///
     /// `PathBuf::from("-")` on success.
     fn download_to_stdout(&self) -> Result<PathBuf, DownloadError> {
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
         let resp = Http::fetch(&self.url, None, None, self.ghcr_blob)?;
         let mut stdout = std::io::stdout();
         let mut reader = resp.into_body().into_reader();
+        let mut buffer = vec![0u8; READ_BUFFER];
 
-        std::io::copy(&mut reader, &mut stdout)?;
+        loop {
+            if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+                return Err(DownloadError::Cancelled);
+            }
+            let n = reader.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+            stdout.write_all(&buffer[..n])?;
+        }
         stdout.flush()?;
 
         Ok(PathBuf::from("-"))
@@ -480,6 +520,10 @@ impl Download {
         resume_info: Option<ResumeInfo>,
         remote: Option<RemoteInfo>,
     ) -> Result<File, DownloadError> {
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
+
         if resume_info
             .as_ref()
             .is_some_and(|info| info.etag.as_deref().and_then(strong_etag).is_none())
@@ -597,6 +641,9 @@ impl Download {
         written: Vec<u64>,
         etag: Option<&str>,
     ) -> Result<File, DownloadError> {
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
         let current: u64 = written.iter().sum();
         let info = ResumeInfo {
             downloaded: current,
@@ -654,6 +701,7 @@ impl Download {
             connections: self.connections,
             ranges,
             written,
+            cancel: self.cancel.as_ref(),
             on_progress: self.on_progress.as_ref(),
         });
 
@@ -691,6 +739,10 @@ impl Download {
         path: &Path,
         resume_info: Option<ResumeInfo>,
     ) -> Result<File, DownloadError> {
+        if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Err(DownloadError::Cancelled);
+        }
+
         let (resume_from, etag) = resume_info
             .as_ref()
             .map(|r| (Some(r.downloaded), r.etag.as_deref()))
@@ -770,6 +822,9 @@ impl Download {
         let mut last_checkpoint = downloaded / (1024 * 1024);
 
         loop {
+            if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+                return Err(DownloadError::Cancelled);
+            }
             let n = reader.read(&mut buffer)?;
             if n == 0 {
                 break;
@@ -1376,5 +1431,43 @@ mod tests {
             .count();
         assert_eq!(preparing, 1);
         assert!(matches!(seen[0], Progress::Preparing));
+    }
+
+    #[test]
+    fn an_already_cancelled_download_returns_cancelled() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+        let token = CancelToken::new();
+        token.cancel();
+
+        let result = Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .cancel(token)
+            .execute();
+
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
+        assert!(!out.exists(), "a download that never started left a file");
+    }
+
+    #[test]
+    fn a_download_cancelled_on_its_first_chunk_keeps_the_partial_file() {
+        let base = crate::test_server::serve(vec![("/file".into(), body())]);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("file");
+        let token = CancelToken::new();
+
+        let result = Download::new(format!("{base}/file"))
+            .output(out.to_string_lossy())
+            .cancel(token.clone())
+            .progress(move |p| {
+                if matches!(p, Progress::Chunk { .. }) {
+                    token.cancel();
+                }
+            })
+            .execute();
+
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
+        assert!(out.exists(), "the partial file was deleted");
     }
 }

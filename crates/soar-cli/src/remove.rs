@@ -1,9 +1,12 @@
 use nu_ansi_term::Color::{Blue, Cyan, Green, LightRed};
-use soar_core::SoarResult;
+use soar_core::{SoarResult, error::SoarError};
 use soar_operations::{RemoveResolveResult, SoarContext, remove};
 use tracing::{debug, error, info, warn};
 
-use crate::utils::{Colored, confirm_action, select_package_interactively};
+use crate::{
+    interrupt::InterruptGuard,
+    utils::{Colored, confirm_action, select_package_interactively},
+};
 
 pub async fn remove_packages(
     ctx: &SoarContext,
@@ -68,6 +71,7 @@ pub async fn remove_packages(
         return Ok(());
     }
 
+    let _interrupt = InterruptGuard::install(ctx.cancel_token().clone());
     let report = remove::perform_removal(ctx, to_remove).await?;
 
     for removed in &report.removed {
@@ -79,6 +83,10 @@ pub async fn remove_packages(
 
     for failed in &report.failed {
         error!("Failed to remove {}: {}", failed.pkg_name, failed.error);
+    }
+
+    if ctx.cancel_token().is_cancelled() {
+        return Err(SoarError::Cancelled);
     }
 
     debug!("package removal completed");

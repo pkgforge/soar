@@ -1,0 +1,26 @@
+[package]
+name = "soar-tui"
+version = "0.1.0"
+description = "Terminal user interface for soar"
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+categories.workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+nucleo-matcher = { workspace = true }
+ratatui = { workspace = true }
+serde_json = { workspace = true }
+soar-config = { workspace = true }
+soar-core = { workspace = true }
+soar-events = { workspace = true }
+soar-operations = { workspace = true }
+soar-utils = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
