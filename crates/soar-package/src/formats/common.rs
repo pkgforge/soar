@@ -76,8 +76,9 @@ fn normalize_image(image: DynamicImage) -> DynamicImage {
 
 /// Creates a symlink for an icon in the appropriate icons directory.
 ///
-/// The icon is normalized to a supported dimension and symlinked to
-/// `~/.local/share/icons/{WxH}/apps/{name}-soar.{ext}`.
+/// A raster icon is normalized to a supported dimension and symlinked to
+/// `~/.local/share/icons/hicolor/{WxH}/apps/{name}-soar.{ext}`. An SVG goes to
+/// `scalable/apps` instead.
 ///
 /// # Arguments
 ///
@@ -142,8 +143,8 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
     }
     let ext = real_path.extension();
 
-    let (w, h) = if ext == Some(OsStr::new("svg")) {
-        (128, 128)
+    let size_dir = if ext == Some(OsStr::new("svg")) {
+        "scalable".to_string()
     } else {
         let image = image::open(real_path)?;
         let (orig_w, orig_h) = image.dimensions();
@@ -170,11 +171,11 @@ pub fn symlink_icon_with_mode<P: AsRef<Path>>(
             }
         }
 
-        (w, h)
+        format!("{w}x{h}")
     };
 
     let final_path = icons_dir(system_mode)
-        .join(format!("{w}x{h}"))
+        .join(size_dir)
         .join("apps")
         .join(format!(
             "{icon_name}-soar.{}",
@@ -1222,6 +1223,33 @@ Name=New Note
 
         symlink_icon_with_mode(&source, "noteboard", false).unwrap();
         assert_eq!(fs::read(&occupant).unwrap(), b"mine");
+
+        if let Some(value) = saved {
+            unsafe { std::env::set_var("XDG_DATA_HOME", value) };
+        } else {
+            unsafe { std::env::remove_var("XDG_DATA_HOME") };
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn an_svg_icon_is_linked_as_scalable() {
+        let dir = TempDir::new().unwrap();
+        let saved = std::env::var("XDG_DATA_HOME").ok();
+        // SAFETY: test-only, and serialized with the other tests that change the
+        // environment by `#[serial]`.
+        unsafe { std::env::set_var("XDG_DATA_HOME", dir.path().join("data")) };
+
+        let source = dir.path().join("noteboard.svg");
+        fs::write(&source, b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>").unwrap();
+
+        let link = symlink_icon_with_mode(&source, "noteboard", false).unwrap();
+        assert_eq!(
+            link,
+            dir.path()
+                .join("data/icons/hicolor/scalable/apps/noteboard-soar.svg")
+        );
+        assert_eq!(fs::read_link(&link).unwrap(), source);
 
         if let Some(value) = saved {
             unsafe { std::env::set_var("XDG_DATA_HOME", value) };
