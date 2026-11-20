@@ -1,4 +1,26 @@
 
+## [0.14.3](https://github.com/pkgforge/soar/compare/v0.14.2...v0.14.3) - 2026-11-20
+
+### ⛰️  Features
+
+- *(url)* Support ptyxis terminal - ([5e9e5d6](https://github.com/pkgforge/soar/commit/5e9e5d63b7a9dbf65ca42b754d710d8291d32855))
+
+### 🐛 Bug Fixes
+
+- *(package)* Link svg icons under hicolor/scalable - ([16e2946](https://github.com/pkgforge/soar/commit/16e2946c5e8206f6e38affd6469d977c8bb59276))
+
+### 🚜 Refactor
+
+- *(core)* Replace chrono with jiff - ([38e9314](https://github.com/pkgforge/soar/commit/38e9314a660301848833bcfd9283249b1b39d031))
+
+### ⚡ Performance
+
+- *(cli)* Use mimalloc as the allocator on musl - ([c78a62b](https://github.com/pkgforge/soar/commit/c78a62b8e5a675e67a9e8c9c428bf488fc01df30))
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.toml dependencies - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.14.2](https://github.com/pkgforge/soar/compare/v0.14.1...v0.14.2) - 2026-11-15
 
 ### ⛰️  Features

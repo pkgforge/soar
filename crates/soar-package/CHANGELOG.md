@@ -1,4 +1,10 @@
 
+## [0.8.2](https://github.com/pkgforge/soar/compare/soar-package-v0.8.1...soar-package-v0.8.2) - 2026-11-20
+
+### 🐛 Bug Fixes
+
+- *(package)* Link svg icons under hicolor/scalable - ([16e2946](https://github.com/pkgforge/soar/commit/16e2946c5e8206f6e38affd6469d977c8bb59276))
+
 ## [0.8.1](https://github.com/pkgforge/soar/compare/soar-package-v0.8.0...soar-package-v0.8.1) - 2026-11-15
 
 ### ⛰️  Features

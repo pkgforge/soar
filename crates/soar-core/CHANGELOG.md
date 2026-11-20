@@ -1,4 +1,10 @@
 
+## [0.18.3](https://github.com/pkgforge/soar/compare/soar-core-v0.18.2...soar-core-v0.18.3) - 2026-11-20
+
+### 🚜 Refactor
+
+- *(core)* Replace chrono with jiff - ([38e9314](https://github.com/pkgforge/soar/commit/38e9314a660301848833bcfd9283249b1b39d031))
+
 ## [0.18.2](https://github.com/pkgforge/soar/compare/soar-core-v0.18.1...soar-core-v0.18.2) - 2026-11-15
 
 ### ⛰️  Features

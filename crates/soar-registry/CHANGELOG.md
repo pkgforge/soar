@@ -1,4 +1,10 @@
 
+## [0.7.2](https://github.com/pkgforge/soar/compare/soar-registry-v0.7.1...soar-registry-v0.7.2) - 2026-11-20
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.toml dependencies - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.7.1](https://github.com/pkgforge/soar/compare/soar-registry-v0.7.0...soar-registry-v0.7.1) - 2026-11-14
 
 ### ⚙️ Miscellaneous Tasks
