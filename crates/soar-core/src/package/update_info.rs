@@ -195,9 +195,9 @@ pub fn version_from_feed(filename: Option<&str>, mtime: Option<&str>) -> Option<
 
 /// `Mon, 01 Aug 2026 12:00:00 GMT` as `20260801`, which compares like a date.
 fn http_date_to_version(raw: &str) -> Option<String> {
-    chrono::DateTime::parse_from_rfc2822(raw)
+    jiff::fmt::rfc2822::parse(raw)
         .ok()
-        .map(|d| d.format("%Y%m%d").to_string())
+        .map(|d| d.strftime("%Y%m%d").to_string())
 }
 
 #[cfg(test)]

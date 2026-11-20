@@ -14,7 +14,7 @@ categories.workspace = true
 ignored = ["libsqlite3-sys"]
 
 [dependencies]
-chrono = { workspace = true }
+jiff = { workspace = true }
 compak = { workspace = true }
 diesel = { workspace = true }
 fast-glob = { workspace = true }

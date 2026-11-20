@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::json;
 use soar_config::{
     config::Config,
@@ -637,7 +637,7 @@ impl PackageInstaller {
             let version = &package.version;
             let size = package.ghcr_size.unwrap_or(package.size.unwrap_or(0)) as i64;
             let installed_path = install_dir.to_string_lossy();
-            let installed_date = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let installed_date = Timestamp::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
 
             // Clean up any orphaned pending installs (different versions) before creating new record
             let orphaned_paths = db.with_conn(|conn| {
@@ -1457,7 +1457,7 @@ impl PackageInstaller {
         let checksum = package.bsum.as_deref();
         let provides = package.provides.clone();
 
-        let installed_date = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let installed_date = Timestamp::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
 
         let installed_path = self.install_dir.to_string_lossy();
         let record_id: Option<i32> = self.db.with_conn(|conn| {
