@@ -1,4 +1,10 @@
 
+## [0.8.2](https://github.com/pkgforge/soar/compare/soar-db-v0.8.1...soar-db-v0.8.2) - 2026-11-20
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.toml dependencies - ([0000000](https://github.com/pkgforge/soar/commit/0000000))
+
 ## [0.8.1](https://github.com/pkgforge/soar/compare/soar-db-v0.8.0...soar-db-v0.8.1) - 2026-11-14
 
 ### ⚙️ Miscellaneous Tasks
