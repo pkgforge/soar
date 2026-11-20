@@ -71,6 +71,12 @@ mod self_actions;
 #[cfg(feature = "self")]
 use self_actions::process_self_action;
 
+/// musl's allocator is slow under concurrent workloads, so musl builds swap in
+/// mimalloc; glibc builds keep the system allocator.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 pub fn create_context() -> (SoarContext, Option<ProgressGuard>) {
     create_context_for(false)
 }

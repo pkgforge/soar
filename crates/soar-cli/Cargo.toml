@@ -46,3 +46,6 @@ toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ureq = { workspace = true }
+
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { workspace = true }

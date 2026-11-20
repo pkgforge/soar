@@ -31,6 +31,7 @@ indicatif = "0.18"
 landlock = "0.4.7"
 libsqlite3-sys = { version = "0.40.0", features = [ "bundled" ]}
 miette = { version = "7.6.0", features = ["fancy"] }
+mimalloc = { version = "0.1.52", features = ["no_thp"] }
 minisign-verify = "0.3.0"
 nix = { version = "0.32.0", features = ["dir", "fs", "ioctl", "term", "user"] }
 nucleo-matcher = "0.3.1"
