@@ -52,6 +52,7 @@ const TERMINALS: &[(&str, &[&str])] = &[
     ("alacritty", &["-e"]),
     ("wterm", &["-e"]),
     ("konsole", &["-e"]),
+    ("ptyxis", &["--"]),
     ("gnome-terminal", &["--"]),
     ("xfce4-terminal", &["-x"]),
     ("st", &["-e"]),
